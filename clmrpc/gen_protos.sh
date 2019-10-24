@@ -11,3 +11,14 @@ do
 		${file}
 
 done
+
+# Only generate the REST proxy and definitions for the client component.
+protoc -I/usr/local/include -I. \
+       -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis \
+       --grpc-gateway_out=logtostderr=true:. \
+       client.proto
+
+protoc -I/usr/local/include -I. \
+       -I$GOPATH/src/github.com/grpc-ecosystem/grpc-gateway/third_party/googleapis \
+       --swagger_out=logtostderr=true:. \
+       client.proto
