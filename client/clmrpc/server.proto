@@ -68,12 +68,12 @@ message ServerOrderRequest {
         /**
         Submit an ask order.
         */
-        Ask ask = 1;
+        ServerAsk ask = 1;
         
         /**
         Submit a bid order.
         */
-        Bid bid = 2;
+        ServerBid bid = 2;
     }
 }
 message ServerOrderResponse {
@@ -105,7 +105,7 @@ message OrderMatchSign {}
 message OrderMatchFinalize {}
 message ServerAuctionMessage {}
 
-message Bid {
+message ServerBid {
     /**
     Fixed order rate in parts per million.
     */
@@ -151,7 +151,7 @@ message Bid {
     int64 funding_fee_rate = 14;
 }
 
-message Ask {
+message ServerAsk {
     /**
     Fixed order rate in parts per million.
     */

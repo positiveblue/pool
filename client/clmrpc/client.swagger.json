@@ -20,7 +20,7 @@
         "operationId": "ListAccounts",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcListAccountsResponse"
             }
@@ -34,7 +34,7 @@
         "operationId": "InitAccount",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcInitAccountResponse"
             }
@@ -60,7 +60,7 @@
         "operationId": "CloseAccount",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcCloseAccountResponse"
             }
@@ -82,7 +82,7 @@
         "operationId": "ModifyAccount",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcModifyAccountResponse"
             }
@@ -114,7 +114,7 @@
         "operationId": "ListOrders",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcListOrdersResponse"
             }
@@ -128,7 +128,7 @@
         "operationId": "SubmitOrder",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcSubmitOrderResponse"
             }
@@ -154,7 +154,7 @@
         "operationId": "CancelOrder",
         "responses": {
           "200": {
-            "description": "",
+            "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/clmrpcCancelOrderResponse"
             }
