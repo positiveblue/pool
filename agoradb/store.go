@@ -3,15 +3,18 @@ package agoradb
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/clientv3"
+	"github.com/lightninglabs/agora/account"
 )
 
 var (
+	errNotInitialized     = errors.New("db not initialized")
 	errAlreadyInitialized = errors.New("db already initialized")
 	errDbVersionMismatch  = errors.New("wrong db version")
 
@@ -35,7 +38,7 @@ var (
 type Store interface {
 	Init(ctx context.Context) error
 
-	// TODO: add business logic methods to store/retrieve information.
+	account.Store
 }
 
 type EtcdStore struct {
@@ -113,7 +116,27 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 
 func (s *EtcdStore) setVersion(ctx context.Context, version uint32) error {
 	key := s.getKeyPrefix(versionPrefix)
-
 	_, err := s.client.Put(ctx, key, strconv.Itoa(int(version)))
 	return err
+}
+
+// getSingleValue is a helper method to retrieve the value for a key that should
+// only have a single value mapped to it. If no value is found, the provided
+// errNoValue error is returned.
+func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
+	errNoValue error) (*clientv3.GetResponse, error) {
+
+	resp, err := s.client.Get(ctx, key, clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	if len(resp.Kvs) == 0 {
+		return nil, errNoValue
+	}
+	if len(resp.Kvs) > 1 {
+		return nil, fmt.Errorf("invalid entry for key %s, found %d "+
+			"keys, expected %d", key, len(resp.Kvs), 1)
+	}
+
+	return resp, nil
 }
