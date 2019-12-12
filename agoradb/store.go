@@ -1,10 +1,10 @@
 package agoradb
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"errors"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -12,8 +12,6 @@ import (
 )
 
 var (
-	byteOrder = binary.BigEndian
-
 	errAlreadyInitialized = errors.New("db already initialized")
 	errDbVersionMismatch  = errors.New("wrong db version")
 
@@ -23,15 +21,15 @@ var (
 var (
 	// topLevelDir is the top level directory that we'll use to store all
 	// the production agora data.
-	topLevelDir = []byte("bitcoin/clm/agora")
+	topLevelDir = "bitcoin/clm/agora"
 
 	// versionPrefix is the key prefix that we'll use to store the current
 	// version of the auction data for the target network.
-	versionPrefix = []byte("version")
+	versionPrefix = "version"
 
 	// keyDelimiter is the special token that we'll use to delimit entries
 	// in a key's path.
-	keyDelimiter = []byte("/")
+	keyDelimiter = "/"
 )
 
 type Store interface {
@@ -42,7 +40,7 @@ type Store interface {
 
 type EtcdStore struct {
 	client      *clientv3.Client
-	networkID   []byte
+	networkID   string
 	initialized bool
 }
 
@@ -64,18 +62,17 @@ func NewEtcdStore(activeNet chaincfg.Params,
 
 	s := &EtcdStore{
 		client:    cli,
-		networkID: []byte(activeNet.Name),
+		networkID: activeNet.Name,
 	}
 
 	return s, nil
 }
 
 // getKeyPrefix returns the key prefix path for the given prefix.
-func (s *EtcdStore) getKeyPrefix(prefix []byte) []byte {
+func (s *EtcdStore) getKeyPrefix(prefix string) string {
 	// /bitcoin/clm/agora/<network>/<prefix>.
-	return bytes.Join(
-		[][]byte{topLevelDir, s.networkID, prefix},
-		keyDelimiter,
+	return strings.Join(
+		[]string{topLevelDir, s.networkID, prefix}, keyDelimiter,
 	)
 }
 
@@ -87,7 +84,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 		return errAlreadyInitialized
 	}
 
-	resp, err := s.client.Get(ctx, string(s.getKeyPrefix(versionPrefix)))
+	resp, err := s.client.Get(ctx, s.getKeyPrefix(versionPrefix))
 	if err != nil {
 		return err
 	}
@@ -99,12 +96,15 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 		return s.setVersion(ctx, currentDbVersion)
 	}
 
-	version := byteOrder.Uint32(resp.Kvs[0].Value)
+	version, err := strconv.Atoi(string(resp.Kvs[0].Value))
+	if err != nil {
+		return err
+	}
 
-	log.Infof("Current db version %v, required version %v",
-		version, currentDbVersion)
+	log.Infof("Current db version %v, latest version %v", version,
+		currentDbVersion)
 
-	if version != currentDbVersion {
+	if uint32(version) != currentDbVersion {
 		return errDbVersionMismatch
 	}
 
@@ -114,9 +114,6 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 func (s *EtcdStore) setVersion(ctx context.Context, version uint32) error {
 	key := s.getKeyPrefix(versionPrefix)
 
-	scratch := make([]byte, 4)
-	byteOrder.PutUint32(scratch, version)
-	_, err := s.client.Put(ctx, string(key), string(scratch))
-
+	_, err := s.client.Put(ctx, key, strconv.Itoa(int(version)))
 	return err
 }
