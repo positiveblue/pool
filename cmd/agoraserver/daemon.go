@@ -146,7 +146,7 @@ func (x *daemonCommand) Execute(_ []string) error {
 	// Start the auctioneer server itself.
 	err = auctioneerServer.Start()
 	if err != nil {
-		log.Errorf("Unable to start agora server: %v\n", err)
+		return fmt.Errorf("unable to start agora server: %v", err)
 	}
 
 	// Start the grpc server.

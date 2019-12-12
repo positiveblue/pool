@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/agora"
+	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
@@ -22,6 +23,7 @@ func init() {
 	addSubLogger(agoradb.Subsystem, agoradb.UseLogger)
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("SGNL", signal.UseLogger)
+	addSubLogger(account.Subsystem, account.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the
