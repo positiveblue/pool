@@ -10,7 +10,6 @@ require (
 	github.com/coreos/go-systemd v0.0.0-20190212144455-93d5ec2c7f76 // indirect
 	github.com/coreos/pkg v0.0.0-20180928190104-399ea9e2e55f // indirect
 	github.com/dgrijalva/jwt-go v3.2.0+incompatible // indirect
-	github.com/gogo/protobuf v1.1.1
 	github.com/golang/groupcache v0.0.0-20191027212112-611e8accdfc9 // indirect
 	github.com/golang/protobuf v1.3.2
 	github.com/google/btree v1.0.0 // indirect
@@ -21,6 +20,7 @@ require (
 	github.com/jonboulle/clockwork v0.1.0 // indirect
 	github.com/json-iterator/go v1.1.8 // indirect
 	github.com/lightninglabs/loop v0.3.0-alpha.0.20191212213924-1ea58ad3d61b
+	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191031062740-ab4db36fadc8
 	github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20191212054348-dca31c2bf8be
 	github.com/lightningnetwork/lnd/cert v1.0.0
 	github.com/modern-go/reflect2 v1.0.1 // indirect
