@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/agora/order"
 )
 
 var (
@@ -19,6 +20,8 @@ var (
 	errDbVersionMismatch  = errors.New("wrong db version")
 
 	currentDbVersion = uint32(0)
+
+	etcdTimeout = 10 * time.Second
 )
 
 var (
@@ -39,6 +42,8 @@ type Store interface {
 	Init(ctx context.Context) error
 
 	account.Store
+
+	order.Store
 }
 
 type EtcdStore struct {
@@ -73,7 +78,7 @@ func NewEtcdStore(activeNet chaincfg.Params,
 
 // getKeyPrefix returns the key prefix path for the given prefix.
 func (s *EtcdStore) getKeyPrefix(prefix string) string {
-	// /bitcoin/clm/agora/<network>/<prefix>.
+	// bitcoin/clm/agora/<network>/<prefix>.
 	return strings.Join(
 		[]string{topLevelDir, s.networkID, prefix}, keyDelimiter,
 	)

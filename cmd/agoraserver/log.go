@@ -1,3 +1,5 @@
+// As this file is very similar in every package, ignore the linter here.
+// nolint:dupl
 package main
 
 import (
@@ -5,6 +7,7 @@ import (
 	"github.com/lightninglabs/agora"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
+	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
@@ -25,6 +28,7 @@ func init() {
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("SGNL", signal.UseLogger)
 	addSubLogger(account.Subsystem, account.UseLogger)
+	addSubLogger(order.Subsystem, order.UseLogger)
 	addSubLogger(auth.Subsystem, auth.UseLogger)
 }
 
