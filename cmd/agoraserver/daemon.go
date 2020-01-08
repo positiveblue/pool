@@ -53,8 +53,7 @@ func (x *daemonCommand) Execute(_ []string) error {
 	}
 
 	lndServices, err := lndclient.NewLndServices(
-		cfg.Lnd.Host, "server", cfg.Network,
-		cfg.Lnd.MacaroonDir, cfg.Lnd.TLSPath,
+		cfg.Lnd.Host, cfg.Network, cfg.Lnd.MacaroonDir, cfg.Lnd.TLSPath,
 	)
 	if err != nil {
 		return err
