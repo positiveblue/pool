@@ -12,6 +12,7 @@ import (
 
 	"github.com/lightninglabs/agora"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
@@ -68,7 +69,10 @@ func (x *daemonCommand) Execute(_ []string) error {
 		return err
 	}
 
-	serverOpts := []grpc.ServerOption{}
+	interceptor := auth.ServerInterceptor{}
+	serverOpts := []grpc.ServerOption{
+		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
+	}
 	switch {
 	// If auto cert is cfgured, then we'll create a cert automatically
 	// using Let's Encrypt.
