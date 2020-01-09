@@ -11,9 +11,9 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.10.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/kirin v0.0.0-20200107133748-8b731e87e4b8
-	github.com/lightninglabs/loop v0.3.0-alpha.0.20200103135410-5e00ce62677a
+	github.com/lightninglabs/loop v0.3.0-alpha.0.20200108113330-d9597e838793
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200103000305-22e1f006b194
+	github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200108005919-658803f51c05
 	github.com/lightningnetwork/lnd/cert v1.0.0
 	github.com/urfave/cli v1.20.0
 	golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472
