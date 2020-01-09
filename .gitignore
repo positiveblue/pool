@@ -49,3 +49,6 @@ profile.tmp
 /agora
 /agorad
 /agoraserver
+/itest/lnd-itest
+/itest/regtest/*.log
+/itest/*.log

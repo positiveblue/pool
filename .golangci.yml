@@ -33,3 +33,12 @@ linters:
     # We have long functions, especially in tests. Moving or renaming those
     # would trigger funlen problems that we may not want to solve at that time.
     - funlen
+
+issues:
+  exclude-rules:
+    # Fix false positives because of build flags.
+    - path: itest/.*
+      linters:
+        - unused
+        - deadcode
+        - varcheck
