@@ -1,11 +1,12 @@
 syntax = "proto3";
 
 import "google/api/annotations.proto";
+import "server.proto";
 
 package clmrpc;
 
 service ChannelAuctioneerClient {
-    rpc InitAccount (InitAccountRequest) returns (InitAccountResponse) {
+    rpc InitAccount (InitAccountRequest) returns (Account) {
         option (google.api.http) = {
             post: "/v1/clm/accounts"
             body: "*"
@@ -52,11 +53,8 @@ service ChannelAuctioneerClient {
 }
 
 message InitAccountRequest {
-    int64 account_value = 1;
-    int64 account_duration = 2;
-}
-message InitAccountResponse {
-    string account_sub_key_hex = 1;
+    uint32 account_value = 1;
+    uint32 account_expiry = 2;
 }
 
 message ListAccountsRequest {}
@@ -75,10 +73,18 @@ message ModifyAccountRequest {
 }
 message ModifyAccountResponse{}
 
+
+enum AccountState {
+    PENDING_OPEN = 0;
+    OPEN = 1;
+}
+
 message Account {
-    string account_sub_key_hex = 1;
-    int64 account_value = 2;
-    int64 account_duration = 3;
+    bytes trader_key = 1;
+    OutPoint outpoint = 2;
+    uint32 value = 3;
+    uint32 expiration_height = 4;
+    AccountState state = 5;
 }
 
 message SubmitOrderRequest {

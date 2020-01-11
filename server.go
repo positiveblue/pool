@@ -7,31 +7,41 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/lsat"
 )
 
 const (
 	// initTimeout is the maximum time we allow for the etcd store to be
 	// initialized.
-	initTimeout = 30 * time.Second
+	initTimeout = 5 * time.Second
+
+	// getInfoTimeout is the maximum time we allow for the GetInfo call to
+	// the backing lnd node.
+	getInfoTimeout = 5 * time.Second
 )
 
 type Server struct {
-	// bestHeight is the best known height of the main chain. The links will
-	// be used this information to govern decisions based on HTLC timeouts.
-	// This will be retrieved by the registered links atomically.
+	started uint32 // To be used atomically.
+	stopped uint32 // To be used atomically.
+
+	// bestHeight is the best known height of the main chain. This MUST be
+	// used atomically.
 	bestHeight uint32
 
 	lnd            *lndclient.LndServices
 	identityPubkey [33]byte
 	store          agoradb.Store
+	accountManager *account.Manager
 
-	started uint32 // To be used atomically.
-	stopped uint32 // To be used atomically.
-	quit    chan struct{}
-	wg      sync.WaitGroup
+	quit chan struct{}
+	wg   sync.WaitGroup
 }
 
 func NewEtcdServer(lnd *lndclient.LndServices,
@@ -44,10 +54,20 @@ func NewEtcdServer(lnd *lndclient.LndServices,
 		return nil, err
 	}
 
+	accountManager, err := account.NewManager(&account.ManagerConfig{
+		Store:         store,
+		Wallet:        lnd.WalletKit,
+		ChainNotifier: lnd.ChainNotifier,
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return &Server{
-		lnd:   lnd,
-		store: store,
-		quit:  make(chan struct{}),
+		lnd:            lnd,
+		store:          store,
+		accountManager: accountManager,
+		quit:           make(chan struct{}),
 	}, nil
 }
 
@@ -58,20 +78,20 @@ func (s *Server) Start() error {
 	}
 
 	log.Infof("Starting auction server")
-	s.wg.Add(1)
 
-	ctx, cancel := context.WithTimeout(context.Background(), initTimeout)
-	defer cancel()
-	if err := s.store.Init(ctx); err != nil {
-		return err
+	ctx := context.Background()
+	etcdCtx, etcdCancel := context.WithTimeout(ctx, initTimeout)
+	defer etcdCancel()
+	if err := s.store.Init(etcdCtx); err != nil {
+		return fmt.Errorf("unable to initialize etcd store: %v", err)
 	}
 
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-
-	infoResp, err := s.lnd.Client.GetInfo(ctx)
+	lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)
+	defer lndCancel()
+	infoResp, err := s.lnd.Client.GetInfo(lndCtx)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to retrieve lnd node public key: %v",
+			err)
 	}
 	s.identityPubkey = infoResp.IdentityPubkey
 
@@ -83,8 +103,6 @@ func (s *Server) Start() error {
 
 	// Before finishing Start(), make sure we have an up to date block
 	// height.
-	log.Infof("Wait for first block ntfn")
-
 	var height int32
 	select {
 	case height = <-blockEpochChan:
@@ -96,9 +114,14 @@ func (s *Server) Start() error {
 
 	s.updateHeight(height)
 
-	log.Infof("Auction server started at height %v", height)
+	if err := s.accountManager.Start(); err != nil {
+		return fmt.Errorf("unable to start account manager: %v", err)
+	}
 
-	go s.serverHandler()
+	s.wg.Add(1)
+	go s.serverHandler(blockEpochChan, blockErrorChan)
+
+	log.Infof("Auction server is now active")
 
 	return nil
 }
@@ -109,21 +132,33 @@ func (s *Server) Stop() error {
 		return nil
 	}
 
-	log.Info("Auction server terminating")
+	log.Info("Stopping auction server")
+
+	s.accountManager.Stop()
+
 	close(s.quit)
 	s.wg.Wait()
 
-	log.Info("Auction server terminated")
+	log.Info("Auction server stopped")
 	return nil
 }
 
 // serverHandler is the main event loop of the server.
-func (s *Server) serverHandler() {
+func (s *Server) serverHandler(blockChan chan int32, blockErrChan chan error) {
 	defer s.wg.Done()
 
-	for { // nolint
-		// TODO(guggero): Implement main event loop.
+	for {
 		select {
+		case height := <-blockChan:
+			log.Infof("Received new block notification: height=%v",
+				height)
+			s.updateHeight(height)
+
+		case err := <-blockErrChan:
+			if err != nil {
+				log.Errorf("Unable to receive block "+
+					"notification: %v", err)
+			}
 
 		// In case the server is shutting down.
 		case <-s.quit:
@@ -133,18 +168,56 @@ func (s *Server) serverHandler() {
 }
 
 func (s *Server) updateHeight(height int32) {
-	log.Infof("Received block %v", height)
-
 	// Store height atomically so the incoming request handler can access it
 	// without locking.
 	atomic.StoreUint32(&s.bestHeight, uint32(height))
 }
 
-func (s *Server) InitAccount(ctx context.Context,
-	req *clmrpc.ServerInitAccountRequest) (
-	*clmrpc.ServerInitAccountResponse, error) {
+func (s *Server) ReserveAccount(ctx context.Context,
+	req *clmrpc.ReserveAccountRequest) (*clmrpc.ReserveAccountResponse, error) {
 
-	return nil, fmt.Errorf("unimplemented")
+	// TODO(wilmer): Extract token ID from LSAT.
+	var tokenID lsat.TokenID
+
+	var traderKey [33]byte
+	copy(traderKey[:], req.UserSubKey)
+
+	ourKey, err := s.accountManager.ReserveAccount(ctx, tokenID, traderKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clmrpc.ReserveAccountResponse{
+		AuctioneerKey: ourKey[:],
+	}, nil
+}
+
+func (s *Server) InitAccount(ctx context.Context,
+	req *clmrpc.ServerInitAccountRequest) (*clmrpc.ServerInitAccountResponse, error) {
+
+	// TODO(wilmer): Extract token ID from LSAT.
+	var tokenID lsat.TokenID
+
+	var txid chainhash.Hash
+	copy(txid[:], req.AccountPoint.Txid)
+	accountPoint := wire.OutPoint{
+		Hash:  txid,
+		Index: req.AccountPoint.OutputIndex,
+	}
+
+	var traderKey [33]byte
+	copy(traderKey[:], req.UserSubKey)
+
+	err := s.accountManager.InitAccount(
+		ctx, tokenID, accountPoint, btcutil.Amount(req.AccountValue),
+		req.AccountScript, req.AccountExpiry, traderKey,
+		atomic.LoadUint32(&s.bestHeight),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clmrpc.ServerInitAccountResponse{}, nil
 }
 
 func (s *Server) CloseAccount(ctx context.Context,

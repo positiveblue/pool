@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/auctioneer"
 	"github.com/lightninglabs/agora/client/clientdb"
 	"github.com/lightninglabs/agora/client/clmrpc"
@@ -17,16 +19,21 @@ import (
 const (
 	// getInfoTimeout is the maximum time we allow for the initial getInfo
 	// call to the connected lnd node.
-	getInfoTimeout = 30 * time.Second
+	getInfoTimeout = 5 * time.Second
 )
 
 type Server struct {
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
 
-	lndServices *lndclient.LndServices
-	auctioneer  *auctioneer.Client
-	db          *clientdb.DB
+	// bestHeight is the best known height of the main chain. This MUST be
+	// used atomically.
+	bestHeight uint32
+
+	lndServices    *lndclient.LndServices
+	auctioneer     *auctioneer.Client
+	db             *clientdb.DB
+	accountManager *account.Manager
 
 	quit chan struct{}
 	wg   sync.WaitGroup
@@ -44,7 +51,14 @@ func NewServer(lnd *lndclient.LndServices, auctionServer *auctioneer.Client,
 		lndServices: lnd,
 		auctioneer:  auctionServer,
 		db:          db,
-		quit:        make(chan struct{}),
+		accountManager: account.NewManager(&account.ManagerConfig{
+			Store:         db,
+			Auctioneer:    auctionServer,
+			Wallet:        lnd.WalletKit,
+			ChainNotifier: lnd.ChainNotifier,
+			TxSource:      lnd.Client,
+		}),
+		quit: make(chan struct{}),
 	}, nil
 }
 
@@ -55,20 +69,45 @@ func (s *Server) Start() error {
 	}
 
 	log.Infof("Starting trader server")
-	s.wg.Add(1)
 
-	// Log connected node.
-	ctx, cancel := context.WithTimeout(context.Background(), getInfoTimeout)
-	defer cancel()
-	info, err := s.lndServices.Client.GetInfo(ctx)
+	ctx := context.Background()
+
+	lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)
+	defer lndCancel()
+	info, err := s.lndServices.Client.GetInfo(lndCtx)
 	if err != nil {
-		return fmt.Errorf("GetInfo error: %v", err)
+		return fmt.Errorf("unable to call GetInfo on lnd node: %v", err)
 	}
-	log.Infof("Connected to lnd node %v with pubkey %v",
-		info.Alias, hex.EncodeToString(info.IdentityPubkey[:]),
-	)
 
-	go s.serverHandler()
+	log.Infof("Connected to lnd node %v with pubkey %v", info.Alias,
+		hex.EncodeToString(info.IdentityPubkey[:]))
+
+	chainNotifier := s.lndServices.ChainNotifier
+	blockChan, blockErrChan, err := chainNotifier.RegisterBlockEpochNtfn(ctx)
+	if err != nil {
+		return err
+	}
+
+	var height int32
+	select {
+	case height = <-blockChan:
+	case err := <-blockErrChan:
+		return fmt.Errorf("unable to receive first block "+
+			"notification: %v", err)
+	case <-ctx.Done():
+		return nil
+	}
+
+	s.updateHeight(height)
+
+	if err := s.accountManager.Start(); err != nil {
+		return err
+	}
+
+	s.wg.Add(1)
+	go s.serverHandler(blockChan, blockErrChan)
+
+	log.Infof("Trader server is now active")
 
 	return nil
 }
@@ -79,21 +118,33 @@ func (s *Server) Stop() error {
 		return nil
 	}
 
-	log.Info("Trader server terminating")
+	log.Info("Stopping trader server")
+
+	s.accountManager.Stop()
+
 	close(s.quit)
 	s.wg.Wait()
 
-	log.Info("Trader server terminated")
+	log.Info("Stopped trader server")
 	return nil
 }
 
 // serverHandler is the main event loop of the server.
-func (s *Server) serverHandler() {
+func (s *Server) serverHandler(blockChan chan int32, blockErrChan chan error) {
 	defer s.wg.Done()
 
-	for { // nolint
-		// TODO(guggero): Implement main event loop.
+	for {
 		select {
+		case height := <-blockChan:
+			log.Infof("Received new block notification: height=%v",
+				height)
+			s.updateHeight(height)
+
+		case err := <-blockErrChan:
+			if err != nil {
+				log.Errorf("Unable to receive block "+
+					"notification: %v", err)
+			}
 
 		// In case the server is shutting down.
 		case <-s.quit:
@@ -102,25 +153,71 @@ func (s *Server) serverHandler() {
 	}
 }
 
-func (s *Server) InitAccount(ctx context.Context,
-	req *clmrpc.InitAccountRequest) (*clmrpc.InitAccountResponse, error) {
+func (s *Server) updateHeight(height int32) {
+	// Store height atomically so the incoming request handler can access it
+	// without locking.
+	atomic.StoreUint32(&s.bestHeight, uint32(height))
+}
 
-	serverReq := &clmrpc.ServerInitAccountRequest{
-		AccountValue: req.AccountValue,
-	}
-	_, err := s.auctioneer.InitAccount(ctx, serverReq)
+func (s *Server) InitAccount(ctx context.Context,
+	req *clmrpc.InitAccountRequest) (*clmrpc.Account, error) {
+
+	account, err := s.accountManager.InitAccount(
+		ctx, btcutil.Amount(req.AccountValue), req.AccountExpiry,
+		atomic.LoadUint32(&s.bestHeight),
+	)
 	if err != nil {
 		return nil, err
 	}
-	return &clmrpc.InitAccountResponse{
-		AccountSubKeyHex: "beef",
-	}, nil
+
+	return marshallAccount(account)
 }
 
 func (s *Server) ListAccounts(ctx context.Context,
 	req *clmrpc.ListAccountsRequest) (*clmrpc.ListAccountsResponse, error) {
 
-	return nil, fmt.Errorf("unimplemented")
+	accounts, err := s.db.Accounts()
+	if err != nil {
+		return nil, err
+	}
+
+	rpcAccounts := make([]*clmrpc.Account, 0, len(accounts))
+	for _, account := range accounts {
+		rpcAccount, err := marshallAccount(account)
+		if err != nil {
+			return nil, err
+		}
+		rpcAccounts = append(rpcAccounts, rpcAccount)
+	}
+
+	return &clmrpc.ListAccountsResponse{
+		Accounts: rpcAccounts,
+	}, nil
+}
+
+func marshallAccount(a *account.Account) (*clmrpc.Account, error) {
+	var rpcState clmrpc.AccountState
+	switch a.State {
+	case account.StateInitiated, account.StatePendingOpen:
+		rpcState = clmrpc.AccountState_PENDING_OPEN
+
+	case account.StateOpen:
+		rpcState = clmrpc.AccountState_OPEN
+
+	default:
+		return nil, fmt.Errorf("unknown state %v", a.State)
+	}
+
+	return &clmrpc.Account{
+		TraderKey: a.TraderKey[:],
+		Outpoint: &clmrpc.OutPoint{
+			Txid:        a.OutPoint.Hash[:],
+			OutputIndex: a.OutPoint.Index,
+		},
+		Value:            uint32(a.Value),
+		ExpirationHeight: a.Expiry,
+		State:            rpcState,
+	}, nil
 }
 
 func (s *Server) CloseAccount(ctx context.Context,

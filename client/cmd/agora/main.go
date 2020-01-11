@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
@@ -14,10 +16,22 @@ import (
 	"google.golang.org/grpc"
 )
 
-func printRespJSON(resp proto.Message) {
+func printJSON(resp interface{}) {
+	b, err := json.Marshal(resp)
+	if err != nil {
+		fatal(err)
+	}
+
+	var out bytes.Buffer
+	_ = json.Indent(&out, b, "", "\t")
+	out.WriteString("\n")
+	_, _ = out.WriteTo(os.Stdout)
+}
+
+func printRespJSON(resp proto.Message) { // nolint
 	jsonMarshaler := &jsonpb.Marshaler{
 		EmitDefaults: true,
-		Indent:       "    ",
+		Indent:       "\t", // Matches indentation of printJSON.
 	}
 
 	jsonStr, err := jsonMarshaler.MarshalToString(resp)
@@ -47,9 +61,7 @@ func main() {
 			Usage: "agorad daemon address host:port",
 		},
 	}
-	app.Commands = []cli.Command{
-		initAccountCommand,
-	}
+	app.Commands = append(app.Commands, accountsCommands...)
 
 	err := app.Run(os.Args)
 	if err != nil {
@@ -74,9 +86,17 @@ func getClient(ctx *cli.Context) (clmrpc.ChannelAuctioneerClientClient, func(),
 func parseAmt(text string) (btcutil.Amount, error) {
 	amtInt64, err := strconv.ParseInt(text, 10, 64)
 	if err != nil {
-		return 0, fmt.Errorf("invalid amt value")
+		return 0, fmt.Errorf("invalid amt value: %v", err)
 	}
 	return btcutil.Amount(amtInt64), nil
+}
+
+func parseExpiry(text string) (uint32, error) {
+	expiry, err := strconv.ParseInt(text, 10, 32)
+	if err != nil {
+		return 0, fmt.Errorf("invalid expiry value: %v", err)
+	}
+	return uint32(expiry), nil
 }
 
 func getClientConn(address string) (*grpc.ClientConn, error) {
