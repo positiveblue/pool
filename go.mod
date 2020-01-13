@@ -7,6 +7,7 @@ require (
 	github.com/coreos/bbolt v1.3.3
 	github.com/coreos/etcd v3.3.17+incompatible
 	github.com/davecgh/go-spew v1.1.1
+	github.com/go-errors/errors v1.0.1
 	github.com/golang/protobuf v1.3.2
 	github.com/grpc-ecosystem/grpc-gateway v1.10.0
 	github.com/jessevdk/go-flags v1.4.0
