@@ -45,17 +45,6 @@ func start() error {
 	return err
 }
 
-// fileExists reports whether the named file or directory exists.
-// This function is taken from https://github.com/btcsuite/btcd
-func fileExists(name string) bool {
-	if _, err := os.Stat(name); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
-}
-
 // getParser returns a parser with the required options for agoraserver.
 func getParser(cfg *config) *flags.Parser {
 	parser := flags.NewParser(cfg, flags.Default)

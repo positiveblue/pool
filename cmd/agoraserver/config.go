@@ -12,6 +12,10 @@ const (
 	// server listens on.
 	defaultAuctioneerRPCPort = 12009
 
+	// defaultOrderSubmitFee is the default one-time fee that is charged for
+	// submitting an order.
+	defaultOrderSubmitFee = 1337
+
 	// defaultTLSCertFilename is the default file name for the TLS
 	// certificate.
 	defaultTLSCertFilename = "tls.cert"
@@ -73,6 +77,8 @@ type etcdConfig struct {
 type config struct {
 	Network string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
 
+	OrderSubmitFee int64 `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
+
 	ServerName string `long:"servername" description:"Server name to use for the tls certificate"`
 	Insecure   bool   `long:"insecure" description:"disable tls"`
 	AutoCert   bool   `long:"autocert" description:"automatically create a Let's Encrypt cert using ServerName"`
@@ -95,10 +101,11 @@ type config struct {
 }
 
 var defaultConfig = &config{
-	Network:    "mainnet",
-	ServerName: "auction.lightning.today",
-	Insecure:   false,
-	AutoCert:   false,
+	Network:        "mainnet",
+	OrderSubmitFee: defaultOrderSubmitFee,
+	ServerName:     "auction.lightning.today",
+	Insecure:       false,
+	AutoCert:       false,
 	Lnd: &lndConfig{
 		Host: "localhost:10009",
 	},

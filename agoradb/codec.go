@@ -5,6 +5,7 @@ import (
 
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clientdb"
+	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
@@ -33,9 +34,10 @@ func WriteElement(w io.Writer, element interface{}) error {
 		}
 
 	case account.State:
-		if err := lnwire.WriteElement(w, uint8(e)); err != nil {
-			return err
-		}
+		return lnwire.WriteElement(w, uint8(e))
+
+	case order.ChanType:
+		return lnwire.WriteElement(w, uint8(e))
 
 	default:
 		return clientdb.WriteElement(w, element)
@@ -72,6 +74,13 @@ func ReadElement(r io.Reader, element interface{}) error {
 			return err
 		}
 		*e = account.State(s)
+
+	case *order.ChanType:
+		var s uint8
+		if err := lnwire.ReadElement(r, &s); err != nil {
+			return err
+		}
+		*e = order.ChanType(s)
 
 	default:
 		return clientdb.ReadElement(r, element)
