@@ -1,7 +1,7 @@
 language: go
 cache:
   directories:
-  - $GOCACHE
+    - $GOCACHE
 
 go:
   - "1.13.x"
@@ -9,11 +9,22 @@ go:
 env:
   global:
     - GOCACHE=$HOME/.go-build
+    - GO111MODULE=on
 
 sudo: required
 
-script:
-  - make lint unit
+jobs:
+  include:
+    - stage: Build
+      script:
+        - make unit pkg=... case=_NONE_
+        - make lint
+        - make btcd
+    - stage: Test
+      script: make travis-race
+      name: Unit Race
+    - script: make itest
+      name: Btcd Integration
 
 after_script:
   - echo "Uploading to termbin.com..." && find *.log | xargs -I{} sh -c "cat {} | nc termbin.com 9999 | xargs -r0 printf '{} uploaded to %s'"

@@ -1,20 +1,19 @@
 // As this file is very similar in every package, ignore the linter here.
 // nolint:dupl
-package main
+package client
 
 import (
 	"github.com/btcsuite/btclog"
-	"github.com/lightninglabs/agora"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/agora/client/account"
+	"github.com/lightninglabs/agora/client/auctioneer"
+	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/agora/client/trader"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
 )
 
-const Subsystem = "SRVR"
+const Subsystem = "AGOD"
 
 var (
 	logWriter = build.NewRotatingLogWriter()
@@ -23,13 +22,12 @@ var (
 
 func init() {
 	setSubLogger(Subsystem, log, nil)
-	addSubLogger(agora.Subsystem, agora.UseLogger)
-	addSubLogger(agoradb.Subsystem, agoradb.UseLogger)
+	addSubLogger(trader.Subsystem, trader.UseLogger)
+	addSubLogger(auctioneer.Subsystem, auctioneer.UseLogger)
+	addSubLogger(order.Subsystem, order.UseLogger)
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("SGNL", signal.UseLogger)
 	addSubLogger(account.Subsystem, account.UseLogger)
-	addSubLogger(order.Subsystem, order.UseLogger)
-	addSubLogger(auth.Subsystem, auth.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the

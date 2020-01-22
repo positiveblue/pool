@@ -1,7 +1,8 @@
-package main
+package agora
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 
 	"github.com/btcsuite/btcutil"
@@ -22,10 +23,6 @@ const (
 
 	// defaultTLSKeyFilename is the default file name for the TLS key.
 	defaultTLSKeyFilename = "tls.key"
-
-	// defaultConfigFilename is the default file name for the configuration
-	// file for the auctioneer server.
-	defaultConfigFilename = "agoraserver.conf"
 
 	// defaultLogLevel is the default log level that is used for all loggers
 	// and sub systems.
@@ -48,34 +45,37 @@ const (
 )
 
 var (
+	// DefaultBaseDir is the default root data directory where agoraserver
+	// will store all its data. On UNIX like systems this will resolve to
+	// ~/.agoraserver. Below this directory the logs and network directory
+	// will be created.
+	DefaultBaseDir = btcutil.AppDataDir("agoraserver", false)
+
 	defaultAuctioneerAddr = fmt.Sprintf(":%d", defaultAuctioneerRPCPort)
-
-	agoraServerDirBase = btcutil.AppDataDir("agoraserver", false)
-
-	defaultTLSCertPath = filepath.Join(
-		agoraServerDirBase, defaultTLSCertFilename,
+	defaultTLSCertPath    = filepath.Join(
+		DefaultBaseDir, defaultTLSCertFilename,
 	)
 	defaultTLSKeyPath = filepath.Join(
-		agoraServerDirBase, defaultTLSKeyFilename,
+		DefaultBaseDir, defaultTLSKeyFilename,
 	)
-
-	defaultLogDir = filepath.Join(agoraServerDirBase, defaultLogDirname)
+	defaultLogDir = filepath.Join(DefaultBaseDir, defaultLogDirname)
 )
 
-type lndConfig struct {
+type LndConfig struct {
 	Host        string `long:"host" description:"lnd instance rpc address"`
 	MacaroonDir string `long:"macaroondir" description:"Path to lnd macaroons"`
 	TLSPath     string `long:"tlspath" description:"Path to lnd tls certificate"`
 }
 
-type etcdConfig struct {
+type EtcdConfig struct {
 	Host     string `long:"host" description:"etcd instance address"`
 	User     string `long:"user" description:"etcd user name"`
 	Password string `long:"password" description:"etcd password"`
 }
 
-type config struct {
+type Config struct {
 	Network string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
+	BaseDir string `long:"basedir" description:"The base directory where agoraserver stores all its data"`
 
 	OrderSubmitFee int64 `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
 
@@ -94,22 +94,30 @@ type config struct {
 
 	DebugLevel string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 
-	Lnd  *lndConfig  `group:"lnd" namespace:"lnd"`
-	Etcd *etcdConfig `group:"etcd" namespace:"etcd"`
+	Lnd  *LndConfig  `group:"lnd" namespace:"lnd"`
+	Etcd *EtcdConfig `group:"etcd" namespace:"etcd"`
 
-	serverDir string
+	// RPCListener is a network listener that can be set if agoraserver
+	// should be used as a library and listen on the given listener instead
+	// of what is configured in the --rpclisten parameter.
+	RPCListener net.Listener
+
+	// ShutdownChannel is the channel that must be provided where
+	// agoraserver listens for a shutdown signal.
+	ShutdownChannel <-chan struct{}
 }
 
-var defaultConfig = &config{
+var DefaultConfig = &Config{
 	Network:        "mainnet",
+	BaseDir:        DefaultBaseDir,
 	OrderSubmitFee: defaultOrderSubmitFee,
 	ServerName:     "auction.lightning.today",
 	Insecure:       false,
 	AutoCert:       false,
-	Lnd: &lndConfig{
+	Lnd: &LndConfig{
 		Host: "localhost:10009",
 	},
-	Etcd: &etcdConfig{
+	Etcd: &EtcdConfig{
 		Host: "localhost:2379",
 	},
 	TLSCertPath:    defaultTLSCertPath,
