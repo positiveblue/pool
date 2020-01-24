@@ -30,43 +30,48 @@ var (
 		},
 		PubKey: testAuctioneerKey,
 	}
+
+	sharedSecret = [32]byte{0x73, 0x65, 0x63, 0x72, 0x65, 0x74}
 )
 
 type mockStore struct {
 	Store
 
-	mu           sync.Mutex
-	reservations map[lsat.TokenID]btcec.PublicKey
-	accounts     map[[33]byte]Account
+	mu              sync.Mutex
+	reservations    map[lsat.TokenID]Reservation
+	newReservations chan *Reservation
+	accounts        map[[33]byte]Account
 }
 
 func newMockStore() *mockStore {
 	return &mockStore{
-		reservations: make(map[lsat.TokenID]btcec.PublicKey),
-		accounts:     make(map[[33]byte]Account),
+		reservations:    make(map[lsat.TokenID]Reservation),
+		newReservations: make(chan *Reservation, 1),
+		accounts:        make(map[[33]byte]Account),
 	}
 }
 
 func (s *mockStore) HasReservation(_ context.Context,
-	tokenID lsat.TokenID) (*btcec.PublicKey, error) {
+	tokenID lsat.TokenID) (*Reservation, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	key, ok := s.reservations[tokenID]
+	reservation, ok := s.reservations[tokenID]
 	if !ok {
 		return nil, ErrNoReservation
 	}
-	return &key, nil
+	return &reservation, nil
 }
 
 func (s *mockStore) ReserveAccount(_ context.Context, tokenID lsat.TokenID,
-	auctioneerKey *btcec.PublicKey) error {
+	reservation *Reservation) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.reservations[tokenID] = *auctioneerKey
+	s.reservations[tokenID] = *reservation
+	s.newReservations <- reservation
 	return nil
 }
 
@@ -133,14 +138,25 @@ func (s *mockStore) Accounts(context.Context) ([]*Account, error) {
 	return accounts, nil
 }
 
+func (s *mockStore) BatchKey(context.Context) (*btcec.PublicKey, error) {
+	return testTraderKey, nil
+}
+
 type mockWallet struct {
 	lndclient.WalletKitClient
+	lndclient.SignerClient
 }
 
 func (w *mockWallet) DeriveKey(ctx context.Context,
 	keyLocator *keychain.KeyLocator) (*keychain.KeyDescriptor, error) {
 
 	return testAuctioneerKeyDesc, nil
+}
+
+func (w *mockWallet) DeriveSharedKey(context.Context, *btcec.PublicKey,
+	*keychain.KeyLocator) ([32]byte, error) {
+
+	return sharedSecret, nil
 }
 
 type mockChainNotifier struct {

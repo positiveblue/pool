@@ -64,6 +64,7 @@ func NewEtcdServer(lnd *lndclient.LndServices, etcdHost, user, pass string,
 	accountManager, err := account.NewManager(&account.ManagerConfig{
 		Store:         store,
 		Wallet:        lnd.WalletKit,
+		Signer:        lnd.Signer,
 		ChainNotifier: lnd.ChainNotifier,
 	})
 	if err != nil {
@@ -194,20 +195,14 @@ func (s *Server) ReserveAccount(ctx context.Context,
 	// TODO(wilmer): Extract token ID from LSAT.
 	var tokenID lsat.TokenID
 
-	traderKey, err := btcec.ParsePubKey(req.UserSubKey, btcec.S256())
-	if err != nil {
-		return nil, err
-	}
-
-	auctioneerKey, err := s.accountManager.ReserveAccount(
-		ctx, tokenID, traderKey,
-	)
+	reservation, err := s.accountManager.ReserveAccount(ctx, tokenID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &clmrpc.ReserveAccountResponse{
-		AuctioneerKey: auctioneerKey.SerializeCompressed(),
+		AuctioneerKey:   reservation.AuctioneerKey.PubKey.SerializeCompressed(),
+		InitialBatchKey: reservation.InitialBatchKey.SerializeCompressed(),
 	}, nil
 }
 

@@ -15,7 +15,6 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -75,6 +74,10 @@ type ManagerConfig struct {
 	// Wallet handles all of our on-chain transaction interaction, whether
 	// that is deriving keys, creating transactions, etc.
 	Wallet lndclient.WalletKitClient
+
+	// Signer is responsible for deriving shared secrets for accounts
+	// between the trader and auctioneer.
+	Signer lndclient.SignerClient
 
 	// ChainNotifier is responsible for requesting confirmation and spend
 	// notifications for accounts.
@@ -171,17 +174,17 @@ func (m *Manager) Stop() {
 // ReserveAccount reserves a new account for a trader associated with the given
 // token ID.
 func (m *Manager) ReserveAccount(ctx context.Context,
-	tokenID lsat.TokenID, traderKey *btcec.PublicKey) (*btcec.PublicKey, error) {
+	tokenID lsat.TokenID) (*Reservation, error) {
 
 	// Check whether we have an existing reservation already.
 	//
 	// TODO(wilmer): Check whether we already have an account with the key
 	// they're trying to make a reservation with?
-	pubKey, err := m.cfg.Store.HasReservation(ctx, tokenID)
+	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
 	switch err {
 	// If we do, return the associated key.
 	case nil:
-		return pubKey, nil
+		return reservation, nil
 
 	// If we don't, proceed to make a new reservation below.
 	case ErrNoReservation:
@@ -193,19 +196,33 @@ func (m *Manager) ReserveAccount(ctx context.Context,
 
 	log.Infof("Reserving new account for token %x", tokenID)
 
-	pubKey = input.TweakPubKey(m.longTermKey, traderKey)
-	if err := m.cfg.Store.ReserveAccount(ctx, tokenID, pubKey); err != nil {
+	// We'll retrieve the current per-batch key, which serves as the initial
+	// key we'll tweak the account's trader key with.
+	batchKey, err := m.cfg.Store.BatchKey(ctx)
+	if err != nil {
 		return nil, err
 	}
 
-	return pubKey, nil
+	reservation = &Reservation{
+		AuctioneerKey: &keychain.KeyDescriptor{
+			KeyLocator: LongTermKeyLocator,
+			PubKey:     m.longTermKey,
+		},
+		InitialBatchKey: batchKey,
+	}
+	err = m.cfg.Store.ReserveAccount(ctx, tokenID, reservation)
+	if err != nil {
+		return nil, err
+	}
+
+	return reservation, nil
 }
 
 // InitAccount handles a new account request from a trader identified by the
 // provided token ID.
 func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	op wire.OutPoint, value btcutil.Amount, script []byte, expiry uint32,
-	traderKey *btcec.PublicKey, bestHeight uint32) error {
+	baseTraderKey *btcec.PublicKey, bestHeight uint32) error {
 
 	// First, make sure we have valid parameters to create the account.
 	if err := validateAccountParams(value, expiry, bestHeight); err != nil {
@@ -225,14 +242,30 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	//   2. A trader is resubmitting a valid request to ensure we've
 	//      received it.
 	//      TODO(wilmer): Verify that we have the account on-disk?
-	ourKey, err := m.cfg.Store.HasReservation(ctx, tokenID)
+	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
 	if err == ErrNoReservation {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	derivedScript, err := clmscript.AccountScript(expiry, traderKey, ourKey)
+
+	// With the reservation obtained, we'll need to derive the shared secret
+	// of the account based on the trader's and our key. This secret, along
+	// with the initial per-batch key, are used as the tweak to the trader's
+	// key, and the resulting key is then used as the tweak to the
+	// auctioneer's key. This prevents script reuse and provides plausible
+	// deniability between account outputs to third parties.
+	secret, err := m.cfg.Signer.DeriveSharedKey(
+		ctx, baseTraderKey, &reservation.AuctioneerKey.KeyLocator,
+	)
+	if err != nil {
+		return err
+	}
+	derivedScript, err := clmscript.AccountScript(
+		expiry, baseTraderKey, reservation.AuctioneerKey.PubKey,
+		reservation.InitialBatchKey, secret,
+	)
 	if err != nil {
 		return err
 	}
@@ -256,17 +289,16 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// we have a transaction that funds the account. Once that's done, we'll
 	// complete the remaining field.
 	account := &Account{
-		TokenID:   tokenID,
-		Value:     value,
-		Expiry:    expiry,
-		TraderKey: traderKey,
-		AuctioneerKey: &keychain.KeyDescriptor{
-			KeyLocator: LongTermKeyLocator,
-			PubKey:     ourKey,
-		},
-		State:      StatePendingOpen,
-		HeightHint: uint32(heightHint),
-		OutPoint:   op,
+		TokenID:       tokenID,
+		Value:         value,
+		Expiry:        expiry,
+		TraderKey:     baseTraderKey,
+		AuctioneerKey: reservation.AuctioneerKey,
+		BatchKey:      reservation.InitialBatchKey,
+		Secret:        secret,
+		State:         StatePendingOpen,
+		HeightHint:    uint32(heightHint),
+		OutPoint:      op,
 	}
 	if err := m.cfg.Store.CompleteReservation(ctx, account); err != nil {
 		return err
