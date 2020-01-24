@@ -2,27 +2,38 @@ package agoradb
 
 import (
 	"context"
+	"encoding/hex"
 	"reflect"
 	"testing"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
-	testTokenID       = lsat.TokenID{1, 2, 3}
-	testAccountSubKey = [33]byte{4, 5, 6}
-	testAccount       = account.Account{
-		TokenID:       testTokenID,
-		Value:         1337,
-		Expiry:        100,
-		TraderKey:     [33]byte{7, 8, 9},
-		AuctioneerKey: [33]byte{10, 11, 12},
-		State:         account.StateOpen,
-		HeightHint:    100,
-		OutPoint:      wire.OutPoint{Index: 1},
+	testRawAuctioneerKey, _ = hex.DecodeString("02187d1a0e30f4e5016fc1137363ee9e7ed5dde1e6c50f367422336df7a108b716")
+	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
+
+	testRawTraderKey, _ = hex.DecodeString("036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c9395446ba09")
+	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+
+	testTokenID = lsat.TokenID{1, 2, 3}
+	testAccount = account.Account{
+		TokenID:   testTokenID,
+		Value:     1337,
+		Expiry:    100,
+		TraderKey: testTraderKey,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			KeyLocator: account.LongTermKeyLocator,
+			PubKey:     testAuctioneerKey,
+		},
+		State:      account.StateOpen,
+		HeightHint: 100,
+		OutPoint:   wire.OutPoint{Index: 1},
 	}
 )
 
@@ -40,17 +51,18 @@ func TestAccountReservation(t *testing.T) {
 	}
 
 	// Make a new reservation for the user with the associated token.
-	err = store.ReserveAccount(ctx, testTokenID, testAccountSubKey)
+	err = store.ReserveAccount(ctx, testTokenID, testAuctioneerKey)
 	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
-	accountSubKey, err := store.HasReservation(ctx, testTokenID)
+	auctioneerKey, err := store.HasReservation(ctx, testTokenID)
 	if err != nil {
 		t.Fatalf("unable to determine existing reservation: %v", err)
 	}
-	if accountSubKey != testAccountSubKey {
-		t.Fatalf("expected account subkey %x, got %x",
-			testAccountSubKey, accountSubKey)
+	if !auctioneerKey.IsEqual(testAuctioneerKey) {
+		t.Fatalf("expected auctioneer key %x, got %x",
+			testAuctioneerKey.SerializeCompressed(),
+			auctioneerKey.SerializeCompressed())
 	}
 
 	// Complete the reservation with an account. The reservation should no
@@ -84,7 +96,7 @@ func TestAccounts(t *testing.T) {
 
 	// Start by adding a new account.
 	a := testAccount
-	err := store.ReserveAccount(ctx, testTokenID, testAccountSubKey)
+	err := store.ReserveAccount(ctx, testTokenID, testAuctioneerKey)
 	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}

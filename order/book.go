@@ -113,9 +113,10 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		return fmt.Errorf("unable to digest message for signature "+
 			"verification: %v", err)
 	}
+	var pubKey [33]byte
+	copy(pubKey[:], srvOrder.Details().AcctKey.SerializeCompressed())
 	sigValid, err := b.cfg.Signer.VerifyMessage(
-		ctx, digest[:], kit.Sig.ToSignatureBytes(),
-		srvOrder.Details().AcctKey,
+		ctx, digest[:], kit.Sig.ToSignatureBytes(), pubKey,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to verify order signature: %v", err)
@@ -146,7 +147,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	acct, err := b.cfg.Store.Account(ctx, srvOrder.Details().AcctKey)
 	if err != nil {
 		return fmt.Errorf("unable to locate account with key %x: %v",
-			srvOrder.Details().AcctKey[:], err)
+			srvOrder.Details().AcctKey.SerializeCompressed(), err)
 	}
 	if acct.Value < balanceNeeded {
 		return ErrInvalidAmt

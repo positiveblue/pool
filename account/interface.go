@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
@@ -65,11 +67,11 @@ type Account struct {
 
 	// TraderKey is the trader's key in the 2-of-2 multi-sig construction of
 	// a CLM account.
-	TraderKey [33]byte
+	TraderKey *btcec.PublicKey
 
 	// AuctioneerKey is the auctioneer's key in the 2-of-2 multi-sig
 	// construction of a CLM account.
-	AuctioneerKey [33]byte
+	AuctioneerKey *keychain.KeyDescriptor
 
 	// State describes the current state of the account.
 	State State
@@ -86,7 +88,7 @@ type Account struct {
 // Output returns the on-chain output associated with the account.
 func (a *Account) Output() (*wire.TxOut, error) {
 	script, err := clmscript.AccountScript(
-		a.Expiry, a.TraderKey, a.AuctioneerKey,
+		a.Expiry, a.TraderKey, a.AuctioneerKey.PubKey,
 	)
 	if err != nil {
 		return nil, err
@@ -112,11 +114,11 @@ type Store interface {
 	// HasReservation determines whether we have an existing reservation
 	// associated with a token. ErrNoReservation is returned if a
 	// reservation does not exist.
-	HasReservation(context.Context, lsat.TokenID) ([33]byte, error)
+	HasReservation(context.Context, lsat.TokenID) (*btcec.PublicKey, error)
 
 	// ReserveAccount makes a reservation for an auctioneer key for a trader
 	// associated to a token.
-	ReserveAccount(context.Context, lsat.TokenID, [33]byte) error
+	ReserveAccount(context.Context, lsat.TokenID, *btcec.PublicKey) error
 
 	// CompleteReservation completes a reservation for an account. This
 	// method should add a record for the account into the store.
@@ -127,7 +129,7 @@ type Store interface {
 	UpdateAccount(context.Context, *Account, ...Modifier) error
 
 	// Account retrieves the account associated with the given trader key.
-	Account(context.Context, [33]byte) (*Account, error)
+	Account(context.Context, *btcec.PublicKey) (*Account, error)
 
 	// Accounts retrieves all existing accounts.
 	Accounts(context.Context) ([]*Account, error)

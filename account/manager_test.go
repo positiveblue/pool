@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 
@@ -118,14 +120,17 @@ func (h *testHarness) initAccount() *Account {
 		actualHeightHint = 0
 	}
 	account := &Account{
-		TokenID:       tokenID,
-		Value:         value,
-		Expiry:        expiry,
-		TraderKey:     traderKey,
-		AuctioneerKey: auctioneerKey,
-		State:         StatePendingOpen,
-		HeightHint:    uint32(actualHeightHint),
-		OutPoint:      zeroOutPoint,
+		TokenID:   tokenID,
+		Value:     value,
+		Expiry:    expiry,
+		TraderKey: traderKey,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			KeyLocator: LongTermKeyLocator,
+			PubKey:     auctioneerKey,
+		},
+		State:      StatePendingOpen,
+		HeightHint: uint32(actualHeightHint),
+		OutPoint:   zeroOutPoint,
 	}
 
 	h.assertAccountExists(account)
@@ -192,8 +197,10 @@ func TestReserveAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to determine existing reservation: %v", err)
 	}
-	if storedKey != key1 {
-		t.Fatalf("key mismatch: expected %x, got %x", key1, storedKey)
+	if !storedKey.IsEqual(key1) {
+		t.Fatalf("key mismatch: expected %x, got %x",
+			key1.SerializeCompressed(),
+			storedKey.SerializeCompressed())
 	}
 
 	// It's not possible to make a reservation for another account while
@@ -202,14 +209,16 @@ func TestReserveAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
-	if key2 != key1 {
-		t.Fatalf("key mismatch: expected %x, got %x", key1, key2)
+	if !key2.IsEqual(key1) {
+		t.Fatalf("key mismatch: expected %x, got %x",
+			key1.SerializeCompressed(), key2.SerializeCompressed())
 	}
 
 	// Complete the reservation so that we can attempt to create another
 	// one.
 	err = h.manager.cfg.Store.CompleteReservation(ctx, &Account{
-		TokenID: testTokenID,
+		TokenID:   testTokenID,
+		TraderKey: testTraderKey,
 	})
 	if err != nil {
 		t.Fatalf("unable to complete reservation: %v", err)
@@ -220,17 +229,18 @@ func TestReserveAccount(t *testing.T) {
 	}
 
 	// The trader will require a new key to make a new reservation.
-	var newTraderKey [33]byte
-	copy(newTraderKey[:], testTraderKey[:])
-	newTraderKey[len(newTraderKey)-1] ^= 1
+	newTraderKey := *testTraderKey
+	newTraderKey.X, newTraderKey.Y = btcec.S256().Double(
+		newTraderKey.X, newTraderKey.Y,
+	)
 
 	// A new reservation should be made, with the resulting key being
 	// different from the previous reservation.
-	key3, err := h.manager.ReserveAccount(ctx, testTokenID, newTraderKey)
+	key3, err := h.manager.ReserveAccount(ctx, testTokenID, &newTraderKey)
 	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
-	if key3 == key2 {
+	if key3.IsEqual(key2) {
 		t.Fatal("expected new key for new reservation")
 	}
 }
