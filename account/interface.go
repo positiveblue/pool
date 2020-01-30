@@ -49,6 +49,10 @@ const (
 	// StateExpired denotes that the account's expiration block height has
 	// been reached.
 	StateExpired State = 2
+
+	// StateClosed denotes that an account has been cooperatively closed out
+	// on-chain by the trader.
+	StateClosed = 3
 )
 
 // String returns a human-readable description of an account's state.
@@ -156,6 +160,17 @@ func (a *Account) Output() (*wire.TxOut, error) {
 		Value:    int64(a.Value),
 		PkScript: script,
 	}, nil
+}
+
+// NextOutputScript returns the next on-chain output script that is to be
+// associated with the account. This is done by using the next batch key, which
+// results from incrementing the current one by its curve's base point.
+func (a *Account) NextOutputScript() ([]byte, error) {
+	nextBatchKey := clmscript.IncrementKey(a.BatchKey)
+	return clmscript.AccountScript(
+		a.Expiry, a.TraderKey, a.AuctioneerKey.PubKey, nextBatchKey,
+		a.Secret,
+	)
 }
 
 // Modifier abstracts the modification of an account through a function.

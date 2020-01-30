@@ -196,6 +196,21 @@ func (h *testHarness) expireAccount(a *Account) {
 	h.assertAccountExists(a)
 }
 
+func (h *testHarness) spendAccount(a *Account, expectedState State,
+	spendDetails *chainntnfs.SpendDetail) {
+
+	h.t.Helper()
+
+	select {
+	case h.notifier.spendChan <- spendDetails:
+	case <-time.After(timeout):
+		h.t.Fatalf("unable to notify spend of account %x", a.TraderKey)
+	}
+
+	a.State = expectedState
+	h.assertAccountExists(a)
+}
+
 // TestReserveAccount ensures that traders are able to reserve a single account
 // at a time with an auctioneer.
 func TestReserveAccount(t *testing.T) {
@@ -357,4 +372,139 @@ func TestAccountConfirmsAtExpiry(t *testing.T) {
 	})
 
 	h.expireAccount(account)
+}
+
+// TestAccountExpirySpend ensures that the auctioneer properly recognizes an
+// account as closed once an expiration spend has confirmed.
+func TestAccountExpirySpend(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	// Create an account and confirm it.
+	account := h.initAccount()
+
+	accountOutput, err := account.Output()
+	if err != nil {
+		t.Fatalf("unable to generate account output: %v", err)
+	}
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		BlockHeight: account.Expiry - 1,
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// Expire the account by notifying the expiration height.
+	h.expireAccount(account)
+
+	h.spendAccount(account, StateClosed, &chainntnfs.SpendDetail{
+		SpendingTx: &wire.MsgTx{
+			TxIn: []*wire.TxIn{
+				{
+					Witness: wire.TxWitness{
+						nil,
+						[]byte("trader sig"),
+						[]byte("witness script"),
+					},
+				},
+			},
+		},
+		SpenderInputIndex: 0,
+	})
+}
+
+// TestAccountMultiSigSpend ensures that the auctioneer properly recognized an
+// account as closed once a multi-sig spend that doesn't recreate an account's
+// output has confirmed.
+func TestAccountMultiSigSpend(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	// Create an account and confirm it.
+	account := h.initAccount()
+
+	accountOutput, err := account.Output()
+	if err != nil {
+		t.Fatalf("unable to generate account output: %v", err)
+	}
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		BlockHeight: account.Expiry - 1,
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// Spend the account with a transaction that doesn't recreate the
+	// output. This should transition the account to StateClosed, since the
+	// witness is that of a multi-sig spend.
+	h.spendAccount(account, StateClosed, &chainntnfs.SpendDetail{
+		SpendingTx: &wire.MsgTx{
+			TxIn: []*wire.TxIn{
+				{
+					Witness: wire.TxWitness{
+						[]byte("auctioneer sig"),
+						[]byte("trader sig"),
+						[]byte("witness script"),
+					},
+				},
+			},
+		},
+		SpenderInputIndex: 0,
+	})
+}
+
+// TestAccountSpendRecreatesOutput ensures that the auctioneer properly
+// recognizes an account is still open if a spend that recreates the account
+// output is detected.
+func TestAccountSpendRecreatesOutput(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	// Create the account and confirm it.
+	account := h.initAccount()
+
+	accountOutput, err := account.Output()
+	if err != nil {
+		t.Fatalf("unable to generate account output: %v", err)
+	}
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		BlockHeight: account.Expiry - 1,
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// Spend the account with a transaction that recreates the output. This
+	// indicates that the account should remain open.
+	nextAccountScript, err := account.NextOutputScript()
+	if err != nil {
+		t.Fatalf("unable to generate next account output: %v", err)
+	}
+	h.spendAccount(account, StateOpen, &chainntnfs.SpendDetail{
+		SpendingTx: &wire.MsgTx{
+			TxIn: []*wire.TxIn{
+				{
+					Witness: wire.TxWitness{
+						[]byte("auctioneer sig"),
+						[]byte("trader sig"),
+						[]byte("witness script"),
+					},
+				},
+			},
+			TxOut: []*wire.TxOut{{PkScript: nextAccountScript}},
+		},
+		SpenderInputIndex: 0,
+	})
 }
