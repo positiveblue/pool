@@ -112,33 +112,31 @@ func (h *testHarness) assertAccountExists(expected *Account) {
 func (h *testHarness) initAccount() *Account {
 	h.t.Helper()
 
-	var (
-		tokenID    = testTokenID
-		value      = maxAccountValue
-		expiry     = uint32(maxAccountExpiry)
-		traderKey  = testTraderKey
-		heightHint = uint32(1)
-		op         = zeroOutPoint
-	)
-
 	ctx := context.Background()
+	tokenID := testTokenID
 	reservation, err := h.manager.ReserveAccount(ctx, tokenID)
 	if err != nil {
 		h.t.Fatalf("unable to reserve account: %v", err)
 	}
 
+	heightHint := uint32(1)
+	params := &Parameters{
+		Value:     maxAccountValue,
+		OutPoint:  zeroOutPoint,
+		TraderKey: testTraderKey,
+		Expiry:    uint32(maxAccountExpiry),
+	}
 	script, err := clmscript.AccountScript(
-		expiry, traderKey, reservation.AuctioneerKey.PubKey,
-		reservation.InitialBatchKey, sharedSecret,
+		params.Expiry, params.TraderKey,
+		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
+		sharedSecret,
 	)
 	if err != nil {
 		h.t.Fatalf("unable to construct new account script: %v", err)
 	}
+	params.Script = script
 
-	err = h.manager.InitAccount(
-		ctx, tokenID, op, value, script, expiry, traderKey,
-		heightHint,
-	)
+	err = h.manager.InitAccount(ctx, tokenID, params, heightHint)
 	if err != nil {
 		h.t.Fatalf("unable to init account: %v", err)
 	}
@@ -149,15 +147,15 @@ func (h *testHarness) initAccount() *Account {
 	}
 	account := &Account{
 		TokenID:       tokenID,
-		Value:         value,
-		Expiry:        expiry,
-		TraderKey:     traderKey,
+		Value:         params.Value,
+		Expiry:        params.Expiry,
+		TraderKey:     params.TraderKey,
 		AuctioneerKey: reservation.AuctioneerKey,
 		BatchKey:      reservation.InitialBatchKey,
 		Secret:        sharedSecret,
 		State:         StatePendingOpen,
 		HeightHint:    uint32(actualHeightHint),
-		OutPoint:      zeroOutPoint,
+		OutPoint:      params.OutPoint,
 	}
 
 	h.assertAccountExists(account)

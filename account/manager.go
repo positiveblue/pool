@@ -221,11 +221,10 @@ func (m *Manager) ReserveAccount(ctx context.Context,
 // InitAccount handles a new account request from a trader identified by the
 // provided token ID.
 func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
-	op wire.OutPoint, value btcutil.Amount, script []byte, expiry uint32,
-	baseTraderKey *btcec.PublicKey, bestHeight uint32) error {
+	params *Parameters, bestHeight uint32) error {
 
 	// First, make sure we have valid parameters to create the account.
-	if err := validateAccountParams(value, expiry, bestHeight); err != nil {
+	if err := validateAccountParams(params, bestHeight); err != nil {
 		return err
 	}
 
@@ -257,21 +256,22 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// auctioneer's key. This prevents script reuse and provides plausible
 	// deniability between account outputs to third parties.
 	secret, err := m.cfg.Signer.DeriveSharedKey(
-		ctx, baseTraderKey, &reservation.AuctioneerKey.KeyLocator,
+		ctx, params.TraderKey, &reservation.AuctioneerKey.KeyLocator,
 	)
 	if err != nil {
 		return err
 	}
 	derivedScript, err := clmscript.AccountScript(
-		expiry, baseTraderKey, reservation.AuctioneerKey.PubKey,
-		reservation.InitialBatchKey, secret,
+		params.Expiry, params.TraderKey,
+		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
+		secret,
 	)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(derivedScript, script) {
+	if !bytes.Equal(derivedScript, params.Script) {
 		return fmt.Errorf("script mismatch: expected %x, got %x",
-			derivedScript, script)
+			derivedScript, params.Script)
 	}
 
 	// We'll account for the trader possibly being a few blocks ahead of us
@@ -290,22 +290,22 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// complete the remaining field.
 	account := &Account{
 		TokenID:       tokenID,
-		Value:         value,
-		Expiry:        expiry,
-		TraderKey:     baseTraderKey,
+		Value:         params.Value,
+		Expiry:        params.Expiry,
+		TraderKey:     params.TraderKey,
 		AuctioneerKey: reservation.AuctioneerKey,
 		BatchKey:      reservation.InitialBatchKey,
 		Secret:        secret,
 		State:         StatePendingOpen,
 		HeightHint:    uint32(heightHint),
-		OutPoint:      op,
+		OutPoint:      params.OutPoint,
 	}
 	if err := m.cfg.Store.CompleteReservation(ctx, account); err != nil {
 		return err
 	}
 
 	log.Infof("Received new account request with outpoint=%v, value=%v, "+
-		"expiry=%v", op, value, expiry)
+		"expiry=%v", account.OutPoint, account.Value, account.Expiry)
 
 	return m.resumeAccount(account)
 }
@@ -470,21 +470,21 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 
 // validateAccountParams ensures that a trader has provided sane parameters for
 // the creation of a new account.
-func validateAccountParams(value btcutil.Amount, expiry, bestHeight uint32) error {
-	if value < minAccountValue {
+func validateAccountParams(params *Parameters, bestHeight uint32) error {
+	if params.Value < minAccountValue {
 		return fmt.Errorf("minimum account value allowed is %v",
 			minAccountValue)
 	}
-	if value > maxAccountValue {
+	if params.Value > maxAccountValue {
 		return fmt.Errorf("maximum account value allowed is %v",
 			maxAccountValue)
 	}
 
-	if expiry < bestHeight+minAccountExpiry {
+	if params.Expiry < bestHeight+minAccountExpiry {
 		return fmt.Errorf("current minimum account expiry allowed is "+
 			"height %v", bestHeight+minAccountExpiry)
 	}
-	if expiry > bestHeight+maxAccountExpiry {
+	if params.Expiry > bestHeight+maxAccountExpiry {
 		return fmt.Errorf("current maximum account expiry allowed is "+
 			"height %v", bestHeight+maxAccountExpiry)
 	}

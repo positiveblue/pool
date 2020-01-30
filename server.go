@@ -206,11 +206,10 @@ func (s *Server) ReserveAccount(ctx context.Context,
 	}, nil
 }
 
-func (s *Server) InitAccount(ctx context.Context,
-	req *clmrpc.ServerInitAccountRequest) (*clmrpc.ServerInitAccountResponse, error) {
-
-	// TODO(wilmer): Extract token ID from LSAT.
-	var tokenID lsat.TokenID
+// parseRPCAccountParams parses the relevant account parameters from a
+// ServerInitAccountRequest RPC message.
+func parseRPCAccountParams(
+	req *clmrpc.ServerInitAccountRequest) (*account.Parameters, error) {
 
 	var txid chainhash.Hash
 	copy(txid[:], req.AccountPoint.Txid)
@@ -224,10 +223,28 @@ func (s *Server) InitAccount(ctx context.Context,
 		return nil, err
 	}
 
+	return &account.Parameters{
+		OutPoint:  accountPoint,
+		Value:     btcutil.Amount(req.AccountValue),
+		Script:    req.AccountScript,
+		Expiry:    req.AccountExpiry,
+		TraderKey: traderKey,
+	}, nil
+}
+
+func (s *Server) InitAccount(ctx context.Context,
+	req *clmrpc.ServerInitAccountRequest) (*clmrpc.ServerInitAccountResponse, error) {
+
+	// TODO(wilmer): Extract token ID from LSAT.
+	var tokenID lsat.TokenID
+
+	accountParams, err := parseRPCAccountParams(req)
+	if err != nil {
+		return nil, err
+	}
+
 	err = s.accountManager.InitAccount(
-		ctx, tokenID, accountPoint, btcutil.Amount(req.AccountValue),
-		req.AccountScript, req.AccountExpiry, traderKey,
-		atomic.LoadUint32(&s.bestHeight),
+		ctx, tokenID, accountParams, atomic.LoadUint32(&s.bestHeight),
 	)
 	if err != nil {
 		return nil, err

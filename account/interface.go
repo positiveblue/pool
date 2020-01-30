@@ -65,6 +65,29 @@ func (s State) String() string {
 	}
 }
 
+// Parameters are the parameters submitted by a trader for an account.
+type Parameters struct {
+	// Value is the value of the account reflected in on-chain output that
+	// backs the existence of an account.
+	Value btcutil.Amount
+
+	// Script is the script of the initial account output that backs the
+	// existence of the account.
+	Script []byte
+
+	// OutPoint is the outpoint of the initial account output.
+	OutPoint wire.OutPoint
+
+	// Expiry is the expiration block height of an account. After this
+	// point, the trader is able to withdraw the funds from their account
+	// without cooperation of the auctioneer.
+	Expiry uint32
+
+	// TraderKey is the base trader's key in the 2-of-2 multi-sig
+	// construction of a CLM account.
+	TraderKey *btcec.PublicKey
+}
+
 // Account encapsulates all of the details of a CLM account on-chain from the
 // auctioneer's perspective.
 type Account struct {
@@ -115,8 +138,7 @@ type Account struct {
 	// the account output in a block.
 	HeightHint uint32
 
-	// OutPoint is the identifying component of an account. It is the
-	// outpoint of the output used to fund the account.
+	// OutPoint the outpoint of the current account output.
 	OutPoint wire.OutPoint
 }
 
