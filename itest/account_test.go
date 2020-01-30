@@ -1,13 +1,15 @@
 package itest
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 
 	"github.com/lightninglabs/agora/client/clmrpc"
 )
 
 // testAccountCreation tests that the trader can successfully create an account
-// on-chain and confirm it.
+// on-chain and close it.
 func testAccountCreation(t *harnessTest) {
 	var ctx = context.Background()
 
@@ -19,10 +21,39 @@ func testAccountCreation(t *harnessTest) {
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
-	_ = openAccountAndAssert(
-		ctx, t, t.lndHarness, t.trader, &clmrpc.InitAccountRequest{
-			AccountValue:  2000000,
-			AccountExpiry: uint32(currentHeight) + 1000,
-		},
+	const accountValue = 2000000
+	account := openAccountAndAssert(ctx, t, &clmrpc.InitAccountRequest{
+		AccountValue:  accountValue,
+		AccountExpiry: uint32(currentHeight) + 1000,
+	})
+
+	// Proceed to close it to a custom output where half of the account
+	// value goes towards it and the rest towards fees.
+	const outputValue = accountValue / 2
+	outputScript, _ := hex.DecodeString(
+		"00203d626e5ad72f78b884333f7db7c612eb448fae27307abe0b27098aab036cb5a7",
 	)
+	closeTx := closeAccountAndAssert(ctx, t, &clmrpc.CloseAccountRequest{
+		TraderKey: account.TraderKey,
+		Outputs: []*clmrpc.Output{
+			{
+				Value:  outputValue,
+				Script: outputScript,
+			},
+		},
+	})
+
+	// Ensure the transaction was crafted as expected.
+	if len(closeTx.TxOut) != 1 {
+		t.Fatalf("expected 1 output in close transaction, found %v",
+			len(closeTx.TxOut))
+	}
+	if closeTx.TxOut[0].Value != outputValue {
+		t.Fatalf("expected output value %v, found %v", outputValue,
+			closeTx.TxOut[0].Value)
+	}
+	if !bytes.Equal(closeTx.TxOut[0].PkScript, outputScript) {
+		t.Fatalf("expected output script %x, found %x", outputScript,
+			closeTx.TxOut[0].PkScript)
+	}
 }

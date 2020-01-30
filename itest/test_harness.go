@@ -23,7 +23,7 @@ var (
 
 const (
 	minerMempoolTimeout = lntest.MinerMempoolTimeout
-	defaultWaitTimeout  = 15 * time.Second
+	defaultWaitTimeout  = lntest.DefaultTimeout
 )
 
 // testCase is a struct that holds a single test case.
@@ -144,15 +144,17 @@ func waitForNTxsInMempool(miner *rpcclient.Client, n int,
 // assertTxInBlock checks that a given transaction can be found in the block's
 // transaction list.
 func assertTxInBlock(t *harnessTest, block *wire.MsgBlock,
-	txid *chainhash.Hash) {
+	txid *chainhash.Hash) *wire.MsgTx {
+
 	for _, tx := range block.Transactions {
 		sha := tx.TxHash()
 		if bytes.Equal(txid[:], sha[:]) {
-			return
+			return tx
 		}
 	}
 
 	t.Fatalf("tx was not included in block")
+	return nil
 }
 
 // mineBlocks mine 'num' of blocks and check that blocks are present in
@@ -199,13 +201,45 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 	return blocks
 }
 
+// assertTraderAccountState asserts that the account with the corresponding
+// trader key is found in the given state.
+func assertTraderAccountState(t *harnessTest, traderKey []byte,
+	state clmrpc.AccountState) {
+
+	ctx := context.Background()
+	err := wait.NoError(func() error {
+		list, err := t.trader.ListAccounts(
+			ctx, &clmrpc.ListAccountsRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("unable to retrieve accounts: %v", err)
+		}
+
+		for _, a := range list.Accounts {
+			if !bytes.Equal(a.TraderKey, traderKey) {
+				continue
+			}
+			if a.State != state {
+				return fmt.Errorf("expected account "+
+					"state %v, got %v", state, a.State)
+			}
+
+			return nil
+		}
+
+		return errors.New("account not found")
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
 func openAccountAndAssert(ctx context.Context, t *harnessTest,
-	net *lntest.NetworkHarness, trader *traderHarness,
 	req *clmrpc.InitAccountRequest) *clmrpc.Account {
 
-	acct, err := trader.InitAccount(ctx, req)
+	acct, err := t.trader.InitAccount(ctx, req)
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)
 	}
@@ -219,38 +253,56 @@ func openAccountAndAssert(ctx context.Context, t *harnessTest,
 
 	// Mine the account funding TX and make sure the account outpoint was
 	// actually included in the block.
-	block := mineBlocks(t, net, 6, 1)[0]
+	block := mineBlocks(t, t.lndHarness, 6, 1)[0]
 	txHash, err := chainhash.NewHash(acct.Outpoint.Txid)
 	if err != nil {
 		t.Fatalf("could not create chain hash from outpoint: %v", err)
 	}
-	assertTxInBlock(t, block, txHash)
+	_ = assertTxInBlock(t, block, txHash)
 
-	var account *clmrpc.Account
-	err = wait.NoError(func() error {
-		list, err := trader.ListAccounts(
-			ctx, &clmrpc.ListAccountsRequest{},
-		)
-		if err != nil {
-			return fmt.Errorf("could not list accounts: %v", err)
-		}
-		for _, a := range list.Accounts {
-			if bytes.Equal(a.TraderKey, acct.TraderKey) {
-				if a.State != clmrpc.AccountState_OPEN {
-					return fmt.Errorf("unexpected account "+
-						"state. got %d, expected %d",
-						a.State,
-						clmrpc.AccountState_OPEN)
-				}
-				account = a
-				return nil
-			}
-		}
-		return fmt.Errorf("account not found in list after account " +
-			"creation")
-	}, defaultWaitTimeout)
+	assertTraderAccountState(t, acct.TraderKey, clmrpc.AccountState_OPEN)
+
+	return acct
+}
+
+// closeAccountAndAssert closes an existing trader account by broadcasting a
+// a spending transaction of the account. This spending transaction may take
+// either the expiration or multi-sig path, depending on whether the account has
+// already expired. Once the spending transaction confirms, we assert that the
+// account is marked as closed.
+func closeAccountAndAssert(ctx context.Context, t *harnessTest,
+	req *clmrpc.CloseAccountRequest) *wire.MsgTx {
+
+	// Send the close account request and wait for the closing transaction
+	// to be broadcast. The account should also be found in a
+	// StatePendingClosed state.
+	resp, err := t.trader.CloseAccount(ctx, req)
 	if err != nil {
-		t.Fatalf("error waiting for account to be confirmed: %v", err)
+		t.Fatalf("could not close account %x: %v", req.TraderKey, err)
 	}
-	return account
+
+	_, err = waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.t.Fatal(err)
+	}
+
+	assertTraderAccountState(
+		t, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
+	)
+
+	// Mine the closing transaction and make sure it was included in a
+	// block.
+	block := mineBlocks(t, t.lndHarness, 1, 1)[0]
+	closeTxHash, err := chainhash.NewHash(resp.CloseTxid)
+	if err != nil {
+		t.Fatalf("invalid close transaction hash: %v", err)
+	}
+	closeTx := assertTxInBlock(t, block, closeTxHash)
+
+	// The account should now be found in a StateClosed state.
+	assertTraderAccountState(t, req.TraderKey, clmrpc.AccountState_CLOSED)
+
+	return closeTx
 }
