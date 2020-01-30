@@ -389,6 +389,12 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 		return nil
 	}
 
+	// Ensure we don't transition an account that's been closed back to open
+	// if the account was closed before it was open.
+	if account.State != StatePendingOpen {
+		return nil
+	}
+
 	// Ensure the client provided us with the correct output.
 	//
 	// TODO(wilmer): If invalid, ban corresponding token? Add new state for
