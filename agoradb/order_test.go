@@ -171,7 +171,7 @@ func dummyClientOrder(t *testing.T, amt btcutil.Amount) *clientorder.Kit {
 	kit.Amt = amt
 	kit.MultiSigKeyLocator = keychain.KeyLocator{Index: 1, Family: 2}
 	kit.FundingFeeRate = chainfee.FeePerKwFloor
-	kit.AcctKey = [33]byte{77, 88, 99}
+	kit.AcctKey = testTraderKey
 	return kit
 }
 

@@ -41,6 +41,7 @@ func newTestHarness(t *testing.T) *testHarness {
 			Store:         store,
 			Auctioneer:    &mockAuctioneer{},
 			Wallet:        wallet,
+			Signer:        wallet,
 			ChainNotifier: notifier,
 			TxSource:      wallet,
 		}),
@@ -65,7 +66,7 @@ func (h *testHarness) assertAcccountExists(expected *Account) {
 	h.t.Helper()
 
 	err := wait.NoError(func() error {
-		found, err := h.store.Account(expected.TraderKey)
+		found, err := h.store.Account(expected.TraderKey.PubKey)
 		if err != nil {
 			return err
 		}
@@ -184,13 +185,14 @@ func TestResumeAccountAfterRestart(t *testing.T) {
 	}
 
 	account := &Account{
-		Value:            value,
-		Expiry:           expiry,
-		TraderKey:        testTraderKey,
-		TraderKeyLocator: testTraderKeyDesc.KeyLocator,
-		AuctioneerKey:    testAuctioneerKey,
-		HeightHint:       bestHeight,
-		State:            StateInitiated,
+		Value:         value,
+		Expiry:        expiry,
+		TraderKey:     testTraderKeyDesc,
+		AuctioneerKey: testAuctioneerKey,
+		BatchKey:      testBatchKey,
+		Secret:        sharedSecret,
+		HeightHint:    bestHeight,
+		State:         StateInitiated,
 	}
 	h.assertAcccountExists(account)
 

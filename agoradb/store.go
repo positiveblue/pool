@@ -84,9 +84,8 @@ func (s *EtcdStore) getKeyPrefix(prefix string) string {
 	)
 }
 
-// Init should be called the first time the database is created. It will
-// initialize the necessary versioning state, and also ensure that the database
-// hasn't already been created in the past.
+// Init initializes the necessary versioning state if the database hasn't
+// already been created in the past.
 func (s *EtcdStore) Init(ctx context.Context) error {
 	if s.initialized {
 		return errAlreadyInitialized
@@ -101,7 +100,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 
 	if resp.Count == 0 {
 		log.Infof("Initializing db with version %v", currentDbVersion)
-		return s.setVersion(ctx, currentDbVersion)
+		return s.firstTimeInit(ctx, currentDbVersion)
 	}
 
 	version, err := strconv.Atoi(string(resp.Kvs[0].Value))
@@ -119,9 +118,21 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 	return nil
 }
 
-func (s *EtcdStore) setVersion(ctx context.Context, version uint32) error {
-	key := s.getKeyPrefix(versionPrefix)
-	_, err := s.client.Put(ctx, key, strconv.Itoa(int(version)))
+// firstTimeInit stores all initial required key-value pairs throughout the
+// store's initialization atomically.
+func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
+	versionKey := s.getKeyPrefix(versionPrefix)
+	storeVersion := clientv3.OpPut(versionKey, strconv.Itoa(int(version)))
+
+	storeInitialBatchKey, err := s.putPerBatchKeyOp(initialBatchKey)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.client.Txn(ctx).
+		If().
+		Then(storeVersion, storeInitialBatchKey).
+		Commit()
 	return err
 }
 

@@ -26,15 +26,20 @@ var (
 
 type testHarness struct {
 	t        *testing.T
+	store    *mockStore
 	notifier *mockChainNotifier
+	wallet   *mockWallet
 	manager  *Manager
 }
 
 func newTestHarness(t *testing.T) *testHarness {
+	store := newMockStore()
 	notifier := newMockChainNotifier()
+	wallet := &mockWallet{}
 	m, err := NewManager(&ManagerConfig{
-		Store:         newMockStore(),
-		Wallet:        &mockWallet{},
+		Store:         store,
+		Wallet:        wallet,
+		Signer:        wallet,
 		ChainNotifier: notifier,
 	})
 	if err != nil {
@@ -43,7 +48,9 @@ func newTestHarness(t *testing.T) *testHarness {
 
 	return &testHarness{
 		t:        t,
+		store:    store,
 		notifier: notifier,
+		wallet:   wallet,
 		manager:  m,
 	}
 }
@@ -56,6 +63,26 @@ func (h *testHarness) start() {
 
 func (h *testHarness) stop() {
 	h.manager.Stop()
+}
+
+func (h *testHarness) assertNewReservation() {
+	h.t.Helper()
+
+	select {
+	case <-h.store.newReservations:
+	case <-time.After(timeout):
+		h.t.Fatal("expected new reservation")
+	}
+}
+
+func (h *testHarness) assertExistingReservation() {
+	h.t.Helper()
+
+	select {
+	case <-h.store.newReservations:
+		h.t.Fatal("unexpected new reservation")
+	case <-time.After(timeout):
+	}
 }
 
 func (h *testHarness) assertAccountExists(expected *Account) {
@@ -95,12 +122,15 @@ func (h *testHarness) initAccount() *Account {
 	)
 
 	ctx := context.Background()
-	auctioneerKey, err := h.manager.ReserveAccount(ctx, tokenID, traderKey)
+	reservation, err := h.manager.ReserveAccount(ctx, tokenID)
 	if err != nil {
 		h.t.Fatalf("unable to reserve account: %v", err)
 	}
 
-	script, err := clmscript.AccountScript(expiry, traderKey, auctioneerKey)
+	script, err := clmscript.AccountScript(
+		expiry, traderKey, reservation.AuctioneerKey.PubKey,
+		reservation.InitialBatchKey, sharedSecret,
+	)
 	if err != nil {
 		h.t.Fatalf("unable to construct new account script: %v", err)
 	}
@@ -122,7 +152,9 @@ func (h *testHarness) initAccount() *Account {
 		Value:         value,
 		Expiry:        expiry,
 		TraderKey:     traderKey,
-		AuctioneerKey: auctioneerKey,
+		AuctioneerKey: reservation.AuctioneerKey,
+		BatchKey:      reservation.InitialBatchKey,
+		Secret:        sharedSecret,
 		State:         StatePendingOpen,
 		HeightHint:    uint32(actualHeightHint),
 		OutPoint:      zeroOutPoint,
@@ -184,32 +216,27 @@ func TestReserveAccount(t *testing.T) {
 	}
 
 	// Proceed to make a reservation now. We should be able to query for it.
-	key1, err := h.manager.ReserveAccount(ctx, testTokenID, testTraderKey)
-	if err != nil {
+	if _, err := h.manager.ReserveAccount(ctx, testTokenID); err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
-	storedKey, err := h.manager.cfg.Store.HasReservation(ctx, testTokenID)
+	h.assertNewReservation()
+	_, err = h.manager.cfg.Store.HasReservation(ctx, testTokenID)
 	if err != nil {
 		t.Fatalf("unable to determine existing reservation: %v", err)
-	}
-	if storedKey != key1 {
-		t.Fatalf("key mismatch: expected %x, got %x", key1, storedKey)
 	}
 
 	// It's not possible to make a reservation for another account while
 	// one's already in flight.
-	key2, err := h.manager.ReserveAccount(ctx, testTokenID, testTraderKey)
-	if err != nil {
+	if _, err := h.manager.ReserveAccount(ctx, testTokenID); err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
-	if key2 != key1 {
-		t.Fatalf("key mismatch: expected %x, got %x", key1, key2)
-	}
+	h.assertExistingReservation()
 
 	// Complete the reservation so that we can attempt to create another
 	// one.
 	err = h.manager.cfg.Store.CompleteReservation(ctx, &Account{
-		TokenID: testTokenID,
+		TokenID:   testTokenID,
+		TraderKey: testTraderKey,
 	})
 	if err != nil {
 		t.Fatalf("unable to complete reservation: %v", err)
@@ -219,20 +246,11 @@ func TestReserveAccount(t *testing.T) {
 		t.Fatalf("expected error ErrNoReservation, got \"%v\"", err)
 	}
 
-	// The trader will require a new key to make a new reservation.
-	var newTraderKey [33]byte
-	copy(newTraderKey[:], testTraderKey[:])
-	newTraderKey[len(newTraderKey)-1] ^= 1
-
-	// A new reservation should be made, with the resulting key being
-	// different from the previous reservation.
-	key3, err := h.manager.ReserveAccount(ctx, testTokenID, newTraderKey)
-	if err != nil {
+	// A new reservation should be made.
+	if _, err := h.manager.ReserveAccount(ctx, testTokenID); err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
-	if key3 == key2 {
-		t.Fatal("expected new key for new reservation")
-	}
+	h.assertNewReservation()
 }
 
 // TestNewAccount ensures that we can recognize the creation and confirmation of

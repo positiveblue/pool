@@ -8,6 +8,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/coreos/etcd/clientv3"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/loop/lsat"
@@ -46,8 +47,10 @@ func (s *EtcdStore) getReservationKey(tokenID lsat.TokenID) string {
 // getAccountKey returns the key for an account associated with the trader key.
 // Assuming a trader key of 123456, the resulting key would be:
 //	/bitcoin/clm/agora/account/123456
-func (s *EtcdStore) getAccountKey(traderKey [33]byte) string {
-	parts := []string{accountDir, hex.EncodeToString(traderKey[:])}
+func (s *EtcdStore) getAccountKey(traderKey *btcec.PublicKey) string {
+	parts := []string{
+		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
+	}
 	accountKey := strings.Join(parts, keyDelimiter)
 	return s.getKeyPrefix(accountKey)
 }
@@ -56,35 +59,38 @@ func (s *EtcdStore) getAccountKey(traderKey [33]byte) string {
 // with a token. account.ErrNoReservation is returned if a reservation does not
 // exist.
 func (s *EtcdStore) HasReservation(ctx context.Context,
-	tokenID lsat.TokenID) ([33]byte, error) {
+	tokenID lsat.TokenID) (*account.Reservation, error) {
 
 	if !s.initialized {
-		return [33]byte{}, errNotInitialized
+		return nil, errNotInitialized
 	}
 
 	resp, err := s.getSingleValue(
 		ctx, s.getReservationKey(tokenID), account.ErrNoReservation,
 	)
 	if err != nil {
-		return [33]byte{}, err
+		return nil, err
 	}
 
-	var auctioneerKey [33]byte
-	copy(auctioneerKey[:], resp.Kvs[0].Value)
-	return auctioneerKey, nil
+	return deserializeReservation(bytes.NewReader(resp.Kvs[0].Value))
 }
 
 // ReserveAccount makes a reservation for an auctioneer key for a trader
 // associated to a token.
 func (s *EtcdStore) ReserveAccount(ctx context.Context,
-	tokenID lsat.TokenID, auctioneerKey [33]byte) error {
+	tokenID lsat.TokenID, reservation *account.Reservation) error {
 
 	if !s.initialized {
 		return errNotInitialized
 	}
 
 	k := s.getReservationKey(tokenID)
-	_, err := s.client.Put(ctx, k, string(auctioneerKey[:]))
+	var buf bytes.Buffer
+	if err := serializeReservation(&buf, reservation); err != nil {
+		return err
+	}
+
+	_, err := s.client.Put(ctx, k, buf.String())
 	return err
 }
 
@@ -166,7 +172,7 @@ func (s *EtcdStore) UpdateAccount(ctx context.Context, account *account.Account,
 
 // Account retrieves the account associated with the given trader key.
 func (s *EtcdStore) Account(ctx context.Context,
-	traderKey [33]byte) (*account.Account, error) {
+	traderKey *btcec.PublicKey) (*account.Account, error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -209,11 +215,26 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 	return accounts, nil
 }
 
+func serializeReservation(w io.Writer, reservation *account.Reservation) error {
+	return WriteElements(
+		w, reservation.AuctioneerKey, reservation.InitialBatchKey,
+	)
+}
+
+func deserializeReservation(r io.Reader) (*account.Reservation, error) {
+	var reservation account.Reservation
+	err := ReadElements(
+		r, &reservation.AuctioneerKey, &reservation.InitialBatchKey,
+	)
+	return &reservation, err
+}
+
 func serializeAccount(w io.Writer, account *account.Account) error {
 	return WriteElements(
 		w, account.TokenID, account.Value, account.Expiry,
-		account.TraderKey, account.AuctioneerKey, account.State,
-		account.HeightHint, account.OutPoint,
+		account.TraderKey, account.AuctioneerKey, account.BatchKey,
+		account.Secret, account.State, account.HeightHint,
+		account.OutPoint,
 	)
 }
 
@@ -221,7 +242,8 @@ func deserializeAccount(r io.Reader) (*account.Account, error) {
 	var a account.Account
 	err := ReadElements(
 		r, &a.TokenID, &a.Value, &a.Expiry, &a.TraderKey,
-		&a.AuctioneerKey, &a.State, &a.HeightHint, &a.OutPoint,
+		&a.AuctioneerKey, &a.BatchKey, &a.Secret, &a.State,
+		&a.HeightHint, &a.OutPoint,
 	)
 	return &a, err
 }

@@ -168,8 +168,8 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQ
 github.com/lightninglabs/kirin v0.0.0-20200107133748-8b731e87e4b8 h1:GNi77lz9o0e0pJkRUt+UcKVGZ1MUIg/Gk3uPjIaWYtY=
 github.com/lightninglabs/kirin v0.0.0-20200107133748-8b731e87e4b8/go.mod h1:yM+vQgYxQKjK8QEVkIWEOtKY21AW3RR4JA3et4kYrco=
 github.com/lightninglabs/loop v0.3.0-alpha.0.20200103135410-5e00ce62677a/go.mod h1:VEp7TFUL7Ehq9mjQVUuNVTjpMIeTx8kOHvQ7PdJpLuA=
-github.com/lightninglabs/loop v0.3.0-alpha.0.20200108113330-d9597e838793 h1:l7Xw0ZpFAN3KSSgbWNLA4bb3P/yO43X4ZhQgZn5Vzck=
-github.com/lightninglabs/loop v0.3.0-alpha.0.20200108113330-d9597e838793/go.mod h1:VEp7TFUL7Ehq9mjQVUuNVTjpMIeTx8kOHvQ7PdJpLuA=
+github.com/lightninglabs/loop v0.3.1-alpha.0.20200122195411-37a245a8dd28 h1:tMkwrUCwh7YE1tHrkHcg4H48nheDrHFD9lVADHlAUf0=
+github.com/lightninglabs/loop v0.3.1-alpha.0.20200122195411-37a245a8dd28/go.mod h1:VT9h1Fq6ZQNvOAIKnLyZGwf03vSutSR6sAwg+pz29aM=
 github.com/lightninglabs/neutrino v0.11.0 h1:lPpYFCtsfJX2W5zI4pWycPmbbBdr7zU+BafYdLoD6k0=
 github.com/lightninglabs/neutrino v0.11.0/go.mod h1:CuhF0iuzg9Sp2HO6ZgXgayviFTn1QHdSTJlMncK80wg=
 github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d h1:QWD/5MPnaZfUVP7P8wLa4M8Td2DI7XXHXt2vhVtUgGI=
@@ -178,8 +178,8 @@ github.com/lightningnetwork/lightning-onion v0.0.0-20191214001659-f34e9dc1651d/g
 github.com/lightningnetwork/lightning-onion v1.0.1 h1:qChGgS5+aPxFeR6JiUsGvanei1bn6WJpYbvosw/1604=
 github.com/lightningnetwork/lightning-onion v1.0.1/go.mod h1:rigfi6Af/KqsF7Za0hOgcyq2PNH4AN70AaMRxcJkff4=
 github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200103000305-22e1f006b194/go.mod h1:WHK90FD3m2n6OyWzondS7ho0Uhtgfp30Nxvj24lQYX4=
-github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200108005919-658803f51c05 h1:hoVN0jZ6dRtS9zXJhPB7suHh2nahramSVbtsvBu00WU=
-github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200108005919-658803f51c05/go.mod h1:sxMH8WLTqgERzBCrTrBCuDkT6SqAjZhnOWiAQSNzJ8A=
+github.com/lightningnetwork/lnd v0.9.0-beta-rc3.0.20200121213302-a2977c4438b5 h1:qLO+I/7EggqegY8uu6k9TuE/5Tc5zV2L8gQGfgEV9LY=
+github.com/lightningnetwork/lnd v0.9.0-beta-rc3.0.20200121213302-a2977c4438b5/go.mod h1:sxMH8WLTqgERzBCrTrBCuDkT6SqAjZhnOWiAQSNzJ8A=
 github.com/lightningnetwork/lnd/cert v1.0.0 h1:J0gtf2UNQX2U+/j5cXnX2wIMSTuJuwrXv7m9qJr2wtw=
 github.com/lightningnetwork/lnd/cert v1.0.0/go.mod h1:fmtemlSMf5t4hsQmcprSoOykypAPp+9c+0d0iqTScMo=
 github.com/lightningnetwork/lnd/queue v1.0.1/go.mod h1:vaQwexir73flPW43Mrm7JOgJHmcEFBWWSl9HlyASoms=

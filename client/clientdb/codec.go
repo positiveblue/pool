@@ -48,6 +48,11 @@ func WriteElement(w io.Writer, element interface{}) error {
 	case chainfee.SatPerKWeight:
 		return lnwire.WriteElement(w, uint64(e))
 
+	case *keychain.KeyDescriptor:
+		if err := WriteElements(w, e.KeyLocator, e.PubKey); err != nil {
+			return err
+		}
+
 	case keychain.KeyLocator:
 		if err := binary.Write(w, byteOrder, e.Family); err != nil {
 			return err
@@ -57,6 +62,9 @@ func WriteElement(w io.Writer, element interface{}) error {
 		}
 
 	case lntypes.Preimage:
+		return lnwire.WriteElement(w, e[:])
+
+	case [32]byte:
 		return lnwire.WriteElement(w, e[:])
 
 	default:
@@ -124,6 +132,14 @@ func ReadElement(r io.Reader, element interface{}) error {
 		}
 		*e = chainfee.SatPerKWeight(v)
 
+	case **keychain.KeyDescriptor:
+		var keyDesc keychain.KeyDescriptor
+		err := ReadElements(r, &keyDesc.KeyLocator, &keyDesc.PubKey)
+		if err != nil {
+			return err
+		}
+		*e = &keyDesc
+
 	case *keychain.KeyLocator:
 		if err := binary.Read(r, byteOrder, &e.Family); err != nil {
 			return err
@@ -138,6 +154,13 @@ func ReadElement(r io.Reader, element interface{}) error {
 			return err
 		}
 		*e = preimage
+
+	case *[32]byte:
+		var b [32]byte
+		if err := lnwire.ReadElement(r, b[:]); err != nil {
+			return err
+		}
+		*e = b
 
 	default:
 		return lnwire.ReadElement(r, element)

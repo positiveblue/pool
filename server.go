@@ -64,6 +64,7 @@ func NewEtcdServer(lnd *lndclient.LndServices, etcdHost, user, pass string,
 	accountManager, err := account.NewManager(&account.ManagerConfig{
 		Store:         store,
 		Wallet:        lnd.WalletKit,
+		Signer:        lnd.Signer,
 		ChainNotifier: lnd.ChainNotifier,
 	})
 	if err != nil {
@@ -194,16 +195,14 @@ func (s *Server) ReserveAccount(ctx context.Context,
 	// TODO(wilmer): Extract token ID from LSAT.
 	var tokenID lsat.TokenID
 
-	var traderKey [33]byte
-	copy(traderKey[:], req.UserSubKey)
-
-	ourKey, err := s.accountManager.ReserveAccount(ctx, tokenID, traderKey)
+	reservation, err := s.accountManager.ReserveAccount(ctx, tokenID)
 	if err != nil {
 		return nil, err
 	}
 
 	return &clmrpc.ReserveAccountResponse{
-		AuctioneerKey: ourKey[:],
+		AuctioneerKey:   reservation.AuctioneerKey.PubKey.SerializeCompressed(),
+		InitialBatchKey: reservation.InitialBatchKey.SerializeCompressed(),
 	}, nil
 }
 
@@ -220,10 +219,12 @@ func (s *Server) InitAccount(ctx context.Context,
 		Index: req.AccountPoint.OutputIndex,
 	}
 
-	var traderKey [33]byte
-	copy(traderKey[:], req.UserSubKey)
+	traderKey, err := btcec.ParsePubKey(req.UserSubKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
 
-	err := s.accountManager.InitAccount(
+	err = s.accountManager.InitAccount(
 		ctx, tokenID, accountPoint, btcutil.Amount(req.AccountValue),
 		req.AccountScript, req.AccountExpiry, traderKey,
 		atomic.LoadUint32(&s.bestHeight),
@@ -373,7 +374,7 @@ func (s *Server) parseRPCOrder(ctx context.Context, version uint32,
 		return nil, nil, fmt.Errorf("unable to parse account key: %v",
 			err)
 	}
-	copy(clientKit.AcctKey[:], acctKey.SerializeCompressed())
+	clientKit.AcctKey = acctKey
 	_, err = s.store.Account(ctx, clientKit.AcctKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)

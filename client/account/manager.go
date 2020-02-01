@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -57,6 +58,10 @@ type ManagerConfig struct {
 	// Wallet handles all of our on-chain transaction interaction, whether
 	// that is deriving keys, creating transactions, etc.
 	Wallet lndclient.WalletKitClient
+
+	// Signer is responsible for deriving shared secrets for accounts
+	// between the trader and auctioneer.
+	Signer lndclient.SignerClient
 
 	// ChainNotifier is responsible for requesting confirmation and spend
 	// notifications for accounts.
@@ -125,7 +130,8 @@ func (m *Manager) start() error {
 	for _, account := range accounts {
 		if err := m.resumeAccount(ctx, account, true); err != nil {
 			return fmt.Errorf("unable to resume account %x: %v",
-				account.TraderKey, err)
+				account.TraderKey.PubKey.SerializeCompressed(),
+				err)
 		}
 	}
 
@@ -161,14 +167,21 @@ func (m *Manager) InitAccount(ctx context.Context, value btcutil.Amount,
 	if err != nil {
 		return nil, err
 	}
-	var ourKey [33]byte
-	copy(ourKey[:], keyDesc.PubKey.SerializeCompressed())
 
 	// With our key obtained, we'll reserve an account with our auctioneer,
-	// who will provide us with their key. Their key is composed of their
-	// long-term key tweaked with ours, which helps us achieve deterministic
-	// account creation.
-	auctioneerKey, err := m.cfg.Auctioneer.ReserveAccount(ctx, ourKey)
+	// who will provide us with their base key and our initial per-batch
+	// key.
+	reservation, err := m.cfg.Auctioneer.ReserveAccount(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// We'll also need to compute a shared secret based on both base keys
+	// (the trader and auctioneer's) to ensure only they are able to
+	// successfully identify every past/future output of the account.
+	secret, err := m.cfg.Signer.DeriveSharedKey(
+		ctx, reservation.AuctioneerKey, &keyDesc.KeyLocator,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -177,20 +190,21 @@ func (m *Manager) InitAccount(ctx context.Context, value btcutil.Amount,
 	// an account to disk and proceed to fund it and wait for its
 	// confirmation.
 	account := &Account{
-		Value:            value,
-		Expiry:           expiry,
-		TraderKey:        ourKey,
-		TraderKeyLocator: keyDesc.KeyLocator,
-		AuctioneerKey:    auctioneerKey,
-		State:            StateInitiated,
-		HeightHint:       bestHeight,
+		Value:         value,
+		Expiry:        expiry,
+		TraderKey:     keyDesc,
+		AuctioneerKey: reservation.AuctioneerKey,
+		BatchKey:      reservation.InitialBatchKey,
+		Secret:        secret,
+		State:         StateInitiated,
+		HeightHint:    bestHeight,
 	}
 	if err := m.cfg.Store.AddAccount(account); err != nil {
 		return nil, err
 	}
 
 	log.Infof("Creating new account %x of %v that expires at height %v",
-		ourKey, value, expiry)
+		keyDesc.PubKey.SerializeCompressed(), value, expiry)
 
 	if err := m.resumeAccount(ctx, account, false); err != nil {
 		return nil, err
@@ -249,7 +263,8 @@ func (m *Manager) resumeAccount(ctx context.Context, account *Account,
 			accountTx = tx
 
 			log.Infof("Funded new account %x with transaction %v",
-				account.TraderKey, tx.TxHash())
+				account.TraderKey.PubKey.SerializeCompressed(),
+				tx.TxHash())
 		}
 
 		// With the transaction obtained, we'll locate the index of our
@@ -311,9 +326,9 @@ func (m *Manager) resumeAccount(ctx context.Context, account *Account,
 		// Proceed to watch for the account on-chain.
 		numConfs := numConfsForValue(account.Value)
 		log.Infof("Waiting for %v confirmation(s) of account %x",
-			numConfs, account.TraderKey)
+			numConfs, account.TraderKey.PubKey.SerializeCompressed())
 		err = m.watcher.WatchAccountConf(
-			account.TraderKey, account.OutPoint.Hash,
+			account.TraderKey.PubKey, account.OutPoint.Hash,
 			accountOutput.PkScript, numConfs, account.HeightHint,
 		)
 		if err != nil {
@@ -327,16 +342,16 @@ func (m *Manager) resumeAccount(ctx context.Context, account *Account,
 	// confirmed, so we only need to watch for its spend and expiration.
 	case StateOpen:
 		log.Infof("Watching account %x for spend and expiration",
-			account.TraderKey)
+			account.TraderKey.PubKey.SerializeCompressed())
 		err := m.watcher.WatchAccountSpend(
-			account.TraderKey, account.OutPoint,
+			account.TraderKey.PubKey, account.OutPoint,
 			accountOutput.PkScript, account.HeightHint,
 		)
 		if err != nil {
 			return fmt.Errorf("unable to watch for spend: %v", err)
 		}
 		err = m.watcher.WatchAccountExpiration(
-			account.TraderKey, account.Expiry,
+			account.TraderKey.PubKey, account.Expiry,
 		)
 		if err != nil {
 			return fmt.Errorf("unable to watch for expiration: %v",
@@ -395,10 +410,10 @@ func (m *Manager) locateTxByHash(ctx context.Context,
 
 // handleAccountConf takes the necessary steps after detecting the confirmation
 // of an account on-chain.
-func (m *Manager) handleAccountConf(accountKey [33]byte,
+func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	confDetails *chainntnfs.TxConfirmation) error {
 
-	account, err := m.cfg.Store.Account(accountKey)
+	account, err := m.cfg.Store.Account(traderKey)
 	if err != nil {
 		return err
 	}
@@ -410,14 +425,14 @@ func (m *Manager) handleAccountConf(accountKey [33]byte,
 		return nil
 	}
 
-	log.Infof("Account %x is now confirmed at height %v!", accountKey,
-		confDetails.BlockHeight)
+	log.Infof("Account %x is now confirmed at height %v!",
+		traderKey.SerializeCompressed(), confDetails.BlockHeight)
 
 	return m.cfg.Store.UpdateAccount(account, StateModifier(StateOpen))
 }
 
 // handleAccountSpend handles the different spend paths of an account.
-func (m *Manager) handleAccountSpend(accountKey [33]byte,
+func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	spendDetails *chainntnfs.SpendDetail) error {
 
 	// TODO(wilmer): Handle different spend paths.
@@ -425,7 +440,7 @@ func (m *Manager) handleAccountSpend(accountKey [33]byte,
 }
 
 // handleAccountExpiry handles the expiration of an account.
-func (m *Manager) handleAccountExpiry(accountKey [33]byte) error {
+func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 	// TODO(wilmer): Sweep account output and mark account as expired.
 	return nil
 }
