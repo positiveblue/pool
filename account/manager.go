@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/client/account/watcher"
@@ -15,6 +17,7 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -76,7 +79,8 @@ type ManagerConfig struct {
 	Wallet lndclient.WalletKitClient
 
 	// Signer is responsible for deriving shared secrets for accounts
-	// between the trader and auctioneer.
+	// between the trader and auctioneer and signing account-related
+	// transactions.
 	Signer lndclient.SignerClient
 
 	// ChainNotifier is responsible for requesting confirmation and spend
@@ -221,11 +225,10 @@ func (m *Manager) ReserveAccount(ctx context.Context,
 // InitAccount handles a new account request from a trader identified by the
 // provided token ID.
 func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
-	op wire.OutPoint, value btcutil.Amount, script []byte, expiry uint32,
-	baseTraderKey *btcec.PublicKey, bestHeight uint32) error {
+	params *Parameters, bestHeight uint32) error {
 
 	// First, make sure we have valid parameters to create the account.
-	if err := validateAccountParams(value, expiry, bestHeight); err != nil {
+	if err := validateAccountParams(params, bestHeight); err != nil {
 		return err
 	}
 
@@ -257,21 +260,22 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// auctioneer's key. This prevents script reuse and provides plausible
 	// deniability between account outputs to third parties.
 	secret, err := m.cfg.Signer.DeriveSharedKey(
-		ctx, baseTraderKey, &reservation.AuctioneerKey.KeyLocator,
+		ctx, params.TraderKey, &reservation.AuctioneerKey.KeyLocator,
 	)
 	if err != nil {
 		return err
 	}
 	derivedScript, err := clmscript.AccountScript(
-		expiry, baseTraderKey, reservation.AuctioneerKey.PubKey,
-		reservation.InitialBatchKey, secret,
+		params.Expiry, params.TraderKey,
+		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
+		secret,
 	)
 	if err != nil {
 		return err
 	}
-	if !bytes.Equal(derivedScript, script) {
+	if !bytes.Equal(derivedScript, params.Script) {
 		return fmt.Errorf("script mismatch: expected %x, got %x",
-			derivedScript, script)
+			derivedScript, params.Script)
 	}
 
 	// We'll account for the trader possibly being a few blocks ahead of us
@@ -290,22 +294,22 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// complete the remaining field.
 	account := &Account{
 		TokenID:       tokenID,
-		Value:         value,
-		Expiry:        expiry,
-		TraderKey:     baseTraderKey,
+		Value:         params.Value,
+		Expiry:        params.Expiry,
+		TraderKey:     params.TraderKey,
 		AuctioneerKey: reservation.AuctioneerKey,
 		BatchKey:      reservation.InitialBatchKey,
 		Secret:        secret,
 		State:         StatePendingOpen,
 		HeightHint:    uint32(heightHint),
-		OutPoint:      op,
+		OutPoint:      params.OutPoint,
 	}
 	if err := m.cfg.Store.CompleteReservation(ctx, account); err != nil {
 		return err
 	}
 
 	log.Infof("Received new account request with outpoint=%v, value=%v, "+
-		"expiry=%v", op, value, expiry)
+		"expiry=%v", account.OutPoint, account.Value, account.Expiry)
 
 	return m.resumeAccount(account)
 }
@@ -359,8 +363,9 @@ func (m *Manager) resumeAccount(account *Account) error {
 				err)
 		}
 
-	// If the account has already expired, there's nothing to be done.
-	case StateExpired:
+	// If the account has already expired or has already been closed,
+	// there's nothing to be done.
+	case StateExpired, StateClosed:
 		break
 
 	default:
@@ -386,6 +391,12 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	// the account confirms at the same height as it expires, we can exit
 	// now and let the account be marked as expired by the watcher.
 	if confDetails.BlockHeight == account.Expiry {
+		return nil
+	}
+
+	// Ensure we don't transition an account that's been closed back to open
+	// if the account was closed before it was open.
+	if account.State != StatePendingOpen {
 		return nil
 	}
 
@@ -434,8 +445,56 @@ func validateAccountOutput(account *Account, chainTx *wire.MsgTx) error {
 func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	spendDetails *chainntnfs.SpendDetail) error {
 
-	// TODO(wilmer): Handle different spend paths.
-	return nil
+	ctx := context.Background()
+	account, err := m.cfg.Store.Account(ctx, traderKey)
+	if err != nil {
+		return err
+	}
+
+	// We'll need to perform different operations based on the witness  of
+	// the spending input of the account.
+	spendTx := spendDetails.SpendingTx
+	spendWitness := spendTx.TxIn[spendDetails.SpenderInputIndex].Witness
+
+	switch {
+	// If the witness is for a spend of the account expiration path, then
+	// we'll mark the account as closed as the account has expired and all
+	// the funds have been withdrawn.
+	case clmscript.IsExpirySpend(spendWitness):
+		break
+
+	// If the witness is for a multi-sig spend, then either an order by the
+	// trader was matched, or the account was closed. If it was closed, then
+	// the account output shouldn't have been recreated.
+	//
+	// TODO(wilmer): What do we do when an order matched and the account was
+	// fully drained?
+	case clmscript.IsMultiSigSpend(spendWitness):
+		// If the account output was recreated, then there's nothing
+		// left for us to do. We'll defer updating the account here, as
+		// we'll want to update it atomically along with the matched
+		// order, which we don't have information of.
+		nextAccountScript, err := account.NextOutputScript()
+		if err != nil {
+			return err
+		}
+		_, ok := clmscript.LocateOutputScript(spendTx, nextAccountScript)
+		if ok {
+			// The account is still open so don't mark it as closed
+			// below.
+			return nil
+		}
+
+	default:
+		return fmt.Errorf("unknown spend witness %v", spendWitness)
+	}
+
+	log.Infof("Account %x has been closed on-chain with transaction %v",
+		account.TraderKey, spendTx.TxHash())
+
+	return m.cfg.Store.UpdateAccount(
+		ctx, account, StateModifier(StateClosed),
+	)
 }
 
 // handleAccountExpiry handles the expiration of an account.
@@ -447,6 +506,12 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 	account, err := m.cfg.Store.Account(ctx, traderKey)
 	if err != nil {
 		return err
+	}
+
+	// If the account has already been closed, there's no need to mark it as
+	// expired.
+	if account.State == StateClosed {
+		return nil
 	}
 
 	err = m.cfg.Store.UpdateAccount(
@@ -462,23 +527,137 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 	return nil
 }
 
+// ModifyAccount handles a trader's intent to modify an account. Since accounts
+// are based on a multi-sig, the trader requires our signature before the
+// account expires in order to modify it. This method is abstracted such that it
+// can handle any type of account modification requested by the trader.
+func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
+	newInputs []*wire.TxIn, newOutputs []*wire.TxOut, newParams *Parameters,
+	bestHeight uint32) ([]byte, error) {
+
+	account, err := m.cfg.Store.Account(ctx, traderKey)
+	if err != nil {
+		return nil, err
+	}
+
+	// We can only modify accounts in a StateOpen state.
+	if account.State != StateOpen {
+		return nil, fmt.Errorf("account found in %v must be in %v to "+
+			"be modified", account.State, StateOpen)
+	}
+
+	// TODO(wilmer): Reject if account has pending orders.
+
+	// If there aren't new account parameters to update, then we'll
+	// interpret this as the trader wishing to close their account.
+	//
+	// TODO(wilmer): Create PendingClosed state to prevent any future orders
+	// since we're giving them a valid signature?
+	if newParams == nil {
+		return m.signAccountSpend(ctx, account, newInputs, newOutputs, 0)
+	}
+
+	// TODO(wilmer): Handle modification parameters.
+	return nil, fmt.Errorf("unimplemented")
+}
+
+// signAccountSpend signs the spending transaction of an account that includes
+// the given inputs and outputs, along with the account output as an input, and
+// a newly created account output if newAccountValue is not zero.
+func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
+	inputs []*wire.TxIn, outputs []*wire.TxOut,
+	newAccountValue btcutil.Amount) ([]byte, error) {
+
+	// Construct the spending transaction that we'll sign.
+	tx := wire.NewMsgTx(2)
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: account.OutPoint})
+	for _, input := range inputs {
+		tx.AddTxIn(input)
+	}
+	for _, output := range outputs {
+		tx.AddTxOut(output)
+	}
+
+	// If the account output must be recreated, then include it with the
+	// next output script in the sequence.
+	if newAccountValue != 0 {
+		nextAccountScript, err := account.NextOutputScript()
+		if err != nil {
+			return nil, err
+		}
+		tx.AddTxOut(&wire.TxOut{
+			Value:    int64(newAccountValue),
+			PkScript: nextAccountScript,
+		})
+	}
+
+	// Ensure the crafted transaction passes some sanity checks.
+	err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx))
+	if err != nil {
+		return nil, err
+	}
+
+	// Gather the remaining components required to sign the transaction from
+	// the auctioneer's point-of-view and sign it.
+	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
+		account.TraderKey, account.AuctioneerKey.PubKey,
+		account.BatchKey, account.Secret,
+	)
+	witnessScript, err := clmscript.AccountWitnessScript(
+		account.Expiry, account.TraderKey, account.AuctioneerKey.PubKey,
+		account.BatchKey, account.Secret,
+	)
+	if err != nil {
+		return nil, err
+	}
+	accountOutput, err := account.Output()
+	if err != nil {
+		return nil, err
+	}
+	signDesc := &input.SignDescriptor{
+		KeyDesc: keychain.KeyDescriptor{
+			KeyLocator: account.AuctioneerKey.KeyLocator,
+		},
+		SingleTweak:   auctioneerKeyTweak,
+		WitnessScript: witnessScript,
+		Output:        accountOutput,
+		HashType:      txscript.SigHashAll,
+		InputIndex:    0,
+		SigHashes:     txscript.NewTxSigHashes(tx),
+	}
+
+	log.Infof("Signing closing transaction %v for account %x", tx.TxHash(),
+		account.TraderKey.SerializeCompressed())
+
+	sigs, err := m.cfg.Signer.SignOutputRaw(
+		ctx, tx, []*input.SignDescriptor{signDesc},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// We'll need to re-append the sighash flag since SignOutputRaw strips
+	// it.
+	return append(sigs[0], byte(signDesc.HashType)), nil
+}
+
 // validateAccountParams ensures that a trader has provided sane parameters for
 // the creation of a new account.
-func validateAccountParams(value btcutil.Amount, expiry, bestHeight uint32) error {
-	if value < minAccountValue {
+func validateAccountParams(params *Parameters, bestHeight uint32) error {
+	if params.Value < minAccountValue {
 		return fmt.Errorf("minimum account value allowed is %v",
 			minAccountValue)
 	}
-	if value > maxAccountValue {
+	if params.Value > maxAccountValue {
 		return fmt.Errorf("maximum account value allowed is %v",
 			maxAccountValue)
 	}
 
-	if expiry < bestHeight+minAccountExpiry {
+	if params.Expiry < bestHeight+minAccountExpiry {
 		return fmt.Errorf("current minimum account expiry allowed is "+
 			"height %v", bestHeight+minAccountExpiry)
 	}
-	if expiry > bestHeight+maxAccountExpiry {
+	if params.Expiry > bestHeight+maxAccountExpiry {
 		return fmt.Errorf("current maximum account expiry allowed is "+
 			"height %v", bestHeight+maxAccountExpiry)
 	}

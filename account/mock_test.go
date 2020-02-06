@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -159,6 +160,12 @@ func (w *mockWallet) DeriveSharedKey(context.Context, *btcec.PublicKey,
 	return sharedSecret, nil
 }
 
+func (w *mockWallet) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
+	signDescs []*input.SignDescriptor) ([][]byte, error) {
+
+	return [][]byte{[]byte("auctioneer sig")}, nil
+}
+
 type mockChainNotifier struct {
 	lndclient.ChainNotifierClient
 
@@ -193,6 +200,12 @@ func (n *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 
 func (n *mockChainNotifier) RegisterBlockEpochNtfn(
 	ctx context.Context) (chan int32, chan error, error) {
+
+	// Mimic the actual ChainNotifier by sending a notification upon
+	// registration.
+	go func() {
+		n.blockChan <- 0
+	}()
 
 	return n.blockChan, n.errChan, nil
 }

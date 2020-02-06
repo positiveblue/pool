@@ -49,6 +49,10 @@ const (
 	// StateExpired denotes that the account's expiration block height has
 	// been reached.
 	StateExpired State = 2
+
+	// StateClosed denotes that an account has been cooperatively closed out
+	// on-chain by the trader.
+	StateClosed = 3
 )
 
 // String returns a human-readable description of an account's state.
@@ -63,6 +67,29 @@ func (s State) String() string {
 	default:
 		return "unknown"
 	}
+}
+
+// Parameters are the parameters submitted by a trader for an account.
+type Parameters struct {
+	// Value is the value of the account reflected in on-chain output that
+	// backs the existence of an account.
+	Value btcutil.Amount
+
+	// Script is the script of the initial account output that backs the
+	// existence of the account.
+	Script []byte
+
+	// OutPoint is the outpoint of the initial account output.
+	OutPoint wire.OutPoint
+
+	// Expiry is the expiration block height of an account. After this
+	// point, the trader is able to withdraw the funds from their account
+	// without cooperation of the auctioneer.
+	Expiry uint32
+
+	// TraderKey is the base trader's key in the 2-of-2 multi-sig
+	// construction of a CLM account.
+	TraderKey *btcec.PublicKey
 }
 
 // Account encapsulates all of the details of a CLM account on-chain from the
@@ -115,8 +142,7 @@ type Account struct {
 	// the account output in a block.
 	HeightHint uint32
 
-	// OutPoint is the identifying component of an account. It is the
-	// outpoint of the output used to fund the account.
+	// OutPoint the outpoint of the current account output.
 	OutPoint wire.OutPoint
 }
 
@@ -134,6 +160,17 @@ func (a *Account) Output() (*wire.TxOut, error) {
 		Value:    int64(a.Value),
 		PkScript: script,
 	}, nil
+}
+
+// NextOutputScript returns the next on-chain output script that is to be
+// associated with the account. This is done by using the next batch key, which
+// results from incrementing the current one by its curve's base point.
+func (a *Account) NextOutputScript() ([]byte, error) {
+	nextBatchKey := clmscript.IncrementKey(a.BatchKey)
+	return clmscript.AccountScript(
+		a.Expiry, a.TraderKey, a.AuctioneerKey.PubKey, nextBatchKey,
+		a.Secret,
+	)
 }
 
 // Modifier abstracts the modification of an account through a function.

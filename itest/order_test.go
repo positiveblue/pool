@@ -19,12 +19,10 @@ func testOrderSubmission(t *harnessTest) {
 
 	// Start by creating an account over 2M sats that is valid for the next
 	// 1000 blocks.
-	acct := openAccountAndAssert(
-		ctx, t, t.lndHarness, t.trader, &clmrpc.InitAccountRequest{
-			AccountValue:  2000000,
-			AccountExpiry: uint32(currentHeight) + 1000,
-		},
-	)
+	acct := openAccountAndAssert(ctx, t, &clmrpc.InitAccountRequest{
+		AccountValue:  2000000,
+		AccountExpiry: uint32(currentHeight) + 1000,
+	})
 
 	// Now that the account is confirmed, submit an order over part of the
 	// account balance.

@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
@@ -206,11 +207,10 @@ func (s *Server) ReserveAccount(ctx context.Context,
 	}, nil
 }
 
-func (s *Server) InitAccount(ctx context.Context,
-	req *clmrpc.ServerInitAccountRequest) (*clmrpc.ServerInitAccountResponse, error) {
-
-	// TODO(wilmer): Extract token ID from LSAT.
-	var tokenID lsat.TokenID
+// parseRPCAccountParams parses the relevant account parameters from a
+// ServerInitAccountRequest RPC message.
+func parseRPCAccountParams(
+	req *clmrpc.ServerInitAccountRequest) (*account.Parameters, error) {
 
 	var txid chainhash.Hash
 	copy(txid[:], req.AccountPoint.Txid)
@@ -224,10 +224,28 @@ func (s *Server) InitAccount(ctx context.Context,
 		return nil, err
 	}
 
+	return &account.Parameters{
+		OutPoint:  accountPoint,
+		Value:     btcutil.Amount(req.AccountValue),
+		Script:    req.AccountScript,
+		Expiry:    req.AccountExpiry,
+		TraderKey: traderKey,
+	}, nil
+}
+
+func (s *Server) InitAccount(ctx context.Context,
+	req *clmrpc.ServerInitAccountRequest) (*clmrpc.ServerInitAccountResponse, error) {
+
+	// TODO(wilmer): Extract token ID from LSAT.
+	var tokenID lsat.TokenID
+
+	accountParams, err := parseRPCAccountParams(req)
+	if err != nil {
+		return nil, err
+	}
+
 	err = s.accountManager.InitAccount(
-		ctx, tokenID, accountPoint, btcutil.Amount(req.AccountValue),
-		req.AccountScript, req.AccountExpiry, traderKey,
-		atomic.LoadUint32(&s.bestHeight),
+		ctx, tokenID, accountParams, atomic.LoadUint32(&s.bestHeight),
 	)
 	if err != nil {
 		return nil, err
@@ -236,18 +254,69 @@ func (s *Server) InitAccount(ctx context.Context,
 	return &clmrpc.ServerInitAccountResponse{}, nil
 }
 
-func (s *Server) CloseAccount(ctx context.Context,
-	req *clmrpc.ServerCloseAccountRequest) (
-	*clmrpc.ServerCloseAccountResponse, error) {
-
-	return nil, fmt.Errorf("unimplemented")
-}
-
 func (s *Server) ModifyAccount(ctx context.Context,
 	req *clmrpc.ServerModifyAccountRequest) (
 	*clmrpc.ServerModifyAccountResponse, error) {
 
-	return nil, fmt.Errorf("unimplemented")
+	traderKey, err := btcec.ParsePubKey(req.UserSubKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+
+	var newInputs []*wire.TxIn
+	if len(req.NewInputs) > 0 {
+		newInputs = make([]*wire.TxIn, 0, len(req.NewInputs))
+		for _, newInput := range req.NewInputs {
+			opHash, err := chainhash.NewHash(newInput.Outpoint.Txid)
+			if err != nil {
+				return nil, err
+			}
+
+			newInputs = append(newInputs, &wire.TxIn{
+				PreviousOutPoint: wire.OutPoint{
+					Hash:  *opHash,
+					Index: newInput.Outpoint.OutputIndex,
+				},
+			})
+		}
+	}
+
+	var newOutputs []*wire.TxOut
+	if len(req.NewOutputs) > 0 {
+		newOutputs = make([]*wire.TxOut, 0, len(req.NewOutputs))
+		for _, newOutput := range req.NewOutputs {
+			// Make sure they've provided a valid output script.
+			_, err := txscript.ParsePkScript(newOutput.Script)
+			if err != nil {
+				return nil, err
+			}
+
+			newOutputs = append(newOutputs, &wire.TxOut{
+				Value:    int64(newOutput.Value),
+				PkScript: newOutput.Script,
+			})
+		}
+	}
+
+	var newAccountParams *account.Parameters
+	if req.NewAccount != nil {
+		newAccountParams, err = parseRPCAccountParams(req.NewAccount)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	accountSig, err := s.accountManager.ModifyAccount(
+		ctx, traderKey, newInputs, newOutputs, newAccountParams,
+		atomic.LoadUint32(&s.bestHeight),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &clmrpc.ServerModifyAccountResponse{
+		AccountSig: accountSig,
+	}, nil
 }
 
 // SubmitOrder parses a client's request to submit an order, validates it and
