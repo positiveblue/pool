@@ -261,12 +261,12 @@ func (b *BatchExecutor) RegisterTrader(t *ActiveTrader) error {
 	b.Lock()
 	defer b.Unlock()
 
-	_, ok := b.activeTraders[matching.AccountID(t.AccountKey)]
+	_, ok := b.activeTraders[t.AccountKey]
 	if ok {
 		return fmt.Errorf("trader %x already registered",
 			t.AccountKey)
 	}
-	b.activeTraders[matching.AccountID(t.AccountKey)] = t
+	b.activeTraders[t.AccountKey] = t
 
 	return nil
 }
