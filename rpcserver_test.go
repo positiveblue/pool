@@ -44,13 +44,11 @@ var (
 	testTraderKeyStr = "036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21" +
 		"a0af58e0c9395446ba09"
 	testRawTraderKey, _ = hex.DecodeString(testTraderKeyStr)
-	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
 	testTokenID         = lsat.TokenID{1, 2, 3}
 	testAccount         = account.Account{
 		TokenID:       testTokenID,
 		Value:         1337,
 		Expiry:        100,
-		TraderKey:     testTraderKey,
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateOpen,
 		HeightHint:    100,
@@ -197,7 +195,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	// Simulate a message from the batch executor to the trader and see that
 	// it is converted correctly to the gRPC message.
 	var acctID matching.AccountID
-	copy(acctID[:], testAccount.TraderKey.SerializeCompressed())
+	copy(acctID[:], testAccount.TraderKeyRaw[:])
 	comms.toTrader <- &venue.PrepareMsg{AcctKey: acctID}
 	select {
 	case rpcMsg := <-mockStream.toClient:
@@ -353,4 +351,8 @@ func newServer(t *testing.T, store agoradb.Store) *rpcServer {
 		t.Fatalf("error creating rpcServer: %v", err)
 	}
 	return server
+}
+
+func init() {
+	copy(testAccount.TraderKeyRaw[:], testRawTraderKey)
 }

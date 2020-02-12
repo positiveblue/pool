@@ -36,7 +36,6 @@ var (
 		TokenID:       testTokenID,
 		Value:         1337,
 		Expiry:        100,
-		TraderKey:     testTraderKey,
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateOpen,
 		BatchKey:      initialBatchKey,
@@ -101,7 +100,8 @@ func TestAccountReservation(t *testing.T) {
 		t.Fatalf("expected ErrNoReservation, got \"%v\"", err)
 	}
 
-	account, err := store.Account(ctx, testAccount.TraderKey)
+	traderKey, _ := testAccount.TraderKey()
+	account, err := store.Account(ctx, traderKey)
 	if err != nil {
 		t.Fatalf("unable to retrieve account: %v", err)
 	}
@@ -162,4 +162,8 @@ func TestAccounts(t *testing.T) {
 		t.Fatalf("expected account: %v\ngot: %v",
 			spew.Sdump(a), spew.Sdump(accounts[0]))
 	}
+}
+
+func init() {
+	copy(testAccount.TraderKeyRaw[:], testRawAuctioneerKey)
 }

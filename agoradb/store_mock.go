@@ -69,7 +69,7 @@ func (s *StoreMock) CompleteReservation(_ context.Context,
 
 	delete(s.Res, a.TokenID)
 	var traderKey [33]byte
-	copy(traderKey[:], a.TraderKey.SerializeCompressed())
+	copy(traderKey[:], a.TraderKeyRaw[:])
 	s.Accs[traderKey] = a
 	return nil
 }
@@ -80,7 +80,7 @@ func (s *StoreMock) UpdateAccount(_ context.Context, acct *account.Account,
 	modifiers ...account.Modifier) error {
 
 	var traderKey [33]byte
-	copy(traderKey[:], acct.TraderKey.SerializeCompressed())
+	copy(traderKey[:], acct.TraderKeyRaw[:])
 	a, ok := s.Accs[traderKey]
 	if !ok {
 		return ErrAccountNotFound

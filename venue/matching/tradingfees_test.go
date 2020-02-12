@@ -35,9 +35,11 @@ func genRandMatchedOrders(r *rand.Rand, opts ...orderGenOption) []MatchedOrder {
 
 		order := MatchedOrder{
 			Asker: Trader{
+				AccountKey:     ask.Acct.TraderKeyRaw,
 				AccountBalance: ask.Acct.Value,
 			},
 			Bidder: Trader{
+				AccountKey:     bid.Acct.TraderKeyRaw,
 				AccountBalance: bid.Acct.Value,
 			},
 			Details: OrderPair{
@@ -48,14 +50,6 @@ func genRandMatchedOrders(r *rand.Rand, opts ...orderGenOption) []MatchedOrder {
 				},
 			},
 		}
-		copy(
-			order.Asker.AccountKey[:],
-			ask.Acct.TraderKey.SerializeCompressed(),
-		)
-		copy(
-			order.Bidder.AccountKey[:],
-			bid.Acct.TraderKey.SerializeCompressed(),
-		)
 
 		matchedOrders[i] = order
 	}

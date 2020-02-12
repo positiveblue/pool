@@ -296,7 +296,6 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 		TokenID:       tokenID,
 		Value:         params.Value,
 		Expiry:        params.Expiry,
-		TraderKey:     params.TraderKey,
 		AuctioneerKey: reservation.AuctioneerKey,
 		BatchKey:      reservation.InitialBatchKey,
 		Secret:        secret,
@@ -304,6 +303,7 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 		HeightHint:    uint32(heightHint),
 		OutPoint:      params.OutPoint,
 	}
+	copy(account.TraderKeyRaw[:], params.TraderKey.SerializeCompressed())
 	if err := m.cfg.Store.CompleteReservation(ctx, account); err != nil {
 		return err
 	}
@@ -323,15 +323,21 @@ func (m *Manager) resumeAccount(account *Account) error {
 		return fmt.Errorf("unable to construct account output: %v", err)
 	}
 
+	traderKey, err := account.TraderKey()
+	if err != nil {
+		return err
+	}
+
 	switch account.State {
 	// If the account is in it's initial state, we'll watch for the account
 	// on-chain.
 	case StatePendingOpen:
 		numConfs := numConfsForValue(account.Value)
 		log.Infof("Waiting for %v confirmation(s) of account %x",
-			numConfs, account.TraderKey.SerializeCompressed())
+			numConfs, account.TraderKeyRaw[:])
+
 		err := m.watcher.WatchAccountConf(
-			account.TraderKey, account.OutPoint.Hash,
+			traderKey, account.OutPoint.Hash,
 			accountOutput.PkScript, numConfs, account.HeightHint,
 		)
 		if err != nil {
@@ -347,16 +353,16 @@ func (m *Manager) resumeAccount(account *Account) error {
 	// and expiration on-chain.
 	case StateOpen:
 		log.Infof("Watching account %x for spend and expiration",
-			account.TraderKey.SerializeCompressed())
+			account.TraderKeyRaw[:])
 		err := m.watcher.WatchAccountSpend(
-			account.TraderKey, account.OutPoint,
+			traderKey, account.OutPoint,
 			accountOutput.PkScript, account.HeightHint,
 		)
 		if err != nil {
 			return fmt.Errorf("unable to watch for spend: %v", err)
 		}
 		err = m.watcher.WatchAccountExpiration(
-			account.TraderKey, account.Expiry,
+			traderKey, account.Expiry,
 		)
 		if err != nil {
 			return fmt.Errorf("unable to watch for expiration: %v",
@@ -599,12 +605,16 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 
 	// Gather the remaining components required to sign the transaction from
 	// the auctioneer's point-of-view and sign it.
+	traderKey, err := account.TraderKey()
+	if err != nil {
+		return nil, err
+	}
 	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
-		account.TraderKey, account.AuctioneerKey.PubKey,
+		traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
 	)
 	witnessScript, err := clmscript.AccountWitnessScript(
-		account.Expiry, account.TraderKey, account.AuctioneerKey.PubKey,
+		account.Expiry, traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
 	)
 	if err != nil {
@@ -627,7 +637,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	}
 
 	log.Infof("Signing closing transaction %v for account %x", tx.TxHash(),
-		account.TraderKey.SerializeCompressed())
+		account.TraderKeyRaw[:])
 
 	sigs, err := m.cfg.Signer.SignOutputRaw(
 		ctx, tx, []*input.SignDescriptor{signDesc},

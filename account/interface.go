@@ -107,12 +107,17 @@ type Account struct {
 	// without cooperation of the auctioneer.
 	Expiry uint32
 
-	// TraderKey is the base trader's key in the 2-of-2 multi-sig
+	// TraderKeyRaw is the base trader's key in the 2-of-2 multi-sig
 	// construction of a CLM account. This key will never be included in the
 	// account script, but rather it will be tweaked with the per-batch key
 	// and the account secret to prevent script reuse and provide plausible
 	// deniability between account outputs to third parties.
-	TraderKey *btcec.PublicKey
+	TraderKeyRaw [33]byte
+
+	// traderKey is the fully materialized version of TraderKeyRaw. We use
+	// a private variable to memoize this value so we only need to compute
+	// it once lazily.
+	traderKey *btcec.PublicKey
 
 	// AuctioneerKey is the base auctioneer's key in the 2-of-2 multi-sig
 	// construction of a CLM account. This key will never be included in the
@@ -148,8 +153,13 @@ type Account struct {
 
 // Output returns the current on-chain output associated with the account.
 func (a *Account) Output() (*wire.TxOut, error) {
+	traderKey, err := a.TraderKey()
+	if err != nil {
+		return nil, err
+	}
+
 	script, err := clmscript.AccountScript(
-		a.Expiry, a.TraderKey, a.AuctioneerKey.PubKey, a.BatchKey,
+		a.Expiry, traderKey, a.AuctioneerKey.PubKey, a.BatchKey,
 		a.Secret,
 	)
 	if err != nil {
@@ -162,13 +172,28 @@ func (a *Account) Output() (*wire.TxOut, error) {
 	}, nil
 }
 
+// TraderKey returns the base trader key that is used to derive the set of keys
+// that appear in the multi-sig portion of an account script.
+func (a *Account) TraderKey() (*btcec.PublicKey, error) {
+	if a.traderKey != nil {
+		return a.traderKey, nil
+	}
+
+	return btcec.ParsePubKey(a.TraderKeyRaw[:], btcec.S256())
+}
+
 // NextOutputScript returns the next on-chain output script that is to be
 // associated with the account. This is done by using the next batch key, which
 // results from incrementing the current one by its curve's base point.
 func (a *Account) NextOutputScript() ([]byte, error) {
+	traderKey, err := a.TraderKey()
+	if err != nil {
+		return nil, err
+	}
+
 	nextBatchKey := clmscript.IncrementKey(a.BatchKey)
 	return clmscript.AccountScript(
-		a.Expiry, a.TraderKey, a.AuctioneerKey.PubKey, nextBatchKey,
+		a.Expiry, traderKey, a.AuctioneerKey.PubKey, nextBatchKey,
 		a.Secret,
 	)
 }

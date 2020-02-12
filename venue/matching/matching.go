@@ -281,14 +281,6 @@ func (m *MultiUnitMatchMaker) MatchBatch(bids []*order.Bid,
 					Quote: matchDetails,
 				},
 			}
-			copy(
-				matchedOrder.Asker.AccountKey[:],
-				ask.Acct.TraderKey.SerializeCompressed(),
-			)
-			copy(
-				matchedOrder.Bidder.AccountKey[:],
-				bid.Acct.TraderKey.SerializeCompressed(),
-			)
 
 			matchedOrders = append(matchedOrders, matchedOrder)
 
