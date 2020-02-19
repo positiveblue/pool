@@ -101,10 +101,6 @@ type Config struct {
 	// should be used as a library and listen on the given listener instead
 	// of what is configured in the --rpclisten parameter.
 	RPCListener net.Listener
-
-	// ShutdownChannel is the channel that must be provided where
-	// agoraserver listens for a shutdown signal.
-	ShutdownChannel <-chan struct{}
 }
 
 var DefaultConfig = &Config{

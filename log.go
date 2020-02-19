@@ -18,6 +18,10 @@ const Subsystem = "SRVR"
 var (
 	logWriter = build.NewRotatingLogWriter()
 	log       = build.NewSubLogger(Subsystem, logWriter.GenSubLogger)
+
+	// SupportedSubsystems is a function that returns a list of all
+	// supported logging sub systems.
+	SupportedSubsystems = logWriter.SupportedSubsystems
 )
 
 func init() {

@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"path/filepath"
-	"sync"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
@@ -22,47 +21,45 @@ import (
 	"google.golang.org/grpc/credentials"
 )
 
-// Start runs agoraserver in daemon mode. It will listen for grpc connections,
-// execute commands and pass back auction status information.
-func Start(cfg *Config) error {
-	// Special show command to list supported subsystems and exit.
-	if cfg.DebugLevel == "show" {
-		fmt.Printf("Supported subsystems: %v\n",
-			logWriter.SupportedSubsystems())
-		os.Exit(0)
-	}
+// Server is the main agora auctioneer server.
+type Server struct {
+	auctioneerServer *rpcServer
+}
 
+// NewServer returns a new auctioneer server that is started in daemon mode,
+// listens for gRPC connections and executes commands.
+func NewServer(cfg *Config) (*Server, error) {
 	// Append the network type to the log directory so it is
 	// "namespaced" per network in the same fashion as the data directory.
-	cfg.LogDir = filepath.Join(cfg.LogDir, cfg.Network)
+	logDir := filepath.Join(cfg.LogDir, cfg.Network)
 
 	// Initialize logging at the default logging level.
 	err := logWriter.InitLogRotator(
-		filepath.Join(cfg.LogDir, defaultLogFilename),
+		filepath.Join(logDir, defaultLogFilename),
 		cfg.MaxLogFileSize, cfg.MaxLogFiles,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	err = build.ParseAndSetDebugLevels(cfg.DebugLevel, logWriter)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	lndServices, err := lndclient.NewLndServices(
-		cfg.Lnd.Host, cfg.Network, cfg.Lnd.MacaroonDir, cfg.Lnd.TLSPath,
+		cfg.Lnd.Host, cfg.Network, cfg.Lnd.MacaroonDir,
+		cfg.Lnd.TLSPath,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	defer lndServices.Close()
 
-	auctioneerServer, err := NewEtcdServer(
-		&lndServices.LndServices, cfg.Etcd.Host, cfg.Etcd.User,
-		cfg.Etcd.Password, btcutil.Amount(cfg.OrderSubmitFee),
+	store, err := agoradb.NewEtcdStore(
+		*lndServices.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
+		cfg.Etcd.Password,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	interceptor := auth.ServerInterceptor{}
@@ -71,13 +68,13 @@ func Start(cfg *Config) error {
 		grpc.StreamInterceptor(interceptor.StreamInterceptor),
 	}
 	switch {
-	// If auto cert is cfgured, then we'll create a cert automatically
+	// If auto cert is configured, then we'll create a cert automatically
 	// using Let's Encrypt.
 	case !cfg.Insecure && cfg.AutoCert:
 		serverName := cfg.ServerName
 		if serverName == "" {
-			return errors.New("servername option is required for " +
-				"secure operation")
+			return nil, errors.New("servername option is required " +
+				"for secure operation")
 		}
 
 		certDir := filepath.Join(cfg.BaseDir, "autocert")
@@ -117,61 +114,59 @@ func Start(cfg *Config) error {
 				cert.DefaultAutogenValidity,
 			)
 			if err != nil {
-				return err
+				return nil, err
 			}
 		}
 		certData, _, err := cert.LoadCert(
 			cfg.TLSCertPath, cfg.TLSKeyPath,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		sCreds := credentials.NewTLS(cert.TLSConfFromCert(certData))
 		serverOpts = append(serverOpts, grpc.Creds(sCreds))
 	}
 
-	grpcServer := grpc.NewServer(serverOpts...)
-	clmrpc.RegisterChannelAuctioneerServer(
-		grpcServer, auctioneerServer,
-	)
-
-	// Next, Start the gRPC server listening for HTTP/2 connections.
+	// Start the gRPC server listening for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
 	if grpcListener == nil {
 		grpcListener, err = net.Listen("tcp", defaultAuctioneerAddr)
 		if err != nil {
-			return fmt.Errorf("RPC server unable to listen on %s",
-				defaultAuctioneerAddr)
+			return nil, fmt.Errorf("RPC server unable to listen "+
+				"on %s", defaultAuctioneerAddr)
 		}
-		defer grpcListener.Close()
 	}
+
+	auctioneerServer, err := newRPCServer(
+		lndServices, store, grpcListener, serverOpts,
+		btcutil.Amount(cfg.OrderSubmitFee),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	clmrpc.RegisterChannelAuctioneerServer(
+		auctioneerServer.Server, auctioneerServer,
+	)
 
 	// Start the auctioneer server itself.
 	err = auctioneerServer.Start()
 	if err != nil {
-		return fmt.Errorf("unable to start agora server: %v", err)
+		return nil, fmt.Errorf("unable to start agora server: %v", err)
 	}
+	return &Server{
+		auctioneerServer: auctioneerServer,
+	}, nil
+}
 
-	// Start the grpc server.
-	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-
-		log.Infof("RPC server listening on %s", grpcListener.Addr())
-		_ = grpcServer.Serve(grpcListener)
-	}()
-
-	// Run until the user terminates agoraserver.
-	<-cfg.ShutdownChannel
+// Stop shuts down the server, including all client connections and network
+// listeners.
+func (s *Server) Stop() error {
 	log.Info("Received shutdown signal, stopping server")
-	grpcServer.GracefulStop()
-	err = auctioneerServer.Stop()
+	err := s.auctioneerServer.Stop()
 	if err != nil {
-		log.Errorf("error shutting down server: %v", err)
+		return fmt.Errorf("error shutting down server: %v", err)
 	}
-
-	wg.Wait()
 	return nil
 }

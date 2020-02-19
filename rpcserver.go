@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -34,7 +35,14 @@ const (
 	getInfoTimeout = 5 * time.Second
 )
 
-type Server struct {
+// rpcServer is a server that implements the auction server RPC interface and
+// serves client requests by delegating the work to the respective managers.
+type rpcServer struct {
+	*grpc.Server
+
+	listener net.Listener
+	serveWg  sync.WaitGroup
+
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
 
@@ -42,7 +50,7 @@ type Server struct {
 	// used atomically.
 	bestHeight uint32
 
-	lnd            *lndclient.LndServices
+	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
 	store          agoradb.Store
 	accountManager *account.Manager
@@ -52,15 +60,10 @@ type Server struct {
 	wg   sync.WaitGroup
 }
 
-func NewEtcdServer(lnd *lndclient.LndServices, etcdHost, user, pass string,
-	orderSubmitFee btcutil.Amount) (*Server, error) {
-
-	store, err := agoradb.NewEtcdStore(
-		*lnd.ChainParams, etcdHost, user, pass,
-	)
-	if err != nil {
-		return nil, err
-	}
+// newRPCServer creates a new rpcServer.
+func newRPCServer(lnd *lndclient.GrpcLndServices, store agoradb.Store,
+	listener net.Listener, serverOpts []grpc.ServerOption,
+	orderSubmitFee btcutil.Amount) (*rpcServer, error) {
 
 	accountManager, err := account.NewManager(&account.ManagerConfig{
 		Store:         store,
@@ -72,7 +75,9 @@ func NewEtcdServer(lnd *lndclient.LndServices, etcdHost, user, pass string,
 		return nil, err
 	}
 
-	return &Server{
+	return &rpcServer{
+		Server:         grpc.NewServer(serverOpts...),
+		listener:       listener,
 		lnd:            lnd,
 		store:          store,
 		accountManager: accountManager,
@@ -85,8 +90,8 @@ func NewEtcdServer(lnd *lndclient.LndServices, etcdHost, user, pass string,
 	}, nil
 }
 
-// Start starts the Server, making it ready to accept incoming requests.
-func (s *Server) Start() error {
+// Start starts the rpcServer, making it ready to accept incoming requests.
+func (s *rpcServer) Start() error {
 	if !atomic.CompareAndSwapUint32(&s.started, 0, 1) {
 		return nil
 	}
@@ -138,13 +143,24 @@ func (s *Server) Start() error {
 	s.wg.Add(1)
 	go s.serverHandler(blockEpochChan, blockErrorChan)
 
+	s.serveWg.Add(1)
+	go func() {
+		defer s.serveWg.Done()
+
+		log.Infof("RPC server listening on %s", s.listener.Addr())
+		err := s.Server.Serve(s.listener)
+		if err != nil && err != grpc.ErrServerStopped {
+			log.Errorf("RPC server stopped with error: %v", err)
+		}
+	}()
+
 	log.Infof("Auction server is now active")
 
 	return nil
 }
 
 // Stop stops the server.
-func (s *Server) Stop() error {
+func (s *rpcServer) Stop() error {
 	if !atomic.CompareAndSwapUint32(&s.stopped, 0, 1) {
 		return nil
 	}
@@ -156,12 +172,23 @@ func (s *Server) Stop() error {
 	close(s.quit)
 	s.wg.Wait()
 
+	log.Info("Stopping lnd client, gRPC server and listener")
+	s.lnd.Close()
+	s.Server.GracefulStop()
+	err := s.listener.Close()
+	if err != nil {
+		return fmt.Errorf("error closing gRPC listener: %v", err)
+	}
+	s.serveWg.Wait()
+
 	log.Info("Auction server stopped")
 	return nil
 }
 
 // serverHandler is the main event loop of the server.
-func (s *Server) serverHandler(blockChan chan int32, blockErrChan chan error) {
+func (s *rpcServer) serverHandler(blockChan chan int32,
+	blockErrChan chan error) {
+
 	defer s.wg.Done()
 
 	for {
@@ -184,14 +211,15 @@ func (s *Server) serverHandler(blockChan chan int32, blockErrChan chan error) {
 	}
 }
 
-func (s *Server) updateHeight(height int32) {
+func (s *rpcServer) updateHeight(height int32) {
 	// Store height atomically so the incoming request handler can access it
 	// without locking.
 	atomic.StoreUint32(&s.bestHeight, uint32(height))
 }
 
-func (s *Server) ReserveAccount(ctx context.Context,
-	req *clmrpc.ReserveAccountRequest) (*clmrpc.ReserveAccountResponse, error) {
+func (s *rpcServer) ReserveAccount(ctx context.Context,
+	req *clmrpc.ReserveAccountRequest) (*clmrpc.ReserveAccountResponse,
+	error) {
 
 	// TODO(wilmer): Extract token ID from LSAT.
 	var tokenID lsat.TokenID
@@ -233,7 +261,7 @@ func parseRPCAccountParams(
 	}, nil
 }
 
-func (s *Server) InitAccount(ctx context.Context,
+func (s *rpcServer) InitAccount(ctx context.Context,
 	req *clmrpc.ServerInitAccountRequest) (*clmrpc.ServerInitAccountResponse, error) {
 
 	// TODO(wilmer): Extract token ID from LSAT.
@@ -254,7 +282,7 @@ func (s *Server) InitAccount(ctx context.Context,
 	return &clmrpc.ServerInitAccountResponse{}, nil
 }
 
-func (s *Server) ModifyAccount(ctx context.Context,
+func (s *rpcServer) ModifyAccount(ctx context.Context,
 	req *clmrpc.ServerModifyAccountRequest) (
 	*clmrpc.ServerModifyAccountResponse, error) {
 
@@ -322,7 +350,7 @@ func (s *Server) ModifyAccount(ctx context.Context,
 // SubmitOrder parses a client's request to submit an order, validates it and
 // if successful, stores it to the database and hands it over to the manager
 // for further processing.
-func (s *Server) SubmitOrder(ctx context.Context,
+func (s *rpcServer) SubmitOrder(ctx context.Context,
 	req *clmrpc.ServerSubmitOrderRequest) (
 	*clmrpc.ServerSubmitOrderResponse, error) {
 
@@ -374,7 +402,7 @@ func (s *Server) SubmitOrder(ctx context.Context,
 
 // CancelOrder tries to remove an order from the order book and mark it as
 // revoked by the user.
-func (s *Server) CancelOrder(ctx context.Context,
+func (s *rpcServer) CancelOrder(ctx context.Context,
 	req *clmrpc.ServerCancelOrderRequest) (
 	*clmrpc.ServerCancelOrderResponse, error) {
 
@@ -387,7 +415,7 @@ func (s *Server) CancelOrder(ctx context.Context,
 	return &clmrpc.ServerCancelOrderResponse{}, nil
 }
 
-func (s *Server) SubscribeBatchAuction(
+func (s *rpcServer) SubscribeBatchAuction(
 	stream clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
 
 	return fmt.Errorf("unimplemented")
@@ -395,7 +423,7 @@ func (s *Server) SubscribeBatchAuction(
 
 // OrderState returns the of an order as it is currently known to the order
 // store.
-func (s *Server) OrderState(ctx context.Context,
+func (s *rpcServer) OrderState(ctx context.Context,
 	req *clmrpc.ServerOrderStateRequest) (*clmrpc.ServerOrderStateResponse,
 	error) {
 
@@ -418,7 +446,7 @@ func (s *Server) OrderState(ctx context.Context,
 
 // parseRPCOrder parses the incoming raw RPC order into the go native data
 // types used in the order struct.
-func (s *Server) parseRPCOrder(ctx context.Context, version uint32,
+func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	details *clmrpc.ServerOrder) (*clientorder.Kit, *order.Kit, error) {
 
 	var (
