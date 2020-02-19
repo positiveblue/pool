@@ -388,7 +388,7 @@ func (s *Server) CancelOrder(ctx context.Context,
 }
 
 func (s *Server) SubscribeBatchAuction(
-	stream clmrpc.ChannelAuctioneerServer_SubscribeBatchAuctionServer) error {
+	stream clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
 
 	return fmt.Errorf("unimplemented")
 }

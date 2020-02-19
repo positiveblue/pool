@@ -131,7 +131,7 @@ func Start(cfg *Config) error {
 	}
 
 	grpcServer := grpc.NewServer(serverOpts...)
-	clmrpc.RegisterChannelAuctioneerServerServer(
+	clmrpc.RegisterChannelAuctioneerServer(
 		grpcServer, auctioneerServer,
 	)
 

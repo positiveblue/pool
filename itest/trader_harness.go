@@ -29,7 +29,7 @@ type traderHarness struct {
 	quit chan struct{}
 	wg   sync.WaitGroup
 
-	clmrpc.ChannelAuctioneerClientClient
+	clmrpc.TraderClient
 }
 
 // traderConfig holds all configuration items that are required to start an
@@ -114,7 +114,7 @@ func (hs *traderHarness) start(errChan chan<- error) error {
 	if err != nil {
 		return err
 	}
-	hs.ChannelAuctioneerClientClient = clmrpc.NewChannelAuctioneerClientClient(
+	hs.TraderClient = clmrpc.NewTraderClient(
 		rpcConn,
 	)
 	return nil

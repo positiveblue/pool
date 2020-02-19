@@ -36,7 +36,7 @@ type auctioneerHarness struct {
 	quit chan struct{}
 	wg   sync.WaitGroup
 
-	clmrpc.ChannelAuctioneerServerClient
+	clmrpc.ChannelAuctioneerClient
 }
 
 // auctioneerConfig holds all configuration items that are required to start an
@@ -128,7 +128,7 @@ func (hs *auctioneerHarness) start(errChan chan<- error) error {
 		return err
 	}
 
-	hs.ChannelAuctioneerServerClient = clmrpc.NewChannelAuctioneerServerClient(
+	hs.ChannelAuctioneerClient = clmrpc.NewChannelAuctioneerClient(
 		rpcConn,
 	)
 	return nil
