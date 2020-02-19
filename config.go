@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"path/filepath"
+	"time"
 
 	"github.com/btcsuite/btcutil"
 )
@@ -42,6 +43,10 @@ const (
 	// defaultMaxLogFileSize is the default file size of 10 MB that a log
 	// file can grow to before it is rotated.
 	defaultMaxLogFileSize = 10
+
+	// defaultSubscribeTimeout is the maximum time we give a client stream
+	// subscriber to send us the first subscription message.
+	defaultSubscribeTimeout = 10 * time.Second
 )
 
 var (
@@ -77,7 +82,8 @@ type Config struct {
 	Network string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
 	BaseDir string `long:"basedir" description:"The base directory where agoraserver stores all its data"`
 
-	OrderSubmitFee int64 `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
+	OrderSubmitFee   int64         `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
+	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
 
 	ServerName string `long:"servername" description:"Server name to use for the tls certificate"`
 	Insecure   bool   `long:"insecure" description:"disable tls"`
@@ -104,12 +110,13 @@ type Config struct {
 }
 
 var DefaultConfig = &Config{
-	Network:        "mainnet",
-	BaseDir:        DefaultBaseDir,
-	OrderSubmitFee: defaultOrderSubmitFee,
-	ServerName:     "auction.lightning.today",
-	Insecure:       false,
-	AutoCert:       false,
+	Network:          "mainnet",
+	BaseDir:          DefaultBaseDir,
+	OrderSubmitFee:   defaultOrderSubmitFee,
+	SubscribeTimeout: defaultSubscribeTimeout,
+	ServerName:       "auction.lightning.today",
+	Insecure:         false,
+	AutoCert:         false,
 	Lnd: &LndConfig{
 		Host: "localhost:10009",
 	},

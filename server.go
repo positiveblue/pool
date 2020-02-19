@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -92,7 +93,7 @@ func NewServer(cfg *Config) (*Server, error) {
 				":http", manager.HTTPHandler(nil),
 			)
 			if err != nil {
-				log.Errorf("autocert http: %v", err)
+				log.Errorf("Autocert http failed: %v", err)
 			}
 		}()
 		tlsConf := &tls.Config{
@@ -140,7 +141,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	auctioneerServer, err := newRPCServer(
 		lndServices, store, grpcListener, serverOpts,
-		btcutil.Amount(cfg.OrderSubmitFee),
+		btcutil.Amount(cfg.OrderSubmitFee), cfg.SubscribeTimeout,
 	)
 	if err != nil {
 		return nil, err
@@ -169,4 +170,10 @@ func (s *Server) Stop() error {
 		return fmt.Errorf("error shutting down server: %v", err)
 	}
 	return nil
+}
+
+// ConnectedStreams returns all currently connected traders and their
+// subscriptions.
+func (s *Server) ConnectedStreams() map[lsat.TokenID]*TraderStream {
+	return s.auctioneerServer.connectedStreams
 }

@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/build"
@@ -32,6 +33,7 @@ func init() {
 	addSubLogger(account.Subsystem, account.UseLogger)
 	addSubLogger(order.Subsystem, order.UseLogger)
 	addSubLogger(auth.Subsystem, auth.UseLogger)
+	addSubLogger(venue.Subsystem, venue.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the

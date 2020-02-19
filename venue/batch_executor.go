@@ -1,0 +1,306 @@
+package venue
+
+import (
+	"fmt"
+	"sync"
+	"sync/atomic"
+
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/client/auction"
+	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+)
+
+// ExecutionMsg...
+type ExecutionMsg interface {
+	// Dest...
+	Dest() matching.AccountID
+
+	// Phase..
+	Phase() auction.Phase
+}
+
+type PrepareMsg struct {
+	AcctKey matching.AccountID
+}
+
+func (m *PrepareMsg) Dest() matching.AccountID {
+	return m.AcctKey
+}
+
+func (m *PrepareMsg) Phase() auction.Phase {
+	return auction.BatchClearingPhase
+}
+
+type FinalizeMsg struct {
+	AcctKey matching.AccountID
+}
+
+func (m *FinalizeMsg) Dest() matching.AccountID {
+	return m.AcctKey
+}
+
+func (m *FinalizeMsg) Phase() auction.Phase {
+	return auction.BatchClearingPhase
+}
+
+// TraderMsg...
+type TraderMsg interface {
+	// Batch returns the batch ID.
+	Batch() []byte
+}
+
+// TraderAcceptMsg is the message a Trader sends to accept the execution of a
+// batch.
+type TraderAcceptMsg struct {
+	BatchID []byte
+	Trader  *ActiveTrader
+	Orders  []order.Nonce
+}
+
+func (m *TraderAcceptMsg) Batch() []byte {
+	return m.BatchID
+}
+
+// TraderRejectMsg is the message a Trader sends to reject the execution of a
+// batch.
+type TraderRejectMsg struct {
+	BatchID []byte
+	Trader  *ActiveTrader
+	Reason  string
+}
+
+func (m *TraderRejectMsg) Batch() []byte {
+	return m.BatchID
+}
+
+// TraderSignMsg is the message a Trader sends when they have signed all account
+// inputs of a batch transaction.
+type TraderSignMsg struct {
+	BatchID []byte
+	Trader  *ActiveTrader
+	Sigs    map[string][][]byte
+}
+
+func (m *TraderSignMsg) Batch() []byte {
+	return m.BatchID
+}
+
+// ExecutionResult..
+type ExecutionResult struct {
+	// Err...
+	Err error
+
+	// BatchTx
+	BatchTx *wire.MsgTx
+
+	// StartingFeeRate
+	StartingFeeRate chainfee.SatPerKWeight
+
+	// ExecutionResult...
+	ExecutionFee btcutil.Amount
+
+	// TODO(roasbeef): other stats?
+	//  * coin blocks created (lol, like BDD)
+	//  * total fees paid to makers
+	//  * clearing rate
+	//  * transaction size
+	//  * total amount of BTC cleared
+
+	// TODO(roasbeef): final batch account state?
+}
+
+// executionReq..
+type executionReq struct {
+	*matching.OrderBatch
+
+	// Result..
+	//
+	// TODO(roasbeef): just make part of the resp?
+	//
+	// NOTE: This chan MUST be buffered.
+	Result chan *ExecutionResult
+}
+
+// BatchExecutor...
+type BatchExecutor struct {
+	started uint32 // To be used atomically.
+	stopped uint32 // To be used atomically.
+
+	// activeTraders...
+	activeTraders map[matching.AccountID]*ActiveTrader
+
+	newBatches chan *executionReq
+
+	sync.RWMutex
+
+	quit chan struct{}
+	wg   sync.WaitGroup
+}
+
+// NewBatchExecutor...
+func NewBatchExecutor() (*BatchExecutor, error) {
+	return &BatchExecutor{
+		quit:          make(chan struct{}),
+		activeTraders: make(map[matching.AccountID]*ActiveTrader),
+		newBatches:    make(chan *executionReq),
+	}, nil
+}
+
+// Start...
+func (b *BatchExecutor) Start() error {
+	if !atomic.CompareAndSwapUint32(&b.started, 0, 1) {
+		return nil
+	}
+
+	b.wg.Add(1)
+	go b.executor()
+
+	return nil
+}
+
+// Stop...
+func (b *BatchExecutor) Stop() error {
+	if !atomic.CompareAndSwapUint32(&b.stopped, 0, 1) {
+		return nil
+	}
+
+	close(b.quit)
+
+	b.wg.Wait()
+
+	return nil
+}
+
+// validateBatch...
+//
+// TODO(roasbeef): don't need anymore?
+func (b *BatchExecutor) validateBatch(batch *matching.OrderBatch) error { // nolint:unparam
+	// ensure orders/asks match up
+
+	// ensure valid transition (take into account fee etc)
+
+	// TODO(roasbeef): Replace with real logic.
+	for _, o := range batch.Orders {
+		trader, ok := b.activeTraders[o.Asker.AccountKey]
+		if !ok {
+			continue
+		}
+		trader.CommLine.Send <- &PrepareMsg{
+			AcctKey: trader.AccountKey,
+		}
+	}
+
+	return nil
+}
+
+func (b *BatchExecutor) executor() {
+	// TODO(roasbeef): active traders local?
+
+	// TODO(roasbeef): server steps
+	//  * get in msg that new batch is accepted
+	//     * validate batch
+	//  * construct the batch transaction, do sanity checks against
+	//  * send OrderMatchPrepare to clients
+	//  * wait for OrderMatchAccept
+	//    * if not all traders in batch send error wait for next
+	//  * enter into signing phase
+	//  * wait for all clients to sned OrderMatchSign..
+	//  * verify all witnesses are valid for batch execution transaction
+	//  * send order match finalize
+
+	// TODO(roasbeef): client stgeps
+	//  * sit there, look cute
+	//  * recv OrderMatchPrepare
+	//  * validate (initial step no validation, just want batch signing, e2e)
+	//  * locate funding output and batch details in preparte message
+	//  * send OrderMatchAccept to the server
+	//  * if taker: register funding shim based on result (do ahead of time
+	//  for each order to avoid race condition issues?)
+	//  * if maker: intiate funding w/ pending chan id of order ID
+	//  * wait until both sides pending chan funding
+	//  * if maker: sign inputs and send OrderMatchSign
+	//  * if taker: sign inputs and send OrderMatchSign
+	//  * both: wait for OrderMatchFinalize
+
+	for {
+		select {
+		case newBatch := <-b.newBatches:
+
+			err := b.validateBatch(newBatch.OrderBatch)
+			if err != nil {
+				log.Errorf("Nope!")
+
+				newBatch.Result <- &ExecutionResult{
+					Err: err,
+				}
+
+				continue
+			}
+
+			// TODO(roasbeef): fail if all
+		case <-b.quit:
+
+		}
+	}
+}
+
+// Submit...
+func (b *BatchExecutor) Submit(batch *matching.OrderBatch) (chan *ExecutionResult, error) {
+	b.newBatches <- &executionReq{
+		OrderBatch: batch,
+		Result:     make(chan *ExecutionResult, 1),
+	}
+	return nil, nil
+}
+
+// RegisterTrader...
+func (b *BatchExecutor) RegisterTrader(t *ActiveTrader) error {
+	b.Lock()
+	defer b.Unlock()
+
+	_, ok := b.activeTraders[matching.AccountID(t.AccountKey)]
+	if ok {
+		return fmt.Errorf("trader %x already registered",
+			t.AccountKey)
+	}
+	b.activeTraders[matching.AccountID(t.AccountKey)] = t
+
+	return nil
+}
+
+// UnregisterTrader...
+func (b *BatchExecutor) UnregisterTrader(t *ActiveTrader) error {
+	b.Lock()
+	defer b.Unlock()
+
+	delete(b.activeTraders, t.AccountKey)
+
+	return nil
+}
+
+func (b *BatchExecutor) HandleTraderMsg(m TraderMsg) error {
+	// TODO(roasbeef): Handle the different messages from the Trader.
+	switch msg := m.(type) {
+	case *TraderAcceptMsg:
+		log.Debugf("The Trader %x accepted: %v", msg.Trader.AccountKey,
+			msg)
+
+	case *TraderRejectMsg:
+		log.Debugf("The Trader %x rejected: %v", msg.Trader.AccountKey,
+			msg)
+
+	case *TraderSignMsg:
+		log.Debugf("The Trader %x signed: %v", msg.Trader.AccountKey,
+			msg)
+		msg.Trader.CommLine.Send <- &FinalizeMsg{
+			AcctKey: msg.Trader.AccountKey,
+		}
+		log.Trace("Sent finalize message to comm line.")
+
+	}
+
+	return nil
+}
