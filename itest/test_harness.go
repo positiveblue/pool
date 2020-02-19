@@ -111,6 +111,18 @@ func (h *harnessTest) Log(args ...interface{}) {
 	h.t.Log(args...)
 }
 
+// shutdown stops both the auction and trader server.
+func (h *harnessTest) shutdown() error {
+	// Allow both server and client to stop but only return the first error
+	// that accurs.
+	err := h.trader.stop()
+	err2 := h.auctioneer.stop()
+	if err != nil {
+		return err
+	}
+	return err2
+}
+
 // waitForNTxsInMempool polls until finding the desired number of transactions
 // in the provided miner's mempool. An error is returned if this number is not
 // met after the given timeout.

@@ -106,11 +106,6 @@ func TestAuctioneerServer(t *testing.T) {
 	}
 	defer lndHarness.TearDownAll()
 
-	// Create the err chan that the agora servers will write errors to. But
-	// because the servers themselves can only be started after lnd, we
-	// can't create them here yet.
-	agoraErrChan := make(chan error)
-
 	// Spawn a new goroutine to watch for any fatal errors that any of the
 	// running lnd processes encounter. If an error occurs, then the test
 	// case should naturally as a result and we log the server error here to
@@ -122,10 +117,8 @@ func TestAuctioneerServer(t *testing.T) {
 				if !more {
 					return
 				}
-				ht.Logf("lnd finished with error (stderr):\n%v", err)
-
-			case err := <-agoraErrChan:
-				panic(err)
+				ht.Logf("lnd finished with error (stderr):\n%v",
+					err)
 			}
 		}
 	}()
@@ -144,50 +137,18 @@ func TestAuctioneerServer(t *testing.T) {
 		ht.Fatalf("unable to set up test lightning network: %v", err)
 	}
 
-	// Create new in-memory listener that we are going to use to communicate
-	// with the agoraserver.
-	auctioneerRPCListener := bufconn.Listen(100)
-
-	// Start the auctioneer server harness.
-	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
-		RPCListener: auctioneerRPCListener,
-		BackendCfg:  lndHarness.BackendCfg,
-		NetParams:   harnessNetParams,
-		LndNode:     lndHarness.Alice,
-	})
-	if err != nil {
-		t.Fatalf("could not create auction server: %v", err)
-	}
-	err = auctioneerHarness.start(agoraErrChan)
-	if err != nil {
-		t.Fatalf("could not start auction server: %v", err)
-	}
-
-	auctioneerConn, err := auctioneerRPCListener.Dial()
-	if err != nil {
-		t.Fatalf("could not connect to auction server: %v", err)
-	}
-	// Start the trader server harness.
-	traderHarness, err := newTraderHarness(traderConfig{
-		AuctioneerConn: auctioneerConn,
-		BackendCfg:     lndHarness.BackendCfg,
-		NetParams:      harnessNetParams,
-		LndNode:        lndHarness.Bob,
-	})
-	if err != nil {
-		t.Fatalf("could not create trader server: %v", err)
-	}
-	err = traderHarness.start(agoraErrChan)
-	if err != nil {
-		t.Fatalf("could not start trader server: %v", err)
-	}
-
 	t.Logf("Running %v integration tests", len(testCases))
 	for _, testCase := range testCases {
 		logLine := fmt.Sprintf("STARTING ============ %v ============\n",
 			testCase.name)
 
-		err := lndHarness.EnsureConnected(
+		// The auction server and client are both freshly created and
+		// later discarded for each test run to assure no state is taken
+		// over between runs.
+		traderHarness, auctioneerHarness := setupHarnesses(
+			t, lndHarness,
+		)
+		err = lndHarness.EnsureConnected(
 			context.Background(), lndHarness.Alice, lndHarness.Bob,
 		)
 		if err != nil {
@@ -207,6 +168,12 @@ func TestAuctioneerServer(t *testing.T) {
 				traderHarness,
 			)
 			ht.RunTestCase(testCase)
+
+			// Shut down both client and server to remove all state.
+			err := ht.shutdown()
+			if err != nil {
+				t.Fatalf("error shutting down harness: %v", err)
+			}
 		})
 
 		// Stop at the first failure. Mimic behavior of original test
@@ -215,4 +182,49 @@ func TestAuctioneerServer(t *testing.T) {
 			break
 		}
 	}
+}
+
+// setupHarnesses creates new server and client harnesses that are connected
+// to each other through an in-memory gRPC connection.
+func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
+	*traderHarness, *auctioneerHarness) {
+
+	// Create new in-memory listener that we are going to use to communicate
+	// with the agoraserver.
+	auctioneerRPCListener := bufconn.Listen(100)
+
+	// Start the auctioneer server harness.
+	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
+		RPCListener: auctioneerRPCListener,
+		BackendCfg:  lndHarness.BackendCfg,
+		NetParams:   harnessNetParams,
+		LndNode:     lndHarness.Alice,
+	})
+	if err != nil {
+		t.Fatalf("could not create auction server: %v", err)
+	}
+	err = auctioneerHarness.start()
+	if err != nil {
+		t.Fatalf("could not start auction server: %v", err)
+	}
+
+	auctioneerConn, err := auctioneerRPCListener.Dial()
+	if err != nil {
+		t.Fatalf("could not connect to auction server: %v", err)
+	}
+	// Start the trader server harness.
+	traderHarness, err := newTraderHarness(traderConfig{
+		AuctioneerConn: auctioneerConn,
+		BackendCfg:     lndHarness.BackendCfg,
+		NetParams:      harnessNetParams,
+		LndNode:        lndHarness.Bob,
+	})
+	if err != nil {
+		t.Fatalf("could not create trader server: %v", err)
+	}
+	err = traderHarness.start()
+	if err != nil {
+		t.Fatalf("could not start trader server: %v", err)
+	}
+	return traderHarness, auctioneerHarness
 }

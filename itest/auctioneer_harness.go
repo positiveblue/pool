@@ -8,7 +8,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -28,13 +27,10 @@ var (
 // auctioneerHarness is a test harness that holds everything that is needed to
 // start an instance of the auctioneer server.
 type auctioneerHarness struct {
-	cfg      *auctioneerConfig
-	agoraCfg *agora.Config
+	cfg    *auctioneerConfig
+	server *agora.Server
 
 	etcd *embed.Etcd
-
-	quit chan struct{}
-	wg   sync.WaitGroup
 
 	clmrpc.ChannelAuctioneerClient
 }
@@ -60,14 +56,13 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 		}
 	}
 	return &auctioneerHarness{
-		cfg:  &cfg,
-		quit: make(chan struct{}),
+		cfg: &cfg,
 	}, nil
 }
 
 // start spins up an in-memory etcd server and the auctioneer server listening
 // for gRPC connections on a bufconn.
-func (hs *auctioneerHarness) start(errChan chan<- error) error {
+func (hs *auctioneerHarness) start() error {
 	// Start the embedded etcd server.
 	err := hs.initEtcdServer()
 	if err != nil {
@@ -83,16 +78,15 @@ func (hs *auctioneerHarness) start(errChan chan<- error) error {
 	)
 
 	// Redirect output from the nodes to log files.
-	hs.agoraCfg = &agora.Config{
-		LogDir:          ".",
-		MaxLogFiles:     99,
-		MaxLogFileSize:  999,
-		ShutdownChannel: hs.quit,
-		Network:         hs.cfg.NetParams.Name,
-		Insecure:        true,
-		BaseDir:         hs.cfg.BaseDir,
-		DebugLevel:      "debug",
-		RPCListener:     hs.cfg.RPCListener,
+	cfg := &agora.Config{
+		LogDir:         ".",
+		MaxLogFiles:    99,
+		MaxLogFileSize: 999,
+		Network:        hs.cfg.NetParams.Name,
+		Insecure:       true,
+		BaseDir:        hs.cfg.BaseDir,
+		DebugLevel:     "debug",
+		RPCListener:    hs.cfg.RPCListener,
 		Lnd: &agora.LndConfig{
 			Host:        hs.cfg.LndNode.Cfg.RPCAddr(),
 			MacaroonDir: rpcMacaroonDir,
@@ -104,18 +98,10 @@ func (hs *auctioneerHarness) start(errChan chan<- error) error {
 			Password: "",
 		},
 	}
-
-	// Launch a new goroutine which that bubbles up any potential fatal
-	// process errors to the goroutine running the tests.
-	hs.wg.Add(1)
-	go func() {
-		defer hs.wg.Done()
-		err := agora.Start(hs.agoraCfg)
-		if err != nil {
-			fmt.Printf("Auctioneer server terminated with %v", err)
-			errChan <- err
-		}
-	}()
+	hs.server, err = agora.NewServer(cfg)
+	if err != nil {
+		return fmt.Errorf("could not start agora server: %v", err)
+	}
 
 	// Since Stop uses the LightningClient to stop the node, if we fail to
 	// get a connected client, we have to kill the process.
@@ -132,6 +118,21 @@ func (hs *auctioneerHarness) start(errChan chan<- error) error {
 		rpcConn,
 	)
 	return nil
+}
+
+// stop shuts down the auctioneer server with its associated etcd server and
+// finally deletes the server's temporary data directory.
+func (hs *auctioneerHarness) stop() error {
+	// Don't return the error immediately if stopping goes wrong, give etcd
+	// a chance to stop as well and always remove the temp directory.
+	err := hs.server.Stop()
+	hs.etcd.Close()
+
+	// The etcd data dir is also below the base dir and will be removed as
+	// well.
+	_ = os.RemoveAll(hs.cfg.BaseDir)
+
+	return err
 }
 
 // initEtcdServer starts and initializes an embedded etcd server.
