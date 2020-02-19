@@ -9,15 +9,15 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-errors/errors v1.0.1
 	github.com/golang/protobuf v1.3.2
-	github.com/grpc-ecosystem/grpc-gateway v1.10.0
+	github.com/grpc-ecosystem/grpc-gateway v1.12.2
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/kirin v0.0.0-20200107133748-8b731e87e4b8
-	github.com/lightninglabs/loop v0.3.1-alpha.0.20200122195411-37a245a8dd28
+	github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585
+	github.com/lightninglabs/loop v0.4.1-beta.0.20200218000029-ba6b4e782eff
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.9.0-beta-rc3.0.20200121213302-a2977c4438b5
 	github.com/lightningnetwork/lnd/cert v1.0.0
 	github.com/urfave/cli v1.20.0
-	golang.org/x/crypto v0.0.0-20190829043050-9756ffdc2472
+	golang.org/x/crypto v0.0.0-20200109152110-61a87790db17
 	google.golang.org/genproto v0.0.0-20191108220845-16a3f7862a1a
 	google.golang.org/grpc v1.25.1
 )

@@ -68,6 +68,7 @@ func Start(cfg *Config) error {
 	interceptor := auth.ServerInterceptor{}
 	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
+		grpc.StreamInterceptor(interceptor.StreamInterceptor),
 	}
 	switch {
 	// If auto cert is cfgured, then we'll create a cert automatically
