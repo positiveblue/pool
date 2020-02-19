@@ -17,6 +17,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -27,8 +28,10 @@ var (
 // auctioneerHarness is a test harness that holds everything that is needed to
 // start an instance of the auctioneer server.
 type auctioneerHarness struct {
-	cfg    *auctioneerConfig
-	server *agora.Server
+	cfg *auctioneerConfig
+
+	serverCfg *agora.Config
+	server    *agora.Server
 
 	etcd *embed.Etcd
 
@@ -55,8 +58,38 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			return nil, err
 		}
 	}
+
+	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
+		return nil, fmt.Errorf("lnd node configuration cannot be nil")
+	}
+	rpcMacaroonDir := filepath.Join(
+		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
+	)
+
 	return &auctioneerHarness{
 		cfg: &cfg,
+		serverCfg: &agora.Config{
+			LogDir:           ".",
+			MaxLogFiles:      99,
+			MaxLogFileSize:   999,
+			Network:          cfg.NetParams.Name,
+			Insecure:         true,
+			BaseDir:          cfg.BaseDir,
+			OrderSubmitFee:   1337,
+			SubscribeTimeout: 500 * time.Millisecond,
+			DebugLevel:       "debug",
+			RPCListener:      cfg.RPCListener,
+			Lnd: &agora.LndConfig{
+				Host:        cfg.LndNode.Cfg.RPCAddr(),
+				MacaroonDir: rpcMacaroonDir,
+				TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
+			},
+			Etcd: &agora.EtcdConfig{
+				Host:     etcdListenAddr,
+				User:     "",
+				Password: "",
+			},
+		},
 	}, nil
 }
 
@@ -69,36 +102,15 @@ func (hs *auctioneerHarness) start() error {
 		return fmt.Errorf("could not start embedded etcd: %v", err)
 	}
 
-	if hs.cfg.LndNode == nil || hs.cfg.LndNode.Cfg == nil {
-		return fmt.Errorf("lnd node configuration cannot be nil")
-	}
-	rpcMacaroonDir := filepath.Join(
-		hs.cfg.LndNode.Cfg.DataDir, "chain", "bitcoin",
-		hs.cfg.NetParams.Name,
-	)
+	return hs.runServer()
+}
 
-	// Redirect output from the nodes to log files.
-	cfg := &agora.Config{
-		LogDir:         ".",
-		MaxLogFiles:    99,
-		MaxLogFileSize: 999,
-		Network:        hs.cfg.NetParams.Name,
-		Insecure:       true,
-		BaseDir:        hs.cfg.BaseDir,
-		DebugLevel:     "debug",
-		RPCListener:    hs.cfg.RPCListener,
-		Lnd: &agora.LndConfig{
-			Host:        hs.cfg.LndNode.Cfg.RPCAddr(),
-			MacaroonDir: rpcMacaroonDir,
-			TLSPath:     hs.cfg.LndNode.Cfg.TLSCertPath,
-		},
-		Etcd: &agora.EtcdConfig{
-			Host:     etcdListenAddr,
-			User:     "",
-			Password: "",
-		},
-	}
-	hs.server, err = agora.NewServer(cfg)
+// runServer starts the actual auctioneer server after the configuration and
+// etcd server have already been created. Can be used to start the same node
+// up again after it was turned off with halt().
+func (hs *auctioneerHarness) runServer() error {
+	var err error
+	hs.server, err = agora.NewServer(hs.serverCfg)
 	if err != nil {
 		return fmt.Errorf("could not start agora server: %v", err)
 	}
@@ -109,7 +121,7 @@ func (hs *auctioneerHarness) start() error {
 	if err != nil {
 		return fmt.Errorf("could not listen on bufconn: %v", err)
 	}
-	rpcConn, err := hs.ConnectRPC(netConn)
+	rpcConn, err := ConnectAuctioneerRPC(netConn, hs.serverCfg.TLSCertPath)
 	if err != nil {
 		return err
 	}
@@ -120,12 +132,20 @@ func (hs *auctioneerHarness) start() error {
 	return nil
 }
 
+// halt temporarily shuts down the auctioneer server in a way that it can be
+// started again later. The etcd server keeps running.
+func (hs *auctioneerHarness) halt() error {
+	err := hs.server.Stop()
+	hs.server = nil
+	return err
+}
+
 // stop shuts down the auctioneer server with its associated etcd server and
 // finally deletes the server's temporary data directory.
 func (hs *auctioneerHarness) stop() error {
 	// Don't return the error immediately if stopping goes wrong, give etcd
 	// a chance to stop as well and always remove the temp directory.
-	err := hs.server.Stop()
+	err := hs.halt()
 	hs.etcd.Close()
 
 	// The etcd data dir is also below the base dir and will be removed as
@@ -162,23 +182,40 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 	return nil
 }
 
-// ConnectRPC uses the non-TLS in-memory buffer connection to dial to the
+// ConnectAuctioneerRPC uses the in-memory buffer connection to dial to the
 // agora server.
-func (hs *auctioneerHarness) ConnectRPC(conn net.Conn) (*grpc.ClientConn,
-	error) {
+func ConnectAuctioneerRPC(conn net.Conn, serverCertPath string) (
+	*grpc.ClientConn, error) {
 
-	opts := []grpc.DialOption{
+	dialer := func(ctx context.Context, target string) (net.Conn, error) {
+		return conn, nil
+	}
+	defaultOpts, err := defaultDialOptions(serverCertPath)
+	if err != nil {
+		return nil, err
+	}
+	opts := append(defaultOpts, grpc.WithContextDialer(dialer))
+	return grpc.DialContext(context.Background(), "", opts...)
+}
+
+// defaultDialOptions returns the default RPC dial options.
+func defaultDialOptions(serverCertPath string) ([]grpc.DialOption, error) {
+	transportOpts := grpc.WithInsecure()
+	if serverCertPath != "" {
+		creds, err := credentials.NewClientTLSFromFile(
+			serverCertPath, "",
+		)
+		if err != nil {
+			return nil, err
+		}
+		transportOpts = grpc.WithTransportCredentials(creds)
+	}
+	return []grpc.DialOption{
 		grpc.WithBlock(),
-		grpc.WithInsecure(),
-		grpc.WithContextDialer(func(ctx context.Context,
-			target string) (net.Conn, error) {
-
-			return conn, nil
-		}),
+		transportOpts,
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff:           backoff.DefaultConfig,
 			MinConnectTimeout: 10 * time.Second,
 		}),
-	}
-	return grpc.DialContext(context.Background(), "", opts...)
+	}, nil
 }

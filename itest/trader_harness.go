@@ -14,16 +14,16 @@ import (
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/test/bufconn"
 )
 
 // traderHarness is a test harness that holds everything that is needed to
 // start an instance of the trader server.
 type traderHarness struct {
-	cfg      *traderConfig
-	server   *client.Server
-	listener *bufconn.Listener
+	cfg       *traderConfig
+	server    *client.Server
+	clientCfg *client.Config
+	listener  *bufconn.Listener
 
 	clmrpc.TraderClient
 }
@@ -33,6 +33,7 @@ type traderHarness struct {
 type traderConfig struct {
 	AuctioneerConn net.Conn
 	BackendCfg     lntest.BackendConfig
+	ServerTLSPath  string
 	LndNode        *lntest.HarnessNode
 	NetParams      *chaincfg.Params
 	BaseDir        string
@@ -48,44 +49,45 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 			return nil, err
 		}
 	}
+
+	// Create new in-memory listener that we are going to use to communicate
+	// with the agorad.
+	listener := bufconn.Listen(100)
+
+	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
+		return nil, fmt.Errorf("lnd node configuration cannot be nil")
+	}
+	rpcMacaroonDir := filepath.Join(
+		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
+	)
+
 	return &traderHarness{
-		cfg: &cfg,
+		cfg:      &cfg,
+		listener: listener,
+		clientCfg: &client.Config{
+			LogDir:         ".",
+			MaxLogFiles:    99,
+			MaxLogFileSize: 999,
+			Network:        cfg.NetParams.Name,
+			Insecure:       true,
+			BaseDir:        cfg.BaseDir,
+			DebugLevel:     "debug",
+			MinBackoff:     100 * time.Millisecond,
+			MaxBackoff:     500 * time.Millisecond,
+			RPCListener:    listener,
+			Lnd: &client.LndConfig{
+				Host:        cfg.LndNode.Cfg.RPCAddr(),
+				MacaroonDir: rpcMacaroonDir,
+				TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
+			},
+		},
 	}, nil
 }
 
 // start spins up the trader server listening for gRPC connections on a bufconn.
 func (hs *traderHarness) start() error {
-	// Create new in-memory listener that we are going to use to communicate
-	// with the agorad.
-	hs.listener = bufconn.Listen(100)
-
-	if hs.cfg.LndNode == nil || hs.cfg.LndNode.Cfg == nil {
-		return fmt.Errorf("lnd node configuration cannot be nil")
-	}
-	rpcMacaroonDir := filepath.Join(
-		hs.cfg.LndNode.Cfg.DataDir, "chain", "bitcoin",
-		hs.cfg.NetParams.Name,
-	)
-
-	// Redirect output from the nodes to log files.
-	cfg := &client.Config{
-		LogDir:         ".",
-		MaxLogFiles:    99,
-		MaxLogFileSize: 999,
-		Network:        hs.cfg.NetParams.Name,
-		Insecure:       true,
-		BaseDir:        hs.cfg.BaseDir,
-		DebugLevel:     "debug",
-		RPCListener:    hs.listener,
-		Lnd: &client.LndConfig{
-			Host:        hs.cfg.LndNode.Cfg.RPCAddr(),
-			MacaroonDir: rpcMacaroonDir,
-			TLSPath:     hs.cfg.LndNode.Cfg.TLSCertPath,
-		},
-		AuctioneerDialOpts: inMemoryDialOpts(hs.cfg.AuctioneerConn),
-	}
 	var err error
-	hs.server, err = client.NewServer(cfg)
+	hs.server, err = client.NewServer(hs.clientCfg)
 	if err != nil {
 		return fmt.Errorf("could not create trader server %v", err)
 	}
@@ -100,14 +102,11 @@ func (hs *traderHarness) start() error {
 	if err != nil {
 		return fmt.Errorf("could not listen on bufconn: %v", err)
 	}
-	rpcOpts := inMemoryDialOpts(netConn)
-	rpcConn, err := grpc.Dial("", rpcOpts...)
+	rpcConn, err := ConnectAuctioneerRPC(netConn, hs.cfg.ServerTLSPath)
 	if err != nil {
 		return err
 	}
-	hs.TraderClient = clmrpc.NewTraderClient(
-		rpcConn,
-	)
+	hs.TraderClient = clmrpc.NewTraderClient(rpcConn)
 	return nil
 }
 
@@ -121,20 +120,17 @@ func (hs *traderHarness) stop() error {
 	return err
 }
 
-// inMemoryDialOpts creates the dial options that are needed to connect over the
-// non-TLS in-memory buffer connection to the agora server.
-func inMemoryDialOpts(conn net.Conn) []grpc.DialOption {
-	return []grpc.DialOption{
-		grpc.WithBlock(),
-		grpc.WithInsecure(),
-		grpc.WithContextDialer(func(ctx context.Context,
-			target string) (net.Conn, error) {
+// auctionServerDialOpts creates the dial options that are needed to connect
+// over the harness' connection to the agora server.
+func (hs *traderHarness) auctionServerDialOpts(serverCertPath string) (
+	[]grpc.DialOption, error) {
 
-			return conn, nil
-		}),
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff:           backoff.DefaultConfig,
-			MinConnectTimeout: 10 * time.Second,
-		}),
+	dialer := func(ctx context.Context, target string) (net.Conn, error) {
+		return hs.cfg.AuctioneerConn, nil
 	}
+	defaultOpts, err := defaultDialOptions(serverCertPath)
+	if err != nil {
+		return nil, err
+	}
+	return append(defaultOpts, grpc.WithContextDialer(dialer)), nil
 }

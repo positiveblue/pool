@@ -14,7 +14,6 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lntest"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 // TestAuctioneerServer performs a series of integration tests amongst a
@@ -189,38 +188,30 @@ func TestAuctioneerServer(t *testing.T) {
 func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
 	*traderHarness, *auctioneerHarness) {
 
-	// Create new in-memory listener that we are going to use to communicate
-	// with the agoraserver.
-	auctioneerRPCListener := bufconn.Listen(100)
-
-	// Start the auctioneer server harness.
+	// Create the two harnesses but don't start them yet, they need to be
+	// connected through the bufconn first.
 	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
-		RPCListener: auctioneerRPCListener,
-		BackendCfg:  lndHarness.BackendCfg,
-		NetParams:   harnessNetParams,
-		LndNode:     lndHarness.Alice,
+		BackendCfg: lndHarness.BackendCfg,
+		NetParams:  harnessNetParams,
+		LndNode:    lndHarness.Alice,
 	})
 	if err != nil {
 		t.Fatalf("could not create auction server: %v", err)
 	}
-	err = auctioneerHarness.start()
-	if err != nil {
-		t.Fatalf("could not start auction server: %v", err)
-	}
-
-	auctioneerConn, err := auctioneerRPCListener.Dial()
-	if err != nil {
-		t.Fatalf("could not connect to auction server: %v", err)
-	}
-	// Start the trader server harness.
 	traderHarness, err := newTraderHarness(traderConfig{
-		AuctioneerConn: auctioneerConn,
-		BackendCfg:     lndHarness.BackendCfg,
-		NetParams:      harnessNetParams,
-		LndNode:        lndHarness.Bob,
+		BackendCfg: lndHarness.BackendCfg,
+		NetParams:  harnessNetParams,
+		LndNode:    lndHarness.Bob,
 	})
 	if err != nil {
 		t.Fatalf("could not create trader server: %v", err)
+	}
+
+	// Connect them together through the in-memory connection and then start
+	// them.
+	err = connectServerClient(auctioneerHarness, traderHarness, false)
+	if err != nil {
+		t.Fatalf("could not connect client to server: %v", err)
 	}
 	err = traderHarness.start()
 	if err != nil {

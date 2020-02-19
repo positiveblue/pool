@@ -13,8 +13,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"google.golang.org/grpc/test/bufconn"
 )
 
 var (
@@ -113,14 +115,81 @@ func (h *harnessTest) Log(args ...interface{}) {
 
 // shutdown stops both the auction and trader server.
 func (h *harnessTest) shutdown() error {
+	h.Log("Shutting down harness")
 	// Allow both server and client to stop but only return the first error
-	// that accurs.
+	// that occurs.
 	err := h.trader.stop()
 	err2 := h.auctioneer.stop()
 	if err != nil {
 		return err
 	}
 	return err2
+}
+
+// restartServer stops the auctioneer server and then starts it again, forcing
+// all connected traders to reconnect.
+func (h *harnessTest) restartServer() {
+	err := h.auctioneer.halt()
+	if err != nil {
+		h.t.Fatalf("could not halt auctioneer server: %v", err)
+	}
+
+	// Wait a few milliseconds to make sure a client reconnect backoff is
+	// triggered.
+	time.Sleep(300 * time.Millisecond)
+
+	err = connectServerClient(h.auctioneer, h.trader, true)
+	if err != nil {
+		h.t.Fatalf("could not reconnect server and client: %v", err)
+	}
+}
+
+// connectServerClient creates a new in-memory bufconn connection and connects
+// the client to the server through it. The server will be started in the
+// process, otherwise the client wouldn't be able to connect.
+func connectServerClient(ah *auctioneerHarness, th *traderHarness,
+	isRestart bool) error {
+
+	// Create new in-memory listener that we are going to use to communicate
+	// with the agoraserver.
+	auctioneerRPCListener := bufconn.Listen(100)
+
+	// Inject the listener into server and start it.
+	ah.cfg.RPCListener = auctioneerRPCListener
+	ah.serverCfg.RPCListener = auctioneerRPCListener
+
+	var err error
+	if isRestart {
+		err = ah.runServer()
+	} else {
+		err = ah.start()
+	}
+	if err != nil {
+		return err
+	}
+
+	// Connect the client and inject the connection into the harness.
+	auctioneerConn, err := auctioneerRPCListener.Dial()
+	if err != nil {
+		return err
+	}
+	th.cfg.AuctioneerConn = auctioneerConn
+	th.clientCfg.AuctioneerDialOpts, err = th.auctionServerDialOpts(
+		ah.serverCfg.TLSCertPath,
+	)
+	if err != nil {
+		return err
+	}
+
+	// After a restart, the bufconn is changed out and we need to reconnect
+	// the client.
+	if isRestart {
+		err := th.server.AuctioneerClient.Start()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // waitForNTxsInMempool polls until finding the desired number of transactions
@@ -248,10 +317,10 @@ func assertTraderAccountState(t *harnessTest, traderKey []byte,
 
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
-func openAccountAndAssert(ctx context.Context, t *harnessTest,
+func openAccountAndAssert(t *harnessTest,
 	req *clmrpc.InitAccountRequest) *clmrpc.Account {
 
-	acct, err := t.trader.InitAccount(ctx, req)
+	acct, err := t.trader.InitAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)
 	}
@@ -282,13 +351,13 @@ func openAccountAndAssert(ctx context.Context, t *harnessTest,
 // either the expiration or multi-sig path, depending on whether the account has
 // already expired. Once the spending transaction confirms, we assert that the
 // account is marked as closed.
-func closeAccountAndAssert(ctx context.Context, t *harnessTest,
+func closeAccountAndAssert(t *harnessTest,
 	req *clmrpc.CloseAccountRequest) *wire.MsgTx {
 
 	// Send the close account request and wait for the closing transaction
 	// to be broadcast. The account should also be found in a
 	// StatePendingClosed state.
-	resp, err := t.trader.CloseAccount(ctx, req)
+	resp, err := t.trader.CloseAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not close account %x: %v", req.TraderKey, err)
 	}
@@ -317,4 +386,37 @@ func closeAccountAndAssert(ctx context.Context, t *harnessTest,
 	assertTraderAccountState(t, req.TraderKey, clmrpc.AccountState_CLOSED)
 
 	return closeTx
+}
+
+// assertTraderSubscribed makes sure the trader with the given token is
+// connected to the auction server and has an active account subscription.
+func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
+	acct *clmrpc.Account) {
+
+	// Make sure the trader stream was registered.
+	err := wait.NoError(func() error {
+		traderStreams := t.auctioneer.server.ConnectedStreams()
+		if len(traderStreams) != 1 {
+			return fmt.Errorf("unexpected number of trader "+
+				"streams, got %d expected %d",
+				len(traderStreams), 1)
+		}
+		stream, ok := traderStreams[token]
+		if !ok {
+			return fmt.Errorf("trader stream for token %v not "+
+				"found", token)
+		}
+
+		var pubKey [33]byte
+		copy(pubKey[:], acct.TraderKey)
+		if _, ok := stream.Subscriptions[pubKey]; !ok {
+			return fmt.Errorf("account %v not subscribed", pubKey)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("trader stream was not registered before timeout: %v",
+			err)
+	}
 }

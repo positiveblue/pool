@@ -8,6 +8,10 @@ var testCases = []*testCase{
 		test: testAccountCreation,
 	},
 	{
+		name: "create account subscription",
+		test: testAccountSubscription,
+	},
+	{
 		name: "submit order",
 		test: testOrderSubmission,
 	},
