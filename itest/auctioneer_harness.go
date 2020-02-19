@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/embed"
 	"github.com/lightninglabs/agora"
+	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
@@ -33,7 +34,8 @@ type auctioneerHarness struct {
 	serverCfg *agora.Config
 	server    *agora.Server
 
-	etcd *embed.Etcd
+	etcd  *embed.Etcd
+	store agoradb.Store
 
 	clmrpc.ChannelAuctioneerClient
 }
@@ -180,6 +182,20 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 		hs.etcd.Close()
 		_ = os.RemoveAll(tempDir)
 		return fmt.Errorf("server took too long to start")
+	}
+
+	hs.store, err = agoradb.NewEtcdStore(
+		*hs.cfg.LndNode.Cfg.NetParams, etcdListenAddr, "", "",
+	)
+	if err != nil {
+		return fmt.Errorf("unable to connect to etcd: %v", err)
+	}
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+	if err := hs.store.Init(ctx); err != nil {
+		return fmt.Errorf("unable to initialize etcd: %v", err)
 	}
 
 	return nil
