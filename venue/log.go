@@ -1,11 +1,11 @@
-package trader
+package venue
 
 import (
 	"github.com/btcsuite/btclog"
 	"github.com/lightningnetwork/lnd/build"
 )
 
-const Subsystem = "TRDR"
+const Subsystem = "VNUE"
 
 // log is a logger that is initialized with no output filters.  This
 // means the package will not perform any logging by default until the caller

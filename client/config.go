@@ -3,6 +3,7 @@ package client
 import (
 	"net"
 	"path/filepath"
+	"time"
 
 	"github.com/btcsuite/btcutil"
 	"google.golang.org/grpc"
@@ -25,6 +26,9 @@ var (
 
 	defaultMaxLogFiles    = 3
 	defaultMaxLogFileSize = 10
+
+	defaultMinBackoff = 5 * time.Second
+	defaultMaxBackoff = 1 * time.Minute
 )
 
 type LndConfig struct {
@@ -47,7 +51,9 @@ type Config struct {
 	MaxLogFiles    int    `long:"maxlogfiles" description:"Maximum logfiles to keep (0 for no rotation)"`
 	MaxLogFileSize int    `long:"maxlogfilesize" description:"Maximum logfile size in MB"`
 
-	DebugLevel string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
+	MinBackoff time.Duration `long:"minbackoff" description:"Shortest backoff when reconnecting to the server. Valid time units are {s, m, h}."`
+	MaxBackoff time.Duration `long:"maxbackoff" description:"Longest backoff when reconnecting to the server. Valid time units are {s, m, h}."`
+	DebugLevel string        `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 
 	Lnd *LndConfig `group:"lnd" namespace:"lnd"`
 
@@ -60,15 +66,17 @@ type Config struct {
 	// AuctioneerDialOpts is a list of dial options that should be used when
 	// dialing the auctioneer server.
 	AuctioneerDialOpts []grpc.DialOption
-
-	// ShutdownChannel is the channel that must be provided where agorad
-	// listens for a shutdown signal.
-	ShutdownChannel <-chan struct{}
 }
 
 const (
 	MainnetServer = "auction.lightning.today:12009"
 	TestnetServer = "test.auction.lightning.today:12009"
+
+	// defaultRPCTimeout is the default number of seconds an unary RPC call
+	// is allowed to take to complete.
+	defaultRPCTimeout  = 30 * time.Second
+	defaultLsatMaxCost = btcutil.Amount(1000)
+	defaultLsatMaxFee  = btcutil.Amount(10)
 )
 
 var DefaultConfig = Config{
@@ -80,6 +88,8 @@ var DefaultConfig = Config{
 	LogDir:         defaultLogDir,
 	MaxLogFiles:    defaultMaxLogFiles,
 	MaxLogFileSize: defaultMaxLogFileSize,
+	MinBackoff:     defaultMinBackoff,
+	MaxBackoff:     defaultMaxBackoff,
 	DebugLevel:     defaultLogLevel,
 	Lnd: &LndConfig{
 		Host: "localhost:10009",

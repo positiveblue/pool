@@ -9,7 +9,7 @@ import (
 // testOrderSubmission tests that a simple ask order can be created on both the
 // trader server and the auction server.
 func testOrderSubmission(t *harnessTest) {
-	var ctx = context.Background()
+	ctx := context.Background()
 
 	// We need the current best block for the account expiry.
 	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
@@ -19,7 +19,7 @@ func testOrderSubmission(t *harnessTest) {
 
 	// Start by creating an account over 2M sats that is valid for the next
 	// 1000 blocks.
-	acct := openAccountAndAssert(ctx, t, &clmrpc.InitAccountRequest{
+	acct := openAccountAndAssert(t, &clmrpc.InitAccountRequest{
 		AccountValue:  2000000,
 		AccountExpiry: uint32(currentHeight) + 1000,
 	})

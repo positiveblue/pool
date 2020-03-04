@@ -52,3 +52,5 @@ profile.tmp
 /itest/lnd-itest
 /itest/regtest/*.log
 /itest/*.log
+/itest/.backendlogs
+/itest/.minerlogs
