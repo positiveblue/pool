@@ -263,18 +263,8 @@ func (m *MultiUnitMatchMaker) MatchBatch(bids []*order.Bid,
 			matchedIndex[ask.Nonce()] = struct{}{}
 
 			matchedOrder := MatchedOrder{
-				Asker: Trader{
-					AccountKey:      ask.Acct.TraderKeyRaw,
-					AccountExpiry:   ask.Acct.Expiry,
-					AccountOutPoint: ask.Acct.OutPoint,
-					AccountBalance:  ask.Acct.Value,
-				},
-				Bidder: Trader{
-					AccountKey:      bid.Acct.TraderKeyRaw,
-					AccountExpiry:   bid.Acct.Expiry,
-					AccountOutPoint: bid.Acct.OutPoint,
-					AccountBalance:  bid.Acct.Value,
-				},
+				Asker:  NewTraderFromAccount(ask.Acct),
+				Bidder: NewTraderFromAccount(bid.Acct),
 				Details: OrderPair{
 					Ask:   ask,
 					Bid:   bid,
