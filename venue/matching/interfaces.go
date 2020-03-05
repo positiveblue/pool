@@ -34,7 +34,7 @@ const (
 type PriceQuote struct {
 	// MatchingRate is the rate that the two orders matched at. This rate
 	// is the bidder's price.
-	MatchingRate FixedRatePremium
+	MatchingRate orderT.FixedRatePremium
 
 	// TotalSatsCleared is the total amount of satoshis cleared, or the
 	// channel size that will ultimately be created once the order is
@@ -127,7 +127,7 @@ type PriceClearer interface {
 	// the entire match set. Only a single price is to be returned. Many
 	// possible algorithms exists to determine a uniform clearing price
 	// such as: first-rejected-bid, last-accepted-bid, and so on.
-	ExtractClearingPrice(*MatchSet) (FixedRatePremium, error)
+	ExtractClearingPrice(*MatchSet) (orderT.FixedRatePremium, error)
 }
 
 // OrderBatch is a final matched+cleared auction batch. This batch contains
@@ -146,7 +146,7 @@ type OrderBatch struct {
 
 	// ClearingPrice is the single clearing price that all traders in the
 	// batch will pay as computed within the FeeReport above.
-	ClearingPrice FixedRatePremium
+	ClearingPrice orderT.FixedRatePremium
 }
 
 // BatchAuctioneer is the main entry point of this package. The BatchAuctioneer

@@ -1,10 +1,10 @@
 package batchtx
 
 import (
-	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmscript"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -88,31 +88,7 @@ func (c *chainFeeEstimator) EstimateTraderFee(acctID matching.AccountID) btcutil
 		return 0
 	}
 
-	var weightEstimate int64
-
-	// First we'll tack on the size of their account output that will be
-	// threaded through in this batch.
-	weightEstimate += input.P2WSHOutputSize
-
-	// Next we'll add the size of a typical input to account for the input
-	// spending their account outpoint.
-	weightEstimate += input.InputSize
-
-	// Next, for each channel that will be created involving this trader,
-	// we'll add the size of a regular P2WSH output. We divide value by two
-	// as the maker and taker will split this fees.
-	chanOutputSize := uint32(input.P2WSHOutputSize)
-	weightEstimate += int64(chanOutputSize*numTraderChans+1) / 2
-
-	// At this point we've tallied all the non-witness data, so we multiply
-	// by 4 to scale it up
-	weightEstimate *= blockchain.WitnessScaleFactor
-
-	// Finally, we tack on the size of the witness spending the account
-	// outpoint.
-	weightEstimate += clmscript.MultiSigWitnessSize
-
-	return c.feeRate.FeeForWeight(weightEstimate)
+	return orderT.EstimateTraderFee(numTraderChans, c.feeRate)
 }
 
 // AuctioneerFee computes the "fee surplus" or the fees that the auctioneer

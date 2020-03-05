@@ -129,7 +129,7 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	//  * clearMatch... (updates internal state, private method?)
 
 	return PriceQuote{
-		MatchingRate:     FixedRatePremium(bid.FixedRate),
+		MatchingRate:     orderT.FixedRatePremium(bid.FixedRate),
 		TotalSatsCleared: unitsMatched.ToSatoshis(),
 		UnitsMatched:     unitsMatched,
 		UnitsUnmatched:   unitsUnmatched,

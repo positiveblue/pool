@@ -13,7 +13,7 @@ import (
 
 type mockFeeSchedule struct {
 	baseFee    btcutil.Amount
-	exeFeeRate FixedRatePremium
+	exeFeeRate orderT.FixedRatePremium
 }
 
 func (m *mockFeeSchedule) BaseFee() btcutil.Amount {
@@ -21,10 +21,10 @@ func (m *mockFeeSchedule) BaseFee() btcutil.Amount {
 }
 
 func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
-	return orderT.CalcFee(amt, uint32(m.exeFeeRate), 0)
+	return orderT.PerBlockPremium(amt, uint32(m.exeFeeRate))
 }
 
-var _ FeeSchedule = (*mockFeeSchedule)(nil)
+var _ orderT.FeeSchedule = (*mockFeeSchedule)(nil)
 
 func genRandMatchedOrders(r *rand.Rand, opts ...orderGenOption) []MatchedOrder {
 	numMatchedOrders := uint16(r.Int31()) % 1000
@@ -59,7 +59,7 @@ func genRandMatchedOrders(r *rand.Rand, opts ...orderGenOption) []MatchedOrder {
 
 // For simplicity, we'll use the same clearing price of 1% for the
 // entire batch.
-const clearingPrice = FixedRatePremium(10000)
+const clearingPrice = orderT.FixedRatePremium(10000)
 
 // TestTradingReportCompletion tests that each time we generate a trading
 // report, it includes all the traders that were included in the set of matched
@@ -69,7 +69,7 @@ func TestTradingReportCompletion(t *testing.T) {
 
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,
-		exeFeeRate: FixedRatePremium(10000),
+		exeFeeRate: orderT.FixedRatePremium(10000),
 	}
 	n, y := 0, 0
 	scenario := func(matchedOrders []MatchedOrder) bool {
@@ -117,7 +117,7 @@ func TestTradingReportGeneration(t *testing.T) {
 
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,
-		exeFeeRate: FixedRatePremium(10000),
+		exeFeeRate: orderT.FixedRatePremium(10000),
 	}
 	n, y := 0, 0
 	scenario := func(matchedOrders []MatchedOrder) bool {
@@ -221,8 +221,12 @@ func TestLumpSumPremiumCalc(t *testing.T) {
 	scenario := func(amt uint32, duration uint16) bool {
 		// We ensure that the premium is never over 100%, so we clam it
 		// up to the max fixed point value.
-		premiumA := FixedRatePremium(r.Int31n(int32(orderT.FeeRateTotalParts)))
-		premiumB := FixedRatePremium(r.Int31n(int32(orderT.FeeRateTotalParts)))
+		premiumA := orderT.FixedRatePremium(
+			r.Int31n(int32(orderT.FeeRateTotalParts)),
+		)
+		premiumB := orderT.FixedRatePremium(
+			r.Int31n(int32(orderT.FeeRateTotalParts)),
+		)
 
 		// We ask for the amount as a uint32 to ensure we don't get a
 		// trillion satoshis or anything like that.
