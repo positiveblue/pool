@@ -3,6 +3,7 @@ package batchtx
 import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
@@ -44,12 +45,6 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 	}
 }
 
-const (
-	// AuctAcctSpendWitnessSize is the size of the witness when the
-	// auctioneer spends their account output.
-	AuctAcctSpendWitnessSize = 218
-)
-
 // EstimateBatchWeight attempts to estimate the total weight of the fully
 // signed batch execution transaction.
 func (c *chainFeeEstimator) EstimateBatchWeight() int64 {
@@ -76,9 +71,9 @@ func (c *chainFeeEstimator) EstimateBatchWeight() int64 {
 	// Now that we've processed all the orders for each trader, we'll
 	// account for the master output for the auctioneer, as well as the
 	// size of the witness when we go to spend our master output.
-	weightEstimator.AddP2WKHOutput()
+	weightEstimator.AddP2WSHOutput()
 	weightEstimator.AddWitnessInput(
-		AuctAcctSpendWitnessSize,
+		account.AuctioneerWitnessSize,
 	)
 
 	return int64(weightEstimator.Weight())
