@@ -119,7 +119,11 @@ func (s *EtcdStore) CompleteReservation(ctx context.Context,
 	if err := serializeAccount(&buf, a); err != nil {
 		return err
 	}
-	putAccount := clientv3.OpPut(s.getAccountKey(a.TraderKey), buf.String())
+	traderKey, err := a.TraderKey()
+	if err != nil {
+		return err
+	}
+	putAccount := clientv3.OpPut(s.getAccountKey(traderKey), buf.String())
 
 	_, err = s.client.Txn(ctx).
 		If().
@@ -138,7 +142,11 @@ func (s *EtcdStore) UpdateAccount(ctx context.Context, account *account.Account,
 	}
 
 	// Retrieve the account stored in the database.
-	k := s.getAccountKey(account.TraderKey)
+	traderKey, err := account.TraderKey()
+	if err != nil {
+		return err
+	}
+	k := s.getAccountKey(traderKey)
 	resp, err := s.getSingleValue(ctx, k, ErrAccountNotFound)
 	if err != nil {
 		return err
@@ -232,7 +240,7 @@ func deserializeReservation(r io.Reader) (*account.Reservation, error) {
 func serializeAccount(w io.Writer, account *account.Account) error {
 	return WriteElements(
 		w, account.TokenID, account.Value, account.Expiry,
-		account.TraderKey, account.AuctioneerKey, account.BatchKey,
+		account.TraderKeyRaw, account.AuctioneerKey, account.BatchKey,
 		account.Secret, account.State, account.HeightHint,
 		account.OutPoint,
 	)
@@ -241,7 +249,7 @@ func serializeAccount(w io.Writer, account *account.Account) error {
 func deserializeAccount(r io.Reader) (*account.Account, error) {
 	var a account.Account
 	err := ReadElements(
-		r, &a.TokenID, &a.Value, &a.Expiry, &a.TraderKey,
+		r, &a.TokenID, &a.Value, &a.Expiry, &a.TraderKeyRaw,
 		&a.AuctioneerKey, &a.BatchKey, &a.Secret, &a.State,
 		&a.HeightHint, &a.OutPoint,
 	)

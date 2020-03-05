@@ -90,8 +90,12 @@ func (h *testHarness) assertAccountExists(expected *Account) {
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
+		traderKey, err := expected.TraderKey()
+		if err != nil {
+			return err
+		}
 		account, err := h.manager.cfg.Store.Account(
-			ctx, expected.TraderKey,
+			ctx, traderKey,
 		)
 		if err != nil {
 			return err
@@ -149,7 +153,6 @@ func (h *testHarness) initAccount() *Account {
 		TokenID:       tokenID,
 		Value:         params.Value,
 		Expiry:        params.Expiry,
-		TraderKey:     params.TraderKey,
 		AuctioneerKey: reservation.AuctioneerKey,
 		BatchKey:      reservation.InitialBatchKey,
 		Secret:        sharedSecret,
@@ -157,6 +160,7 @@ func (h *testHarness) initAccount() *Account {
 		HeightHint:    uint32(actualHeightHint),
 		OutPoint:      params.OutPoint,
 	}
+	copy(account.TraderKeyRaw[:], params.TraderKey.SerializeCompressed())
 
 	h.assertAccountExists(account)
 
@@ -172,7 +176,7 @@ func (h *testHarness) confirmAccount(a *Account, valid bool,
 	case h.notifier.confChan <- confDetails:
 	case <-time.After(timeout):
 		h.t.Fatalf("unable to notify confirmation of account %x",
-			a.TraderKey)
+			a.TraderKeyRaw)
 	}
 
 	if valid {
@@ -189,7 +193,7 @@ func (h *testHarness) expireAccount(a *Account) {
 	case h.notifier.blockChan <- int32(a.Expiry):
 	case <-time.After(timeout):
 		h.t.Fatalf("unable to notify expiration of account %x",
-			a.TraderKey)
+			a.TraderKeyRaw)
 	}
 
 	a.State = StateExpired
@@ -204,7 +208,8 @@ func (h *testHarness) spendAccount(a *Account, expectedState State,
 	select {
 	case h.notifier.spendChan <- spendDetails:
 	case <-time.After(timeout):
-		h.t.Fatalf("unable to notify spend of account %x", a.TraderKey)
+		h.t.Fatalf("unable to notify spend of account %x",
+			a.TraderKeyRaw)
 	}
 
 	a.State = expectedState
@@ -247,10 +252,11 @@ func TestReserveAccount(t *testing.T) {
 
 	// Complete the reservation so that we can attempt to create another
 	// one.
-	err = h.manager.cfg.Store.CompleteReservation(ctx, &Account{
-		TokenID:   testTokenID,
-		TraderKey: testTraderKey,
-	})
+	acct := &Account{
+		TokenID: testTokenID,
+	}
+	copy(acct.TraderKeyRaw[:], testTraderKey.SerializeCompressed())
+	err = h.manager.cfg.Store.CompleteReservation(ctx, acct)
 	if err != nil {
 		t.Fatalf("unable to complete reservation: %v", err)
 	}

@@ -83,7 +83,7 @@ func (s *mockStore) CompleteReservation(_ context.Context,
 	defer s.mu.Unlock()
 
 	var accountKey [33]byte
-	copy(accountKey[:], account.TraderKey.SerializeCompressed())
+	copy(accountKey[:], account.TraderKeyRaw[:])
 
 	delete(s.reservations, account.TokenID)
 	s.accounts[accountKey] = *account
@@ -97,7 +97,7 @@ func (s *mockStore) UpdateAccount(_ context.Context, account *Account,
 	defer s.mu.Unlock()
 
 	var accountKey [33]byte
-	copy(accountKey[:], account.TraderKey.SerializeCompressed())
+	copy(accountKey[:], account.TraderKeyRaw[:])
 
 	if _, ok := s.accounts[accountKey]; !ok {
 		return errors.New("account not found")

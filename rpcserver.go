@@ -819,10 +819,10 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		trader := &venue.ActiveTrader{
 			CommLine: commLine,
 			Trader: &matching.Trader{
-				AccountKey:     acctKey,
-				AccountExpiry:  acct.Expiry,
-				AccountPoint:   acct.OutPoint,
-				AccountBalance: acct.Value,
+				AccountKey:      acctKey,
+				AccountExpiry:   acct.Expiry,
+				AccountOutPoint: acct.OutPoint,
+				AccountBalance:  acct.Value,
 			},
 		}
 		comms.newSub <- trader
