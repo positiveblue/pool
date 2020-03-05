@@ -7,7 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/agora/account"
-	clientorder "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/loop/lsat"
 )
@@ -16,7 +16,7 @@ import (
 type StoreMock struct {
 	Res         map[lsat.TokenID]*account.Reservation
 	Accs        map[[33]byte]*account.Account
-	Orders      map[clientorder.Nonce]order.ServerOrder
+	Orders      map[orderT.Nonce]order.ServerOrder
 	BatchPubkey *btcec.PublicKey
 	t           *testing.T
 }
@@ -26,7 +26,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 	return &StoreMock{
 		Res:         make(map[lsat.TokenID]*account.Reservation),
 		Accs:        make(map[[33]byte]*account.Account),
-		Orders:      make(map[clientorder.Nonce]order.ServerOrder),
+		Orders:      make(map[orderT.Nonce]order.ServerOrder),
 		BatchPubkey: initialBatchKey,
 		t:           t,
 	}
@@ -135,7 +135,7 @@ func (s *StoreMock) SubmitOrder(_ context.Context, o order.ServerOrder) error {
 // modifiers.
 //
 // NOTE: This is part of the Store interface.
-func (s *StoreMock) UpdateOrder(_ context.Context, nonce clientorder.Nonce,
+func (s *StoreMock) UpdateOrder(_ context.Context, nonce orderT.Nonce,
 	modifiers ...order.Modifier) error {
 
 	o, ok := s.Orders[nonce]
@@ -153,7 +153,7 @@ func (s *StoreMock) UpdateOrder(_ context.Context, nonce clientorder.Nonce,
 // according to the given modifiers.
 //
 // NOTE: This is part of the Store interface.
-func (s *StoreMock) UpdateOrders(ctx context.Context, nonces []clientorder.Nonce,
+func (s *StoreMock) UpdateOrders(ctx context.Context, nonces []orderT.Nonce,
 	modifiers [][]order.Modifier) error {
 
 	for idx, nonce := range nonces {
@@ -169,7 +169,7 @@ func (s *StoreMock) UpdateOrders(ctx context.Context, nonces []clientorder.Nonce
 // nonce exists in the store, ErrNoOrder is returned.
 //
 // NOTE: This is part of the Store interface.
-func (s *StoreMock) GetOrder(_ context.Context, nonce clientorder.Nonce) (
+func (s *StoreMock) GetOrder(_ context.Context, nonce orderT.Nonce) (
 	order.ServerOrder, error) {
 
 	o, ok := s.Orders[nonce]

@@ -10,7 +10,7 @@ import (
 
 	"github.com/coreos/etcd/clientv3"
 	"github.com/lightninglabs/agora/client/clientdb"
-	clientorder "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 )
 
@@ -81,7 +81,7 @@ func (s *EtcdStore) SubmitOrder(mainCtx context.Context,
 //
 // NOTE: This is part of the Store interface.
 func (s *EtcdStore) UpdateOrder(mainCtx context.Context,
-	nonce clientorder.Nonce, modifiers ...order.Modifier) error {
+	nonce orderT.Nonce, modifiers ...order.Modifier) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -113,7 +113,7 @@ func (s *EtcdStore) UpdateOrder(mainCtx context.Context,
 //
 // NOTE: This is part of the Store interface.
 func (s *EtcdStore) UpdateOrders(mainCtx context.Context,
-	nonces []clientorder.Nonce, modifiers [][]order.Modifier) error {
+	nonces []orderT.Nonce, modifiers [][]order.Modifier) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -159,7 +159,7 @@ func (s *EtcdStore) UpdateOrders(mainCtx context.Context,
 // nonce exists in the store, ErrNoOrder is returned.
 //
 // NOTE: This is part of the Store interface.
-func (s *EtcdStore) GetOrder(ctx context.Context, nonce clientorder.Nonce) (
+func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 	order.ServerOrder, error) {
 
 	if !s.initialized {
@@ -204,7 +204,7 @@ func (s *EtcdStore) GetOrders(mainCtx context.Context) ([]order.ServerOrder, err
 }
 
 // getKeyOrderPrefix returns the key prefix path for the given order.
-func (s *EtcdStore) getKeyOrderPrefix(nonce clientorder.Nonce) string {
+func (s *EtcdStore) getKeyOrderPrefix(nonce orderT.Nonce) string {
 	// bitcoin/clm/agora/<network>/order/<nonce>.
 	return strings.Join(
 		[]string{s.getKeyPrefix(orderPrefix), nonce.String()},
@@ -234,8 +234,8 @@ func (s *EtcdStore) readOrderKeys(mainCtx context.Context,
 // nonceFromKey parses a whole order key and tries to extract the nonce from
 // the last part of it. This function also checks that the key has the expected
 // length and number of key parts.
-func nonceFromKey(key string) (clientorder.Nonce, error) {
-	var nonce clientorder.Nonce
+func nonceFromKey(key string) (orderT.Nonce, error) {
+	var nonce orderT.Nonce
 	if len(key) == 0 {
 		return nonce, fmt.Errorf("key cannot be empty")
 	}
@@ -284,7 +284,7 @@ func serializeOrder(o order.ServerOrder) ([]byte, error) {
 
 // deserializeOrder reconstructs an order from binary data in the LN wire
 // format.
-func deserializeOrder(content []byte, nonce clientorder.Nonce) (
+func deserializeOrder(content []byte, nonce orderT.Nonce) (
 	order.ServerOrder, error) {
 
 	var (
@@ -309,11 +309,11 @@ func deserializeOrder(content []byte, nonce clientorder.Nonce) (
 
 	// Finally read the order type specific fields.
 	switch t := clientOrder.(type) {
-	case *clientorder.Ask:
+	case *orderT.Ask:
 		ask := &order.Ask{Ask: *t, Kit: *kit}
 		return ask, nil
 
-	case *clientorder.Bid:
+	case *orderT.Bid:
 		bid := &order.Bid{Bid: *t, Kit: *kit}
 		return bid, nil
 

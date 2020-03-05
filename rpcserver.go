@@ -19,7 +19,7 @@ import (
 	"github.com/lightninglabs/agora/agoradb"
 	accountT "github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmrpc"
-	clientorder "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/agora/venue/matching"
@@ -350,7 +350,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		clientAsk := &clientorder.Ask{
+		clientAsk := &orderT.Ask{
 			Kit:         *clientKit,
 			MaxDuration: uint32(a.MaxDurationBlocks),
 		}
@@ -367,7 +367,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
-		clientBid := &clientorder.Bid{
+		clientBid := &orderT.Bid{
 			Kit:         *clientKit,
 			MinDuration: uint32(b.MinDurationBlocks),
 		}
@@ -413,7 +413,7 @@ func (s *rpcServer) CancelOrder(ctx context.Context,
 	req *clmrpc.ServerCancelOrderRequest) (
 	*clmrpc.ServerCancelOrderResponse, error) {
 
-	var nonce clientorder.Nonce
+	var nonce orderT.Nonce
 	copy(nonce[:], req.OrderNonce)
 	err := s.orderBook.CancelOrder(ctx, nonce)
 	if err != nil {
@@ -745,7 +745,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 	// The trader accepts an order execution.
 	case *clmrpc.ClientAuctionMessage_Accept:
-		nonces := make([]clientorder.Nonce, len(msg.Accept.OrderNonce))
+		nonces := make([]orderT.Nonce, len(msg.Accept.OrderNonce))
 		for idx, rawNonce := range msg.Accept.OrderNonce {
 			if len(rawNonce) != 32 {
 				comms.err <- fmt.Errorf("invalid nonce: %x",
@@ -894,7 +894,7 @@ func (s *rpcServer) OrderState(ctx context.Context,
 	req *clmrpc.ServerOrderStateRequest) (*clmrpc.ServerOrderStateResponse,
 	error) {
 
-	var nonce clientorder.Nonce
+	var nonce orderT.Nonce
 	copy(nonce[:], req.OrderNonce)
 
 	// The state of an order should be reflected in the database so we don't
@@ -912,20 +912,20 @@ func (s *rpcServer) OrderState(ctx context.Context,
 // parseRPCOrder parses the incoming raw RPC order into the go native data
 // types used in the order struct.
 func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
-	details *clmrpc.ServerOrder) (*clientorder.Kit, *order.Kit, error) {
+	details *clmrpc.ServerOrder) (*orderT.Kit, *order.Kit, error) {
 
 	var (
-		nonce clientorder.Nonce
+		nonce orderT.Nonce
 		err   error
 	)
 
 	// Parse the nonce first so we can create the client order kit.
 	copy(nonce[:], details.OrderNonce)
-	clientKit := clientorder.NewKit(nonce)
-	clientKit.Version = clientorder.Version(version)
+	clientKit := orderT.NewKit(nonce)
+	clientKit.Version = orderT.Version(version)
 	clientKit.FixedRate = uint32(details.RateFixed)
 	clientKit.Amt = btcutil.Amount(details.Amt)
-	clientKit.Units = clientorder.NewSupplyFromSats(clientKit.Amt)
+	clientKit.Units = orderT.NewSupplyFromSats(clientKit.Amt)
 	clientKit.FundingFeeRate = chainfee.SatPerKWeight(
 		details.FundingFeeRateSatPerKw,
 	)
@@ -982,7 +982,7 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 
 // mapOrderResp maps the error returned from the order manager into the correct
 // RPC return type.
-func mapOrderResp(orderNonce clientorder.Nonce, err error) (
+func mapOrderResp(orderNonce orderT.Nonce, err error) (
 	*clmrpc.ServerSubmitOrderResponse, error) {
 
 	switch err {
