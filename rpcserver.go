@@ -79,8 +79,19 @@ type commChannels struct {
 	newSub   chan *venue.ActiveTrader
 	toTrader chan venue.ExecutionMsg
 	toServer chan venue.TraderMsg
-	abort    chan struct{}
-	err      chan error
+
+	abortOnce sync.Once
+	quitConn  chan struct{}
+
+	err chan error
+}
+
+// abort can be called to initiate a shutdown of the communication channel
+// between the client and server.
+func (c *commChannels) abort() {
+	c.abortOnce.Do(func() {
+		close(c.quitConn)
+	})
 }
 
 // rpcServer is a server that implements the auction server RPC interface and
@@ -556,8 +567,8 @@ func (s *rpcServer) SubscribeBatchAuction(
 			toServer: make(
 				chan venue.TraderMsg, maxAccountsPerTrader,
 			),
-			abort: make(chan struct{}),
-			err:   make(chan error),
+			quitConn: make(chan struct{}),
+			err:      make(chan error),
 		},
 	}
 	s.connectedStreams[traderID] = trader
@@ -619,7 +630,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 			}
 
 		// The trader is signaling abort or is closing the connection.
-		case <-trader.comms.abort:
+		case <-trader.comms.quitConn:
 			log.Debugf("Trader client_id=%x is disconnecting",
 				trader.Lsat)
 			return s.disconnectTrader(traderID)
@@ -628,7 +639,9 @@ func (s *rpcServer) SubscribeBatchAuction(
 		// the connection.
 		case err := <-trader.comms.err:
 			log.Errorf("Error in trader stream: %v", err)
-			close(trader.comms.abort)
+
+			trader.comms.abort()
+
 			err2 := s.disconnectTrader(traderID)
 			if err2 != nil {
 				log.Errorf("Unable to disconnect trader: %v",
@@ -648,7 +661,9 @@ func (s *rpcServer) SubscribeBatchAuction(
 				log.Errorf("Unable to send shutdown msg: %v",
 					err)
 			}
-			close(trader.comms.abort)
+
+			trader.comms.abort()
+
 			return fmt.Errorf("server shutting down")
 		}
 	}
@@ -679,7 +694,7 @@ func (s *rpcServer) readIncomingStream(trader *TraderStream,
 		// The default disconnect signal from the client, if the trader
 		// is shut down.
 		case err == io.EOF:
-			close(trader.comms.abort)
+			trader.comms.abort()
 			return
 
 		// Any other error we receive is treated as critical and leads
