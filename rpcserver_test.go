@@ -218,7 +218,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	if len(rpcServer.connectedStreams) != 0 {
 		t.Fatalf("stream was not cleaned up after disconnect")
 	}
-	_, ok := <-comms.abort
+	_, ok := <-comms.quitConn
 	if ok {
 		t.Fatalf("expected abort channel to be closed")
 	}
