@@ -24,6 +24,10 @@ func (x *daemonCommand) Execute(_ []string) error {
 
 	server, err := agora.NewServer(x.cfg)
 	if err != nil {
+		return fmt.Errorf("unable to create server: %v", err)
+	}
+
+	if err := server.Start(); err != nil {
 		return fmt.Errorf("unable to start server: %v", err)
 	}
 
