@@ -112,7 +112,10 @@ func (hs *auctioneerHarness) runServer() error {
 	var err error
 	hs.server, err = agora.NewServer(hs.serverCfg)
 	if err != nil {
-		return fmt.Errorf("could not start agora server: %v", err)
+		return fmt.Errorf("unable to create server: %v", err)
+	}
+	if err := hs.server.Start(); err != nil {
+		return fmt.Errorf("unable to start server: %v", err)
 	}
 
 	// Since Stop uses the LightningClient to stop the node, if we fail to

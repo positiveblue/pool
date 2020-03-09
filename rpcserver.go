@@ -97,7 +97,7 @@ func (c *commChannels) abort() {
 // rpcServer is a server that implements the auction server RPC interface and
 // serves client requests by delegating the work to the respective managers.
 type rpcServer struct {
-	*grpc.Server
+	grpcServer *grpc.Server
 
 	listener net.Listener
 	serveWg  sync.WaitGroup
@@ -105,20 +105,21 @@ type rpcServer struct {
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
 
-	// bestHeight is the best known height of the main chain. This MUST be
-	// used atomically.
-	bestHeight uint32
-
-	lnd            *lndclient.GrpcLndServices
-	identityPubkey [33]byte
-	store          agoradb.Store
-	accountManager *account.Manager
-	orderBook      *order.Book
-	batchExecutor  *venue.BatchExecutor
-
 	quit             chan struct{}
 	wg               sync.WaitGroup
 	subscribeTimeout time.Duration
+
+	accountManager *account.Manager
+
+	orderBook *order.Book
+
+	store agoradb.Store
+
+	batchExecutor *venue.BatchExecutor
+
+	lnd *lndclient.GrpcLndServices
+
+	bestHeight func() uint32
 
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
@@ -128,42 +129,25 @@ type rpcServer struct {
 }
 
 // newRPCServer creates a new rpcServer.
-func newRPCServer(lnd *lndclient.GrpcLndServices, store agoradb.Store,
+func newRPCServer(store agoradb.Store, lnd *lndclient.GrpcLndServices,
+	accountManager *account.Manager, bestHeight func() uint32,
+	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	listener net.Listener, serverOpts []grpc.ServerOption,
-	orderSubmitFee btcutil.Amount,
-	subscribeTimeout time.Duration) (*rpcServer, error) {
-
-	accountManager, err := account.NewManager(&account.ManagerConfig{
-		Store:         store,
-		Wallet:        lnd.WalletKit,
-		Signer:        lnd.Signer,
-		ChainNotifier: lnd.ChainNotifier,
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	batchExecutor, err := venue.NewBatchExecutor()
-	if err != nil {
-		return nil, err
-	}
+	subscribeTimeout time.Duration) *rpcServer {
 
 	return &rpcServer{
-		Server:         grpc.NewServer(serverOpts...),
-		listener:       listener,
-		lnd:            lnd,
-		store:          store,
-		accountManager: accountManager,
-		orderBook: order.NewBook(&order.BookConfig{
-			Store:     store,
-			Signer:    lnd.Signer,
-			SubmitFee: orderSubmitFee,
-		}),
+		grpcServer:       grpc.NewServer(serverOpts...),
+		listener:         listener,
+		bestHeight:       bestHeight,
+		lnd:              lnd,
+		accountManager:   accountManager,
+		orderBook:        orderBook,
+		store:            store,
 		batchExecutor:    batchExecutor,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
 		subscribeTimeout: subscribeTimeout,
-	}, nil
+	}
 }
 
 // Start starts the rpcServer, making it ready to accept incoming requests.
@@ -174,63 +158,12 @@ func (s *rpcServer) Start() error {
 
 	log.Infof("Starting auction server")
 
-	ctx := context.Background()
-	etcdCtx, etcdCancel := context.WithTimeout(ctx, initTimeout)
-	defer etcdCancel()
-	if err := s.store.Init(etcdCtx); err != nil {
-		return fmt.Errorf("unable to initialize etcd store: %v", err)
-	}
-
-	lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)
-	defer lndCancel()
-	infoResp, err := s.lnd.Client.GetInfo(lndCtx)
-	if err != nil {
-		return fmt.Errorf("unable to retrieve lnd node public key: %v",
-			err)
-	}
-	s.identityPubkey = infoResp.IdentityPubkey
-
-	blockEpochChan, blockErrorChan, err := s.lnd.
-		ChainNotifier.RegisterBlockEpochNtfn(ctx)
-	if err != nil {
-		return err
-	}
-
-	// Before finishing Start(), make sure we have an up to date block
-	// height.
-	var height int32
-	select {
-	case height = <-blockEpochChan:
-	case err := <-blockErrorChan:
-		return fmt.Errorf("RegisterBlockEpochNtfn: %v", err)
-	case <-ctx.Done():
-		return nil
-	}
-	s.updateHeight(height)
-
-	// Start managers.
-	if err := s.accountManager.Start(); err != nil {
-		return fmt.Errorf("unable to start account manager: %v", err)
-	}
-	if err := s.orderBook.Start(); err != nil {
-		return fmt.Errorf("unable to start order manager: %v", err)
-	}
-	if err := s.batchExecutor.Start(); err != nil {
-		return fmt.Errorf("unable to start batch executor: %v", err)
-	}
-
-	s.wg.Add(1)
-	go func() {
-		defer s.wg.Done()
-		s.serverHandler(blockEpochChan, blockErrorChan)
-	}()
-
 	s.serveWg.Add(1)
 	go func() {
 		defer s.serveWg.Done()
 
 		log.Infof("RPC server listening on %s", s.listener.Addr())
-		err := s.Server.Serve(s.listener)
+		err := s.grpcServer.Serve(s.listener)
 		if err != nil && err != grpc.ErrServerStopped {
 			log.Errorf("RPC server stopped with error: %v", err)
 		}
@@ -248,15 +181,12 @@ func (s *rpcServer) Stop() error {
 	}
 
 	log.Info("Stopping auction server")
-	s.accountManager.Stop()
-	s.orderBook.Stop()
 
 	close(s.quit)
 	s.wg.Wait()
 
 	log.Info("Stopping lnd client, gRPC server and listener")
-	s.lnd.Close()
-	s.Server.GracefulStop()
+	s.grpcServer.GracefulStop()
 	err := s.listener.Close()
 	if err != nil {
 		return fmt.Errorf("error closing gRPC listener: %v", err)
@@ -265,36 +195,6 @@ func (s *rpcServer) Stop() error {
 
 	log.Info("Auction server stopped")
 	return nil
-}
-
-// serverHandler is the main event loop of the server.
-func (s *rpcServer) serverHandler(blockChan chan int32,
-	blockErrChan chan error) {
-
-	for {
-		select {
-		case height := <-blockChan:
-			log.Infof("Received new block notification: height=%v",
-				height)
-			s.updateHeight(height)
-
-		case err := <-blockErrChan:
-			if err != nil {
-				log.Errorf("Unable to receive block "+
-					"notification: %v", err)
-			}
-
-		// In case the server is shutting down.
-		case <-s.quit:
-			return
-		}
-	}
-}
-
-func (s *rpcServer) updateHeight(height int32) {
-	// Store height atomically so the incoming request handler can access it
-	// without locking.
-	atomic.StoreUint32(&s.bestHeight, uint32(height))
 }
 
 func (s *rpcServer) ReserveAccount(ctx context.Context,
@@ -359,7 +259,7 @@ func (s *rpcServer) InitAccount(ctx context.Context,
 	}
 
 	err = s.accountManager.InitAccount(
-		ctx, tokenID, accountParams, atomic.LoadUint32(&s.bestHeight),
+		ctx, tokenID, accountParams, s.bestHeight(),
 	)
 	if err != nil {
 		return nil, err
@@ -422,7 +322,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 
 	accountSig, err := s.accountManager.ModifyAccount(
 		ctx, traderKey, newInputs, newOutputs, newAccountParams,
-		atomic.LoadUint32(&s.bestHeight),
+		s.bestHeight(),
 	)
 	if err != nil {
 		return nil, err
@@ -519,6 +419,7 @@ func (s *rpcServer) CancelOrder(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
 	return &clmrpc.ServerCancelOrderResponse{}, nil
 }
 

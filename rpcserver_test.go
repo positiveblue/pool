@@ -13,7 +13,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	accountT "github.com/lightninglabs/agora/client/account"
@@ -333,24 +332,28 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 }
 
 func newServer(t *testing.T, store agoradb.Store) *rpcServer {
-	server, err := newRPCServer(
-		&lndclient.GrpcLndServices{
-			LndServices: lndclient.LndServices{
-				Client:        mockLnd.Client,
-				WalletKit:     mockLnd.WalletKit,
-				ChainNotifier: mockLnd.ChainNotifier,
-				Signer:        mockLnd.Signer,
-				Invoices:      mockLnd.Invoices,
-				Router:        mockLnd.Router,
-				ChainParams:   mockLnd.ChainParams,
-			},
-		}, store, bufconn.Listen(100), nil, btcutil.Amount(123),
-		defaultTimeout,
-	)
-	if err != nil {
-		t.Fatalf("error creating rpcServer: %v", err)
+	lndServices := &lndclient.GrpcLndServices{
+		LndServices: lndclient.LndServices{
+			Client:        mockLnd.Client,
+			WalletKit:     mockLnd.WalletKit,
+			ChainNotifier: mockLnd.ChainNotifier,
+			Signer:        mockLnd.Signer,
+			Invoices:      mockLnd.Invoices,
+			Router:        mockLnd.Router,
+			ChainParams:   mockLnd.ChainParams,
+		},
 	}
-	return server
+
+	batchExecutor, err := venue.NewBatchExecutor()
+	if err != nil {
+		t.Fatalf("unable to create batch executor: %v", err)
+		return nil
+	}
+
+	return newRPCServer(
+		store, lndServices, nil, nil, nil, batchExecutor,
+		bufconn.Listen(100), nil, defaultTimeout,
+	)
 }
 
 func init() {

@@ -1,53 +1,63 @@
 package agora
 
 import (
-	"crypto/tls"
-	"errors"
+	"context"
 	"fmt"
 	"net"
-	"net/http"
-	"path/filepath"
+	"sync"
+	"sync/atomic"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
-	"github.com/lightningnetwork/lnd/build"
-	"github.com/lightningnetwork/lnd/cert"
-	"github.com/lightningnetwork/lnd/lnrpc"
-	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 // Server is the main agora auctioneer server.
 type Server struct {
-	auctioneerServer *rpcServer
+	// bestHeight is the best known height of the main chain. This MUST be
+	// used atomically.
+	bestHeight uint32
+
+	rpcServer *rpcServer
+
+	lnd            *lndclient.GrpcLndServices
+	identityPubkey [33]byte
+
+	store agoradb.Store
+
+	accountManager *account.Manager
+
+	orderBook *order.Book
+
+	batchExecutor *venue.BatchExecutor
+
+	quit chan struct{}
+
+	wg sync.WaitGroup
+
+	startOnce sync.Once
+	stopOnce  sync.Once
 }
 
 // NewServer returns a new auctioneer server that is started in daemon mode,
 // listens for gRPC connections and executes commands.
 func NewServer(cfg *Config) (*Server, error) {
-	// Append the network type to the log directory so it is
-	// "namespaced" per network in the same fashion as the data directory.
-	logDir := filepath.Join(cfg.LogDir, cfg.Network)
-
-	// Initialize logging at the default logging level.
-	err := logWriter.InitLogRotator(
-		filepath.Join(logDir, defaultLogFilename),
-		cfg.MaxLogFileSize, cfg.MaxLogFiles,
-	)
-	if err != nil {
-		return nil, err
-	}
-	err = build.ParseAndSetDebugLevels(cfg.DebugLevel, logWriter)
-	if err != nil {
-		return nil, err
+	// First, we'll set up our logging infrastructure so all operations
+	// below will properly be logged.
+	if err := initLogging(cfg); err != nil {
+		return nil, fmt.Errorf("unable to init logging: %w", err)
 	}
 
-	lndServices, err := lndclient.NewLndServices(
+	// With our logging set up, we'll now establish our initial connection
+	// to the backing lnd instance.
+	lnd, err := lndclient.NewLndServices(
 		cfg.Lnd.Host, cfg.Network, cfg.Lnd.MacaroonDir,
 		cfg.Lnd.TLSPath,
 	)
@@ -55,80 +65,68 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Next, we'll open our primary connection to the main backing
+	// database.
 	store, err := agoradb.NewEtcdStore(
-		*lndServices.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
+		*lnd.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
 		cfg.Etcd.Password,
 	)
 	if err != nil {
 		return nil, err
 	}
 
+	// With our database open, we can set up the manager which watches over
+	// all the trader accounts.
+	accountManager, err := account.NewManager(&account.ManagerConfig{
+		Store:         store,
+		Wallet:        lnd.WalletKit,
+		Signer:        lnd.Signer,
+		ChainNotifier: lnd.ChainNotifier,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Continuing, we create the batch executor which will communicate
+	// between the trader's an auctioneer for each batch epoch.
+	batchExecutor, err := venue.NewBatchExecutor()
+	if err != nil {
+		return nil, err
+	}
+
+	server := &Server{
+		lnd:            lnd,
+		store:          store,
+		accountManager: accountManager,
+		orderBook: order.NewBook(&order.BookConfig{
+			Store:     store,
+			Signer:    lnd.Signer,
+			SubmitFee: btcutil.Amount(cfg.OrderSubmitFee),
+		}),
+		batchExecutor: batchExecutor,
+		quit:          make(chan struct{}),
+	}
+
+	// With all our other initialization complete, we'll now create the
+	// main RPC server.
+	//
+	// First, we'll set up the series of interceptors for our gRPC server
+	// which we'll initialize shortly below.
 	interceptor := auth.ServerInterceptor{}
 	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
 		grpc.StreamInterceptor(interceptor.StreamInterceptor),
 	}
-	switch {
-	// If auto cert is configured, then we'll create a cert automatically
-	// using Let's Encrypt.
-	case !cfg.Insecure && cfg.AutoCert:
-		serverName := cfg.ServerName
-		if serverName == "" {
-			return nil, errors.New("servername option is required " +
-				"for secure operation")
-		}
-
-		certDir := filepath.Join(cfg.BaseDir, "autocert")
-		log.Infof("Configuring autocert for server %v and cache dir %v",
-			serverName, certDir)
-
-		manager := autocert.Manager{
-			Cache:      autocert.DirCache(certDir),
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(serverName),
-		}
-
-		go func() {
-			err := http.ListenAndServe(
-				":http", manager.HTTPHandler(nil),
-			)
-			if err != nil {
-				log.Errorf("Autocert http failed: %v", err)
-			}
-		}()
-		tlsConf := &tls.Config{
-			GetCertificate: manager.GetCertificate,
-		}
-
-		sCreds := credentials.NewTLS(tlsConf)
-		serverOpts = append(serverOpts, grpc.Creds(sCreds))
-
-	// Otherwise, we'll generate custom self-signed cets.
-	case !cfg.Insecure:
-		// Ensure we create TLS key and certificate if they don't exist
-		if !lnrpc.FileExists(cfg.TLSCertPath) &&
-			!lnrpc.FileExists(cfg.TLSKeyPath) {
-
-			err := cert.GenCertPair(
-				"agora autogenerated cert", cfg.TLSCertPath,
-				cfg.TLSKeyPath, nil, nil,
-				cert.DefaultAutogenValidity,
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		certData, _, err := cert.LoadCert(
-			cfg.TLSCertPath, cfg.TLSKeyPath,
-		)
-		if err != nil {
-			return nil, err
-		}
-		sCreds := credentials.NewTLS(cert.TLSConfFromCert(certData))
-		serverOpts = append(serverOpts, grpc.Creds(sCreds))
+	certOpts, err := extractCertOpt(cfg)
+	if err != nil {
+		return nil, err
+	}
+	if certOpts != nil {
+		serverOpts = append(serverOpts, certOpts)
 	}
 
-	// Start the gRPC server listening for HTTP/2 connections.
+	// Finally, create our listener, and initialize the primary gRPc server
+	// for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
 	if grpcListener == nil {
@@ -138,42 +136,161 @@ func NewServer(cfg *Config) (*Server, error) {
 				"on %s", defaultAuctioneerAddr)
 		}
 	}
-
-	auctioneerServer, err := newRPCServer(
-		lndServices, store, grpcListener, serverOpts,
-		btcutil.Amount(cfg.OrderSubmitFee), cfg.SubscribeTimeout,
+	auctioneerServer := newRPCServer(
+		store, lnd, accountManager, server.fetchBestHeight,
+		server.orderBook,
+		batchExecutor, grpcListener, serverOpts,
+		cfg.SubscribeTimeout,
 	)
-	if err != nil {
-		return nil, err
-	}
+	server.rpcServer = auctioneerServer
 
 	clmrpc.RegisterChannelAuctioneerServer(
-		auctioneerServer.Server, auctioneerServer,
+		auctioneerServer.grpcServer, auctioneerServer,
 	)
 
-	// Start the auctioneer server itself.
-	err = auctioneerServer.Start()
-	if err != nil {
-		return nil, fmt.Errorf("unable to start agora server: %v", err)
-	}
-	return &Server{
-		auctioneerServer: auctioneerServer,
-	}, nil
+	return server, nil
+}
+
+// Start attempts to start the auctioneer server which includes the RPC server
+// and the main auctioneer state machine loop.
+func (s *Server) Start() error {
+	var startErr error
+
+	s.startOnce.Do(func() {
+		log.Infof("Starting primary server")
+
+		ctx := context.Background()
+		etcdCtx, etcdCancel := context.WithTimeout(ctx, initTimeout)
+		defer etcdCancel()
+		if err := s.store.Init(etcdCtx); err != nil {
+			startErr = fmt.Errorf("unable to initialize etcd "+
+				"store: %v", err)
+		}
+
+		lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)
+		defer lndCancel()
+		infoResp, err := s.lnd.Client.GetInfo(lndCtx)
+		if err != nil {
+			startErr = fmt.Errorf("unable to retrieve lnd node "+
+				"public key: %v", err)
+		}
+		s.identityPubkey = infoResp.IdentityPubkey
+
+		blockEpochChan, blockErrorChan, err := s.lnd.
+			ChainNotifier.RegisterBlockEpochNtfn(ctx)
+		if err != nil {
+			startErr = err
+		}
+
+		// Before finishing Start(), make sure we have an up to date block
+		// height.
+		var height int32
+		select {
+		case height = <-blockEpochChan:
+		case err := <-blockErrorChan:
+			startErr = fmt.Errorf("RegisterBlockEpochNtfn: %v", err)
+		case <-ctx.Done():
+			return
+		}
+		s.updateHeight(height)
+
+		// Start managers.
+		if err := s.accountManager.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start account "+
+				"manager: %v", err)
+		}
+		if err := s.orderBook.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start order "+
+				"manager: %v", err)
+		}
+		if err := s.batchExecutor.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start batch "+
+				"executor: %v", err)
+		}
+
+		s.wg.Add(1)
+		go s.auctioneer(blockEpochChan, blockErrorChan)
+
+		// Start the gRPC server itself.
+		err = s.rpcServer.Start()
+		if err != nil {
+			startErr = fmt.Errorf("unable to start agora "+
+				"server: %w", err)
+			return
+		}
+	})
+
+	return startErr
 }
 
 // Stop shuts down the server, including all client connections and network
 // listeners.
 func (s *Server) Stop() error {
 	log.Info("Received shutdown signal, stopping server")
-	err := s.auctioneerServer.Stop()
-	if err != nil {
-		return fmt.Errorf("error shutting down server: %v", err)
+
+	var stopErr error
+
+	s.stopOnce.Do(func() {
+		close(s.quit)
+
+		s.accountManager.Stop()
+		s.orderBook.Stop()
+
+		s.lnd.Close()
+
+		err := s.rpcServer.Stop()
+		if err != nil {
+			stopErr = fmt.Errorf("error shutting down "+
+				"server: %w", err)
+			return
+		}
+
+		s.wg.Wait()
+	})
+
+	return stopErr
+}
+
+// updateHeight stores the height atomically so the incoming request handler
+// can access it without locking.
+func (s *Server) updateHeight(height int32) {
+	atomic.StoreUint32(&s.bestHeight, uint32(height))
+}
+
+// fetchBestHeight returns the current best known block height.
+func (s *Server) fetchBestHeight() uint32 {
+	return atomic.LoadUint32(&s.bestHeight)
+}
+
+// auctioneer is the main control loop of the entire daemon. This goroutine
+// will carry out the multi-step batch auction lifecyle.
+//
+// TODO(roasbeef): move to diff file?
+func (s *Server) auctioneer(blockChan chan int32, blockErrChan chan error) {
+	defer s.wg.Done()
+
+	for {
+		select {
+
+		case height := <-blockChan:
+			log.Infof("Received new block notification: height=%v",
+				height)
+			s.updateHeight(height)
+
+		case err := <-blockErrChan:
+			if err != nil {
+				log.Errorf("Unable to receive block "+
+					"notification: %v", err)
+			}
+
+		case <-s.quit:
+			return
+		}
 	}
-	return nil
 }
 
 // ConnectedStreams returns all currently connected traders and their
 // subscriptions.
 func (s *Server) ConnectedStreams() map[lsat.TokenID]*TraderStream {
-	return s.auctioneerServer.connectedStreams
+	return s.rpcServer.connectedStreams
 }
