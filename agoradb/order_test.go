@@ -26,7 +26,7 @@ func TestSubmitOrder(t *testing.T) {
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
 
-	// Store a dummy order and see if we can retrieve it again.
+	// Create a dummy order and make sure it does not yet exist in the DB.
 	bid := &order.Bid{
 		Bid: orderT.Bid{
 			Kit:         *dummyClientOrder(t, 500000),
@@ -34,7 +34,14 @@ func TestSubmitOrder(t *testing.T) {
 		},
 		Kit: *dummyOrder(t),
 	}
-	err := store.SubmitOrder(ctxb, bid)
+	_, err := store.GetOrder(ctxb, bid.Nonce())
+	if err != ErrNoOrder {
+		t.Fatalf("unexpected error. got %v expected %v", err,
+			ErrNoOrder)
+	}
+
+	// Store the dummy order now.
+	err = store.SubmitOrder(ctxb, bid)
 	if err != nil {
 		t.Fatalf("unable to store order: %v", err)
 	}
@@ -65,6 +72,13 @@ func TestSubmitOrder(t *testing.T) {
 	if allOrders[0].Type() != orderT.TypeBid {
 		t.Fatalf("unexpected order type. got %d expected %d",
 			allOrders[0].Type(), orderT.TypeBid)
+	}
+
+	// Finally, make sure we cannot submit the same order again.
+	err = store.SubmitOrder(ctxb, bid)
+	if err != ErrOrderExists {
+		t.Fatalf("unexpected error. got %v expected %v", err,
+			ErrOrderExists)
 	}
 }
 
@@ -140,6 +154,21 @@ func TestUpdateOrders(t *testing.T) {
 				o.Details().State,
 				orderT.StateCleared)
 		}
+	}
+
+	// Finally make sure we can't update an order that does not exist.
+	o3 := &order.Bid{
+		Bid: orderT.Bid{
+			Kit:         *dummyClientOrder(t, 12345),
+			MinDuration: 1337,
+		},
+		Kit: *dummyOrder(t),
+	}
+	err = store.UpdateOrder(
+		ctxb, o3.Nonce(), order.StateModifier(orderT.StateExecuted),
+	)
+	if err != ErrNoOrder {
+		t.Fatalf("unexpected error. got %v wanted %v", err, ErrNoOrder)
 	}
 }
 

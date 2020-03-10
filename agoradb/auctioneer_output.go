@@ -6,7 +6,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/coreos/etcd/clientv3"
+	"github.com/btcsuite/btcd/btcec"
+	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
 )
 
@@ -30,7 +31,9 @@ func (s *EtcdStore) auctioneerKey() string {
 
 // FetchAuctioneerAccount retrieves the current information pertaining to the
 // current auctioneer output state.
-func (s *EtcdStore) FetchAuctioneerAccount(ctx context.Context) (*account.Auctioneer, error) {
+func (s *EtcdStore) FetchAuctioneerAccount(ctx context.Context) (
+	*account.Auctioneer, error) {
+
 	if !s.initialized {
 		return nil, errNotInitialized
 	}
@@ -63,9 +66,9 @@ func (s *EtcdStore) FetchAuctioneerAccount(ctx context.Context) (*account.Auctio
 	return acct, nil
 }
 
-// UpdateAuctioneerAccount updates the current auctioneer output in-place.
-//
-// TODO(roasbeef): pass in STM struct?
+// UpdateAuctioneerAccount updates the current auctioneer output in-place and
+// also updates the per batch key according to the state in the auctioneer's
+// account.
 func (s *EtcdStore) UpdateAuctioneerAccount(ctx context.Context,
 	acct *account.Auctioneer) error {
 
@@ -73,28 +76,36 @@ func (s *EtcdStore) UpdateAuctioneerAccount(ctx context.Context,
 		return errNotInitialized
 	}
 
+	// For this update, we aim to update both the batch key and the
+	// auctioneer's state in a single transaction, so we'll create updates
+	// to apply atomically below.
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		err := s.updateAuctioneerAccountSTM(stm, acct)
+		if err != nil {
+			return err
+		}
+
+		key, err := btcec.ParsePubKey(acct.BatchKey[:], btcec.S256())
+		if err != nil {
+			return err
+		}
+		return s.putPerBatchKeySTM(stm, key)
+	})
+	return err
+}
+
+// updateAuctioneerAccountSTM adds all operations necessary to update the master
+// account to the given STM transaction.
+func (s *EtcdStore) updateAuctioneerAccountSTM(stm conc.STM,
+	acct *account.Auctioneer) error {
+
 	var acctBytes bytes.Buffer
 	if err := serializeAuctioneerAccount(&acctBytes, acct); err != nil {
 		return err
 	}
 
-	// For this update, we aim to update both the batch key and the
-	// auctioneer's state in a single transaction, so we'll create updates
-	// to apply atomically below.
-	updateAcctState := clientv3.OpPut(s.auctioneerKey(),
-		acctBytes.String())
-	updateBatchKey := clientv3.OpPut(
-		s.perBatchKeyPath(), string(acct.BatchKey[:]),
-	)
-
-	// With our updates crafted, we'll attempt to update both these keys at
-	// once.
-	_, err := s.client.Txn(ctx).
-		If().
-		Then(updateBatchKey, updateAcctState).
-		Commit()
-
-	return err
+	stm.Put(s.auctioneerKey(), acctBytes.String())
+	return nil
 }
 
 func serializeAuctioneerAccount(w io.Writer, acct *account.Auctioneer) error {

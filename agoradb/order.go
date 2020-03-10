@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/coreos/etcd/clientv3"
+	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/client/clientdb"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
@@ -43,36 +44,34 @@ var (
 // already exists in the store, ErrOrderExists is returned.
 //
 // NOTE: This is part of the Store interface.
-func (s *EtcdStore) SubmitOrder(mainCtx context.Context,
+func (s *EtcdStore) SubmitOrder(ctx context.Context,
 	order order.ServerOrder) error {
 
 	if !s.initialized {
 		return errNotInitialized
 	}
 
-	key := s.getKeyOrderPrefix(order.Nonce())
-	_, err := s.getSingleValue(mainCtx, key, ErrNoOrder)
-	switch err {
-	// No error means there is an order with that nonce in the DB already.
-	case nil:
-		return ErrOrderExists
+	// Read and update the order in an isolated STM transaction to make sure
+	// the same order cannot be created concurrently.
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		// First, we need to make sure no order exists for the given
+		// nonce. In STM this is signaled by an empty string being
+		// returned.
+		key := s.getKeyOrderPrefix(order.Nonce())
+		existing := stm.Get(key)
+		if existing != "" {
+			return ErrOrderExists
+		}
 
-	// This is what we want, no order with that nonce should be known.
-	case ErrNoOrder:
-
-	// Surface any other error.
-	default:
-		return err
-	}
-
-	serialized, err := serializeOrder(order)
-	if err != nil {
-		return err
-	}
-
-	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
-	defer cancel()
-	_, err = s.client.Put(ctx, key, string(serialized))
+		// Now that we know it doesn't yet exist, serialize and store
+		// the new order.
+		serialized, err := serializeOrder(order)
+		if err != nil {
+			return err
+		}
+		stm.Put(key, string(serialized))
+		return nil
+	})
 	return err
 }
 
@@ -80,31 +79,20 @@ func (s *EtcdStore) SubmitOrder(mainCtx context.Context,
 // modifiers.
 //
 // NOTE: This is part of the Store interface.
-func (s *EtcdStore) UpdateOrder(mainCtx context.Context,
+func (s *EtcdStore) UpdateOrder(ctx context.Context,
 	nonce orderT.Nonce, modifiers ...order.Modifier) error {
 
 	if !s.initialized {
 		return errNotInitialized
 	}
 
-	// Retrieve the order stored in the database.
-	dbOrder, err := s.GetOrder(mainCtx, nonce)
-	if err != nil {
-		return err
-	}
-
-	// Apply the given modifications to it and store it back.
-	for _, modifier := range modifiers {
-		modifier(dbOrder)
-	}
-	serialized, err := serializeOrder(dbOrder)
-	if err != nil {
-		return err
-	}
-	key := s.getKeyOrderPrefix(nonce)
-	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
-	defer cancel()
-	_, err = s.client.Put(ctx, key, string(serialized))
+	// Read and update the order in one single isolated STM transaction.
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		return s.updateOrdersSTM(
+			stm, []orderT.Nonce{nonce},
+			[][]order.Modifier{modifiers},
+		)
+	})
 	return err
 }
 
@@ -119,15 +107,34 @@ func (s *EtcdStore) UpdateOrders(mainCtx context.Context,
 		return errNotInitialized
 	}
 
+	// Update the orders in one single STM transaction that they are updated
+	// atomically.
+	_, err := s.defaultSTM(mainCtx, func(stm conc.STM) error {
+		return s.updateOrdersSTM(stm, nonces, modifiers)
+	})
+	return err
+}
+
+// updateOrdersSTM adds all operations necessary to update multiple orders to
+// the given STM transaction. If any of the orders does not yet exist, the whole
+// STM transaction will fail.
+func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
+	modifiers [][]order.Modifier) error {
+
 	if len(nonces) != len(modifiers) {
 		return fmt.Errorf("invalid number of modifiers")
 	}
 
-	dbOperations := make([]clientv3.Op, len(nonces))
 	for idx, nonce := range nonces {
 		// Read the current version from the DB and apply the
-		// modifications to it.
-		dbOrder, err := s.GetOrder(mainCtx, nonce)
+		// modifications to it. If the order to be modified does not
+		// exist, this will be signaled with an empty string by STM.
+		key := s.getKeyOrderPrefix(nonce)
+		resp := stm.Get(key)
+		if resp == "" {
+			return ErrNoOrder
+		}
+		dbOrder, err := deserializeOrder([]byte(resp), nonce)
 		if err != nil {
 			return err
 		}
@@ -140,19 +147,10 @@ func (s *EtcdStore) UpdateOrders(mainCtx context.Context,
 		if err != nil {
 			return err
 		}
-		key := s.getKeyOrderPrefix(nonce)
-		dbOperations[idx] = clientv3.OpPut(key, string(serialized))
+		stm.Put(key, string(serialized))
 	}
 
-	// Write the orders in one single transaction that they are updated
-	// atomically
-	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
-	defer cancel()
-	_, err := s.client.Txn(ctx).
-		If().
-		Then(dbOperations...).
-		Commit()
-	return err
+	return nil
 }
 
 // GetOrder returns an order by looking up the nonce. If no order with that
@@ -177,13 +175,13 @@ func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 // GetOrders returns all orders that are currently known to the store.
 //
 // NOTE: This is part of the Store interface.
-func (s *EtcdStore) GetOrders(mainCtx context.Context) ([]order.ServerOrder, error) {
+func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) {
 	if !s.initialized {
 		return nil, errNotInitialized
 	}
 
 	key := s.getKeyPrefix(orderPrefix)
-	resultMap, err := s.readOrderKeys(mainCtx, key)
+	resultMap, err := s.readOrderKeys(ctx, key)
 	if err != nil {
 		return nil, err
 	}

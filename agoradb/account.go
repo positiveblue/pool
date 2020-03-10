@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/coreos/etcd/clientv3"
+	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/loop/lsat"
 )
@@ -84,13 +85,17 @@ func (s *EtcdStore) ReserveAccount(ctx context.Context,
 		return errNotInitialized
 	}
 
-	k := s.getReservationKey(tokenID)
+	reservationKey := s.getReservationKey(tokenID)
 	var buf bytes.Buffer
 	if err := serializeReservation(&buf, reservation); err != nil {
 		return err
 	}
 
-	_, err := s.client.Put(ctx, k, buf.String())
+	// Wrap the update in an STM and execute it.
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		stm.Put(reservationKey, buf.String())
+		return nil
+	})
 	return err
 }
 
@@ -103,18 +108,7 @@ func (s *EtcdStore) CompleteReservation(ctx context.Context,
 		return errNotInitialized
 	}
 
-	// First, make sure we have an active reservation for the LSAT token
-	// associated with the account.
-	reservationKey := s.getReservationKey(a.TokenID)
-	_, err := s.getSingleValue(ctx, reservationKey, account.ErrNoReservation)
-	if err != nil {
-		return err
-	}
-
-	// If we do, we'll need to remove the reservation and add the account
-	// atomically. Create both operations to commit them under the same
-	// database transaction.
-	removeReservation := clientv3.OpDelete(reservationKey)
+	// Make sure we can serialize the new account before trying to store it.
 	var buf bytes.Buffer
 	if err := serializeAccount(&buf, a); err != nil {
 		return err
@@ -123,12 +117,23 @@ func (s *EtcdStore) CompleteReservation(ctx context.Context,
 	if err != nil {
 		return err
 	}
-	putAccount := clientv3.OpPut(s.getAccountKey(traderKey), buf.String())
 
-	_, err = s.client.Txn(ctx).
-		If().
-		Then(removeReservation, putAccount).
-		Commit()
+	// If we do, we'll need to remove the reservation and add the account
+	// atomically. Create both operations in an STM to commit them under the
+	// same database transaction.
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+		// First, make sure we have an active reservation for the LSAT
+		// token associated with the account.
+		reservationKey := s.getReservationKey(a.TokenID)
+		reservation := stm.Get(reservationKey)
+		if reservation == "" {
+			return account.ErrNoReservation
+		}
+
+		stm.Del(reservationKey)
+		stm.Put(s.getAccountKey(traderKey), buf.String())
+		return nil
+	})
 	return err
 }
 
@@ -141,31 +146,17 @@ func (s *EtcdStore) UpdateAccount(ctx context.Context, account *account.Account,
 		return errNotInitialized
 	}
 
-	// Retrieve the account stored in the database.
+	// Get the parsed key from the account.
 	traderKey, err := account.TraderKey()
 	if err != nil {
 		return err
 	}
-	k := s.getAccountKey(traderKey)
-	resp, err := s.getSingleValue(ctx, k, ErrAccountNotFound)
-	if err != nil {
-		return err
-	}
-	dbAccount, err := deserializeAccount(bytes.NewReader(resp.Kvs[0].Value))
-	if err != nil {
-		return err
-	}
 
-	// Apply the given modifications to it and store it back.
-	for _, modifier := range modifiers {
-		modifier(dbAccount)
-	}
-
-	var buf bytes.Buffer
-	if err := serializeAccount(&buf, dbAccount); err != nil {
-		return err
-	}
-	if _, err := s.client.Put(ctx, k, buf.String()); err != nil {
+	// Wrap the update in an STM and execute it.
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+		return s.updateAccountSTM(stm, traderKey, modifiers...)
+	})
+	if err != nil {
 		return err
 	}
 
@@ -175,6 +166,39 @@ func (s *EtcdStore) UpdateAccount(ctx context.Context, account *account.Account,
 		modifier(account)
 	}
 
+	return nil
+}
+
+// updateAccountSTM adds all operations necessary to update an account to the
+// given STM transaction. If the account does not yet exist, the whole STM
+// transaction will fail.
+func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
+	modifiers ...account.Modifier) error {
+
+	// Retrieve the account stored in the database. In STM an empty string
+	// means that the key does not exist.
+	k := s.getAccountKey(acctKey)
+	resp := stm.Get(k)
+	if resp == "" {
+		return ErrAccountNotFound
+	}
+	dbAccount, err := deserializeAccount(bytes.NewReader([]byte(resp)))
+	if err != nil {
+		return err
+	}
+
+	// Apply the given modifications to it and serialize it back.
+	for _, modifier := range modifiers {
+		modifier(dbAccount)
+	}
+
+	var buf bytes.Buffer
+	if err := serializeAccount(&buf, dbAccount); err != nil {
+		return err
+	}
+
+	// Add the put operation to the queue.
+	stm.Put(k, buf.String())
 	return nil
 }
 
@@ -213,11 +237,11 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 
 	accounts := make([]*account.Account, 0, len(resp.Kvs))
 	for _, kv := range resp.Kvs {
-		account, err := deserializeAccount(bytes.NewReader(kv.Value))
+		acct, err := deserializeAccount(bytes.NewReader(kv.Value))
 		if err != nil {
 			return nil, err
 		}
-		accounts = append(accounts, account)
+		accounts = append(accounts, acct)
 	}
 
 	return accounts, nil

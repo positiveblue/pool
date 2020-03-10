@@ -101,13 +101,13 @@ func TestAccountReservation(t *testing.T) {
 	}
 
 	traderKey, _ := testAccount.TraderKey()
-	account, err := store.Account(ctx, traderKey)
+	acct, err := store.Account(ctx, traderKey)
 	if err != nil {
 		t.Fatalf("unable to retrieve account: %v", err)
 	}
-	if !reflect.DeepEqual(account, &testAccount) {
+	if !reflect.DeepEqual(acct, &testAccount) {
 		t.Fatalf("expected account: %v\ngot: %v",
-			spew.Sdump(testAccount), spew.Sdump(account))
+			spew.Sdump(testAccount), spew.Sdump(acct))
 	}
 }
 
@@ -161,6 +161,17 @@ func TestAccounts(t *testing.T) {
 	if !reflect.DeepEqual(accounts[0], &a) {
 		t.Fatalf("expected account: %v\ngot: %v",
 			spew.Sdump(a), spew.Sdump(accounts[0]))
+	}
+
+	// Make sure we can't update an account that does not exist. Just flip
+	// the trader key's sign bit to create a valid point that does not exist
+	// in the database.
+	a.TraderKeyRaw[0] ^= 0x01
+	err = store.UpdateAccount(
+		ctx, &a, account.StateModifier(account.StateOpen),
+	)
+	if err != ErrAccountNotFound {
+		t.Fatalf("expected ErrAccountNotFound, got \"%v\"", err)
 	}
 }
 
