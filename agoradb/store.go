@@ -129,6 +129,8 @@ func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 		return err
 	}
 
+	// TODO(roasbeef): insert place holder aucitoneer acct?
+
 	_, err = s.client.Txn(ctx).
 		If().
 		Then(storeVersion, storeInitialBatchKey).
