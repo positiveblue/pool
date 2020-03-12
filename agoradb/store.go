@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/clientv3"
+	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/order"
 )
@@ -22,6 +23,12 @@ var (
 	currentDbVersion = uint32(0)
 
 	etcdTimeout = 10 * time.Second
+
+	// stmDefaultIsolation is the default isolation level we use for STM
+	// transactions that manipulate accounts and orders. This is also the
+	// default as declared in the concurrency package and offers the most
+	// strict isolation.
+	stmDefaultIsolation = conc.SerializableSnapshot
 )
 
 var (
@@ -122,19 +129,17 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 // store's initialization atomically.
 func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 	versionKey := s.getKeyPrefix(versionPrefix)
-	storeVersion := clientv3.OpPut(versionKey, strconv.Itoa(int(version)))
 
-	storeInitialBatchKey, err := s.putPerBatchKeyOp(initialBatchKey)
-	if err != nil {
-		return err
-	}
+	// Wrap the update in an STM and execute it.
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		// Write initial version number.
+		stm.Put(versionKey, strconv.Itoa(int(version)))
 
-	// TODO(roasbeef): insert place holder aucitoneer acct?
+		// TODO(roasbeef): insert place holder auctioneer acct?
 
-	_, err = s.client.Txn(ctx).
-		If().
-		Then(storeVersion, storeInitialBatchKey).
-		Commit()
+		// Store the starting batch key.
+		return s.putPerBatchKeySTM(stm, initialBatchKey)
+	})
 	return err
 }
 
@@ -144,7 +149,7 @@ func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
 	errNoValue error) (*clientv3.GetResponse, error) {
 
-	resp, err := s.client.Get(ctx, key, clientv3.WithPrefix())
+	resp, err := s.client.Get(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -157,4 +162,18 @@ func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
 	}
 
 	return resp, nil
+}
+
+// defaultSTM returns an STM transaction wrapper for the store's etcd client
+// with the default isolation level that is suitable for manipulating accounts
+// and orders during the order submit phase.
+func (s *EtcdStore) defaultSTM(ctx context.Context, apply func(conc.STM) error) (
+	*clientv3.TxnResponse, error) {
+
+	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
+	defer cancel()
+	return conc.NewSTM(
+		s.client, apply, conc.WithAbortContext(ctxt),
+		conc.WithIsolation(stmDefaultIsolation),
+	)
 }

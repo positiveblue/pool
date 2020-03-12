@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/coreos/etcd/clientv3"
+	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/client/clmscript"
 )
 
@@ -61,15 +61,16 @@ func (s *EtcdStore) perBatchKey(ctx context.Context) (*btcec.PublicKey, error) {
 	return batchKey, nil
 }
 
-// putPerBatchKeyOp returns an etcd operation to store the given key under the
-// path of the per-batch key.
-func (s *EtcdStore) putPerBatchKeyOp(key *btcec.PublicKey) (clientv3.Op, error) {
+// updateAccountSTM adds all operations necessary to store the per batch key to
+// the given STM transaction.
+func (s *EtcdStore) putPerBatchKeySTM(stm conc.STM, key *btcec.PublicKey) error {
 	perBatchKeyPath := s.perBatchKeyPath()
 	var perBatchKeyBuf bytes.Buffer
 	if err := WriteElement(&perBatchKeyBuf, key); err != nil {
-		return clientv3.Op{}, err
+		return err
 	}
-	return clientv3.OpPut(perBatchKeyPath, perBatchKeyBuf.String()), nil
+	stm.Put(perBatchKeyPath, perBatchKeyBuf.String())
+	return nil
 }
 
 // BatchKey returns the current per-batch key that must be used to tweak account
@@ -98,11 +99,10 @@ func (s *EtcdStore) NextBatchKey(ctx context.Context) (*btcec.PublicKey, error) 
 
 	newPerBatchKey := clmscript.IncrementKey(perBatchKey)
 
-	op, err := s.putPerBatchKeyOp(newPerBatchKey)
-	if err != nil {
-		return nil, err
-	}
-	_, err = s.client.Do(ctx, op)
+	// Wrap the update in an STM and execute it.
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+		return s.putPerBatchKeySTM(stm, newPerBatchKey)
+	})
 	if err != nil {
 		return nil, err
 	}

@@ -11,7 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	clientorder "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -26,15 +26,22 @@ func TestSubmitOrder(t *testing.T) {
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
 
-	// Store a dummy order and see if we can retrieve it again.
+	// Create a dummy order and make sure it does not yet exist in the DB.
 	bid := &order.Bid{
-		Bid: clientorder.Bid{
+		Bid: orderT.Bid{
 			Kit:         *dummyClientOrder(t, 500000),
 			MinDuration: 1337,
 		},
 		Kit: *dummyOrder(t),
 	}
-	err := store.SubmitOrder(ctxb, bid)
+	_, err := store.GetOrder(ctxb, bid.Nonce())
+	if err != ErrNoOrder {
+		t.Fatalf("unexpected error. got %v expected %v", err,
+			ErrNoOrder)
+	}
+
+	// Store the dummy order now.
+	err = store.SubmitOrder(ctxb, bid)
 	if err != nil {
 		t.Fatalf("unable to store order: %v", err)
 	}
@@ -45,9 +52,9 @@ func TestSubmitOrder(t *testing.T) {
 	assertOrdersEqual(t, bid, storedOrder)
 
 	// Check that we got the correct type back.
-	if storedOrder.Type() != clientorder.TypeBid {
+	if storedOrder.Type() != orderT.TypeBid {
 		t.Fatalf("unexpected order type. got %d expected %d",
-			storedOrder.Type(), clientorder.TypeBid)
+			storedOrder.Type(), orderT.TypeBid)
 	}
 
 	// Get all orders and check that we get the same as when querying a
@@ -62,9 +69,16 @@ func TestSubmitOrder(t *testing.T) {
 	}
 	assertOrdersEqual(t, bid, allOrders[0])
 
-	if allOrders[0].Type() != clientorder.TypeBid {
+	if allOrders[0].Type() != orderT.TypeBid {
 		t.Fatalf("unexpected order type. got %d expected %d",
-			allOrders[0].Type(), clientorder.TypeBid)
+			allOrders[0].Type(), orderT.TypeBid)
+	}
+
+	// Finally, make sure we cannot submit the same order again.
+	err = store.SubmitOrder(ctxb, bid)
+	if err != ErrOrderExists {
+		t.Fatalf("unexpected error. got %v expected %v", err,
+			ErrOrderExists)
 	}
 }
 
@@ -76,7 +90,7 @@ func TestUpdateOrders(t *testing.T) {
 
 	// Store two dummy orders that we are going to update later.
 	o1 := &order.Bid{
-		Bid: clientorder.Bid{
+		Bid: orderT.Bid{
 			Kit:         *dummyClientOrder(t, 500000),
 			MinDuration: 1337,
 		},
@@ -87,7 +101,7 @@ func TestUpdateOrders(t *testing.T) {
 		t.Fatalf("unable to store order: %v", err)
 	}
 	o2 := &order.Ask{
-		Ask: clientorder.Ask{
+		Ask: orderT.Ask{
 			Kit:         *dummyClientOrder(t, 500000),
 			MaxDuration: 1337,
 		},
@@ -101,7 +115,7 @@ func TestUpdateOrders(t *testing.T) {
 	// Update the state of the first order and check that it is persisted.
 	err = store.UpdateOrder(
 		ctxb, o1.Nonce(),
-		order.StateModifier(clientorder.StatePartiallyFilled),
+		order.StateModifier(orderT.StatePartiallyFilled),
 	)
 	if err != nil {
 		t.Fatalf("unable to update order: %v", err)
@@ -110,17 +124,17 @@ func TestUpdateOrders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	if storedOrder.Details().State != clientorder.StatePartiallyFilled {
+	if storedOrder.Details().State != orderT.StatePartiallyFilled {
 		t.Fatalf("unexpected order state. got %d expected %d",
 			storedOrder.Details().State,
-			clientorder.StatePartiallyFilled)
+			orderT.StatePartiallyFilled)
 	}
 
 	// Bulk update the state of both orders and check that they are
 	// persisted correctly.
-	stateModifier := order.StateModifier(clientorder.StateCleared)
+	stateModifier := order.StateModifier(orderT.StateCleared)
 	err = store.UpdateOrders(
-		ctxb, []clientorder.Nonce{o1.Nonce(), o2.Nonce()},
+		ctxb, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
 		[][]order.Modifier{{stateModifier}, {stateModifier}},
 	)
 	if err != nil {
@@ -135,11 +149,26 @@ func TestUpdateOrders(t *testing.T) {
 			len(allOrders), 2)
 	}
 	for _, o := range allOrders {
-		if o.Details().State != clientorder.StateCleared {
+		if o.Details().State != orderT.StateCleared {
 			t.Fatalf("unexpected order state. got %d expected %d",
 				o.Details().State,
-				clientorder.StateCleared)
+				orderT.StateCleared)
 		}
+	}
+
+	// Finally make sure we can't update an order that does not exist.
+	o3 := &order.Bid{
+		Bid: orderT.Bid{
+			Kit:         *dummyClientOrder(t, 12345),
+			MinDuration: 1337,
+		},
+		Kit: *dummyOrder(t),
+	}
+	err = store.UpdateOrder(
+		ctxb, o3.Nonce(), order.StateModifier(orderT.StateExecuted),
+	)
+	if err != ErrNoOrder {
+		t.Fatalf("unexpected error. got %v wanted %v", err, ErrNoOrder)
 	}
 }
 
@@ -160,13 +189,13 @@ func assertOrdersEqual(t *testing.T, o1, o2 order.ServerOrder) {
 	}
 }
 
-func dummyClientOrder(t *testing.T, amt btcutil.Amount) *clientorder.Kit {
+func dummyClientOrder(t *testing.T, amt btcutil.Amount) *orderT.Kit {
 	var testPreimage lntypes.Preimage
 	if _, err := rand.Read(testPreimage[:]); err != nil {
 		t.Fatalf("could not create private key: %v", err)
 	}
-	kit := clientorder.NewKitWithPreimage(testPreimage)
-	kit.State = clientorder.StateExecuted
+	kit := orderT.NewKitWithPreimage(testPreimage)
+	kit.State = orderT.StateExecuted
 	kit.FixedRate = 21
 	kit.Amt = amt
 	kit.MultiSigKeyLocator = keychain.KeyLocator{Index: 1, Family: 2}
