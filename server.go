@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/kirin/auth"
@@ -87,6 +88,12 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Instantiate our fee schedule now that will be used by different parts
+	// during the batch execution.
+	feeSchedule := orderT.NewLinearFeeSchedule(
+		btcutil.Amount(cfg.ExecFeeBase), btcutil.Amount(cfg.ExecFeeRate),
+	)
+
 	// Continuing, we create the batch executor which will communicate
 	// between the trader's an auctioneer for each batch epoch.
 	batchExecutor, err := venue.NewBatchExecutor()
@@ -138,9 +145,8 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	auctioneerServer := newRPCServer(
 		store, lnd, accountManager, server.fetchBestHeight,
-		server.orderBook,
-		batchExecutor, grpcListener, serverOpts,
-		cfg.SubscribeTimeout,
+		server.orderBook, batchExecutor, feeSchedule, grpcListener,
+		serverOpts, cfg.SubscribeTimeout,
 	)
 	server.rpcServer = auctioneerServer
 

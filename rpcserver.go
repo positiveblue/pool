@@ -121,6 +121,8 @@ type rpcServer struct {
 
 	bestHeight func() uint32
 
+	feeSchedule *orderT.LinearFeeSchedule
+
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
 	// but can subscribe to updates for multiple accounts through the same
@@ -132,7 +134,8 @@ type rpcServer struct {
 func newRPCServer(store agoradb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
-	listener net.Listener, serverOpts []grpc.ServerOption,
+	feeSchedule *orderT.LinearFeeSchedule, listener net.Listener,
+	serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
 	return &rpcServer{
@@ -144,6 +147,7 @@ func newRPCServer(store agoradb.Store, lnd *lndclient.GrpcLndServices,
 		orderBook:        orderBook,
 		store:            store,
 		batchExecutor:    batchExecutor,
+		feeSchedule:      feeSchedule,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
 		subscribeTimeout: subscribeTimeout,
@@ -906,6 +910,18 @@ func (s *rpcServer) OrderState(ctx context.Context,
 	return &clmrpc.ServerOrderStateResponse{
 		State:            clmrpc.OrderState(o.Details().State),
 		UnitsUnfulfilled: uint32(o.Details().UnitsUnfulfilled),
+	}, nil
+}
+
+// FeeQuote returns all the fees as they are currently configured.
+func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
+	*clmrpc.FeeQuoteResponse, error) {
+
+	return &clmrpc.FeeQuoteResponse{
+		ExecutionFee: &clmrpc.ExecutionFee{
+			BaseFee: int64(s.feeSchedule.BaseFee()),
+			FeeRate: int64(s.feeSchedule.FeeRate()),
+		},
 	}, nil
 }
 
