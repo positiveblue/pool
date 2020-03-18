@@ -1,5 +1,7 @@
 package matching
 
+import orderT "github.com/lightninglabs/agora/client/order"
+
 // LastAcceptedBid is a uniform clearing price algorithm that selects the
 // clearing price to the lowest bid within the candidate batch.
 type LastAcceptedBid struct {
@@ -14,8 +16,8 @@ type LastAcceptedBid struct {
 //
 // NOTE: This method requires that there're a non-zero number of orders in the
 // given matchSet.
-func (l *LastAcceptedBid) ExtractClearingPrice(matchSet *MatchSet,
-) (FixedRatePremium, error) {
+func (l *LastAcceptedBid) ExtractClearingPrice(matchSet *MatchSet) (
+	orderT.FixedRatePremium, error) {
 
 	// TODO(roasbeef): buyer's bid??
 	//  * actually need to find the intersection point? (only for above?)
@@ -25,7 +27,7 @@ func (l *LastAcceptedBid) ExtractClearingPrice(matchSet *MatchSet,
 
 	lastAcceptedBid := matchedOrders[numMatchedOrders-1].Details.Bid
 
-	return FixedRatePremium(lastAcceptedBid.FixedRate), nil
+	return orderT.FixedRatePremium(lastAcceptedBid.FixedRate), nil
 }
 
 // A compile-time assertion to ensure that the LastAcceptedBid meets the

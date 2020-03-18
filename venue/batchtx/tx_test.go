@@ -22,7 +22,7 @@ var (
 
 type mockFeeSchedule struct {
 	baseFee    btcutil.Amount
-	exeFeeRate matching.FixedRatePremium
+	exeFeeRate orderT.FixedRatePremium
 }
 
 func (m *mockFeeSchedule) BaseFee() btcutil.Amount {
@@ -30,10 +30,10 @@ func (m *mockFeeSchedule) BaseFee() btcutil.Amount {
 }
 
 func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
-	return orderT.CalcFee(amt, uint32(m.exeFeeRate), 0)
+	return orderT.PerBlockPremium(amt, uint32(m.exeFeeRate))
 }
 
-var _ matching.FeeSchedule = (*mockFeeSchedule)(nil)
+var _ orderT.FeeSchedule = (*mockFeeSchedule)(nil)
 
 // TestBatchTransactionAssembly tests that given a valid set of parameters,
 // we're able to construct a complete batch transaction. All relevant outputs
@@ -44,10 +44,10 @@ func TestBatchTransactionAssembly(t *testing.T) {
 
 	// For simplicity, we'll use the same clearing price of 1% for the
 	// entire batch.
-	const clearingPrice = matching.FixedRatePremium(10000)
+	const clearingPrice = orderT.FixedRatePremium(10000)
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,
-		exeFeeRate: matching.FixedRatePremium(10000),
+		exeFeeRate: orderT.FixedRatePremium(10000),
 	}
 
 	acctValue := btcutil.SatoshiPerBitcoin

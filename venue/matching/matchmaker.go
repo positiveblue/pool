@@ -40,14 +40,14 @@ type UniformPriceCallMarket struct {
 	// feeSchedule is the current fee schedule of the auctioneer. This will
 	// be used to determine how much to charge traders in venue and
 	// execution fees.
-	feeSchedule FeeSchedule
+	feeSchedule orderT.FeeSchedule
 }
 
 // NewUniformPriceCallMarket returns a new instance of the
 // UniformPriceCallMarket struct given the price clearer and fee schedule for
 // this current batch epoch.
 func NewUniformPriceCallMarket(priceClearer PriceClearer,
-	feeSchedule FeeSchedule) *UniformPriceCallMarket {
+	feeSchedule orderT.FeeSchedule) *UniformPriceCallMarket {
 
 	u := &UniformPriceCallMarket{
 		priceClearer: priceClearer,

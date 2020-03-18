@@ -140,7 +140,8 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		if o.MinDuration() == 0 {
 			return fmt.Errorf("invalid min duration")
 		}
-		orderFee := order.CalcFee(o.Amt, o.FixedRate, o.MinDuration())
+		rate := order.FixedRatePremium(o.FixedRate)
+		orderFee := rate.LumpSumPremium(o.Amt, o.MinDuration())
 		balanceNeeded = orderFee + b.cfg.SubmitFee
 	}
 
