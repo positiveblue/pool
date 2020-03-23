@@ -344,6 +344,12 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	req *clmrpc.ServerSubmitOrderRequest) (
 	*clmrpc.ServerSubmitOrderResponse, error) {
 
+	// TODO(roasbeef): don't accept orders if auctioneer doesn't have
+	// master account
+	//  * make new interface for? have all operations flow thru the
+	//    auctioneer?
+	//  * allow order cancellations tho?
+
 	var o order.ServerOrder
 	switch requestOrder := req.Details.(type) {
 	case *clmrpc.ServerSubmitOrderRequest_Ask:
