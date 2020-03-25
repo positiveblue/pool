@@ -27,6 +27,14 @@ const (
 	// submitting an order.
 	defaultOrderSubmitFee = 1337
 
+	// defaultExecutionFeeBase is the default base fee in satoshis that we
+	// charge per matched order.
+	defaultExecutionFeeBase = 1
+
+	// defaultExecutionFeeRate is the default variable fee rate in parts per
+	// million that we charge per matched order.
+	defaultExecutionFeeRate = 100
+
 	// defaultTLSCertFilename is the default file name for the TLS
 	// certificate.
 	defaultTLSCertFilename = "tls.cert"
@@ -94,6 +102,9 @@ type Config struct {
 	OrderSubmitFee   int64         `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
 	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
 
+	ExecFeeBase int64 `long:"execfeebase" description:"The execution base fee in satoshis that is charged per matched order."`
+	ExecFeeRate int64 `long:"execfeerate" description:"The execution fee rate in parts per million that is charged per matched order."`
+
 	ServerName string `long:"servername" description:"Server name to use for the tls certificate"`
 	Insecure   bool   `long:"insecure" description:"disable tls"`
 	AutoCert   bool   `long:"autocert" description:"automatically create a Let's Encrypt cert using ServerName"`
@@ -122,6 +133,8 @@ var DefaultConfig = &Config{
 	Network:          "mainnet",
 	BaseDir:          DefaultBaseDir,
 	OrderSubmitFee:   defaultOrderSubmitFee,
+	ExecFeeBase:      defaultExecutionFeeBase,
+	ExecFeeRate:      defaultExecutionFeeRate,
 	SubscribeTimeout: defaultSubscribeTimeout,
 	ServerName:       "auction.lightning.today",
 	Insecure:         false,
