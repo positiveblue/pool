@@ -147,6 +147,10 @@ flake-unit:
 	@$(call print, "Flake hunting unit tests.")
 	while [ $$? -eq 0 ]; do GOTRACEBACK=all $(UNIT) -count=1; done
 
+flakehunt:
+	@$(call print, "Flake hunting itests.")
+	while [ $$? -eq 0 ]; do GOTRACEBACK=all $(ITEST); done
+
 # =========
 # UTILITIES
 # =========

@@ -115,7 +115,6 @@ func (h *harnessTest) Log(args ...interface{}) {
 
 // shutdown stops both the auction and trader server.
 func (h *harnessTest) shutdown() error {
-	h.Log("Shutting down harness")
 	// Allow both server and client to stop but only return the first error
 	// that occurs.
 	err := h.trader.stop()

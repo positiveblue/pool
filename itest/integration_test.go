@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/integration/rpctest"
@@ -103,7 +104,14 @@ func TestAuctioneerServer(t *testing.T) {
 	if err != nil {
 		ht.Fatalf("unable to create lightning network harness: %v", err)
 	}
-	defer lndHarness.TearDownAll()
+	defer func() {
+		// There is a timing issue in here somewhere. If we shut down
+		// lnd immediately after stopping the trader server, sometimes
+		// we get a race in the TX notifier chan closes. The wait seems
+		// to fix it for now...
+		time.Sleep(100 * time.Millisecond)
+		_ = lndHarness.TearDownAll()
+	}()
 
 	// Spawn a new goroutine to watch for any fatal errors that any of the
 	// running lnd processes encounter. If an error occurs, then the test
