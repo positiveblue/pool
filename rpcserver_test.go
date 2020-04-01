@@ -345,7 +345,7 @@ func newServer(t *testing.T, store agoradb.Store) *rpcServer {
 		},
 	}
 
-	batchExecutor, err := venue.NewBatchExecutor()
+	batchExecutor, err := venue.NewBatchExecutor(store)
 	if err != nil {
 		t.Fatalf("unable to create batch executor: %v", err)
 		return nil

@@ -8,10 +8,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/clientv3"
 	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 )
 
@@ -51,6 +53,22 @@ type Store interface {
 	account.Store
 
 	order.Store
+
+	// FetchAuctioneerAccount retrieves the current information pertaining
+	// to the current auctioneer output state.
+	FetchAuctioneerAccount(context.Context) (*account.Auctioneer, error)
+
+	// UpdateAuctioneerAccount updates the current auctioneer output
+	// in-place and also updates the per batch key according to the state in
+	// the auctioneer's account.
+	UpdateAuctioneerAccount(context.Context, *account.Auctioneer) error
+
+	// PersistBatchResult atomically updates all modified orders/accounts
+	// and switches to the next batch ID. If any single operation fails, the
+	// whole set of changes is rolled back.
+	PersistBatchResult(context.Context, []orderT.Nonce, [][]order.Modifier,
+		[]*btcec.PublicKey, [][]account.Modifier,
+		*account.Auctioneer, *btcec.PublicKey) error
 }
 
 type EtcdStore struct {

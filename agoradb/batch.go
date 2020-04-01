@@ -5,11 +5,15 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
 	conc "github.com/coreos/etcd/clientv3/concurrency"
+	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmscript"
+	orderT "github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/agora/order"
 )
 
 var (
@@ -108,4 +112,54 @@ func (s *EtcdStore) NextBatchKey(ctx context.Context) (*btcec.PublicKey, error) 
 	}
 
 	return newPerBatchKey, err
+}
+
+// PersistBatchResult atomically updates all modified orders/accounts and
+// switches to the next batch ID. If any single operation fails, the whole
+// set of changes is rolled back.
+func (s *EtcdStore) PersistBatchResult(ctx context.Context,
+	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
+	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
+	masterAccount *account.Auctioneer, newBatchkey *btcec.PublicKey) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	// Catch the most obvious problems first.
+	if len(orders) != len(orderModifiers) {
+		return fmt.Errorf("order modifier length mismatch")
+	}
+	if len(accounts) != len(accountModifiers) {
+		return fmt.Errorf("account modifier length mismatch")
+	}
+
+	// Wrap the whole batch update in one large isolated STM transaction.
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		// Update orders first.
+		err := s.updateOrdersSTM(stm, orders, orderModifiers)
+		if err != nil {
+			return err
+		}
+
+		// Update accounts next.
+		for idx, acctKey := range accounts {
+			err := s.updateAccountSTM(
+				stm, acctKey, accountModifiers[idx]...,
+			)
+			if err != nil {
+				return err
+			}
+		}
+
+		// Update the master account output.
+		err = s.updateAuctioneerAccountSTM(stm, masterAccount)
+		if err != nil {
+			return err
+		}
+
+		// And finally, put the new batch key in place.
+		return s.putPerBatchKeySTM(stm, newBatchkey)
+	})
+	return err
 }

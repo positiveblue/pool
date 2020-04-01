@@ -127,6 +127,14 @@ func StateModifier(state order.State) Modifier {
 	}
 }
 
+// UnitsFulfilledModifier is a functional option that modifies the number of
+// unfulfilled units of an order.
+func UnitsFulfilledModifier(newUnfulfilledUnits order.SupplyUnit) Modifier {
+	return func(order ServerOrder) {
+		order.Details().UnitsUnfulfilled = newUnfulfilledUnits
+	}
+}
+
 // Store is the interface a store has to implement to support persisting orders.
 type Store interface {
 	// SubmitOrder submits an order to the store. If an order with the given

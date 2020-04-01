@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/client/clmscript"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -68,6 +69,22 @@ func (s State) String() string {
 		return "unknown"
 	}
 }
+
+// OnChainState describes the different possible states an account can have
+// regarding its on-chain state.
+type OnChainState uint8
+
+const (
+	// OnChainStateRecreated denotes that the leftover account balance was
+	// large enough for a new account output to be created on-chain.
+	OnChainStateRecreated OnChainState = iota
+
+	// OnChainStateFullySpent denotes that the leftover account balance was
+	// considered dust and no new account output has been created on-chain.
+	// The dust balance has either been credited to the user through an
+	// off-chain mechanism or has been fully consumed as chain fees.
+	OnChainStateFullySpent
+)
 
 // Parameters are the parameters submitted by a trader for an account.
 type Parameters struct {
@@ -208,6 +225,36 @@ func StateModifier(state State) Modifier {
 	}
 }
 
+// ValueModifier is a functional option that modifies the value of an account.
+func ValueModifier(value btcutil.Amount) Modifier {
+	return func(account *Account) {
+		account.Value = value
+	}
+}
+
+// ExpiryModifier is a functional option that modifies the expiry of an account.
+func ExpiryModifier(expiry uint32) Modifier {
+	return func(account *Account) {
+		account.Expiry = expiry
+	}
+}
+
+// BatchKeyModifier is a functional option that modifies the batch key of an
+// account.
+func BatchKeyModifier(batchKey *btcec.PublicKey) Modifier {
+	return func(account *Account) {
+		account.BatchKey = batchKey
+	}
+}
+
+// OutPointModifier is a functional option that modifies the out point of an
+// account.
+func OutPointModifier(outPoint wire.OutPoint) Modifier {
+	return func(account *Account) {
+		account.OutPoint = outPoint
+	}
+}
+
 // Store is responsible for storing and retrieving account information reliably.
 type Store interface {
 	// HasReservation determines whether we have an existing reservation
@@ -236,4 +283,13 @@ type Store interface {
 	// BatchKey returns the current per-batch key that must be used to tweak
 	// account trader keys with.
 	BatchKey(context.Context) (*btcec.PublicKey, error)
+}
+
+// EndingState determines the new on-chain state for an account with the given
+// ending balance after a batch execution.
+func EndingState(endingBalance btcutil.Amount) OnChainState {
+	if endingBalance < orderT.MinNoDustAccountSize {
+		return OnChainStateFullySpent
+	}
+	return OnChainStateRecreated
 }
