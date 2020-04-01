@@ -26,7 +26,6 @@ import (
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"google.golang.org/grpc"
 )
@@ -945,29 +944,16 @@ func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
 func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	details *clmrpc.ServerOrder) (*orderT.Kit, *order.Kit, error) {
 
-	var (
-		nonce orderT.Nonce
-		err   error
+	// Parse the RPC fields into the common client struct.
+	clientKit, nodeKey, addrs, multiSigKey, err := orderT.ParseRPCServerOrder(
+		version, details,
 	)
-
-	// Parse the nonce first so we can create the client order kit.
-	copy(nonce[:], details.OrderNonce)
-	clientKit := orderT.NewKit(nonce)
-	clientKit.Version = orderT.Version(version)
-	clientKit.FixedRate = uint32(details.RateFixed)
-	clientKit.Amt = btcutil.Amount(details.Amt)
-	clientKit.Units = orderT.NewSupplyFromSats(clientKit.Amt)
-	clientKit.FundingFeeRate = chainfee.SatPerKWeight(
-		details.FundingFeeRateSatPerKw,
-	)
-
-	// Parse the account key next so we can make sure it exists.
-	acctKey, err := btcec.ParsePubKey(details.UserSubKey, btcec.S256())
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse account key: %v",
+		return nil, nil, fmt.Errorf("unable to parse server order: %v",
 			err)
 	}
-	clientKit.AcctKey = acctKey
+
+	// Make sure the referenced account exists.
 	_, err = s.store.Account(ctx, clientKit.AcctKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)
@@ -980,32 +966,9 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 		return nil, nil, fmt.Errorf("unable to parse order signature: "+
 			"%v", err)
 	}
-	nodePubKey, err := btcec.ParsePubKey(details.NodePub, btcec.S256())
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse node pub key: %v",
-			err)
-	}
-	copy(serverKit.NodeKey[:], nodePubKey.SerializeCompressed())
-	if len(details.NodeAddr) == 0 {
-		return nil, nil, fmt.Errorf("invalid node addresses")
-	}
-	serverKit.NodeAddrs = make([]net.Addr, 0, len(details.NodeAddr))
-	for _, rpcAddr := range details.NodeAddr {
-		addr, err := net.ResolveTCPAddr(rpcAddr.Network, rpcAddr.Addr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to parse node "+
-				"ddr: %v", err)
-		}
-		serverKit.NodeAddrs = append(serverKit.NodeAddrs, addr)
-	}
-	multiSigPubkey, err := btcec.ParsePubKey(
-		details.MultiSigKey, btcec.S256(),
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse multi sig pub "+
-			"key: %v", err)
-	}
-	copy(serverKit.MultiSigKey[:], multiSigPubkey.SerializeCompressed())
+	copy(serverKit.NodeKey[:], nodeKey[:])
+	serverKit.NodeAddrs = addrs
+	copy(serverKit.MultiSigKey[:], multiSigKey[:])
 	serverKit.ChanType = order.ChanType(details.ChanType)
 
 	return clientKit, serverKit, nil
