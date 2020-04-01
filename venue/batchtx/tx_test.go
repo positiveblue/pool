@@ -30,7 +30,7 @@ func (m *mockFeeSchedule) BaseFee() btcutil.Amount {
 }
 
 func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
-	return orderT.PerBlockPremium(amt, uint32(m.exeFeeRate))
+	return btcutil.Amount(orderT.PerBlockPremium(amt, uint32(m.exeFeeRate)))
 }
 
 var _ orderT.FeeSchedule = (*mockFeeSchedule)(nil)
