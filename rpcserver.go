@@ -392,27 +392,6 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
 	err := s.orderBook.PrepareOrder(ctx, o)
-
-	// TODO(guggero): Remove once real batch execution is working.
-	// For now, we just simulate a batch for each registered trader's
-	// accounts.
-	for _, trader := range s.connectedStreams {
-		for _, traderAcct := range trader.Subscriptions {
-			_, err = s.batchExecutor.Submit(&matching.OrderBatch{
-				Orders: []matching.MatchedOrder{
-					{
-						Asker: *traderAcct.Trader,
-					},
-				},
-				ClearingPrice: 0,
-			})
-			if err != nil {
-				log.Errorf("Error faking batch execution: %v",
-					err)
-			}
-		}
-	}
-
 	return mapOrderResp(o.Nonce(), err)
 }
 
