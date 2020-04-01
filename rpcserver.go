@@ -639,6 +639,15 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 	case *clmrpc.ClientAuctionMessage_Commit:
 		commit := msg.Commit
 
+		// First check that they are using the latest version of the
+		// batch execution protocol. If not, they need to update. Better
+		// reject them now instead of waiting for a batch to be prepared
+		// and then everybody bailing out because of a version mismatch.
+		if commit.BatchVersion != uint32(orderT.CurrentVersion) {
+			comms.err <- orderT.ErrVersionMismatch
+			return
+		}
+
 		// We don't know what's in the commit yet so we can only make
 		// sure it's long enough and not zero.
 		if len(commit.CommitHash) != 32 {
