@@ -7,11 +7,13 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/go-errors/errors"
+	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -282,7 +284,7 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 }
 
 // assertTraderAccountState asserts that the account with the corresponding
-// trader key is found in the given state.
+// trader key is found in the given state from the PoV of the trader.
 func assertTraderAccountState(t *harnessTest, traderKey []byte,
 	state clmrpc.AccountState) {
 
@@ -314,6 +316,35 @@ func assertTraderAccountState(t *harnessTest, traderKey []byte,
 	}
 }
 
+// assertAuctioneerAccountState asserts that the account with the corresponding
+// trader key is found in the given state from the PoV of the auctioneer.
+func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
+	state auctioneerAccount.State) {
+
+	traderKey, err := btcec.ParsePubKey(rawTraderKey, btcec.S256())
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	ctx := context.Background()
+	err = wait.NoError(func() error {
+		account, err := t.auctioneer.store.Account(ctx, traderKey)
+		if err != nil {
+			return fmt.Errorf("unable to retrieve account: %v", err)
+		}
+
+		if account.State != state {
+			return fmt.Errorf("expected account state %v, got %v",
+				state, account.State)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
 func openAccountAndAssert(t *harnessTest,
@@ -330,6 +361,9 @@ func openAccountAndAssert(t *harnessTest,
 		t.Fatalf("unexpected account state. got %d, expected %d",
 			acct.State, clmrpc.AccountState_PENDING_OPEN)
 	}
+	assertAuctioneerAccountState(
+		t, acct.TraderKey, auctioneerAccount.StatePendingOpen,
+	)
 
 	// Mine the account funding TX and make sure the account outpoint was
 	// actually included in the block.
@@ -341,6 +375,9 @@ func openAccountAndAssert(t *harnessTest,
 	_ = assertTxInBlock(t, block, txHash)
 
 	assertTraderAccountState(t, acct.TraderKey, clmrpc.AccountState_OPEN)
+	assertAuctioneerAccountState(
+		t, acct.TraderKey, auctioneerAccount.StateOpen,
+	)
 
 	return acct
 }
@@ -371,6 +408,9 @@ func closeAccountAndAssert(t *harnessTest,
 	assertTraderAccountState(
 		t, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
 	)
+	assertAuctioneerAccountState(
+		t, req.TraderKey, auctioneerAccount.StateOpen,
+	)
 
 	// Mine the closing transaction and make sure it was included in a
 	// block.
@@ -383,6 +423,9 @@ func closeAccountAndAssert(t *harnessTest,
 
 	// The account should now be found in a StateClosed state.
 	assertTraderAccountState(t, req.TraderKey, clmrpc.AccountState_CLOSED)
+	assertAuctioneerAccountState(
+		t, req.TraderKey, auctioneerAccount.StateClosed,
+	)
 
 	return closeTx
 }
