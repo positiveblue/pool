@@ -20,12 +20,50 @@ import (
 	"google.golang.org/grpc"
 )
 
+type auctioneerWallet struct {
+	lndclient.LightningClient
+	lndclient.WalletKitClient
+}
+
+// A compile-time assertion to ensure auctioneerWallet meets the Wallet
+// interface.
+var _ Wallet = (*auctioneerWallet)(nil)
+
+// auctioneerStore is a simple wrapper around the main database that maintains
+// an in-memory atomically modified auction state.
+type auctioneerStore struct {
+	// state is the current auctioneer state.
+	//
+	// NOTE: This MUST be used atomically
+	state uint32
+
+	*agoradb.EtcdStore
+}
+
+// UpdateAuctionState updates the current state of the auction.
+//
+// NOTE: This state doesn't need to be persisted, but it should be
+// durable during the lifetime of this interface. This method is use
+// mainly to make testing state transition in the auction easier.
+func (a *auctioneerStore) UpdateAuctionState(newState AuctionState) error {
+	atomic.StoreUint32(&a.state, uint32(newState))
+	return nil
+}
+
+// AuctionState returns the current state of the auction. If no state
+// modification have been made, then this method should return the default
+// state.
+//
+// NOTE: This state doesn't need to be persisted. This method is use
+// mainly to make testing state transition in the auction easier.
+func (a *auctioneerStore) AuctionState() (AuctionState, error) {
+	return AuctionState(atomic.LoadUint32(&a.state)), nil
+}
+
+var _ AuctioneerDatabase = (*auctioneerStore)(nil)
+
 // Server is the main agora auctioneer server.
 type Server struct {
-	// bestHeight is the best known height of the main chain. This MUST be
-	// used atomically.
-	bestHeight uint32
-
 	rpcServer *rpcServer
 
 	lnd            *lndclient.GrpcLndServices
@@ -38,6 +76,8 @@ type Server struct {
 	orderBook *order.Book
 
 	batchExecutor *venue.BatchExecutor
+
+	Auctioneer *Auctioneer
 
 	quit chan struct{}
 
@@ -111,7 +151,18 @@ func NewServer(cfg *Config) (*Server, error) {
 			SubmitFee: btcutil.Amount(cfg.OrderSubmitFee),
 		}),
 		batchExecutor: batchExecutor,
-		quit:          make(chan struct{}),
+		Auctioneer: NewAuctioneer(AuctioneerConfig{
+			DB: &auctioneerStore{
+				EtcdStore: store,
+			},
+			ChainNotifier: lnd.ChainNotifier,
+			Wallet: &auctioneerWallet{
+				WalletKitClient: lnd.WalletKit,
+				LightningClient: lnd.Client,
+			},
+			StartingAcctValue: 1_000_000,
+		}),
+		quit: make(chan struct{}),
 	}
 
 	// With all our other initialization complete, we'll now create the
@@ -144,7 +195,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		}
 	}
 	auctioneerServer := newRPCServer(
-		store, lnd, accountManager, server.fetchBestHeight,
+		store, lnd, accountManager, server.Auctioneer.BestHeight,
 		server.orderBook, batchExecutor, feeSchedule, grpcListener,
 		serverOpts, cfg.SubscribeTimeout,
 	)
@@ -182,40 +233,27 @@ func (s *Server) Start() error {
 		}
 		s.identityPubkey = infoResp.IdentityPubkey
 
-		blockEpochChan, blockErrorChan, err := s.lnd.
-			ChainNotifier.RegisterBlockEpochNtfn(ctx)
-		if err != nil {
-			startErr = err
-		}
-
-		// Before finishing Start(), make sure we have an up to date block
-		// height.
-		var height int32
-		select {
-		case height = <-blockEpochChan:
-		case err := <-blockErrorChan:
-			startErr = fmt.Errorf("RegisterBlockEpochNtfn: %v", err)
-		case <-ctx.Done():
-			return
-		}
-		s.updateHeight(height)
-
 		// Start managers.
 		if err := s.accountManager.Start(); err != nil {
 			startErr = fmt.Errorf("unable to start account "+
 				"manager: %v", err)
+			return
 		}
 		if err := s.orderBook.Start(); err != nil {
 			startErr = fmt.Errorf("unable to start order "+
 				"manager: %v", err)
+			return
 		}
 		if err := s.batchExecutor.Start(); err != nil {
 			startErr = fmt.Errorf("unable to start batch "+
 				"executor: %v", err)
+			return
 		}
-
-		s.wg.Add(1)
-		go s.auctioneer(blockEpochChan, blockErrorChan)
+		if err := s.Auctioneer.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start auctioneer"+
+				"executor: %v", err)
+			return
+		}
 
 		// Start the gRPC server itself.
 		err = s.rpcServer.Start()
@@ -250,49 +288,16 @@ func (s *Server) Stop() error {
 				"server: %w", err)
 			return
 		}
+		if err := s.Auctioneer.Stop(); err != nil {
+			stopErr = fmt.Errorf("unable to stop auctioneer: %v",
+				err)
+			return
+		}
 
 		s.wg.Wait()
 	})
 
 	return stopErr
-}
-
-// updateHeight stores the height atomically so the incoming request handler
-// can access it without locking.
-func (s *Server) updateHeight(height int32) {
-	atomic.StoreUint32(&s.bestHeight, uint32(height))
-}
-
-// fetchBestHeight returns the current best known block height.
-func (s *Server) fetchBestHeight() uint32 {
-	return atomic.LoadUint32(&s.bestHeight)
-}
-
-// auctioneer is the main control loop of the entire daemon. This goroutine
-// will carry out the multi-step batch auction lifecyle.
-//
-// TODO(roasbeef): move to diff file?
-func (s *Server) auctioneer(blockChan chan int32, blockErrChan chan error) {
-	defer s.wg.Done()
-
-	for {
-		select {
-
-		case height := <-blockChan:
-			log.Infof("Received new block notification: height=%v",
-				height)
-			s.updateHeight(height)
-
-		case err := <-blockErrChan:
-			if err != nil {
-				log.Errorf("Unable to receive block "+
-					"notification: %v", err)
-			}
-
-		case <-s.quit:
-			return
-		}
-	}
 }
 
 // ConnectedStreams returns all currently connected traders and their

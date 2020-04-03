@@ -166,46 +166,44 @@ func (w *mockWallet) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
 	return [][]byte{[]byte("auctioneer sig")}, nil
 }
 
-type mockChainNotifier struct {
-	lndclient.ChainNotifierClient
-
-	confChan  chan *chainntnfs.TxConfirmation
-	spendChan chan *chainntnfs.SpendDetail
-	blockChan chan int32
-	errChan   chan error
+type MockChainNotifier struct {
+	ConfChan  chan *chainntnfs.TxConfirmation
+	SpendChan chan *chainntnfs.SpendDetail
+	BlockChan chan int32
+	ErrChan   chan error
 }
 
-func newMockChainNotifier() *mockChainNotifier {
-	return &mockChainNotifier{
-		confChan:  make(chan *chainntnfs.TxConfirmation),
-		spendChan: make(chan *chainntnfs.SpendDetail),
-		blockChan: make(chan int32),
-		errChan:   make(chan error),
+func NewMockChainNotifier() *MockChainNotifier {
+	return &MockChainNotifier{
+		ConfChan:  make(chan *chainntnfs.TxConfirmation),
+		SpendChan: make(chan *chainntnfs.SpendDetail),
+		BlockChan: make(chan int32),
+		ErrChan:   make(chan error),
 	}
 }
 
-func (n *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
+func (n *MockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
 	txid *chainhash.Hash, pkScript []byte, numConfs,
 	heightHint int32) (chan *chainntnfs.TxConfirmation, chan error, error) {
 
-	return n.confChan, n.errChan, nil
+	return n.ConfChan, n.ErrChan, nil
 }
 
-func (n *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
+func (n *MockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 	outpoint *wire.OutPoint, pkScript []byte,
 	heightHint int32) (chan *chainntnfs.SpendDetail, chan error, error) {
 
-	return n.spendChan, n.errChan, nil
+	return n.SpendChan, n.ErrChan, nil
 }
 
-func (n *mockChainNotifier) RegisterBlockEpochNtfn(
+func (n *MockChainNotifier) RegisterBlockEpochNtfn(
 	ctx context.Context) (chan int32, chan error, error) {
 
 	// Mimic the actual ChainNotifier by sending a notification upon
 	// registration.
 	go func() {
-		n.blockChan <- 0
+		n.BlockChan <- 0
 	}()
 
-	return n.blockChan, n.errChan, nil
+	return n.BlockChan, n.ErrChan, nil
 }

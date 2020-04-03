@@ -4,6 +4,10 @@ package itest
 
 var testCases = []*testCase{
 	{
+		name: "master acct init",
+		test: testMasterAcctInit,
+	},
+	{
 		name: "create account",
 		test: testAccountCreation,
 	},

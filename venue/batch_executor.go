@@ -7,7 +7,6 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/client/auction"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -17,9 +16,6 @@ import (
 type ExecutionMsg interface {
 	// Dest...
 	Dest() matching.AccountID
-
-	// Phase..
-	Phase() auction.Phase
 }
 
 type PrepareMsg struct {
@@ -30,20 +26,12 @@ func (m *PrepareMsg) Dest() matching.AccountID {
 	return m.AcctKey
 }
 
-func (m *PrepareMsg) Phase() auction.Phase {
-	return auction.BatchClearingPhase
-}
-
 type FinalizeMsg struct {
 	AcctKey matching.AccountID
 }
 
 func (m *FinalizeMsg) Dest() matching.AccountID {
 	return m.AcctKey
-}
-
-func (m *FinalizeMsg) Phase() auction.Phase {
-	return auction.BatchClearingPhase
 }
 
 // TraderMsg...

@@ -27,14 +27,14 @@ var (
 type testHarness struct {
 	t        *testing.T
 	store    *mockStore
-	notifier *mockChainNotifier
+	notifier *MockChainNotifier
 	wallet   *mockWallet
 	manager  *Manager
 }
 
 func newTestHarness(t *testing.T) *testHarness {
 	store := newMockStore()
-	notifier := newMockChainNotifier()
+	notifier := NewMockChainNotifier()
 	wallet := &mockWallet{}
 	m, err := NewManager(&ManagerConfig{
 		Store:         store,
@@ -173,7 +173,7 @@ func (h *testHarness) confirmAccount(a *Account, valid bool,
 	h.t.Helper()
 
 	select {
-	case h.notifier.confChan <- confDetails:
+	case h.notifier.ConfChan <- confDetails:
 	case <-time.After(timeout):
 		h.t.Fatalf("unable to notify confirmation of account %x",
 			a.TraderKeyRaw)
@@ -190,7 +190,7 @@ func (h *testHarness) expireAccount(a *Account) {
 	h.t.Helper()
 
 	select {
-	case h.notifier.blockChan <- int32(a.Expiry):
+	case h.notifier.BlockChan <- int32(a.Expiry):
 	case <-time.After(timeout):
 		h.t.Fatalf("unable to notify expiration of account %x",
 			a.TraderKeyRaw)
@@ -206,7 +206,7 @@ func (h *testHarness) spendAccount(a *Account, expectedState State,
 	h.t.Helper()
 
 	select {
-	case h.notifier.spendChan <- spendDetails:
+	case h.notifier.SpendChan <- spendDetails:
 	case <-time.After(timeout):
 		h.t.Fatalf("unable to notify spend of account %x",
 			a.TraderKeyRaw)
