@@ -1,13 +1,16 @@
 package venue
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/agora/venue/batchtx"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
@@ -81,6 +84,15 @@ type ExecutionResult struct {
 	// Err...
 	Err error
 
+	// BatchID...
+	BatchID order.BatchID
+
+	// Batch...
+	Batch *matching.OrderBatch
+
+	// MasterAccountDiff...
+	MasterAccountDiff *batchtx.MasterAccountState
+
 	// BatchTx
 	BatchTx *wire.MsgTx
 
@@ -124,16 +136,23 @@ type BatchExecutor struct {
 
 	sync.RWMutex
 
+	store       agoradb.Store
+	batchStorer BatchStorer
+
 	quit chan struct{}
 	wg   sync.WaitGroup
 }
 
 // NewBatchExecutor...
-func NewBatchExecutor() (*BatchExecutor, error) {
+func NewBatchExecutor(store agoradb.Store) (*BatchExecutor, error) {
 	return &BatchExecutor{
 		quit:          make(chan struct{}),
 		activeTraders: make(map[matching.AccountID]*ActiveTrader),
 		newBatches:    make(chan *executionReq),
+		store:         store,
+		batchStorer: &batchStorer{
+			store: store,
+		},
 	}, nil
 }
 
@@ -217,9 +236,48 @@ func (b *BatchExecutor) executor() {
 		select {
 		case newBatch := <-b.newBatches:
 
-			err := b.validateBatch(newBatch.OrderBatch)
+			// TODO(guggero): Use timeout and/or cancel?
+			batchCtx := context.Background()
+
+			// The batch ID is always the currently stored ID. We
+			// can try to match the same batch multiple times with
+			// traders bailing out and us trying again. But we
+			// always need to use the same ID. Only after clearing
+			// the batch, the ID is increased and stored as the ID
+			// to use for the next batch.
+			batchKey, err := b.store.BatchKey(batchCtx)
 			if err != nil {
-				log.Errorf("Nope!")
+				log.Errorf("Nope, couldn't get batch key!")
+
+				newBatch.Result <- &ExecutionResult{
+					Err: err,
+				}
+
+				continue
+			}
+			var batchID order.BatchID
+			copy(batchID[:], batchKey.SerializeCompressed())
+
+			err = b.validateBatch(newBatch.OrderBatch)
+			if err != nil {
+				log.Errorf("Nope, batch didn't validate!")
+
+				newBatch.Result <- &ExecutionResult{
+					Err: err,
+				}
+
+				continue
+			}
+
+			result := &ExecutionResult{
+				Batch:   newBatch.OrderBatch,
+				BatchID: batchID,
+			}
+
+			// TODO(roasbeef): move to correct place.
+			err = b.batchStorer.Store(batchCtx, result)
+			if err != nil {
+				log.Errorf("Nope, batch couldn't be persisted!")
 
 				newBatch.Result <- &ExecutionResult{
 					Err: err,

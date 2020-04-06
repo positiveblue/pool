@@ -197,7 +197,7 @@ func (e *ExecutionContext) indexBatchTx(
 // assembleBatchTx attempts to assemble a batch transaction that is able to
 // execute the passed orderBatch. We also accept the starting fee rate of the
 // batch transaction, along with a description of the prior and next state of
-// the autcioneer's account.
+// the auctioneer's account.
 func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	mAccountDiff *MasterAccountState, feeRate chainfee.SatPerKWeight) error {
 
@@ -231,6 +231,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
 		acctParams := trader.StartingState
 
+		// TODO(guggero): Only re-create account output if above dust.
+
 		// Using the set params of the account, and the information
 		// within the account key, we'll create a new output to place
 		// within our transaction.
@@ -262,6 +264,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// our later passes, and also attach the output directly to the
 		// BET (batch execution transaction)
 		traderAccounts[acctID] = traderAccountTxOut
+		trader.RecreatedOutput = traderAccountTxOut
 		e.ExeTx.AddTxOut(traderAccountTxOut)
 	}
 

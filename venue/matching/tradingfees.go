@@ -1,6 +1,7 @@
 package matching
 
 import (
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/agora/client/order"
 )
@@ -13,6 +14,11 @@ type AccountDiff struct {
 
 	// StartingState is the starting state for a trader's account.
 	StartingState *Trader
+
+	// RecreatedOutput is the recreated account output in the batch
+	// transaction. This is only set if the account had sufficient balance
+	// left for a new on-chain output and wasn't considered to be dust.
+	RecreatedOutput *wire.TxOut
 }
 
 // TradingFeeReport is the breakdown of the balance fluctuations to a trade's

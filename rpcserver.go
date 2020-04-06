@@ -26,7 +26,6 @@ import (
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"google.golang.org/grpc"
 )
@@ -393,27 +392,6 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
 	err := s.orderBook.PrepareOrder(ctx, o)
-
-	// TODO(guggero): Remove once real batch execution is working.
-	// For now, we just simulate a batch for each registered trader's
-	// accounts.
-	for _, trader := range s.connectedStreams {
-		for _, traderAcct := range trader.Subscriptions {
-			_, err = s.batchExecutor.Submit(&matching.OrderBatch{
-				Orders: []matching.MatchedOrder{
-					{
-						Asker: *traderAcct.Trader,
-					},
-				},
-				ClearingPrice: 0,
-			})
-			if err != nil {
-				log.Errorf("Error faking batch execution: %v",
-					err)
-			}
-		}
-	}
-
 	return mapOrderResp(o.Nonce(), err)
 }
 
@@ -638,6 +616,15 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 	// handshake between the auctioneer and the trader.
 	case *clmrpc.ClientAuctionMessage_Commit:
 		commit := msg.Commit
+
+		// First check that they are using the latest version of the
+		// batch execution protocol. If not, they need to update. Better
+		// reject them now instead of waiting for a batch to be prepared
+		// and then everybody bailing out because of a version mismatch.
+		if commit.BatchVersion != uint32(orderT.CurrentVersion) {
+			comms.err <- orderT.ErrVersionMismatch
+			return
+		}
 
 		// We don't know what's in the commit yet so we can only make
 		// sure it's long enough and not zero.
@@ -936,29 +923,16 @@ func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
 func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	details *clmrpc.ServerOrder) (*orderT.Kit, *order.Kit, error) {
 
-	var (
-		nonce orderT.Nonce
-		err   error
+	// Parse the RPC fields into the common client struct.
+	clientKit, nodeKey, addrs, multiSigKey, err := orderT.ParseRPCServerOrder(
+		version, details,
 	)
-
-	// Parse the nonce first so we can create the client order kit.
-	copy(nonce[:], details.OrderNonce)
-	clientKit := orderT.NewKit(nonce)
-	clientKit.Version = orderT.Version(version)
-	clientKit.FixedRate = uint32(details.RateFixed)
-	clientKit.Amt = btcutil.Amount(details.Amt)
-	clientKit.Units = orderT.NewSupplyFromSats(clientKit.Amt)
-	clientKit.FundingFeeRate = chainfee.SatPerKWeight(
-		details.FundingFeeRateSatPerKw,
-	)
-
-	// Parse the account key next so we can make sure it exists.
-	acctKey, err := btcec.ParsePubKey(details.UserSubKey, btcec.S256())
 	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse account key: %v",
+		return nil, nil, fmt.Errorf("unable to parse server order: %v",
 			err)
 	}
-	clientKit.AcctKey = acctKey
+
+	// Make sure the referenced account exists.
 	_, err = s.store.Account(ctx, clientKit.AcctKey)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)
@@ -971,32 +945,9 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 		return nil, nil, fmt.Errorf("unable to parse order signature: "+
 			"%v", err)
 	}
-	nodePubKey, err := btcec.ParsePubKey(details.NodePub, btcec.S256())
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse node pub key: %v",
-			err)
-	}
-	copy(serverKit.NodeKey[:], nodePubKey.SerializeCompressed())
-	if len(details.NodeAddr) == 0 {
-		return nil, nil, fmt.Errorf("invalid node addresses")
-	}
-	serverKit.NodeAddrs = make([]net.Addr, 0, len(details.NodeAddr))
-	for _, rpcAddr := range details.NodeAddr {
-		addr, err := net.ResolveTCPAddr(rpcAddr.Network, rpcAddr.Addr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("unable to parse node "+
-				"ddr: %v", err)
-		}
-		serverKit.NodeAddrs = append(serverKit.NodeAddrs, addr)
-	}
-	multiSigPubkey, err := btcec.ParsePubKey(
-		details.MultiSigKey, btcec.S256(),
-	)
-	if err != nil {
-		return nil, nil, fmt.Errorf("unable to parse multi sig pub "+
-			"key: %v", err)
-	}
-	copy(serverKit.MultiSigKey[:], multiSigPubkey.SerializeCompressed())
+	copy(serverKit.NodeKey[:], nodeKey[:])
+	serverKit.NodeAddrs = addrs
+	copy(serverKit.MultiSigKey[:], multiSigKey[:])
 	serverKit.ChanType = order.ChanType(details.ChanType)
 
 	return clientKit, serverKit, nil

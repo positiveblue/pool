@@ -136,7 +136,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// Continuing, we create the batch executor which will communicate
 	// between the trader's an auctioneer for each batch epoch.
-	batchExecutor, err := venue.NewBatchExecutor()
+	batchExecutor, err := venue.NewBatchExecutor(store)
 	if err != nil {
 		return nil, err
 	}

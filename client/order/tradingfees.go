@@ -3,6 +3,8 @@ package order
 import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcwallet/wallet/txrules"
+	"github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -13,6 +15,18 @@ var (
 	// Throughout the codebase, we'll use fix based arithmetic to compute
 	// fees.
 	FeeRateTotalParts = 1e6
+
+	// dustLimitP2WPKH is the minimum size of a P2WPKH output to not be
+	// considered dust.
+	dustLimitP2WPKH = txrules.GetDustThreshold(
+		input.P2WPKHSize, txrules.DefaultRelayFeePerKb,
+	)
+
+	// MinNoDustAccountSize is the minimum number of satoshis an account
+	// output value needs to be to not be considered a dust output. This is
+	// the cost of a spend TX at 1 sat/byte plus the minimum non-dust output
+	// size.
+	MinNoDustAccountSize = minNoDustAccountSize()
 )
 
 // FixedRatePremium is the unit that we'll use to express the "lease" rate of
@@ -31,13 +45,14 @@ func (f FixedRatePremium) LumpSumPremium(amt btcutil.Amount,
 	durationBlocks uint32) btcutil.Amount {
 
 	// First, we'll compute the premium that will be paid each block over
-	// the lifetime of the asset.
+	// the lifetime of the asset. This can be a fraction of a satoshi as one
+	// block is a very short period.
 	premiumPerBlock := PerBlockPremium(amt, uint32(f))
 
 	// Once we have this value, we can then multiply the premium paid per
 	// block times the number of compounding periods, or the total lease
 	// duration.
-	return premiumPerBlock * btcutil.Amount(durationBlocks)
+	return btcutil.Amount(premiumPerBlock * float32(durationBlocks))
 }
 
 // FeeSchedule is an interface that represents the configuration source that
@@ -78,7 +93,7 @@ func (s *LinearFeeSchedule) FeeRate() btcutil.Amount {
 //
 // NOTE: This method is part of the orderT.FeeSchedule interface.
 func (s *LinearFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
-	return amt * 1_000_000 / s.feeRate
+	return amt * s.feeRate / 1_000_000
 }
 
 // NewLinearFeeSchedule creates a new linear fee schedule based upon a static
@@ -94,11 +109,11 @@ func NewLinearFeeSchedule(baseFee, feeRate btcutil.Amount) *LinearFeeSchedule {
 // implements the orderT.FeeSchedule interface.
 var _ FeeSchedule = (*LinearFeeSchedule)(nil)
 
-// PerBlockPremium calculates the absolute premium in satoshis for a one block
-// duration from the amount and the specified fee rate in parts per million.
-func PerBlockPremium(amt btcutil.Amount, fixedRate uint32) btcutil.Amount {
-	return amt * btcutil.Amount(fixedRate) /
-		btcutil.Amount(FeeRateTotalParts)
+// PerBlockPremium calculates the absolute premium in fractions of satoshis for
+// a one block duration from the amount and the specified fee rate in parts per
+// million.
+func PerBlockPremium(amt btcutil.Amount, fixedRate uint32) float32 {
+	return float32(amt) * float32(fixedRate) / float32(FeeRateTotalParts)
 }
 
 // EstimateTraderFee calculates the chain fees a trader has to pay for their
@@ -137,6 +152,9 @@ func EstimateTraderFee(numTraderChans uint32,
 // AccountTally keeps track of an account's balance and fees for all orders in
 // a batch that spend from/use that account.
 type AccountTally struct {
+	// Account is the embedded account this tally is related to.
+	*account.Account
+
 	// EndingBalance is the ending balance for a trader's account.
 	EndingBalance btcutil.Amount
 
@@ -210,6 +228,24 @@ func (t *AccountTally) CalcTakerDelta(feeSchedule FeeSchedule,
 func (t *AccountTally) ChainFees(feeRate chainfee.SatPerKWeight) {
 	chainFeesDue := EstimateTraderFee(t.NumChansCreated, feeRate)
 	t.EndingBalance -= chainFeesDue
+}
+
+// minNoDustAccountSize returns the minimum number of satoshis an account output
+// value needs to be to not be considered a dust output. This is the cost of a
+// spend TX at 1 sat/byte plus the minimum non-dust output size.
+func minNoDustAccountSize() btcutil.Amount {
+	// Calculate the minimum fee we would need to pay to coop close the
+	// account to a P2WKH output.
+	var weightEstimator input.TxWeightEstimator
+	weightEstimator.AddWitnessInput(clmscript.MultiSigWitnessSize)
+	weightEstimator.AddP2WKHOutput()
+	minimumFee := chainfee.FeePerKwFloor.FeeForWeight(
+		int64(weightEstimator.Weight()),
+	)
+
+	// After paying the fee, more than dust needs to remain, otherwise it
+	// doesn't make sense to sweep the account.
+	return minimumFee + dustLimitP2WPKH
 }
 
 // executionFee calculates the execution fee which is the base fee plus the

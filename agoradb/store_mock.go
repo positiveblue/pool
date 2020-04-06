@@ -18,6 +18,7 @@ type StoreMock struct {
 	Accs        map[[33]byte]*account.Account
 	Orders      map[orderT.Nonce]order.ServerOrder
 	BatchPubkey *btcec.PublicKey
+	MasterAcct  *account.Auctioneer
 	t           *testing.T
 }
 
@@ -185,6 +186,66 @@ func (s *StoreMock) GetOrders(_ context.Context) ([]order.ServerOrder, error) {
 		orders[idx] = o
 	}
 	return orders, nil
+}
+
+// FetchAuctioneerAccount retrieves the current information pertaining to the
+// current auctioneer output state.
+//
+// NOTE: This is part of the Store interface.
+func (s *StoreMock) FetchAuctioneerAccount(_ context.Context) (
+	*account.Auctioneer, error) {
+
+	if s.MasterAcct == nil {
+		return nil, fmt.Errorf("no master account set")
+	}
+	return s.MasterAcct, nil
+}
+
+// UpdateAuctioneerAccount updates the current auctioneer output in-place and
+// also updates the per batch key according to the state in the auctioneer's
+// account.
+//
+// NOTE: This is part of the Store interface.
+func (s *StoreMock) UpdateAuctioneerAccount(_ context.Context,
+	acct *account.Auctioneer) error {
+
+	s.MasterAcct = acct
+	return nil
+}
+
+// PersistBatchResult atomically updates all modified orders/accounts and
+// switches to the next batch ID. If any single operation fails, the whole
+// set of changes is rolled back.
+//
+// NOTE: This is part of the Store interface.
+func (s *StoreMock) PersistBatchResult(ctx context.Context,
+	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
+	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
+	masterAcct *account.Auctioneer, nextBatchKey *btcec.PublicKey) error {
+
+	err := s.UpdateOrders(ctx, orders, orderModifiers)
+	if err != nil {
+		return err
+	}
+
+	for idx, acctKey := range accounts {
+		acct, err := s.Account(ctx, acctKey)
+		if err != nil {
+			return err
+		}
+		err = s.UpdateAccount(ctx, acct, accountModifiers[idx]...)
+		if err != nil {
+			return err
+		}
+	}
+
+	s.MasterAcct = masterAcct
+
+	var batchKey [33]byte
+	copy(batchKey[:], nextBatchKey.SerializeCompressed())
+	s.MasterAcct.BatchKey = batchKey
+
+	return nil
 }
 
 // A compile-time check to make sure StoreMock implements the Store interface.
