@@ -153,6 +153,11 @@ type Store interface {
 	// that nonce exists in the store, ErrNoOrder is returned.
 	GetOrder(context.Context, order.Nonce) (ServerOrder, error)
 
-	// GetOrders returns all orders that are currently known to the store.
+	// GetOrders returns all non-archived orders that are currently known to
+	// the store.
 	GetOrders(context.Context) ([]ServerOrder, error)
+
+	// GetArchivedOrders returns all archived orders that are currently
+	// known to the store.
+	GetArchivedOrders(context.Context) ([]ServerOrder, error)
 }
