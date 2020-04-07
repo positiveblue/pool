@@ -234,9 +234,9 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	if err != nil {
 		t.Fatalf("error getting order: %v", err)
 	}
-	if o2.Details().State != orderT.StateExecuted {
+	if o2.Details().State != orderT.StatePartiallyFilled {
 		t.Fatalf("unexpected order state, got %d wanted %d",
-			o2.Details().State, orderT.StateExecuted)
+			o2.Details().State, orderT.StatePartiallyFilled)
 	}
 
 	// And finally the auctioneer/master account and the batch key.
