@@ -244,13 +244,13 @@ func (s *Server) Start() error {
 				"manager: %v", err)
 			return
 		}
-		if err := s.batchExecutor.Start(); err != nil {
-			startErr = fmt.Errorf("unable to start batch "+
+		if err := s.Auctioneer.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start auctioneer"+
 				"executor: %v", err)
 			return
 		}
-		if err := s.Auctioneer.Start(); err != nil {
-			startErr = fmt.Errorf("unable to start auctioneer"+
+		if err := s.batchExecutor.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start batch "+
 				"executor: %v", err)
 			return
 		}
@@ -277,23 +277,25 @@ func (s *Server) Stop() error {
 	s.stopOnce.Do(func() {
 		close(s.quit)
 
-		s.accountManager.Stop()
-		s.orderBook.Stop()
-
-		s.lnd.Close()
-
 		err := s.rpcServer.Stop()
 		if err != nil {
 			stopErr = fmt.Errorf("error shutting down "+
 				"server: %w", err)
 			return
 		}
+		if err := s.batchExecutor.Stop(); err != nil {
+			stopErr = fmt.Errorf("unable to stop batch executor: "+
+				"%w", err)
+			return
+		}
 		if err := s.Auctioneer.Stop(); err != nil {
-			stopErr = fmt.Errorf("unable to stop auctioneer: %v",
+			stopErr = fmt.Errorf("unable to stop auctioneer: %w",
 				err)
 			return
 		}
-
+		s.orderBook.Stop()
+		s.accountManager.Stop()
+		s.lnd.Close()
 		s.wg.Wait()
 	})
 

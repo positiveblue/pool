@@ -204,6 +204,8 @@ func (b *BatchExecutor) validateBatch(batch *matching.OrderBatch) error { // nol
 }
 
 func (b *BatchExecutor) executor() {
+	defer b.wg.Done()
+
 	// TODO(roasbeef): active traders local?
 
 	// TODO(roasbeef): server steps
@@ -288,7 +290,7 @@ func (b *BatchExecutor) executor() {
 
 			// TODO(roasbeef): fail if all
 		case <-b.quit:
-
+			return
 		}
 	}
 }

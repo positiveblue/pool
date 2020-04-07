@@ -122,6 +122,8 @@ type Auctioneer struct {
 	wg sync.WaitGroup
 
 	watchAccountConfOnce sync.Once
+
+	blockNtfnCancel func()
 }
 
 // NewAuctioneer returns a new instance of the auctioneer given a fully
@@ -142,9 +144,11 @@ func (a *Auctioneer) Start() error {
 		log.Infof("Starting main Auctioneer State Machine")
 
 		notifier := a.Cfg.ChainNotifier
+		ctx, blockNtfnCancel := context.WithCancel(context.Background())
 		newBlockChan, blockErrChan, err := notifier.RegisterBlockEpochNtfn(
-			context.Background(),
+			ctx,
 		)
+		a.blockNtfnCancel = blockNtfnCancel
 		if err != nil {
 			startErr = err
 			return
@@ -187,6 +191,10 @@ func (a *Auctioneer) Stop() error {
 		close(a.quit)
 
 		a.wg.Wait()
+
+		if a.blockNtfnCancel != nil {
+			a.blockNtfnCancel()
+		}
 	})
 
 	return stopErr
