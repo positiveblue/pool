@@ -107,8 +107,8 @@ type Auctioneer struct {
 	// NOTE: This field MUST be used atomically.
 	bestHeight uint32
 
-	// Cfg is the primary config of the Auctioneer.
-	Cfg AuctioneerConfig
+	// cfg is the primary config of the Auctioneer.
+	cfg AuctioneerConfig
 
 	// auctionEvents is a channel where all the new auction related events
 	// (externally triggered) will be sent over.
@@ -130,7 +130,7 @@ type Auctioneer struct {
 // populated config struct.
 func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
 	return &Auctioneer{
-		Cfg:           cfg,
+		cfg:           cfg,
 		auctionEvents: make(chan EventTrigger),
 		quit:          make(chan struct{}),
 	}
@@ -143,7 +143,7 @@ func (a *Auctioneer) Start() error {
 	a.startOnce.Do(func() {
 		log.Infof("Starting main Auctioneer State Machine")
 
-		notifier := a.Cfg.ChainNotifier
+		notifier := a.cfg.ChainNotifier
 		ctx, blockNtfnCancel := context.WithCancel(context.Background())
 		newBlockChan, blockErrChan, err := notifier.RegisterBlockEpochNtfn(
 			ctx,
@@ -154,7 +154,7 @@ func (a *Auctioneer) Start() error {
 			return
 		}
 
-		dbState, err := a.Cfg.DB.AuctionState()
+		dbState, err := a.cfg.DB.AuctionState()
 		if err != nil {
 			startErr = err
 			return
@@ -167,7 +167,7 @@ func (a *Auctioneer) Start() error {
 
 		log.Infof("Auctioneer starting at state: %v", startingState)
 
-		err = a.Cfg.DB.UpdateAuctionState(startingState)
+		err = a.cfg.DB.UpdateAuctionState(startingState)
 		if err != nil {
 			startErr = err
 			return
@@ -273,7 +273,7 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 				// We'll log the prior state now, as this will
 				// be used to evaluate our termination
 				// condition.
-				prevState, err := a.Cfg.DB.AuctionState()
+				prevState, err := a.cfg.DB.AuctionState()
 				if err != nil {
 					log.Errorf("Unable to get auction "+
 						"state: %v", err)
@@ -306,7 +306,7 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 
 				// Now that we've completed this state
 				// transition, we'll update our current state.
-				err = a.Cfg.DB.UpdateAuctionState(nextState)
+				err = a.cfg.DB.UpdateAuctionState(nextState)
 				if err != nil {
 					log.Errorf("Unable to update "+
 						"state: %v", err)
@@ -336,7 +336,7 @@ func (a *Auctioneer) accountConfNotifier(expectedOutput *wire.TxOut,
 	// TODO(roasbeef): what height hint? log earliest height of system
 	// init? height at time of broadcast?
 	ctxb := context.Background()
-	confChan, errChan, err := a.Cfg.ChainNotifier.RegisterConfirmationsNtfn(
+	confChan, errChan, err := a.cfg.ChainNotifier.RegisterConfirmationsNtfn(
 		ctxb, &genTXID, expectedOutput.PkScript, 1, 1,
 	)
 	if err != nil {
@@ -404,7 +404,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 		//
 		// First, we'll check if we have a master account in the
 		// database or not.
-		_, err := a.Cfg.DB.FetchAuctioneerAccount(
+		_, err := a.cfg.DB.FetchAuctioneerAccount(
 			context.Background(),
 		)
 		switch {
@@ -434,7 +434,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 		// As we don't yet have an account, we'll create the starting
 		// account state according to the value in our configuration.
 		startingAcct, err := a.baseAuctioneerAcct(
-			ctxb, a.Cfg.StartingAcctValue,
+			ctxb, a.cfg.StartingAcctValue,
 		)
 		if err != nil {
 			return 0, err
@@ -472,16 +472,16 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 		// have no sats.
 		//
 		// TODO(roasbeef): add wallet balance to WalletKit
-		walletBalance, err := a.Cfg.Wallet.ConfirmedWalletBalance(
+		walletBalance, err := a.cfg.Wallet.ConfirmedWalletBalance(
 			ctxb,
 		)
 		if err != nil {
 			return 0, err
 		}
-		if walletBalance <= a.Cfg.StartingAcctValue {
+		if walletBalance <= a.cfg.StartingAcctValue {
 			log.Infof("Need %v coins for Master Account, only "+
 				"have %v, waiting for new block...",
-				walletBalance, a.Cfg.StartingAcctValue)
+				walletBalance, a.cfg.StartingAcctValue)
 
 			return NoMasterAcctState, nil
 		}
@@ -497,7 +497,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 		// TODO(roasbeef): what fee to use? rely on manual anchor down
 		// if not confirming? need admin RPC get current txid and
 		// anchor down if needed?
-		tx, err := a.Cfg.Wallet.SendOutputs(
+		tx, err := a.cfg.Wallet.SendOutputs(
 			ctxb, []*wire.TxOut{acctOutput}, chainfee.FeePerKwFloor,
 		)
 		if err != nil {
@@ -525,7 +525,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 		// account, so we'll find the transaction in the wallet's
 		// store, so we can watch for its confirmation on-chain.
 		startingAcct, err := a.baseAuctioneerAcct(
-			ctxb, a.Cfg.StartingAcctValue,
+			ctxb, a.cfg.StartingAcctValue,
 		)
 		if err != nil {
 			return 0, err
@@ -560,7 +560,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 			acctReadyEvent.acct.OutPoint,
 			acctReadyEvent.acct.Balance)
 
-		err := a.Cfg.DB.UpdateAuctioneerAccount(
+		err := a.cfg.DB.UpdateAuctioneerAccount(
 			ctxb, acctReadyEvent.acct,
 		)
 		if err != nil {
@@ -586,11 +586,11 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 
 	// First, we'll obtain the two keys we need to generate the account
 	// (and its output): the batch key and our long-term auctioneer key.
-	batchKey, err := a.Cfg.DB.BatchKey(ctx)
+	batchKey, err := a.cfg.DB.BatchKey(ctx)
 	if err != nil {
 		return nil, err
 	}
-	auctioneerKey, err := a.Cfg.Wallet.DeriveKey(
+	auctioneerKey, err := a.cfg.Wallet.DeriveKey(
 		ctx, &keychain.KeyLocator{
 			Family: account.AuctioneerKeyFamily,
 		},
@@ -616,7 +616,7 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 func (a *Auctioneer) locateTxByOutput(ctx context.Context,
 	output *wire.TxOut) (*wire.MsgTx, error) {
 
-	txs, err := a.Cfg.Wallet.ListTransactions(ctx)
+	txs, err := a.cfg.Wallet.ListTransactions(ctx)
 	if err != nil {
 		return nil, err
 	}

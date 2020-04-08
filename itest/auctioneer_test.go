@@ -1,11 +1,12 @@
 package itest
 
 import (
+	"bytes"
 	"context"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 
@@ -48,11 +49,11 @@ func testMasterAcctInit(t *harnessTest) {
 	// We should now be able to examine the database and find a populated
 	// master account which matches the genesis tx found above.
 	ctxb := context.Background()
-	auctioneer := t.auctioneer.server.Auctioneer
-	var masterAcct *account.Auctioneer
+	client := t.auctioneer.AuctionAdminClient
+	var masterAcct *adminrpc.MasterAccountResponse
 	err = wait.NoError(func() error {
-		masterAcct, err = auctioneer.Cfg.DB.FetchAuctioneerAccount(
-			ctxb,
+		masterAcct, err = client.MasterAccount(
+			ctxb, &adminrpc.EmptyRequest{},
 		)
 		if err != nil { // nolint:gosimple
 			return err
@@ -66,10 +67,10 @@ func testMasterAcctInit(t *harnessTest) {
 
 	// The stored outpoint should match the genesis transaction, and the
 	// output should match as well.
-	acctOutPoint := masterAcct.OutPoint
+	acctOutPoint := masterAcct.Outpoint
 	genTxHash := genesisTx.TxHash()
-	if !acctOutPoint.Hash.IsEqual(&genTxHash) {
-		t.Fatalf("gen txid mismatch: expected %v, got %v",
-			&genTxHash, masterAcct.OutPoint.Hash)
+	if !bytes.Equal(acctOutPoint.Txid, genTxHash[:]) {
+		t.Fatalf("gen txid mismatch: expected %v, got %x",
+			&genTxHash, acctOutPoint.Txid)
 	}
 }

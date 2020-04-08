@@ -17,7 +17,6 @@ import (
 	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/lsat"
 	"google.golang.org/grpc"
 )
 
@@ -79,7 +78,7 @@ type Server struct {
 
 	batchExecutor *venue.BatchExecutor
 
-	Auctioneer *Auctioneer
+	auctioneer *Auctioneer
 
 	quit chan struct{}
 
@@ -153,7 +152,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			SubmitFee: btcutil.Amount(cfg.OrderSubmitFee),
 		}),
 		batchExecutor: batchExecutor,
-		Auctioneer: NewAuctioneer(AuctioneerConfig{
+		auctioneer: NewAuctioneer(AuctioneerConfig{
 			DB: &auctioneerStore{
 				EtcdStore: store,
 			},
@@ -197,7 +196,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		}
 	}
 	auctioneerServer := newRPCServer(
-		store, lnd, accountManager, server.Auctioneer.BestHeight,
+		store, lnd, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, feeSchedule, grpcListener,
 		serverOpts, cfg.SubscribeTimeout,
 	)
@@ -264,7 +263,7 @@ func (s *Server) Start() error {
 				"manager: %v", err)
 			return
 		}
-		if err := s.Auctioneer.Start(); err != nil {
+		if err := s.auctioneer.Start(); err != nil {
 			startErr = fmt.Errorf("unable to start auctioneer"+
 				"executor: %v", err)
 			return
@@ -323,7 +322,7 @@ func (s *Server) Stop() error {
 				"%w", err)
 			return
 		}
-		if err := s.Auctioneer.Stop(); err != nil {
+		if err := s.auctioneer.Stop(); err != nil {
 			stopErr = fmt.Errorf("unable to stop auctioneer: %w",
 				err)
 			return
@@ -335,10 +334,4 @@ func (s *Server) Stop() error {
 	})
 
 	return stopErr
-}
-
-// ConnectedStreams returns all currently connected traders and their
-// subscriptions.
-func (s *Server) ConnectedStreams() map[lsat.TokenID]*TraderStream {
-	return s.rpcServer.connectedStreams
 }

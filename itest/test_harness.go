@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/go-errors/errors"
 	auctioneerAccount "github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -440,25 +441,36 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 
 	// Make sure the trader stream was registered.
 	err := wait.NoError(func() error {
-		traderStreams := t.auctioneer.server.ConnectedStreams()
+		ctx := context.Background()
+		client := t.auctioneer.AuctionAdminClient
+		resp, err := client.ConnectedTraders(
+			ctx, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("error getting connected traders: %v",
+				err)
+		}
+		traderStreams := resp.Streams
 		if len(traderStreams) != 1 {
 			return fmt.Errorf("unexpected number of trader "+
 				"streams, got %d expected %d",
 				len(traderStreams), 1)
 		}
-		stream, ok := traderStreams[token]
+		stream, ok := traderStreams[token.String()]
 		if !ok {
 			return fmt.Errorf("trader stream for token %v not "+
 				"found", token)
 		}
 
-		var pubKey [33]byte
-		copy(pubKey[:], acct.TraderKey)
-		if _, ok := stream.Subscriptions[pubKey]; !ok {
-			return fmt.Errorf("account %v not subscribed", pubKey)
+		// Loop through all subscribed account keys to see if the one we
+		// are looking for is included.
+		for _, subscribedKey := range stream.RawKeyBytes {
+			if bytes.Equal(subscribedKey, acct.TraderKey) {
+				return nil
+			}
 		}
 
-		return nil
+		return fmt.Errorf("account %x not subscribed", acct.TraderKey)
 	}, defaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("trader stream was not registered before timeout: %v",
