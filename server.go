@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	orderT "github.com/lightninglabs/agora/client/order"
@@ -64,7 +65,8 @@ var _ AuctioneerDatabase = (*auctioneerStore)(nil)
 
 // Server is the main agora auctioneer server.
 type Server struct {
-	rpcServer *rpcServer
+	rpcServer   *rpcServer
+	adminServer *adminRPCServer
 
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
@@ -183,7 +185,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		serverOpts = append(serverOpts, certOpts)
 	}
 
-	// Finally, create our listener, and initialize the primary gRPc server
+	// Next, create our listener, and initialize the primary gRPc server
 	// for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
@@ -203,6 +205,24 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	clmrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,
+	)
+
+	// Finally, create our admin RPC that is by default only exposed on the
+	// local loopback interface.
+	log.Infof("Starting admin gRPC listener")
+	adminListener := cfg.AdminRPCListener
+	if adminListener == nil {
+		adminListener, err = net.Listen("tcp", defaultAdminAddr)
+		if err != nil {
+			return nil, fmt.Errorf("admin RPC server unable to "+
+				"listen on %s", defaultAdminAddr)
+		}
+	}
+	server.adminServer = newAdminRPCServer(
+		auctioneerServer, adminListener, []grpc.ServerOption{},
+	)
+	adminrpc.RegisterAuctionAdminServer(
+		server.adminServer.grpcServer, server.adminServer,
 	)
 
 	return server, nil
@@ -258,7 +278,15 @@ func (s *Server) Start() error {
 		// Start the gRPC server itself.
 		err = s.rpcServer.Start()
 		if err != nil {
-			startErr = fmt.Errorf("unable to start agora "+
+			startErr = fmt.Errorf("unable to start auction "+
+				"server: %w", err)
+			return
+		}
+
+		// And finally the admin RPC server.
+		err = s.adminServer.Start()
+		if err != nil {
+			startErr = fmt.Errorf("unable to start admin "+
 				"server: %w", err)
 			return
 		}
@@ -277,9 +305,16 @@ func (s *Server) Stop() error {
 	s.stopOnce.Do(func() {
 		close(s.quit)
 
-		err := s.rpcServer.Stop()
+		err := s.adminServer.Stop()
 		if err != nil {
-			stopErr = fmt.Errorf("error shutting down "+
+			stopErr = fmt.Errorf("error shutting down admin "+
+				"server: %w", err)
+			return
+		}
+
+		err = s.rpcServer.Stop()
+		if err != nil {
+			stopErr = fmt.Errorf("error shutting down auction "+
 				"server: %w", err)
 			return
 		}
