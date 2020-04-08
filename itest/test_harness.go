@@ -151,13 +151,16 @@ func (h *harnessTest) restartServer() {
 func connectServerClient(ah *auctioneerHarness, th *traderHarness,
 	isRestart bool) error {
 
-	// Create new in-memory listener that we are going to use to communicate
-	// with the agoraserver.
+	// Create new in-memory listeners that we are going to use to
+	// communicate with the agora and admin server.
 	auctioneerRPCListener := bufconn.Listen(100)
+	adminRPCListener := bufconn.Listen(100)
 
 	// Inject the listener into server and start it.
 	ah.cfg.RPCListener = auctioneerRPCListener
+	ah.cfg.AdminRPCListener = adminRPCListener
 	ah.serverCfg.RPCListener = auctioneerRPCListener
+	ah.serverCfg.AdminRPCListener = adminRPCListener
 
 	var err error
 	if isRestart {
@@ -169,7 +172,7 @@ func connectServerClient(ah *auctioneerHarness, th *traderHarness,
 		return err
 	}
 
-	// Connect the client and inject the connection into the harness.
+	// Connect the main client and inject the connection into the harness.
 	auctioneerConn, err := auctioneerRPCListener.Dial()
 	if err != nil {
 		return err
