@@ -175,7 +175,6 @@ func (s *batchStorer) Store(ctx context.Context, result *ExecutionResult) error 
 		// Finally update the account value and expiry.
 		accountModifiers[accountIndex] = append(
 			modifiers, account.ValueModifier(diff.EndingBalance),
-			account.ExpiryModifier(diff.Expiry),
 		)
 		accountIndex++
 	}
