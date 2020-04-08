@@ -17,6 +17,10 @@ type Trader struct {
 	// AccountKey is the account key of a trader.
 	AccountKey AccountID
 
+	// BatchKey is the CURRENT batch key of the trader, this will be used to
+	// generate the script when spending from a trader's account.
+	BatchKey [33]byte
+
 	// NextBatchKey is the NEXT batch key of the trader, this will be used
 	// to generate all the scripts we need for the trader's outputs in the
 	// batch execution transaction.
@@ -51,6 +55,8 @@ func NewTraderFromAccount(acct *account.Account) Trader {
 	}
 
 	if acct.BatchKey != nil {
+		copy(t.BatchKey[:], acct.BatchKey.SerializeCompressed())
+
 		nextBatchKey := clmscript.IncrementKey(acct.BatchKey)
 		copy(t.NextBatchKey[:], nextBatchKey.SerializeCompressed())
 	}
