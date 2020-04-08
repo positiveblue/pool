@@ -172,6 +172,7 @@ list:
 rpc:
 	@$(call print, "Compiling protos.")
 	cd ./client/clmrpc; ./gen_protos.sh
+	cd ./adminrpc; ./gen_protos.sh
 
 clean:
 	@$(call print, "Cleaning source.$(NC)")

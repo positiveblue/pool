@@ -1,0 +1,86 @@
+syntax = "proto3";
+
+import "google/api/annotations.proto";
+
+package adminrpc;
+
+service AuctionAdmin {
+    rpc MasterAccount (EmptyRequest) returns (MasterAccountResponse);
+    rpc ConnectedTraders (EmptyRequest) returns (ConnectedTradersResponse);
+}
+
+message EmptyRequest {
+}
+
+message MasterAccountResponse {
+    /**
+    OutPoint is the outpoint of the master account. If this is a zero outpoint,
+    then no account exists yet.
+    */
+    OutPoint outpoint = 1;
+
+    /**
+    Balance is the current balance of the master account.
+    */
+    int64 balance = 2;
+
+    /**
+    AuctioneerKey is the base key for the auctioneer, this is a static parameter
+    that's created when the system is initialized.
+    */
+    KeyDescriptor key_descriptor = 3;
+
+    /**
+    BatchKey is the current batch key for the auctioneer's account, this will be
+    incremented by one each batch.
+    */
+    bytes batch_key = 4;
+}
+
+message ConnectedTradersResponse {
+    /**
+    A map of all connected trader streams. The key is the hex-encoded LSAT ID
+    of a connected stream and the content is a list of all account keys that
+    trader connection has sent subscriptions for.
+    */
+    map<string, PubKeyList> streams = 1;
+}
+
+message PubKeyList {
+    /**
+    The raw bytes of the key being identified.
+    */
+    repeated bytes raw_key_bytes = 1;
+}
+
+message OutPoint {
+    /**
+    Raw bytes representing the transaction id.
+    */
+    bytes txid = 1 [json_name = "txid"];
+
+    /**
+    The index of the output on the transaction.
+    */
+    uint32 output_index = 2 [json_name = "output_index"];
+}
+
+message KeyLocator {
+    /// The family of key being identified.
+    int32 key_family = 1;
+
+    /// The precise index of the key being identified.
+    int32 key_index = 2;
+}
+
+message KeyDescriptor {
+    /**
+    The raw bytes of the key being identified.
+    */
+    bytes raw_key_bytes = 1;
+
+    /**
+    The key locator that identifies which key to use for signing.
+    */
+    KeyLocator key_loc = 2;
+}
