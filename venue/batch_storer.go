@@ -199,6 +199,6 @@ func (s *batchStorer) Store(ctx context.Context, result *ExecutionResult) error 
 	// Everything is ready to be persisted now.
 	return s.store.PersistBatchResult(
 		ctx, orders, orderModifiers, accounts, accountModifiers,
-		auctAcct, nextBatchKey,
+		auctAcct, result.BatchID, batch, nextBatchKey,
 	)
 }

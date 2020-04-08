@@ -40,12 +40,25 @@ var (
 	// errPerBatchKeyNotFound is an error returned when we can't locate the
 	// per-batch key at its expected path.
 	errPerBatchKeyNotFound = errors.New("per-batch key not found")
+
+	// errBatchSnapshotNotFound is an error returned when we can't locate
+	// the batch snapshot that was requested.
+	errBatchSnapshotNotFound = errors.New("batch snapshot not found")
 )
 
 // perBatchKeyPath returns the full path under which we store the current
 // per-batch key.
 func (s *EtcdStore) perBatchKeyPath() string {
+	// bitcoin/clm/agora/<network>/batch/key.
 	parts := []string{batchDir, perBatchKey}
+	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
+}
+
+// batchSnapshotKeyPath returns the full path under which we store a batch
+// snapshot.
+func (s *EtcdStore) batchSnapshotKeyPath(id orderT.BatchID) string {
+	// bitcoin/clm/agora/<network>/batch/<batchID>.
+	parts := []string{batchDir, hex.EncodeToString(id[:])}
 	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
 }
 
@@ -116,13 +129,14 @@ func (s *EtcdStore) NextBatchKey(ctx context.Context) (*btcec.PublicKey, error) 
 	return newPerBatchKey, err
 }
 
-// PersistBatchResult atomically updates all modified orders/accounts and
-// switches to the next batch ID. If any single operation fails, the whole
-// set of changes is rolled back.
+// PersistBatchResult atomically updates all modified orders/accounts, persists
+// a snapshot of the batch and switches to the next batch ID. If any single
+// operation fails, the whole set of changes is rolled back.
 func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
-	masterAccount *account.Auctioneer, newBatchkey *btcec.PublicKey) error {
+	masterAccount *account.Auctioneer, batchID orderT.BatchID,
+	batch *matching.OrderBatch, newBatchKey *btcec.PublicKey) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -160,10 +174,61 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 			return err
 		}
 
+		// Store a self-contained snapshot of the current batch.
+		var buf bytes.Buffer
+		err = serializeBatch(&buf, batch)
+		if err != nil {
+			return err
+		}
+		stm.Put(s.batchSnapshotKeyPath(batchID), buf.String())
+
 		// And finally, put the new batch key in place.
-		return s.putPerBatchKeySTM(stm, newBatchkey)
+		return s.putPerBatchKeySTM(stm, newBatchKey)
 	})
 	return err
+}
+
+// PersistBatchSnapshot persists a self-contained snapshot of a batch
+// including all involved orders and accounts.
+func (s *EtcdStore) PersistBatchSnapshot(ctx context.Context, id orderT.BatchID,
+	batch *matching.OrderBatch) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	key := s.batchSnapshotKeyPath(id)
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		// Serialize the batch snapshot and store it. If a previous
+		// snapshots exists for the given ID, it is overwritten.
+		var buf bytes.Buffer
+		err := serializeBatch(&buf, batch)
+		if err != nil {
+			return err
+		}
+		stm.Put(key, buf.String())
+		return nil
+	})
+	return err
+}
+
+// GetBatchSnapshot returns the self-contained snapshot of a batch with
+// the given ID as it was recorded at the time.
+func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
+	*matching.OrderBatch, error) {
+
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	resp, err := s.getSingleValue(
+		ctx, s.batchSnapshotKeyPath(id), errBatchSnapshotNotFound,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return deserializeBatch(bytes.NewReader(resp.Kvs[0].Value))
 }
 
 // serializeBatch binary serializes a batch by using the LN wire format.

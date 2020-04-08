@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/agora/venue/matching"
 )
 
 var (
@@ -63,12 +64,23 @@ type Store interface {
 	// the auctioneer's account.
 	UpdateAuctioneerAccount(context.Context, *account.Auctioneer) error
 
-	// PersistBatchResult atomically updates all modified orders/accounts
-	// and switches to the next batch ID. If any single operation fails, the
-	// whole set of changes is rolled back.
+	// PersistBatchResult atomically updates all modified orders/accounts,
+	// persists a snapshot of the batch and switches to the next batch ID.
+	// If any single operation fails, the whole set of changes is rolled
+	// back.
 	PersistBatchResult(context.Context, []orderT.Nonce, [][]order.Modifier,
-		[]*btcec.PublicKey, [][]account.Modifier,
-		*account.Auctioneer, *btcec.PublicKey) error
+		[]*btcec.PublicKey, [][]account.Modifier, *account.Auctioneer,
+		orderT.BatchID, *matching.OrderBatch, *btcec.PublicKey) error
+
+	// PersistBatchSnapshot persists a self-contained snapshot of a batch
+	// including all involved orders and accounts.
+	PersistBatchSnapshot(context.Context, orderT.BatchID,
+		*matching.OrderBatch) error
+
+	// GetBatchSnapshot returns the self-contained snapshot of a batch with
+	// the given ID as it was recorded at the time.
+	GetBatchSnapshot(context.Context, orderT.BatchID) (
+		*matching.OrderBatch, error)
 }
 
 type EtcdStore struct {
