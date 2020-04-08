@@ -1,6 +1,8 @@
 package matching
 
 import (
+	"encoding/hex"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
@@ -9,6 +11,12 @@ import (
 
 // AccountID is the account ID that uniquely identifies a trader.
 type AccountID [33]byte
+
+// MarshalText returns the text representation if an account ID. This is needed
+// for certain tests that serialize structs to JSON for deep comparison.
+func (i AccountID) MarshalText() ([]byte, error) {
+	return []byte(hex.EncodeToString(i[:])), nil
+}
 
 // Trader is a snapshot of a trader's state at a given point in time. We'll use
 // this to generate account diffs, and compute metric groups such as trading
