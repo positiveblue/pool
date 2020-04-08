@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcutil/txsort"
 	"github.com/lightninglabs/agora/client/account/watcher"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lndclient"
@@ -597,6 +598,10 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		})
 	}
 
+	// The transaction should have its inputs and outputs sorted according
+	// to BIP-69.
+	txsort.InPlaceSort(tx)
+
 	// Ensure the crafted transaction passes some sanity checks.
 	err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx))
 	if err != nil {
@@ -613,6 +618,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
 	)
+
 	witnessScript, err := clmscript.AccountWitnessScript(
 		account.Expiry, traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
@@ -620,10 +626,22 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	if err != nil {
 		return nil, err
 	}
+
 	accountOutput, err := account.Output()
 	if err != nil {
 		return nil, err
 	}
+
+	accountInputIdx := -1
+	for i, txIn := range tx.TxIn {
+		if txIn.PreviousOutPoint == account.OutPoint {
+			accountInputIdx = i
+		}
+	}
+	if accountInputIdx == -1 {
+		return nil, errors.New("account input not found")
+	}
+
 	signDesc := &input.SignDescriptor{
 		KeyDesc: keychain.KeyDescriptor{
 			KeyLocator: account.AuctioneerKey.KeyLocator,
@@ -632,7 +650,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		WitnessScript: witnessScript,
 		Output:        accountOutput,
 		HashType:      txscript.SigHashAll,
-		InputIndex:    0,
+		InputIndex:    accountInputIdx,
 		SigHashes:     txscript.NewTxSigHashes(tx),
 	}
 
