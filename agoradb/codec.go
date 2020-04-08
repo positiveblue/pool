@@ -3,9 +3,12 @@ package agoradb
 import (
 	"io"
 
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clientdb"
 	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
@@ -38,6 +41,25 @@ func WriteElement(w io.Writer, element interface{}) error {
 
 	case order.ChanType:
 		return lnwire.WriteElement(w, uint8(e))
+
+	case matching.FulfillType:
+		return lnwire.WriteElement(w, uint8(e))
+
+	case matching.AccountID:
+		return lnwire.WriteElement(w, e[:])
+
+	case *wire.TxOut:
+		// We allow the values of TX outputs to be nil and just write a
+		// boolean value for hasValue = false.
+		if e == nil {
+			return lnwire.WriteElement(w, false)
+		}
+
+		// We have a non-nil value, write it.
+		return lnwire.WriteElements(
+			w, true, btcutil.Amount(e.Value),
+			uint32(len(e.PkScript)), e.PkScript,
+		)
 
 	default:
 		return clientdb.WriteElement(w, element)
@@ -81,6 +103,46 @@ func ReadElement(r io.Reader, element interface{}) error {
 			return err
 		}
 		*e = order.ChanType(s)
+
+	case *matching.FulfillType:
+		var s uint8
+		if err := lnwire.ReadElement(r, &s); err != nil {
+			return err
+		}
+		*e = matching.FulfillType(s)
+
+	case *matching.AccountID:
+		if _, err := io.ReadFull(r, e[:]); err != nil {
+			return err
+		}
+
+	case **wire.TxOut:
+		var (
+			hasValue    bool
+			value       btcutil.Amount
+			pkScriptLen uint32
+		)
+		// Was this nil when it was serialized?
+		if err := lnwire.ReadElement(r, &hasValue); err != nil {
+			return err
+		}
+		if !hasValue {
+			return nil
+		}
+
+		// Non-nil value, read the rest.
+		err := lnwire.ReadElements(r, &value, &pkScriptLen)
+		if err != nil {
+			return err
+		}
+		txOut := &wire.TxOut{
+			Value:    int64(value),
+			PkScript: make([]byte, pkScriptLen),
+		}
+		if _, err := io.ReadFull(r, txOut.PkScript); err != nil {
+			return err
+		}
+		*e = txOut
 
 	default:
 		return clientdb.ReadElement(r, element)
