@@ -147,6 +147,10 @@ flake-unit:
 	@$(call print, "Flake hunting unit tests.")
 	while [ $$? -eq 0 ]; do GOTRACEBACK=all $(UNIT) -count=1; done
 
+flake-race:
+	@$(call print, "Flake hunting race tests.")
+	while [ $$? -eq 0 ]; do GOTRACEBACK=all CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(UNIT_RACE) -count=1; done
+
 flakehunt:
 	@$(call print, "Flake hunting itests.")
 	while [ $$? -eq 0 ]; do GOTRACEBACK=all $(ITEST); done
