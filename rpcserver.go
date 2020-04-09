@@ -127,6 +127,9 @@ type rpcServer struct {
 	// but can subscribe to updates for multiple accounts through the same
 	// stream.
 	connectedStreams map[lsat.TokenID]*TraderStream
+
+	// connectedStreamsMutex is a mutex guarding access to connectedStreams.
+	connectedStreamsMutex sync.Mutex
 }
 
 // newRPCServer creates a new rpcServer.
@@ -431,7 +434,10 @@ func (s *rpcServer) SubscribeBatchAuction(
 	// Kirin (or during the integration tests). In a real deployment, Kirin
 	// enforces the token to be set so we don't need an explicit check here.
 	traderID := tokenIDFromContext(stream.Context())
-	if _, ok := s.connectedStreams[traderID]; ok {
+	s.connectedStreamsMutex.Lock()
+	_, ok := s.connectedStreams[traderID]
+	s.connectedStreamsMutex.Unlock()
+	if ok {
 		return fmt.Errorf("client already connected, only one stream " +
 			"per trader is allowed")
 	}
@@ -460,7 +466,9 @@ func (s *rpcServer) SubscribeBatchAuction(
 			err:      make(chan error),
 		},
 	}
+	s.connectedStreamsMutex.Lock()
 	s.connectedStreams[traderID] = trader
+	s.connectedStreamsMutex.Unlock()
 	initialSubscriptionTimeout := time.After(s.subscribeTimeout)
 
 	// Start the goroutine that just accepts incoming subscription requests.
@@ -556,6 +564,13 @@ func (s *rpcServer) SubscribeBatchAuction(
 			return fmt.Errorf("server shutting down")
 		}
 	}
+}
+
+func (s *rpcServer) ConnectedStreams() map[lsat.TokenID]*TraderStream {
+	s.connectedStreamsMutex.Lock()
+	defer s.connectedStreamsMutex.Unlock()
+
+	return s.connectedStreams
 }
 
 // readIncomingStream reads incoming messages on a bi-directional stream and
@@ -833,6 +848,9 @@ func (s *rpcServer) sendToTrader(
 func (s *rpcServer) addStreamSubscription(traderID lsat.TokenID,
 	newSub *venue.ActiveTrader) error {
 
+	s.connectedStreamsMutex.Lock()
+	defer s.connectedStreamsMutex.Unlock()
+
 	trader, ok := s.connectedStreams[traderID]
 	if !ok {
 		return fmt.Errorf("stream for trader %v not found", traderID)
@@ -862,6 +880,9 @@ func (s *rpcServer) addStreamSubscription(traderID lsat.TokenID,
 // disconnectTrader removes a trading client stream connection and unregisters
 // all account subscriptions from the batch executor.
 func (s *rpcServer) disconnectTrader(traderID lsat.TokenID) error {
+	s.connectedStreamsMutex.Lock()
+	defer s.connectedStreamsMutex.Unlock()
+
 	trader, ok := s.connectedStreams[traderID]
 	if !ok {
 		return fmt.Errorf("stream for trader %v not found", traderID)
