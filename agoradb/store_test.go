@@ -18,6 +18,7 @@ const (
 
 var (
 	netParams = chaincfg.MainNetParams
+	keyPrefix = "bitcoin/clm/agora/" + netParams.Name + "/"
 )
 
 func newTestEtcdStore(t *testing.T) (*EtcdStore, func()) {

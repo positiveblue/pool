@@ -176,14 +176,36 @@ func (s *StoreMock) GetOrder(_ context.Context, nonce orderT.Nonce) (
 	return o, nil
 }
 
-// GetOrders returns all orders that are currently known to the store.
+// GetOrders returns all non-archived  orders that are currently known to the
+// store.
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) GetOrders(_ context.Context) ([]order.ServerOrder, error) {
 	orders := make([]order.ServerOrder, len(s.Orders))
-	idx := 0
 	for _, o := range s.Orders {
-		orders[idx] = o
+		if o.Details().State.Archived() {
+			continue
+		}
+
+		orders = append(orders, o)
+	}
+	return orders, nil
+}
+
+// GetArchivedOrders returns all archived orders that are currently known to the
+// store.
+//
+// NOTE: This is part of the Store interface.
+func (s *StoreMock) GetArchivedOrders(_ context.Context) ([]order.ServerOrder,
+	error) {
+
+	orders := make([]order.ServerOrder, 0, len(s.Orders))
+	for _, o := range s.Orders {
+		if !o.Details().State.Archived() {
+			continue
+		}
+
+		orders = append(orders, o)
 	}
 	return orders, nil
 }

@@ -112,10 +112,25 @@ func TestUpdateOrders(t *testing.T) {
 		t.Fatalf("unable to store order: %v", err)
 	}
 
+	// Make sure they are both stored to the non-archived branch of orders.
+	keyOrderPrefix := keyPrefix + "order/"
+	orderMap, err := store.readOrderKeys(ctxb, keyOrderPrefix)
+	if err != nil {
+		t.Fatalf("unable to read order keys: %v", err)
+	}
+	key1 := keyPrefix + "order/false/" + o1.Nonce().String()
+	if _, ok := orderMap[key1]; !ok {
+		t.Fatalf("order 1 was not found with expected key '%s'", key1)
+	}
+	key2 := keyPrefix + "order/false/" + o2.Nonce().String()
+	if _, ok := orderMap[key2]; !ok {
+		t.Fatalf("order 2 was not found with expected key '%s'", key2)
+	}
+
 	// Update the state of the first order and check that it is persisted.
 	err = store.UpdateOrder(
 		ctxb, o1.Nonce(),
-		order.StateModifier(orderT.StatePartiallyFilled),
+		order.StateModifier(orderT.StateCleared),
 	)
 	if err != nil {
 		t.Fatalf("unable to update order: %v", err)
@@ -124,15 +139,16 @@ func TestUpdateOrders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	if storedOrder.Details().State != orderT.StatePartiallyFilled {
+	if storedOrder.Details().State != orderT.StateCleared {
 		t.Fatalf("unexpected order state. got %d expected %d",
 			storedOrder.Details().State,
-			orderT.StatePartiallyFilled)
+			orderT.StateCleared)
 	}
 
 	// Bulk update the state of both orders and check that they are
-	// persisted correctly.
-	stateModifier := order.StateModifier(orderT.StateCleared)
+	// persisted correctly and moved out of the active bucket into the
+	// archive.
+	stateModifier := order.StateModifier(orderT.StateExecuted)
 	err = store.UpdateOrders(
 		ctxb, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
 		[][]order.Modifier{{stateModifier}, {stateModifier}},
@@ -144,16 +160,50 @@ func TestUpdateOrders(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to get all orders: %v", err)
 	}
+	if len(allOrders) != 0 {
+		t.Fatalf("unexpected number of orders. got %d expected %d",
+			len(allOrders), 0)
+	}
+
+	// Both orders should now be in the archived path.
+	allOrders, err = store.GetArchivedOrders(ctxb)
+	if err != nil {
+		t.Fatalf("unable to get all active orders: %v", err)
+	}
 	if len(allOrders) != 2 {
 		t.Fatalf("unexpected number of orders. got %d expected %d",
 			len(allOrders), 2)
 	}
 	for _, o := range allOrders {
-		if o.Details().State != orderT.StateCleared {
+		if o.Details().State != orderT.StateExecuted {
 			t.Fatalf("unexpected order state. got %d expected %d",
 				o.Details().State,
-				orderT.StateCleared)
+				orderT.StateExecuted)
 		}
+	}
+
+	// Make sure the keys reflect the change as well.
+	orderMap, err = store.readOrderKeys(ctxb, keyOrderPrefix)
+	if err != nil {
+		t.Fatalf("unable to read order keys: %v", err)
+	}
+	key1 = keyPrefix + "order/true/" + o1.Nonce().String()
+	if _, ok := orderMap[key1]; !ok {
+		t.Fatalf("order 1 was not found with expected key '%s'", key1)
+	}
+	key2 = keyPrefix + "order/true/" + o2.Nonce().String()
+	if _, ok := orderMap[key2]; !ok {
+		t.Fatalf("order 2 was not found with expected key '%s'", key2)
+	}
+
+	// We should still be able to look up an order by its nonce, even if
+	// it's archived.
+	storedOrder, err = store.GetOrder(ctxb, o2.Nonce())
+	if err != nil {
+		t.Fatalf("unable to retrieve order: %v", err)
+	}
+	if !storedOrder.Details().State.Archived() {
+		t.Fatalf("expected stored order to be archived but was not")
 	}
 
 	// Finally make sure we can't update an order that does not exist.
@@ -195,7 +245,7 @@ func dummyClientOrder(t *testing.T, amt btcutil.Amount) *orderT.Kit {
 		t.Fatalf("could not create private key: %v", err)
 	}
 	kit := orderT.NewKitWithPreimage(testPreimage)
-	kit.State = orderT.StateExecuted
+	kit.State = orderT.StatePartiallyFilled
 	kit.FixedRate = 21
 	kit.Amt = amt
 	kit.MultiSigKeyLocator = keychain.KeyLocator{Index: 1, Family: 2}

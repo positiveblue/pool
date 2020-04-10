@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/coreos/etcd/clientv3"
@@ -27,12 +28,12 @@ var (
 	// numOrderKeyParts is the number of parts that a full order key can be
 	// split into when using the / character as delimiter. A full path looks
 	// like this:
-	// bitcoin/clm/agora/<network>/order/<nonce>.
-	numOrderKeyParts = 6
+	// bitcoin/clm/agora/<network>/order/<archive>/<nonce>.
+	numOrderKeyParts = 7
 
 	// nonceKeyIndex is the index of the nonce in a key split by the key
 	// delimiter.
-	nonceKeyIndex = 5
+	nonceKeyIndex = 6
 
 	// orderPrefix is the prefix that we'll use to store all order specific
 	// order data. From the top level directory, this path is:
@@ -129,6 +130,8 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		// Read the current version from the DB and apply the
 		// modifications to it. If the order to be modified does not
 		// exist, this will be signaled with an empty string by STM.
+		// Archived orders can't be updated so we only look in the
+		// default path.
 		key := s.getKeyOrderPrefix(nonce)
 		resp := stm.Get(key)
 		if resp == "" {
@@ -147,6 +150,13 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		if err != nil {
 			return err
 		}
+
+		// If the state has been modified to it being archived now, we
+		// have to move it to the archive bucket.
+		if dbOrder.Details().State.Archived() {
+			stm.Del(key)
+			key = s.getKeyOrderPrefixArchive(nonce)
+		}
 		stm.Put(key, string(serialized))
 	}
 
@@ -164,15 +174,24 @@ func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 		return nil, errNotInitialized
 	}
 
+	// By default, we assume an order that is queried here is an active,
+	// non-archived order.
 	key := s.getKeyOrderPrefix(nonce)
 	resp, err := s.getSingleValue(ctx, key, ErrNoOrder)
+	if err == ErrNoOrder {
+		// Because a trader might be querying for an order that we have
+		// already archived, we look it up in the archive branch too.
+		key = s.getKeyOrderPrefixArchive(nonce)
+		resp, err = s.getSingleValue(ctx, key, ErrNoOrder)
+	}
 	if err != nil {
 		return nil, err
 	}
 	return deserializeOrder(resp.Kvs[0].Value, nonce)
 }
 
-// GetOrders returns all orders that are currently known to the store.
+// GetOrders returns all non-archived orders that are currently known to the
+// store.
 //
 // NOTE: This is part of the Store interface.
 func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) {
@@ -180,7 +199,39 @@ func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) 
 		return nil, errNotInitialized
 	}
 
-	key := s.getKeyPrefix(orderPrefix)
+	key := s.getKeyOrderArchivePrefix(false)
+	resultMap, err := s.readOrderKeys(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	orders := make([]order.ServerOrder, 0, len(resultMap))
+	for key, value := range resultMap {
+		nonce, err := nonceFromKey(key)
+		if err != nil {
+			return nil, err
+		}
+		o, err := deserializeOrder(value, nonce)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, o)
+	}
+
+	return orders, nil
+}
+
+// GetArchivedOrders returns all archived orders that are currently known to the
+// store.
+//
+// NOTE: This is part of the Store interface.
+func (s *EtcdStore) GetArchivedOrders(ctx context.Context) ([]order.ServerOrder,
+	error) {
+
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	key := s.getKeyOrderArchivePrefix(true)
 	resultMap, err := s.readOrderKeys(ctx, key)
 	if err != nil {
 		return nil, err
@@ -203,11 +254,29 @@ func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) 
 
 // getKeyOrderPrefix returns the key prefix path for the given order.
 func (s *EtcdStore) getKeyOrderPrefix(nonce orderT.Nonce) string {
-	// bitcoin/clm/agora/<network>/order/<nonce>.
+	// bitcoin/clm/agora/<network>/order/<archive>/<nonce>.
 	return strings.Join(
-		[]string{s.getKeyPrefix(orderPrefix), nonce.String()},
+		[]string{s.getKeyOrderArchivePrefix(false), nonce.String()},
 		keyDelimiter,
 	)
+}
+
+// getKeyOrderPrefixArchive returns the key prefix path for the given order.
+func (s *EtcdStore) getKeyOrderPrefixArchive(nonce orderT.Nonce) string {
+	// bitcoin/clm/agora/<network>/order/<archive>/<nonce>.
+	return strings.Join(
+		[]string{s.getKeyOrderArchivePrefix(true), nonce.String()},
+		keyDelimiter,
+	)
+}
+
+// getKeyOrderArchivePrefix returns the key prefix path for active/inactive
+// orders.
+func (s *EtcdStore) getKeyOrderArchivePrefix(archive bool) string {
+	// bitcoin/clm/agora/<network>/order/<archive>.
+	return strings.Join([]string{
+		s.getKeyPrefix(orderPrefix), strconv.FormatBool(archive),
+	}, keyDelimiter)
 }
 
 // readOrderKeys reads multiple orders from the etcd database and returns its
