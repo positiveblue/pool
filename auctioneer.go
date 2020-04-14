@@ -481,7 +481,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState,
 		if walletBalance <= a.cfg.StartingAcctValue {
 			log.Infof("Need %v coins for Master Account, only "+
 				"have %v, waiting for new block...",
-				walletBalance, a.cfg.StartingAcctValue)
+				a.cfg.StartingAcctValue, walletBalance)
 
 			return NoMasterAcctState, nil
 		}
