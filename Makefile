@@ -93,6 +93,7 @@ build:
 	$(GOBUILD) $(PKG)/client/cmd/agora
 	$(GOBUILD) $(PKG)/client/cmd/agorad
 	$(GOBUILD) $(PKG)/cmd/agoraserver
+	$(GOBUILD) $(PKG)/cmd/auctioncli
 
 build-itest:
 	@$(call print, "Building itest lnd.")
@@ -103,6 +104,7 @@ install:
 	$(GOINSTALL) $(PKG)/client/cmd/agora
 	$(GOINSTALL) $(PKG)/client/cmd/agorad
 	$(GOINSTALL) $(PKG)/cmd/agoraserver
+	$(GOINSTALL) $(PKG)/cmd/auctioncli
 
 scratch: build
 
@@ -179,4 +181,5 @@ clean:
 	$(RM) ./agora
 	$(RM) ./agorad
 	$(RM) ./agoradserver
+	$(RM) ./auctioncli
 	$(RM) coverage.txt
