@@ -48,17 +48,19 @@ func WriteElement(w io.Writer, element interface{}) error {
 	case matching.AccountID:
 		return lnwire.WriteElement(w, e[:])
 
+	case []byte:
+		return lnwire.WriteElements(w, uint32(len(e)), e)
+
 	case *wire.TxOut:
 		// We allow the values of TX outputs to be nil and just write a
 		// boolean value for hasValue = false.
 		if e == nil {
-			return lnwire.WriteElement(w, false)
+			return WriteElement(w, false)
 		}
 
 		// We have a non-nil value, write it.
-		return lnwire.WriteElements(
-			w, true, btcutil.Amount(e.Value),
-			uint32(len(e.PkScript)), e.PkScript,
+		return WriteElements(
+			w, true, btcutil.Amount(e.Value), e.PkScript,
 		)
 
 	default:
@@ -116,14 +118,24 @@ func ReadElement(r io.Reader, element interface{}) error {
 			return err
 		}
 
+	case *[]byte:
+		var size uint32
+		if err := ReadElement(r, &size); err != nil {
+			return err
+		}
+		*e = make([]byte, size)
+		if _, err := io.ReadFull(r, *e); err != nil {
+			return err
+		}
+
 	case **wire.TxOut:
 		var (
-			hasValue    bool
-			value       btcutil.Amount
-			pkScriptLen uint32
+			hasValue bool
+			value    btcutil.Amount
+			pkScript []byte
 		)
 		// Was this nil when it was serialized?
-		if err := lnwire.ReadElement(r, &hasValue); err != nil {
+		if err := ReadElement(r, &hasValue); err != nil {
 			return err
 		}
 		if !hasValue {
@@ -131,18 +143,13 @@ func ReadElement(r io.Reader, element interface{}) error {
 		}
 
 		// Non-nil value, read the rest.
-		err := lnwire.ReadElements(r, &value, &pkScriptLen)
-		if err != nil {
+		if err := ReadElements(r, &value, &pkScript); err != nil {
 			return err
 		}
-		txOut := &wire.TxOut{
+		*e = &wire.TxOut{
 			Value:    int64(value),
-			PkScript: make([]byte, pkScriptLen),
+			PkScript: pkScript,
 		}
-		if _, err := io.ReadFull(r, txOut.PkScript); err != nil {
-			return err
-		}
-		*e = txOut
 
 	default:
 		return clientdb.ReadElement(r, element)
