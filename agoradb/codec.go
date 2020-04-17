@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -47,6 +48,9 @@ func WriteElement(w io.Writer, element interface{}) error {
 
 	case matching.AccountID:
 		return lnwire.WriteElement(w, e[:])
+
+	case chanbackup.SingleBackupVersion:
+		return lnwire.WriteElement(w, uint8(e))
 
 	case []byte:
 		return lnwire.WriteElements(w, uint32(len(e)), e)
@@ -112,6 +116,13 @@ func ReadElement(r io.Reader, element interface{}) error {
 			return err
 		}
 		*e = matching.FulfillType(s)
+
+	case *chanbackup.SingleBackupVersion:
+		var s uint8
+		if err := lnwire.ReadElement(r, &s); err != nil {
+			return err
+		}
+		*e = chanbackup.SingleBackupVersion(s)
 
 	case *matching.AccountID:
 		if _, err := io.ReadFull(r, e[:]); err != nil {
