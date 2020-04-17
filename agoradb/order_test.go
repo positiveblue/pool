@@ -10,7 +10,6 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/davecgh/go-spew/spew"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/loop/lsat"
@@ -49,7 +48,7 @@ func TestSubmitOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	assertOrdersEqual(t, bid, storedOrder)
+	assertJSONDeepEqual(t, bid, storedOrder)
 
 	// Check that we got the correct type back.
 	if storedOrder.Type() != orderT.TypeBid {
@@ -67,7 +66,7 @@ func TestSubmitOrder(t *testing.T) {
 		t.Fatalf("unexpected number of orders. got %d expected %d",
 			len(allOrders), 1)
 	}
-	assertOrdersEqual(t, bid, allOrders[0])
+	assertJSONDeepEqual(t, bid, allOrders[0])
 
 	if allOrders[0].Type() != orderT.TypeBid {
 		t.Fatalf("unexpected order type. got %d expected %d",
@@ -222,9 +221,11 @@ func TestUpdateOrders(t *testing.T) {
 	}
 }
 
-// assertOrdersEqual deep compares two orders for equality. We cannot use
-// reflect.DeepEqual because that doesn't seem to work for net.Addr.
-func assertOrdersEqual(t *testing.T, o1, o2 order.ServerOrder) {
+// assertJSONDeepEqual deep compares two items for equality by both serializing
+// them to JSON and then comparing them as text. This can be used for nested
+// structures that are not compatible with reflect.DeepEqual, for example
+// anything that contains net.Addr fields.
+func assertJSONDeepEqual(t *testing.T, o1, o2 interface{}) {
 	expected, err := json.Marshal(o1)
 	if err != nil {
 		t.Fatalf("cannot marshal: %v", err)
@@ -234,8 +235,8 @@ func assertOrdersEqual(t *testing.T, o1, o2 order.ServerOrder) {
 		t.Fatalf("cannot marshal: %v", err)
 	}
 	if !bytes.Equal(expected, actual) {
-		t.Fatalf("expected order: %v\ngot: %v", spew.Sdump(o1),
-			spew.Sdump(o2))
+		t.Fatalf("expected elem: %s\ngot: %s", string(expected),
+			string(actual))
 	}
 }
 

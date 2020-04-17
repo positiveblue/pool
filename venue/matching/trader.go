@@ -1,6 +1,8 @@
 package matching
 
 import (
+	"encoding/hex"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
@@ -10,12 +12,22 @@ import (
 // AccountID is the account ID that uniquely identifies a trader.
 type AccountID [33]byte
 
+// MarshalText returns the text representation if an account ID. This is needed
+// for certain tests that serialize structs to JSON for deep comparison.
+func (i AccountID) MarshalText() ([]byte, error) {
+	return []byte(hex.EncodeToString(i[:])), nil
+}
+
 // Trader is a snapshot of a trader's state at a given point in time. We'll use
 // this to generate account diffs, and compute metric groups such as trading
 // fees paid.
 type Trader struct {
 	// AccountKey is the account key of a trader.
 	AccountKey AccountID
+
+	// BatchKey is the CURRENT batch key of the trader, this will be used to
+	// generate the script when spending from a trader's account.
+	BatchKey [33]byte
 
 	// NextBatchKey is the NEXT batch key of the trader, this will be used
 	// to generate all the scripts we need for the trader's outputs in the
@@ -51,6 +63,8 @@ func NewTraderFromAccount(acct *account.Account) Trader {
 	}
 
 	if acct.BatchKey != nil {
+		copy(t.BatchKey[:], acct.BatchKey.SerializeCompressed())
+
 		nextBatchKey := clmscript.IncrementKey(acct.BatchKey)
 		copy(t.NextBatchKey[:], nextBatchKey.SerializeCompressed())
 	}

@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lsat"
 )
 
@@ -19,6 +20,7 @@ type StoreMock struct {
 	Orders      map[orderT.Nonce]order.ServerOrder
 	BatchPubkey *btcec.PublicKey
 	MasterAcct  *account.Auctioneer
+	Snapshots   map[orderT.BatchID]*matching.OrderBatch
 	t           *testing.T
 }
 
@@ -29,6 +31,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		Accs:        make(map[[33]byte]*account.Account),
 		Orders:      make(map[orderT.Nonce]order.ServerOrder),
 		BatchPubkey: initialBatchKey,
+		Snapshots:   make(map[orderT.BatchID]*matching.OrderBatch),
 		t:           t,
 	}
 }
@@ -235,15 +238,16 @@ func (s *StoreMock) UpdateAuctioneerAccount(_ context.Context,
 	return nil
 }
 
-// PersistBatchResult atomically updates all modified orders/accounts and
-// switches to the next batch ID. If any single operation fails, the whole
-// set of changes is rolled back.
+// PersistBatchResult atomically updates all modified orders/accounts, persists
+// a snapshot of the batch and switches to the next batch ID. If any single
+// operation fails, the whole set of changes is rolled back.
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
-	masterAcct *account.Auctioneer, nextBatchKey *btcec.PublicKey) error {
+	masterAcct *account.Auctioneer, batchID orderT.BatchID,
+	batch *matching.OrderBatch, nextBatchKey *btcec.PublicKey) error {
 
 	err := s.UpdateOrders(ctx, orders, orderModifiers)
 	if err != nil {
@@ -262,12 +266,38 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	}
 
 	s.MasterAcct = masterAcct
+	s.Snapshots[batchID] = batch
 
 	var batchKey [33]byte
 	copy(batchKey[:], nextBatchKey.SerializeCompressed())
 	s.MasterAcct.BatchKey = batchKey
 
 	return nil
+}
+
+// PersistBatchSnapshot persists a self-contained snapshot of a batch
+// including all involved orders and accounts.
+//
+// NOTE: This is part of the Store interface.
+func (s *StoreMock) PersistBatchSnapshot(_ context.Context, id orderT.BatchID,
+	batch *matching.OrderBatch) error {
+
+	s.Snapshots[id] = batch
+	return nil
+}
+
+// GetBatchSnapshot returns the self-contained snapshot of a batch with
+// the given ID as it was recorded at the time.
+//
+// NOTE: This is part of the Store interface.
+func (s *StoreMock) GetBatchSnapshot(_ context.Context, id orderT.BatchID) (
+	*matching.OrderBatch, error) {
+
+	snapshot, ok := s.Snapshots[id]
+	if !ok {
+		return nil, errBatchSnapshotNotFound
+	}
+	return snapshot, nil
 }
 
 // A compile-time check to make sure StoreMock implements the Store interface.

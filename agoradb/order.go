@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"strconv"
 	"strings"
 
@@ -66,11 +67,12 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 
 		// Now that we know it doesn't yet exist, serialize and store
 		// the new order.
-		serialized, err := serializeOrder(order)
+		var buf bytes.Buffer
+		err := serializeOrder(&buf, order)
 		if err != nil {
 			return err
 		}
-		stm.Put(key, string(serialized))
+		stm.Put(key, buf.String())
 		return nil
 	})
 	return err
@@ -137,7 +139,10 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		if resp == "" {
 			return ErrNoOrder
 		}
-		dbOrder, err := deserializeOrder([]byte(resp), nonce)
+		dbOrder, err := deserializeOrder(
+			bytes.NewReader([]byte(resp)), nonce,
+		)
+
 		if err != nil {
 			return err
 		}
@@ -146,7 +151,8 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		}
 
 		// Serialize it back into binary form.
-		serialized, err := serializeOrder(dbOrder)
+		var buf bytes.Buffer
+		err = serializeOrder(&buf, dbOrder)
 		if err != nil {
 			return err
 		}
@@ -157,7 +163,7 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 			stm.Del(key)
 			key = s.getKeyOrderPrefixArchive(nonce)
 		}
-		stm.Put(key, string(serialized))
+		stm.Put(key, buf.String())
 	}
 
 	return nil
@@ -187,7 +193,7 @@ func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 	if err != nil {
 		return nil, err
 	}
-	return deserializeOrder(resp.Kvs[0].Value, nonce)
+	return deserializeOrder(bytes.NewReader(resp.Kvs[0].Value), nonce)
 }
 
 // GetOrders returns all non-archived orders that are currently known to the
@@ -210,7 +216,7 @@ func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) 
 		if err != nil {
 			return nil, err
 		}
-		o, err := deserializeOrder(value, nonce)
+		o, err := deserializeOrder(bytes.NewReader(value), nonce)
 		if err != nil {
 			return nil, err
 		}
@@ -242,7 +248,7 @@ func (s *EtcdStore) GetArchivedOrders(ctx context.Context) ([]order.ServerOrder,
 		if err != nil {
 			return nil, err
 		}
-		o, err := deserializeOrder(value, nonce)
+		o, err := deserializeOrder(bytes.NewReader(value), nonce)
 		if err != nil {
 			return nil, err
 		}
@@ -319,45 +325,36 @@ func nonceFromKey(key string) (orderT.Nonce, error) {
 }
 
 // serializeOrder binary serializes an order by using the LN wire format.
-func serializeOrder(o order.ServerOrder) ([]byte, error) {
-	var w bytes.Buffer
-
+func serializeOrder(w io.Writer, o order.ServerOrder) error {
 	// Serialize the client part first.
 	switch t := o.(type) {
 	case *order.Ask:
-		err := clientdb.SerializeOrder(&t.Ask, &w)
+		err := clientdb.SerializeOrder(&t.Ask, w)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 	case *order.Bid:
-		err := clientdb.SerializeOrder(&t.Bid, &w)
+		err := clientdb.SerializeOrder(&t.Bid, w)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
 
 	// We don't have to deserialize the nonce as it's part of the etcd key.
 	kit := o.ServerDetails()
-	err := WriteElements(
-		&w, kit.Sig, kit.NodeKey, kit.NodeAddrs, kit.ChanType,
+	return WriteElements(
+		w, kit.Sig, kit.NodeKey, kit.NodeAddrs, kit.ChanType,
 		kit.Lsat, kit.MultiSigKey,
 	)
-	if err != nil {
-		return nil, err
-	}
-	return w.Bytes(), nil
 }
 
 // deserializeOrder reconstructs an order from binary data in the LN wire
 // format.
-func deserializeOrder(content []byte, nonce orderT.Nonce) (
-	order.ServerOrder, error) {
+func deserializeOrder(r io.Reader, nonce orderT.Nonce) (order.ServerOrder,
+	error) {
 
-	var (
-		r   = bytes.NewReader(content)
-		kit = &order.Kit{}
-	)
+	kit := &order.Kit{}
 
 	// Deserialize the client part first.
 	clientOrder, err := clientdb.DeserializeOrder(nonce, r)

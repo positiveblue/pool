@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
-	accountT "github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmscript"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
@@ -91,18 +90,12 @@ func TestBatchStorer(t *testing.T) {
 			RecreatedOutput: batchTx.TxOut[0],
 			AccountTally: &orderT.AccountTally{
 				EndingBalance: 600_000,
-				Account: &accountT.Account{
-					Expiry: bigAcct.Expiry,
-				},
 			},
 		},
 		smallAcct.TraderKeyRaw: {
 			StartingState: &smallTrader,
 			AccountTally: &orderT.AccountTally{
 				EndingBalance: 0,
-				Account: &accountT.Account{
-					Expiry: smallAcct.Expiry,
-				},
 			},
 		},
 	}

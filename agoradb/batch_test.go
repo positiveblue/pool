@@ -7,11 +7,13 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmscript"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/agora/venue/matching"
 )
 
 // TestBatchKey tests the different database operations that can be performed on
@@ -59,19 +61,23 @@ func TestBatchKey(t *testing.T) {
 // TestPersistBatchResult tests the different database operations that are
 // performed during the persisting phase of a batch.
 func TestPersistBatchResult(t *testing.T) {
-	ctx := context.Background()
+	var (
+		ctx     = context.Background()
+		batchID = orderT.BatchID{1, 2, 3}
+	)
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
 
 	// First test the basic sanity tests that are performed.
 	err := store.PersistBatchResult(
-		ctx, []orderT.Nonce{{}}, nil, nil, nil, nil, nil,
+		ctx, []orderT.Nonce{{}}, nil, nil, nil, nil, batchID, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "order modifier") {
 		t.Fatalf("expected order modifier length mismatch, got %v", err)
 	}
 	err = store.PersistBatchResult(
-		ctx, nil, nil, []*btcec.PublicKey{{}}, nil, nil, nil,
+		ctx, nil, nil, []*btcec.PublicKey{{}}, nil, nil, batchID, nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "account modifier") {
 		t.Fatalf("expected account modifier length mismatch, got %v",
@@ -131,7 +137,7 @@ func TestPersistBatchResult(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{traderKey}, accountModifiers,
-		ma1, testTraderKey,
+		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
 	)
 	if err != nil {
 		t.Fatalf("error persisting batch result: %v", err)
@@ -176,7 +182,10 @@ func TestPersistBatchResult(t *testing.T) {
 // TestPersistBatchResultRollback tests that the persisting operation of a batch
 // is executed atomically and everything is rolled back if one operation fails.
 func TestPersistBatchResultRollback(t *testing.T) {
-	ctx := context.Background()
+	var (
+		ctx     = context.Background()
+		batchID = orderT.BatchID{1, 2, 3}
+	)
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
 
@@ -223,7 +232,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{traderKey}, accountModifiers,
-		ma1, testTraderKey,
+		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
 	)
 	if err == nil {
 		t.Fatal("expected error persisting batch result, got nil")
@@ -252,4 +261,137 @@ func TestPersistBatchResultRollback(t *testing.T) {
 		t.Fatalf("unexpected batch key, got %x wanted %x", ma2.BatchKey,
 			initialBatchKey.SerializeCompressed())
 	}
+}
+
+// TestPersistBatchSnapshot makes sure a batch snapshot can be stored and
+// retrieved again correctly.
+func TestPersistBatchSnapshot(t *testing.T) {
+	ctx := context.Background()
+	store, cleanup := newTestEtcdStore(t)
+	defer cleanup()
+
+	// Create an order batch that contains dummy data.
+	clientKit := dummyClientOrder(t, 123_456)
+	serverKit := dummyOrder(t)
+	trader1 := matching.Trader{
+		AccountKey: matching.AccountID{
+			1, 2, 3, 4, 5,
+		},
+		BatchKey: toRawKey(testAuctioneerKey),
+		NextBatchKey: toRawKey(
+			clmscript.IncrementKey(testAuctioneerKey),
+		),
+		VenueSecret:   [32]byte{88, 99},
+		AccountExpiry: 10,
+		AccountOutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{
+				11, 12, 13, 14, 15,
+			},
+			Index: 16,
+		},
+		AccountBalance: 17,
+	}
+	trader2 := matching.Trader{
+		AccountKey: matching.AccountID{
+			2, 3, 4, 5, 6,
+		},
+		BatchKey: toRawKey(testTraderKey),
+		NextBatchKey: toRawKey(
+			clmscript.IncrementKey(testTraderKey),
+		),
+		VenueSecret:   [32]byte{99, 10},
+		AccountExpiry: 11,
+		AccountOutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{
+				12, 13, 14, 15, 16,
+			},
+			Index: 17,
+		},
+		AccountBalance: 18,
+	}
+	batch := &matching.OrderBatch{
+		Orders: []matching.MatchedOrder{
+			{
+				Asker:  trader1,
+				Bidder: trader2,
+				Details: matching.OrderPair{
+					Ask: &order.Ask{
+						Ask: orderT.Ask{
+							Kit:         *clientKit,
+							MaxDuration: 12345,
+						},
+						Kit: *serverKit,
+					},
+					Bid: &order.Bid{
+						Bid: orderT.Bid{
+							Kit:         *clientKit,
+							MinDuration: 54321,
+						},
+						Kit: *serverKit,
+					},
+					Quote: matching.PriceQuote{
+						MatchingRate:     9,
+						TotalSatsCleared: 8,
+						UnitsMatched:     7,
+						UnitsUnmatched:   6,
+						Type:             5,
+					},
+				},
+			},
+		},
+		FeeReport: matching.TradingFeeReport{
+			AccountDiffs: map[matching.AccountID]matching.AccountDiff{
+				{1, 2, 3}: {
+					AccountTally: &orderT.AccountTally{
+						EndingBalance:          123,
+						TotalExecutionFeesPaid: 234,
+						TotalTakerFeesPaid:     345,
+						TotalMakerFeesAccrued:  456,
+						NumChansCreated:        567,
+					},
+					StartingState:   &trader2,
+					RecreatedOutput: nil,
+				},
+				{99, 88, 77, 66, 55, 44}: {
+					AccountTally: &orderT.AccountTally{
+						EndingBalance:          99,
+						TotalExecutionFeesPaid: 88,
+						TotalTakerFeesPaid:     77,
+						TotalMakerFeesAccrued:  66,
+						NumChansCreated:        55,
+					},
+					StartingState: &trader1,
+					RecreatedOutput: &wire.TxOut{
+						Value:    987654,
+						PkScript: []byte{77, 88, 99},
+					},
+				},
+			},
+			AuctioneerFeesAccrued: 1337,
+		},
+		ClearingPrice: 123,
+	}
+
+	// Store the snapshot and then read it back again immediately.
+	var batchID orderT.BatchID
+	copy(batchID[:], initialBatchKeyBytes)
+	err := store.PersistBatchSnapshot(ctx, batchID, batch)
+	if err != nil {
+		t.Fatalf("could not store batch snapshot: %v", err)
+	}
+	dbBatch, err := store.GetBatchSnapshot(ctx, batchID)
+	if err != nil {
+		t.Fatalf("could not read batch snapshot: %v", err)
+	}
+
+	// Both snapshots must be identical. We use the special assert function
+	// here because our batch contains orders which have net.Addr fields
+	// that aren't reflect.DeepEqual compatible.
+	assertJSONDeepEqual(t, batch, dbBatch)
+}
+
+func toRawKey(pubkey *btcec.PublicKey) [33]byte {
+	var result [33]byte
+	copy(result[:], pubkey.SerializeCompressed())
+	return result
 }
