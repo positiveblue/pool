@@ -23,6 +23,10 @@ const (
 	// server listens on.
 	defaultAuctioneerRPCPort = 12009
 
+	// defaultAdminRPCPort is the default port that the admin server listens
+	// on.
+	defaultAdminRPCPort = 13370
+
 	// defaultOrderSubmitFee is the default one-time fee that is charged for
 	// submitting an order.
 	defaultOrderSubmitFee = 1337
@@ -74,6 +78,7 @@ var (
 	DefaultBaseDir = btcutil.AppDataDir("agoraserver", false)
 
 	defaultAuctioneerAddr = fmt.Sprintf(":%d", defaultAuctioneerRPCPort)
+	defaultAdminAddr      = fmt.Sprintf("127.0.0.1:%d", defaultAdminRPCPort)
 	defaultTLSCertPath    = filepath.Join(
 		DefaultBaseDir, defaultTLSCertFilename,
 	)
@@ -123,10 +128,13 @@ type Config struct {
 	Lnd  *LndConfig  `group:"lnd" namespace:"lnd"`
 	Etcd *EtcdConfig `group:"etcd" namespace:"etcd"`
 
-	// RPCListener is a network listener that can be set if agoraserver
-	// should be used as a library and listen on the given listener instead
-	// of what is configured in the --rpclisten parameter.
+	// RPCListener is a network listener that the default agoraserver
+	// should listen on.
 	RPCListener net.Listener
+
+	// AdminRPCListener is a network listener that the admin server should
+	// listen on.
+	AdminRPCListener net.Listener
 }
 
 var DefaultConfig = &Config{

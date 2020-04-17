@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/embed"
 	"github.com/lightninglabs/agora"
+	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -38,16 +39,18 @@ type auctioneerHarness struct {
 	store agoradb.Store
 
 	clmrpc.ChannelAuctioneerClient
+	adminrpc.AuctionAdminClient
 }
 
 // auctioneerConfig holds all configuration items that are required to start an
 // auctioneer server.
 type auctioneerConfig struct {
-	RPCListener *bufconn.Listener
-	BackendCfg  lntest.BackendConfig
-	LndNode     *lntest.HarnessNode
-	NetParams   *chaincfg.Params
-	BaseDir     string
+	RPCListener      *bufconn.Listener
+	AdminRPCListener *bufconn.Listener
+	BackendCfg       lntest.BackendConfig
+	LndNode          *lntest.HarnessNode
+	NetParams        *chaincfg.Params
+	BaseDir          string
 }
 
 // newAuctioneerHarness creates a new auctioneer server harness with the given
@@ -81,6 +84,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			SubscribeTimeout: 500 * time.Millisecond,
 			DebugLevel:       "debug",
 			RPCListener:      cfg.RPCListener,
+			AdminRPCListener: cfg.AdminRPCListener,
 			Lnd: &agora.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,
@@ -120,8 +124,8 @@ func (hs *auctioneerHarness) runServer() error {
 		return fmt.Errorf("unable to start server: %v", err)
 	}
 
-	// Since Stop uses the LightningClient to stop the node, if we fail to
-	// get a connected client, we have to kill the process.
+	// Connect our internal client to the main RPC server so we can interact
+	// with it during the test.
 	netConn, err := hs.cfg.RPCListener.Dial()
 	if err != nil {
 		return fmt.Errorf("could not listen on bufconn: %v", err)
@@ -130,10 +134,21 @@ func (hs *auctioneerHarness) runServer() error {
 	if err != nil {
 		return err
 	}
-
 	hs.ChannelAuctioneerClient = clmrpc.NewChannelAuctioneerClient(
 		rpcConn,
 	)
+
+	// Also connect our internal admin client to the main RPC server so we
+	// can interact with it during the test.
+	netConn, err = hs.cfg.AdminRPCListener.Dial()
+	if err != nil {
+		return fmt.Errorf("could not listen on bufconn: %v", err)
+	}
+	rpcConn, err = ConnectAuctioneerRPC(netConn, "")
+	if err != nil {
+		return err
+	}
+	hs.AuctionAdminClient = adminrpc.NewAuctionAdminClient(rpcConn)
 	return nil
 }
 

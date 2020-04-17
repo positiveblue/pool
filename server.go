@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	orderT "github.com/lightninglabs/agora/client/order"
@@ -16,7 +17,6 @@ import (
 	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/lsat"
 	"google.golang.org/grpc"
 )
 
@@ -64,7 +64,8 @@ var _ AuctioneerDatabase = (*auctioneerStore)(nil)
 
 // Server is the main agora auctioneer server.
 type Server struct {
-	rpcServer *rpcServer
+	rpcServer   *rpcServer
+	adminServer *adminRPCServer
 
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
@@ -77,7 +78,7 @@ type Server struct {
 
 	batchExecutor *venue.BatchExecutor
 
-	Auctioneer *Auctioneer
+	auctioneer *Auctioneer
 
 	quit chan struct{}
 
@@ -151,7 +152,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			SubmitFee: btcutil.Amount(cfg.OrderSubmitFee),
 		}),
 		batchExecutor: batchExecutor,
-		Auctioneer: NewAuctioneer(AuctioneerConfig{
+		auctioneer: NewAuctioneer(AuctioneerConfig{
 			DB: &auctioneerStore{
 				EtcdStore: store,
 			},
@@ -183,7 +184,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		serverOpts = append(serverOpts, certOpts)
 	}
 
-	// Finally, create our listener, and initialize the primary gRPc server
+	// Next, create our listener, and initialize the primary gRPc server
 	// for HTTP/2 connections.
 	log.Infof("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
@@ -195,7 +196,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		}
 	}
 	auctioneerServer := newRPCServer(
-		store, lnd, accountManager, server.Auctioneer.BestHeight,
+		store, lnd, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, feeSchedule, grpcListener,
 		serverOpts, cfg.SubscribeTimeout,
 	)
@@ -203,6 +204,24 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	clmrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,
+	)
+
+	// Finally, create our admin RPC that is by default only exposed on the
+	// local loopback interface.
+	log.Infof("Starting admin gRPC listener")
+	adminListener := cfg.AdminRPCListener
+	if adminListener == nil {
+		adminListener, err = net.Listen("tcp", defaultAdminAddr)
+		if err != nil {
+			return nil, fmt.Errorf("admin RPC server unable to "+
+				"listen on %s", defaultAdminAddr)
+		}
+	}
+	server.adminServer = newAdminRPCServer(
+		auctioneerServer, adminListener, []grpc.ServerOption{},
+	)
+	adminrpc.RegisterAuctionAdminServer(
+		server.adminServer.grpcServer, server.adminServer,
 	)
 
 	return server, nil
@@ -244,7 +263,7 @@ func (s *Server) Start() error {
 				"manager: %v", err)
 			return
 		}
-		if err := s.Auctioneer.Start(); err != nil {
+		if err := s.auctioneer.Start(); err != nil {
 			startErr = fmt.Errorf("unable to start auctioneer"+
 				"executor: %v", err)
 			return
@@ -258,7 +277,15 @@ func (s *Server) Start() error {
 		// Start the gRPC server itself.
 		err = s.rpcServer.Start()
 		if err != nil {
-			startErr = fmt.Errorf("unable to start agora "+
+			startErr = fmt.Errorf("unable to start auction "+
+				"server: %w", err)
+			return
+		}
+
+		// And finally the admin RPC server.
+		err = s.adminServer.Start()
+		if err != nil {
+			startErr = fmt.Errorf("unable to start admin "+
 				"server: %w", err)
 			return
 		}
@@ -277,9 +304,16 @@ func (s *Server) Stop() error {
 	s.stopOnce.Do(func() {
 		close(s.quit)
 
-		err := s.rpcServer.Stop()
+		err := s.adminServer.Stop()
 		if err != nil {
-			stopErr = fmt.Errorf("error shutting down "+
+			stopErr = fmt.Errorf("error shutting down admin "+
+				"server: %w", err)
+			return
+		}
+
+		err = s.rpcServer.Stop()
+		if err != nil {
+			stopErr = fmt.Errorf("error shutting down auction "+
 				"server: %w", err)
 			return
 		}
@@ -288,7 +322,7 @@ func (s *Server) Stop() error {
 				"%w", err)
 			return
 		}
-		if err := s.Auctioneer.Stop(); err != nil {
+		if err := s.auctioneer.Stop(); err != nil {
 			stopErr = fmt.Errorf("unable to stop auctioneer: %w",
 				err)
 			return
@@ -300,10 +334,4 @@ func (s *Server) Stop() error {
 	})
 
 	return stopErr
-}
-
-// ConnectedStreams returns all currently connected traders and their
-// subscriptions.
-func (s *Server) ConnectedStreams() map[lsat.TokenID]*TraderStream {
-	return s.rpcServer.connectedStreams
 }
