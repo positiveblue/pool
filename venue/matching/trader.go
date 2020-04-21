@@ -3,6 +3,7 @@ package matching
 import (
 	"encoding/hex"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
@@ -16,6 +17,13 @@ type AccountID [33]byte
 // for certain tests that serialize structs to JSON for deep comparison.
 func (i AccountID) MarshalText() ([]byte, error) {
 	return []byte(hex.EncodeToString(i[:])), nil
+}
+
+// NewAccountID creates a new account ID given a populated pubkey.
+func NewAccountID(pub *btcec.PublicKey) AccountID {
+	var a AccountID
+	copy(a[:], pub.SerializeCompressed())
+	return a
 }
 
 // Trader is a snapshot of a trader's state at a given point in time. We'll use
