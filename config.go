@@ -68,6 +68,10 @@ const (
 	// defaultSubscribeTimeout is the maximum time we give a client stream
 	// subscriber to send us the first subscription message.
 	defaultSubscribeTimeout = 10 * time.Second
+
+	// defaultMsgTimeout is the default amount of time that we'll wait for
+	// a trader to send us an expected batch execution message.
+	defaultMsgTimeout = time.Second * 10
 )
 
 var (

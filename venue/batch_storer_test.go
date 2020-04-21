@@ -163,11 +163,9 @@ var (
 // TestBatchStorer makes sure a batch is prepared correctly for serialization by
 // the batch storer.
 func TestBatchStorer(t *testing.T) {
-	t.Parallel()
-
 	var (
 		storeMock = agoradb.NewStoreMock(t)
-		storer    = &batchStorer{store: storeMock}
+		storer    = &ExeBatchStorer{store: storeMock}
 	)
 
 	batchResult := &ExecutionResult{

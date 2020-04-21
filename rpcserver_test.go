@@ -101,7 +101,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 			context.Background(), auth.KeyTokenID, testTokenID,
 		)
 		mockStore  = agoradb.NewStoreMock(t)
-		rpcServer  = newServer(t, mockStore)
+		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
 			toClient: make(chan *clmrpc.ServerAuctionMessage),
@@ -241,7 +241,7 @@ func TestRPCServerBatchAuctionStreamError(t *testing.T) {
 			context.Background(), auth.KeyTokenID, testTokenID,
 		)
 		mockStore  = agoradb.NewStoreMock(t)
-		rpcServer  = newServer(t, mockStore)
+		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
 			toClient: make(chan *clmrpc.ServerAuctionMessage),
@@ -292,7 +292,7 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 			context.Background(), auth.KeyTokenID, testTokenID,
 		)
 		mockStore  = agoradb.NewStoreMock(t)
-		rpcServer  = newServer(t, mockStore)
+		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
 			toClient: make(chan *clmrpc.ServerAuctionMessage),
@@ -332,7 +332,7 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 	}
 }
 
-func newServer(t *testing.T, store agoradb.Store) *rpcServer {
+func newServer(store agoradb.Store) *rpcServer {
 	lndServices := &lndclient.GrpcLndServices{
 		LndServices: lndclient.LndServices{
 			Client:        mockLnd.Client,
@@ -345,11 +345,12 @@ func newServer(t *testing.T, store agoradb.Store) *rpcServer {
 		},
 	}
 
-	batchExecutor, err := venue.NewBatchExecutor(store)
-	if err != nil {
-		t.Fatalf("unable to create batch executor: %v", err)
-		return nil
-	}
+	batchExecutor := venue.NewBatchExecutor(
+		&executorStore{
+			Store: store,
+		},
+		lndServices.Signer, time.Second*15, venue.NewExeBatchStorer(store),
+	)
 
 	return newRPCServer(
 		store, lndServices, nil, nil, nil, batchExecutor,

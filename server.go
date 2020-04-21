@@ -66,6 +66,31 @@ func (a *auctioneerStore) AuctionState() (AuctionState, error) {
 
 var _ AuctioneerDatabase = (*auctioneerStore)(nil)
 
+// executorStore is a wrapper around the normal database to implement the
+// ExecutorStore interface. This only exposes some new methods to update and
+// read the in-memory execution state.
+type executorStore struct {
+	// state is the current batch execution state.
+	//
+	// NOTE: This MUST be used atomically
+	state uint32
+
+	agoradb.Store
+}
+
+// ExecutionState returns the current execution state.
+func (e *executorStore) ExecutionState() (venue.ExecutionState, error) {
+	return venue.ExecutionState(atomic.LoadUint32(&e.state)), nil
+}
+
+// UpdateExecutionState updates the current execution state.
+func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) error {
+	atomic.StoreUint32(&e.state, uint32(newState))
+	return nil
+}
+
+var _ venue.ExecutorStore = (*executorStore)(nil)
+
 // Server is the main agora auctioneer server.
 type Server struct {
 	rpcServer   *rpcServer
@@ -141,10 +166,13 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// Continuing, we create the batch executor which will communicate
 	// between the trader's an auctioneer for each batch epoch.
-	batchExecutor, err := venue.NewBatchExecutor(store)
-	if err != nil {
-		return nil, err
+	exeStore := &executorStore{
+		Store: store,
 	}
+	batchExecutor := venue.NewBatchExecutor(
+		exeStore, lnd.Signer, defaultMsgTimeout,
+		venue.NewExeBatchStorer(store),
+	)
 
 	server := &Server{
 		lnd:            lnd,
