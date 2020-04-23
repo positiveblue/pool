@@ -7,7 +7,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmrpc"
-	"github.com/lightninglabs/agora/client/clmscript"
 )
 
 // batchStorer is a type that implements BatchStorer and can persist a batch to
@@ -60,13 +59,6 @@ func (s *batchStorer) Store(batch *Batch) error {
 		orderIndex++
 	}
 
-	// Before we can update our accounts, we need to know the next batch ID.
-	batchKey, err := btcec.ParsePubKey(batch.ID[:], btcec.S256())
-	if err != nil {
-		return fmt.Errorf("error parsing batch ID: %v", err)
-	}
-	nextBatchKey := clmscript.IncrementKey(batchKey)
-
 	// Next create our account modifiers.
 	accounts := make([]*account.Account, len(batch.AccountDiffs))
 	accountModifiers := make([][]account.Modifier, len(accounts))
@@ -88,12 +80,12 @@ func (s *batchStorer) Store(batch *Batch) error {
 		case clmrpc.AccountDiff_OUTPUT_RECREATED:
 			modifiers = append(
 				modifiers,
-				account.StateModifier(account.StatePendingOpen),
+				account.StateModifier(account.StatePendingUpdate),
 				account.OutPointModifier(wire.OutPoint{
 					Index: uint32(diff.OutpointIndex),
 					Hash:  batch.BatchTX.TxHash(),
 				}),
-				account.BatchKeyModifier(nextBatchKey),
+				account.IncrementBatchKey(),
 			)
 
 		// The account was fully spent on-chain. We need to wait for the
@@ -116,7 +108,6 @@ func (s *batchStorer) Store(batch *Batch) error {
 		// Finally update the account value and expiry.
 		accountModifiers[idx] = append(
 			modifiers, account.ValueModifier(diff.EndingBalance),
-			account.ExpiryModifier(diff.Expiry),
 		)
 	}
 

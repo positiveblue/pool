@@ -113,6 +113,13 @@ type Manager struct {
 	cfg     ManagerConfig
 	watcher *watcher.Watcher
 
+	// watchMtx guards access to watchingExpiry.
+	watchMtx sync.Mutex
+
+	// watchingExpiry is the set of accounts we're currently tracking the
+	// expiration of.
+	watchingExpiry map[[33]byte]struct{}
+
 	wg   sync.WaitGroup
 	quit chan struct{}
 }
@@ -120,8 +127,9 @@ type Manager struct {
 // NewManager instantiates a new Manager backed by the given config.
 func NewManager(cfg *ManagerConfig) *Manager {
 	m := &Manager{
-		cfg:  *cfg,
-		quit: make(chan struct{}),
+		cfg:            *cfg,
+		watchingExpiry: make(map[[33]byte]struct{}),
+		quit:           make(chan struct{}),
 	}
 
 	m.watcher = watcher.New(&watcher.Config{
@@ -369,39 +377,29 @@ func (m *Manager) resumeAccount(ctx context.Context, account *Account,
 				"%v", err)
 		}
 
-		fallthrough
+	// In StatePendingUpdate, we've processed an account update due to
+	// either a matched order or trader modification, so we'll need to wait
+	// for its confirmation. Once it confirms, handleAccountConf will take
+	// care of the rest of the flow.
+	case StatePendingUpdate:
+		numConfs := numConfsForValue(account.Value)
+		log.Infof("Waiting for %v confirmation(s) of account %x",
+			numConfs, account.TraderKey.PubKey.SerializeCompressed())
+		err = m.watcher.WatchAccountConf(
+			account.TraderKey.PubKey, account.OutPoint.Hash,
+			accountOutput.PkScript, numConfs, account.HeightHint,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to watch for confirmation: "+
+				"%v", err)
+		}
 
 	// In StateOpen, the funding transaction for the account has already
-	// confirmed, so we only need to watch for its spend and expiration.
+	// confirmed, so we only need to watch for its spend and expiration and
+	// register for account updates.
 	case StateOpen:
-		log.Infof("Watching account %x for spend and expiration",
-			account.TraderKey.PubKey.SerializeCompressed())
-		err := m.watcher.WatchAccountSpend(
-			account.TraderKey.PubKey, account.OutPoint,
-			accountOutput.PkScript, account.HeightHint,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to watch for spend: %v", err)
-		}
-		err = m.watcher.WatchAccountExpiration(
-			account.TraderKey.PubKey, account.Expiry,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to watch for expiration: %v",
-				err)
-		}
-
-		// Now that we have an open account, subscribe for updates to it
-		// to the server. We subscribe for the account instead of the
-		// individual orders because all signing operations will need to
-		// be executed on an account level anyway. And we might end up
-		// executing multiple orders for the same account in one batch.
-		// The messages from the server are received and dispatched to
-		// the correct manager by the rpcServer.
-		err = m.cfg.Auctioneer.SubscribeAccountUpdates(ctx, account)
-		if err != nil {
-			return fmt.Errorf("error subscribing to account "+
-				"updates: %v", err)
+		if err := m.handleStateOpen(ctx, account); err != nil {
+			return err
 		}
 
 	// In StateExpired, we'll wait for the account to be spent such that it
@@ -490,6 +488,57 @@ func (m *Manager) locateTxByHash(ctx context.Context,
 	return nil, errTxNotFound
 }
 
+// handleStateOpen performs the necessary operations for accounts found in
+// StateOpen.
+func (m *Manager) handleStateOpen(ctx context.Context, account *Account) error {
+	var traderKey [33]byte
+	copy(traderKey[:], account.TraderKey.PubKey.SerializeCompressed())
+
+	log.Infof("Watching spend of %v for account %x", account.OutPoint,
+		traderKey)
+
+	accountOutput, err := account.Output()
+	if err != nil {
+		return err
+	}
+
+	err = m.watcher.WatchAccountSpend(
+		account.TraderKey.PubKey, account.OutPoint,
+		accountOutput.PkScript, account.HeightHint,
+	)
+	if err != nil {
+		return fmt.Errorf("unable to watch for spend: %v", err)
+	}
+
+	// Make sure we don't track the expiry again if we don't have to.
+	m.watchMtx.Lock()
+	if _, ok := m.watchingExpiry[traderKey]; !ok {
+		err = m.watcher.WatchAccountExpiration(
+			account.TraderKey.PubKey, account.Expiry,
+		)
+		if err != nil {
+			m.watchMtx.Unlock()
+			return fmt.Errorf("unable to watch for expiration: %v",
+				err)
+		}
+	}
+	m.watchMtx.Unlock()
+
+	// Now that we have an open account, subscribe for updates to it to the
+	// server. We subscribe for the account instead of the individual orders
+	// because all signing operations will need to be executed on an account
+	// level anyway. And we might end up executing multiple orders for the
+	// same account in one batch. The messages from the server are received
+	// and dispatched to the correct manager by the rpcServer.
+	err = m.cfg.Auctioneer.SubscribeAccountUpdates(ctx, account)
+	if err != nil {
+		return fmt.Errorf("unable to subscribe for account updates: %v",
+			err)
+	}
+
+	return nil
+}
+
 // handleAccountConf takes the necessary steps after detecting the confirmation
 // of an account on-chain.
 func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
@@ -498,13 +547,6 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	account, err := m.cfg.Store.Account(traderKey)
 	if err != nil {
 		return err
-	}
-
-	// To not rely on the order of confirmation and block notifications, if
-	// the account confirms at the same height as it expires, we can exit
-	// now and let the account be marked as expired by the watcher.
-	if confDetails.BlockHeight == account.Expiry {
-		return nil
 	}
 
 	// Ensure we don't transition an account that's been closed back to open
@@ -516,7 +558,13 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	log.Infof("Account %x is now confirmed at height %v!",
 		traderKey.SerializeCompressed(), confDetails.BlockHeight)
 
-	return m.cfg.Store.UpdateAccount(account, StateModifier(StateOpen))
+	// Mark the account as open and proceed with the rest of the flow.
+	err = m.cfg.Store.UpdateAccount(account, StateModifier(StateOpen))
+	if err != nil {
+		return err
+	}
+
+	return m.handleStateOpen(context.Background(), account)
 }
 
 // handleAccountSpend handles the different spend paths of an account. If an
@@ -548,24 +596,24 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	// If the witness is for a multi-sig spend, then either an order by the
 	// trader was matched, or the account was closed. If it was closed, then
 	// the account output shouldn't have been recreated.
-	//
-	// TODO(wilmer): What do we do when an order matched and the account was
-	// drained resulting in a dust amount? The output isn't recreated in
-	// that case.
 	case clmscript.IsMultiSigSpend(spendWitness):
-		// If the account output was recreated, then there's nothing
-		// left for us to do. We'll defer updating the account here, as
-		// we'll want to update it atomically along with the matched
-		// order, which we don't have information of.
-		nextAccountScript, err := account.NextOutputScript()
+		// An account cannot be spent without our knowledge, so we'll
+		// assume we always persist account updates before a broadcast
+		// of the spending transaction. Therefore, since we should
+		// already have the updates applied, we can just look for our
+		// current output in the transaction.
+		accountOutput, err := account.Output()
 		if err != nil {
 			return err
 		}
-		_, ok := clmscript.LocateOutputScript(spendTx, nextAccountScript)
+		_, ok := clmscript.LocateOutputScript(
+			spendTx, accountOutput.PkScript,
+		)
 		if ok {
-			// The account is still open so don't mark it as closed
-			// below.
-			return nil
+			// Proceed with the rest of the flow.
+			return m.resumeAccount(
+				context.Background(), account, false,
+			)
 		}
 
 	default:
