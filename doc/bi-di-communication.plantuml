@@ -1,0 +1,32 @@
+@startuml
+
+participant trader
+participant auctioneer
+
+== authentication ==
+
+[-> trader: account confirmed
+
+trader -> auctioneer: commit to account SHA256(nonce || accountKey)
+
+auctioneer -> trader: send challenge SHA256(commitment || nonce)
+
+trader -> auctioneer: sign SHA256(challenge || commitment), reveal nonce
+
+auctioneer -> auctioneer: validate signature
+
+auctioneer -> auctioneer: register account subscription
+
+== batch execution ==
+
+auctioneer -> trader: order match prepare
+
+trader -> auctioneer: order match accept
+
+auctioneer -> trader: order match sign begin
+
+trader -> auctioneer: order match sign
+
+auctioneer -> trader: order finalize
+
+@enduml

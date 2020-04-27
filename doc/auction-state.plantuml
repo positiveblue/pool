@@ -1,0 +1,20 @@
+@startuml
+
+[*] --> NoActiveBatch
+NoActiveBatch -down-> PrepareSent
+NoActiveBatch -right-> BatchTempError
+
+BatchTempError -up-> NoActiveBatch : Reset
+
+PrepareSent -down-> BatchSigning
+PrepareSent -left-> BatchTempError
+
+BatchSigning -down-> BatchFinalize
+BatchSigning -left-> BatchTempError
+
+BatchFinalize -down-> BatchComplete
+BatchFinalize -left-> BatchTempError
+
+BatchComplete -up-> NoActiveBatch : Next Batch
+
+@enduml
