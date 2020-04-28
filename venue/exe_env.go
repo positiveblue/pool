@@ -184,6 +184,9 @@ func (e *environment) sendPrepareMsg() error {
 			)
 		}
 
+		// TODO(roasbeef): need to multi-plex and combine all the
+		// prepare messages for a group of traders
+		acctOutpoint, _ := e.exeCtx.AcctOutputForTrader(traderKey)
 		select {
 		case trader.CommLine.Send <- &PrepareMsg{
 			AcctKey:       trader.AccountKey,
@@ -192,11 +195,12 @@ func (e *environment) sendPrepareMsg() error {
 			ChargedAccounts: []matching.AccountDiff{
 				accountDiffs[trader.AccountKey],
 			},
-			ExecutionFee: e.exeFee,
-			BatchTx:      batchTxBuf.Bytes(),
-			FeeRate:      e.feeRate,
-			BatchID:      e.batchID,
-			BatchVersion: e.batchVersion,
+			AccountOutPoint: acctOutpoint,
+			ExecutionFee:    e.exeFee,
+			BatchTx:         batchTxBuf.Bytes(),
+			FeeRate:         e.feeRate,
+			BatchID:         e.batchID,
+			BatchVersion:    e.batchVersion,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")

@@ -192,5 +192,6 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	return s.store.PersistBatchResult(
 		ctx, orders, orderModifiers, accounts, accountModifiers,
 		auctAcct, result.BatchID, batch, nextBatchKey,
+		result.BatchTx,
 	)
 }
