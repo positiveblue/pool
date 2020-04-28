@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/coreos/etcd/clientv3"
 	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
@@ -70,17 +71,18 @@ type Store interface {
 	// back.
 	PersistBatchResult(context.Context, []orderT.Nonce, [][]order.Modifier,
 		[]*btcec.PublicKey, [][]account.Modifier, *account.Auctioneer,
-		orderT.BatchID, *matching.OrderBatch, *btcec.PublicKey) error
+		orderT.BatchID, *matching.OrderBatch, *btcec.PublicKey,
+		*wire.MsgTx) error
 
 	// PersistBatchSnapshot persists a self-contained snapshot of a batch
 	// including all involved orders and accounts.
 	PersistBatchSnapshot(context.Context, orderT.BatchID,
-		*matching.OrderBatch) error
+		*matching.OrderBatch, *wire.MsgTx) error
 
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context, orderT.BatchID) (
-		*matching.OrderBatch, error)
+		*matching.OrderBatch, *wire.MsgTx, error)
 }
 
 type EtcdStore struct {

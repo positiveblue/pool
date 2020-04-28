@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
@@ -21,6 +22,7 @@ type StoreMock struct {
 	BatchPubkey *btcec.PublicKey
 	MasterAcct  *account.Auctioneer
 	Snapshots   map[orderT.BatchID]*matching.OrderBatch
+	BatchTx     *wire.MsgTx
 	t           *testing.T
 }
 
@@ -247,7 +249,8 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAcct *account.Auctioneer, batchID orderT.BatchID,
-	batch *matching.OrderBatch, nextBatchKey *btcec.PublicKey) error {
+	batch *matching.OrderBatch, nextBatchKey *btcec.PublicKey,
+	tx *wire.MsgTx) error {
 
 	err := s.UpdateOrders(ctx, orders, orderModifiers)
 	if err != nil {
@@ -266,6 +269,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	}
 
 	s.MasterAcct = masterAcct
+	s.BatchTx = tx
 	s.Snapshots[batchID] = batch
 
 	var batchKey [33]byte
@@ -280,9 +284,10 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) PersistBatchSnapshot(_ context.Context, id orderT.BatchID,
-	batch *matching.OrderBatch) error {
+	batch *matching.OrderBatch, tx *wire.MsgTx) error {
 
 	s.Snapshots[id] = batch
+	s.BatchTx = tx
 	return nil
 }
 
@@ -291,13 +296,13 @@ func (s *StoreMock) PersistBatchSnapshot(_ context.Context, id orderT.BatchID,
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) GetBatchSnapshot(_ context.Context, id orderT.BatchID) (
-	*matching.OrderBatch, error) {
+	*matching.OrderBatch, *wire.MsgTx, error) {
 
 	snapshot, ok := s.Snapshots[id]
 	if !ok {
-		return nil, errBatchSnapshotNotFound
+		return nil, nil, errBatchSnapshotNotFound
 	}
-	return snapshot, nil
+	return snapshot, s.BatchTx, nil
 }
 
 // A compile-time check to make sure StoreMock implements the Store interface.

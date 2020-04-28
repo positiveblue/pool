@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
 	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmscript"
@@ -37,6 +38,12 @@ var (
 	// the full path.
 	perBatchKey = "key"
 
+	// batchStatusKey is the key we'll use to store the current state of a
+	// given batch. The state is either a 0 or 1. 0 means the batch is
+	// pending, while 1 means the batch has been finalized. A batch is
+	// finalized once it has been confirmed.
+	batchStatusKey = "status"
+
 	// errPerBatchKeyNotFound is an error returned when we can't locate the
 	// per-batch key at its expected path.
 	errPerBatchKeyNotFound = errors.New("per-batch key not found")
@@ -48,6 +55,10 @@ var (
 	// When modifying it, it should also be updated at the client level. The
 	// client cannot import this error since the server code is private.
 	errBatchSnapshotNotFound = errors.New("batch snapshot not found")
+
+	// ErrNoBatchExists is returned when a caller attempts to query for a
+	// batch by it's ID, yet one isn't found.
+	ErrNoBatchExists = errors.New("no batch found")
 )
 
 // perBatchKeyPath returns the full path under which we store the current
@@ -63,6 +74,14 @@ func (s *EtcdStore) perBatchKeyPath() string {
 func (s *EtcdStore) batchSnapshotKeyPath(id orderT.BatchID) string {
 	// bitcoin/clm/agora/<network>/batch/<batchID>.
 	parts := []string{batchDir, hex.EncodeToString(id[:])}
+	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
+}
+
+// batchStatusKeyPath returns the full path under which we store a batch
+// status.
+func (s *EtcdStore) batchStatusKeyPath(id orderT.BatchID) string {
+	// bitcoin/clm/agora/<network>/batch/<batchID>/status.
+	parts := []string{batchDir, hex.EncodeToString(id[:]), batchStatusKey}
 	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
 }
 
@@ -140,7 +159,8 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAccount *account.Auctioneer, batchID orderT.BatchID,
-	batch *matching.OrderBatch, newBatchKey *btcec.PublicKey) error {
+	batch *matching.OrderBatch, newBatchKey *btcec.PublicKey,
+	batchTx *wire.MsgTx) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -180,11 +200,17 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 
 		// Store a self-contained snapshot of the current batch.
 		var buf bytes.Buffer
-		err = serializeBatch(&buf, batch)
+		err = serializeBatch(&buf, batch, batchTx)
 		if err != nil {
 			return err
 		}
 		stm.Put(s.batchSnapshotKeyPath(batchID), buf.String())
+
+		// Now that the batch has been inserted, we'll mark it as
+		// pending in the DB.
+		//
+		// TODO(roasbeef): feels weird to write string zero...
+		stm.Put(s.batchStatusKeyPath(batchID), "0")
 
 		// And finally, put the new batch key in place.
 		return s.putPerBatchKeySTM(stm, newBatchKey)
@@ -192,10 +218,45 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	return err
 }
 
+// BatchConfirmed returns true if the target batch has been marked finalized
+// (confirmed) on disk.
+func (s *EtcdStore) BatchConfirmed(ctx context.Context,
+	batchID orderT.BatchID) (bool, error) {
+
+	var confirmed bool
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		batchStatus := stm.Get(s.batchStatusKeyPath(batchID))
+		if batchStatus == "" {
+			return ErrNoBatchExists
+		}
+
+		confirmed = batchStatus == "1"
+		return nil
+	})
+	if err != nil {
+		return false, err
+	}
+
+	return confirmed, nil
+}
+
+// ConfirmBatch finalizes a batch on disk, marking it as pending (unconfirmed)
+// no longer.
+func (s *EtcdStore) ConfirmBatch(ctx context.Context,
+	batchID orderT.BatchID) error {
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		stm.Put(s.batchStatusKeyPath(batchID), "1")
+
+		return nil
+	})
+	return err
+}
+
 // PersistBatchSnapshot persists a self-contained snapshot of a batch
 // including all involved orders and accounts.
 func (s *EtcdStore) PersistBatchSnapshot(ctx context.Context, id orderT.BatchID,
-	batch *matching.OrderBatch) error {
+	batch *matching.OrderBatch, batchTx *wire.MsgTx) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -206,7 +267,7 @@ func (s *EtcdStore) PersistBatchSnapshot(ctx context.Context, id orderT.BatchID,
 		// Serialize the batch snapshot and store it. If a previous
 		// snapshots exists for the given ID, it is overwritten.
 		var buf bytes.Buffer
-		err := serializeBatch(&buf, batch)
+		err := serializeBatch(&buf, batch, batchTx)
 		if err != nil {
 			return err
 		}
@@ -219,25 +280,32 @@ func (s *EtcdStore) PersistBatchSnapshot(ctx context.Context, id orderT.BatchID,
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
-	*matching.OrderBatch, error) {
+	*matching.OrderBatch, *wire.MsgTx, error) {
 
 	if !s.initialized {
-		return nil, errNotInitialized
+		return nil, nil, errNotInitialized
 	}
 
 	resp, err := s.getSingleValue(
 		ctx, s.batchSnapshotKeyPath(id), errBatchSnapshotNotFound,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	return deserializeBatch(bytes.NewReader(resp.Kvs[0].Value))
 }
 
 // serializeBatch binary serializes a batch by using the LN wire format.
-func serializeBatch(w io.Writer, b *matching.OrderBatch) error {
-	// Write scalar values first.
+func serializeBatch(w io.Writer, b *matching.OrderBatch,
+	batchTx *wire.MsgTx) error {
+
+	// First, we'll encode the finalized batch tx itself.
+	if err := batchTx.Serialize(w); err != nil {
+		return err
+	}
+
+	// Write scalar values next.
 	err := WriteElements(w, b.ClearingPrice, uint32(len(b.Orders)))
 	if err != nil {
 		return err
@@ -356,23 +424,29 @@ func serializeAccountTally(w io.Writer, t *orderT.AccountTally) error {
 
 // deserializeBatch reconstructs a batch from binary data in the LN wire
 // format.
-func deserializeBatch(r io.Reader) (*matching.OrderBatch, error) {
+func deserializeBatch(r io.Reader) (*matching.OrderBatch, *wire.MsgTx, error) {
 	var (
 		b                = &matching.OrderBatch{}
 		numMatchedOrders uint32
 	)
 
-	// First read the scalar values.
+	// First, we'll read out the batch tx itself.
+	batchTx := &wire.MsgTx{}
+	if err := batchTx.Deserialize(r); err != nil {
+		return nil, nil, err
+	}
+
+	// Next read the scalar values.
 	err := ReadElements(r, &b.ClearingPrice, &numMatchedOrders)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Now we know how many orders to read.
 	for i := uint32(0); i < numMatchedOrders; i++ {
 		o, err := deserializeMatchedOrder(r)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		b.Orders = append(b.Orders, *o)
 	}
@@ -380,10 +454,11 @@ func deserializeBatch(r io.Reader) (*matching.OrderBatch, error) {
 	// Finally deserialize the trading fee report nested structure.
 	feeReport, err := deserializeTradingFeeReport(r)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	b.FeeReport = *feeReport
-	return b, nil
+
+	return b, batchTx, nil
 }
 
 // deserializeMatchedOrder reconstructs a matched order from binary data in the
