@@ -17,6 +17,7 @@ require (
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.10.0-beta.rc6
 	github.com/lightningnetwork/lnd/cert v1.0.2
+	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/urfave/cli v1.20.0
 	golang.org/x/crypto v0.0.0-20200115085410-6d4e4cb37c7d
 	golang.org/x/sync v0.0.0-20190911185100-cd5d95a43a6e
