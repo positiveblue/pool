@@ -131,10 +131,12 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// With our logging set up, we'll now establish our initial connection
 	// to the backing lnd instance.
-	lnd, err := lndclient.NewLndServices(
-		cfg.Lnd.Host, cfg.Network, cfg.Lnd.MacaroonDir,
-		cfg.Lnd.TLSPath,
-	)
+	lnd, err := lndclient.NewLndServices(&lndclient.LndServicesConfig{
+		LndAddress:  cfg.Lnd.Host,
+		Network:     cfg.Network,
+		MacaroonDir: cfg.Lnd.MacaroonDir,
+		TLSPath:     cfg.Lnd.TLSPath,
+	})
 	if err != nil {
 		return nil, err
 	}
