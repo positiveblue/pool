@@ -196,7 +196,10 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	// it is converted correctly to the gRPC message.
 	var acctID matching.AccountID
 	copy(acctID[:], testAccount.TraderKeyRaw[:])
-	comms.toTrader <- &venue.PrepareMsg{AcctKey: acctID}
+	comms.toTrader <- &venue.PrepareMsg{
+		AcctKey:      acctID,
+		ExecutionFee: order.NewLinearFeeSchedule(1, 100),
+	}
 	select {
 	case rpcMsg := <-mockStream.toClient:
 		switch typedMsg := rpcMsg.Msg.(type) {

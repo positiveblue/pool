@@ -3,6 +3,7 @@ package agora
 import (
 	"context"
 	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
@@ -391,6 +392,10 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	default:
 		return nil, fmt.Errorf("invalid order request")
 	}
+
+	// TODO(roasbeef): instead have callback/notification system on order
+	// book itself?
+	//  * eventually needed if we want to stream the info out live
 
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
@@ -825,12 +830,77 @@ func (s *rpcServer) sendToTrader(
 	stream clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer,
 	msg venue.ExecutionMsg) error {
 
-	switch msg.(type) {
+	switch m := msg.(type) {
 	case *venue.PrepareMsg:
+		feeSchedule, ok := m.ExecutionFee.(*orderT.LinearFeeSchedule)
+		if !ok {
+			return fmt.Errorf("FeeSchedule w/o fee rate used")
+		}
+
+		// Each order the user submitted may be matched to one or more
+		// corresponding orders, so we'll map the in-memory
+		// representation we use to the proto representation that we
+		// need to send to the client.
+		matchedOrders := make(map[string]*clmrpc.MatchedOrder)
+		for orderNonce, order := range m.MatchedOrders {
+			isAsk := order.Asker.AccountKey == msg.Dest()
+			nonceStr := hex.EncodeToString(orderNonce[:])
+			unitsFilled := order.Details.Quote.UnitsMatched
+
+			ask, bid := order.Details.Ask, order.Details.Bid
+
+			// If the client had their bid matched, then we'll send
+			// over the ask information and the other way around if
+			// it's a bid.
+			if !isAsk {
+				matchedOrders[nonceStr].MatchedAsks = append(
+					matchedOrders[nonceStr].MatchedAsks,
+					marshallMatchedAsk(ask, unitsFilled),
+				)
+			} else {
+				matchedOrders[nonceStr].MatchedBids = append(
+					matchedOrders[nonceStr].MatchedBids,
+					marshallMatchedBid(bid, unitsFilled),
+				)
+			}
+		}
+
+		// Next, for each account that the user had in this batch,
+		// we'll generate a similar RPC account diff so they can verify
+		// their portion of the batch.
+		var accountDiffs []*clmrpc.AccountDiff
+		for _, acctDiff := range m.ChargedAccounts {
+			acctDiff, err := marshallAccountDiff(acctDiff)
+			if err != nil {
+				return err
+			}
+
+			accountDiffs = append(accountDiffs, acctDiff)
+		}
+
 		return stream.Send(&clmrpc.ServerAuctionMessage{
 			Msg: &clmrpc.ServerAuctionMessage_Prepare{
 				Prepare: &clmrpc.OrderMatchPrepare{
-					// TODO(roasbeef): fill all fields.
+					MatchedOrders:     matchedOrders,
+					ClearingPriceRate: uint32(m.ClearingPrice),
+					ChargedAccounts:   accountDiffs,
+					ExecutionFee: &clmrpc.ExecutionFee{
+						BaseFee: int64(m.ExecutionFee.BaseFee()),
+						FeeRate: int64(feeSchedule.FeeRate()),
+					},
+					BatchTransaction: m.BatchTx,
+					FeeRateSatPerKw:  int64(m.FeeRate),
+					BatchId:          m.BatchID[:],
+					BatchVersion:     m.BatchVersion,
+				},
+			},
+		})
+
+	case *venue.SignBeginMsg:
+		return stream.Send(&clmrpc.ServerAuctionMessage{
+			Msg: &clmrpc.ServerAuctionMessage_Sign{
+				Sign: &clmrpc.OrderMatchSignBegin{
+					BatchId: m.BatchID[:],
 				},
 			},
 		})
@@ -839,7 +909,9 @@ func (s *rpcServer) sendToTrader(
 		return stream.Send(&clmrpc.ServerAuctionMessage{
 			Msg: &clmrpc.ServerAuctionMessage_Finalize{
 				Finalize: &clmrpc.OrderMatchFinalize{
-					// TODO(roasbeef): fill all fields.
+					BatchId:    m.BatchID[:],
+					BatchTxid:  m.BatchTxID[:],
+					HeightHint: s.bestHeight() - 1,
 				},
 			},
 		})
@@ -956,7 +1028,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	copy(batchID[:], req.Id)
 
 	// TODO(wilmer): Add caching layer? LRU?
-	batch, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batch, _, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
