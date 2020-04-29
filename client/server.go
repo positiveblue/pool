@@ -1,7 +1,9 @@
 package client
 
 import (
+	"bytes"
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 	"net"
@@ -13,10 +15,12 @@ import (
 	"github.com/lightninglabs/agora/client/auctioneer"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/build"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 // Server is the main agora trader server.
@@ -26,6 +30,10 @@ type Server struct {
 	// the connection with a new one in the itest, if the server is
 	// restarted.
 	AuctioneerClient *auctioneer.Client
+
+	// GetIdentity returns the current LSAT identification of the trader
+	// client or an error if none has been established yet.
+	GetIdentity func() (*lsat.TokenID, error)
 
 	cfg          *Config
 	lndServices  *lndclient.GrpcLndServices
@@ -86,10 +94,37 @@ func NewServer(cfg *Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	interceptor := lsat.NewInterceptor(
+	var interceptor Interceptor = lsat.NewInterceptor(
 		&lndServices.LndServices, fileStore, defaultRPCTimeout,
 		defaultLsatMaxCost, defaultLsatMaxFee,
 	)
+
+	// getIdentity can be used to determine the current LSAT identification
+	// of the trader.
+	getIdentity := func() (*lsat.TokenID, error) {
+		token, err := fileStore.CurrentToken()
+		if err != nil {
+			return nil, err
+		}
+		macID, err := lsat.DecodeIdentifier(
+			bytes.NewBuffer(token.BaseMacaroon().Id()),
+		)
+		if err != nil {
+			return nil, err
+		}
+		return &macID.TokenID, nil
+	}
+
+	// For regtest, we create a fixed identity now that is used for the
+	// whole runtime of the trader.
+	if cfg.Network == "regtest" {
+		var tokenID lsat.TokenID
+		_, _ = rand.Read(tokenID[:])
+		interceptor = &regtestInterceptor{id: tokenID}
+		getIdentity = func() (*lsat.TokenID, error) {
+			return &tokenID, nil
+		}
+	}
 	cfg.AuctioneerDialOpts = append(
 		cfg.AuctioneerDialOpts,
 		grpc.WithUnaryInterceptor(interceptor.UnaryInterceptor),
@@ -115,6 +150,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		cfg:              cfg,
 		lndServices:      lndServices,
 		AuctioneerClient: auctioneerClient,
+		GetIdentity:      getIdentity,
 	}, nil
 }
 
@@ -244,4 +280,51 @@ func getLnd(network string, cfg *LndConfig) (*lndclient.GrpcLndServices, error) 
 	return lndclient.NewLndServices(
 		cfg.Host, network, cfg.MacaroonDir, cfg.TLSPath,
 	)
+}
+
+// Interceptor is the interface a client side gRPC interceptor has to implement.
+type Interceptor interface {
+	// UnaryInterceptor intercepts normal, non-streaming requests from the
+	// client to the server.
+	UnaryInterceptor(context.Context, string, interface{}, interface{},
+		*grpc.ClientConn, grpc.UnaryInvoker, ...grpc.CallOption) error
+
+	// StreamInterceptor intercepts streaming requests from the client to
+	// the server.
+	StreamInterceptor(context.Context, *grpc.StreamDesc, *grpc.ClientConn,
+		string, grpc.Streamer, ...grpc.CallOption) (grpc.ClientStream,
+		error)
+}
+
+// regtestInterceptor is a dummy gRPC interceptor that can be used on regtest to
+// simulate identification through LSAT.
+type regtestInterceptor struct {
+	id lsat.TokenID
+}
+
+// UnaryInterceptor intercepts non-streaming requests and appends the dummy LSAT
+// ID.
+func (i *regtestInterceptor) UnaryInterceptor(ctx context.Context, method string,
+	req, reply interface{}, cc *grpc.ClientConn, invoker grpc.UnaryInvoker,
+	opts ...grpc.CallOption) error {
+
+	idStr := fmt.Sprintf("LSATID %x", i.id[:])
+	idCtx := metadata.AppendToOutgoingContext(
+		ctx, auth.HeaderAuthorization, idStr,
+	)
+	return invoker(idCtx, method, req, reply, cc, opts...)
+}
+
+// StreamingInterceptor intercepts streaming requests and appends the dummy LSAT
+// ID.
+func (i *regtestInterceptor) StreamInterceptor(ctx context.Context,
+	desc *grpc.StreamDesc, cc *grpc.ClientConn, method string,
+	streamer grpc.Streamer, opts ...grpc.CallOption) (grpc.ClientStream,
+	error) {
+
+	idStr := fmt.Sprintf("LSATID %x", i.id[:])
+	idCtx := metadata.AppendToOutgoingContext(
+		ctx, auth.HeaderAuthorization, idStr,
+	)
+	return streamer(idCtx, desc, cc, method, opts...)
 }

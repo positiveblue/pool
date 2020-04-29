@@ -76,11 +76,15 @@ func testAccountSubscription(t *harnessTest) {
 		AccountValue:  2000000,
 		AccountExpiry: uint32(currentHeight) + 1000,
 	})
-	assertTraderSubscribed(t, zeroID, acct)
+	tokenID, err := t.trader.server.GetIdentity()
+	if err != nil {
+		t.Fatalf("could not get the trader's identity: %v", err)
+	}
+	assertTraderSubscribed(t, *tokenID, acct)
 
 	// Now that the trader is connected, let's shut down the auctioneer
 	// server to simulate maintenance and see if the trader reconnects after
 	// a while.
 	t.restartServer()
-	assertTraderSubscribed(t, zeroID, acct)
+	assertTraderSubscribed(t, *tokenID, acct)
 }
