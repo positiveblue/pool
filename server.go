@@ -2,8 +2,10 @@ package agora
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"net"
+	"regexp"
 	"sync"
 	"sync/atomic"
 
@@ -17,7 +19,9 @@ import (
 	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/loop/lsat"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
 )
 
 type auctioneerWallet struct {
@@ -171,7 +175,10 @@ func NewServer(cfg *Config) (*Server, error) {
 	//
 	// First, we'll set up the series of interceptors for our gRPC server
 	// which we'll initialize shortly below.
-	interceptor := auth.ServerInterceptor{}
+	var interceptor ServerInterceptor = &auth.ServerInterceptor{}
+	if cfg.Network == "regtest" {
+		interceptor = &regtestInterceptor{}
+	}
 	serverOpts := []grpc.ServerOption{
 		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
 		grpc.StreamInterceptor(interceptor.StreamInterceptor),
@@ -334,4 +341,97 @@ func (s *Server) Stop() error {
 	})
 
 	return stopErr
+}
+
+// newRegtestInterceptor creates an LSAT interceptor that reads the dummy LSAT
+// ID added by the client's counterpart and uses that as the client's main
+// identification. As its name suggests, this should only be used for testing on
+// local regtest networks.
+type ServerInterceptor interface {
+	// UnaryInterceptor intercepts normal, non-streaming requests from the
+	// client to the server.
+	UnaryInterceptor(context.Context, interface{}, *grpc.UnaryServerInfo,
+		grpc.UnaryHandler) (resp interface{}, err error)
+
+	// StreamInterceptor intercepts streaming requests from the client to
+	// the server.
+	StreamInterceptor(interface{}, grpc.ServerStream,
+		*grpc.StreamServerInfo, grpc.StreamHandler) error
+}
+
+// wrappedStream is a helper struct that allows to overwrite the context of a
+// gRPC stream.
+type wrappedStream struct {
+	grpc.ServerStream
+	WrappedContext context.Context
+}
+
+// Context returns the overwritten context of the stream.
+func (w *wrappedStream) Context() context.Context {
+	return w.WrappedContext
+}
+
+// regtestInterceptor is a dummy gRPC interceptor that can be used on regtest to
+// simulate identification through LSAT.
+type regtestInterceptor struct{}
+
+// UnaryInterceptor intercepts non-streaming requests and reads the dummy LSAT
+// ID.
+func (i *regtestInterceptor) UnaryInterceptor(ctx context.Context,
+	req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (
+	resp interface{}, err error) {
+
+	id, err := idFromContext(ctx)
+	if err != nil {
+		log.Debugf("No ID extracted, error was: %v", err)
+		return handler(ctx, req)
+	}
+	idCtx := auth.AddToContext(ctx, auth.KeyTokenID, *id)
+	return handler(idCtx, req)
+}
+
+// StreamingInterceptor intercepts streaming requests and reads the dummy LSAT
+// ID.
+func (i *regtestInterceptor) StreamInterceptor(srv interface{},
+	ss grpc.ServerStream, _ *grpc.StreamServerInfo,
+	handler grpc.StreamHandler) error {
+
+	ctx := ss.Context()
+	id, err := idFromContext(ctx)
+	if err != nil {
+		log.Debugf("No ID extracted, error was: %v", err)
+		return handler(srv, ss)
+	}
+
+	idCtx := auth.AddToContext(ctx, auth.KeyTokenID, *id)
+	wrappedStream := &wrappedStream{ss, idCtx}
+	return handler(srv, wrappedStream)
+}
+
+// idFromContext extracts the dummy ID specified in the gRPC metadata. The MD
+// field looks like this:
+//   Authorization: LSATID <hex>
+func idFromContext(ctx context.Context) (*lsat.TokenID, error) {
+	dummyRex := regexp.MustCompile("LSATID ([a-f0-9]{64})")
+	md, ok := metadata.FromIncomingContext(ctx)
+	if !ok {
+		return nil, fmt.Errorf("context contains no metadata")
+	}
+	authHeader := md.Get(auth.HeaderAuthorization)[0]
+	log.Debugf("Auth header present in request: %s", authHeader)
+	if !dummyRex.MatchString(authHeader) {
+		log.Debugf("Auth header didn't match dummy ID")
+		return nil, nil
+	}
+	matches := dummyRex.FindStringSubmatch(authHeader)
+	idHex, err := hex.DecodeString(matches[1])
+	if err != nil {
+		return nil, err
+	}
+
+	var clientID lsat.TokenID
+	copy(clientID[:], idHex)
+	log.Debugf("Decoded client/token ID %s from auth header",
+		clientID.String())
+	return &clientID, nil
 }
