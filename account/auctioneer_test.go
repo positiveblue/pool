@@ -1,53 +1,13 @@
 package account
 
 import (
-	"context"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
-
-type mockSigner struct {
-	privKey *btcec.PrivateKey
-}
-
-func (m *mockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
-
-	s := input.MockSigner{
-		Privkeys: []*btcec.PrivateKey{
-			m.privKey,
-		},
-	}
-
-	sig, err := s.SignOutputRaw(tx, signDescriptors[0])
-	if err != nil {
-		return nil, err
-	}
-
-	return [][]byte{sig}, nil
-}
-
-func (m *mockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([]*input.Script, error) {
-	return nil, nil
-}
-func (m *mockSigner) SignMessage(ctx context.Context, msg []byte,
-	locator keychain.KeyLocator) ([]byte, error) {
-	return nil, nil
-}
-func (m *mockSigner) VerifyMessage(ctx context.Context, msg, sig []byte, pubkey [33]byte) (
-	bool, error) {
-	return false, nil
-}
-func (m *mockSigner) DeriveSharedKey(ctx context.Context, ephemeralPubKey *btcec.PublicKey,
-	keyLocator *keychain.KeyLocator) ([32]byte, error) {
-	return [32]byte{}, nil
-}
 
 // TestAuctioneerAccountWitness tests that we're able to properly produce a
 // valid witness for the auctioneer's account given a set of starting params.
@@ -87,7 +47,7 @@ func TestAuctioneerAccountWitness(t *testing.T) {
 	spendTx.AddTxOut(acctOutput)
 
 	// Now we'll construct the witness to simulate a spend of the account.
-	signer := &mockSigner{auctioneerKey}
+	signer := &MockSigner{auctioneerKey}
 	witness, err := acct.AccountWitness(signer, spendTx, 0)
 	if err != nil {
 		t.Fatalf("unable to generate witness: %v", err)

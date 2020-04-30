@@ -15,76 +15,94 @@ import (
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/batchtx"
 	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
-	_, startBatchKey = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x01})
-	_, acctKeyBig    = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x02})
-	_, acctKeySmall  = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x03})
-	oldMasterOutHash = chainhash.Hash{0x01}
-	newMasterOutHash = chainhash.Hash{0x02}
+	batchPriv, startBatchKey    = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x01})
+	acctBigPriv, acctKeyBig     = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x02})
+	acctSmallPriv, acctKeySmall = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x03})
+	oldMasterOutHash            = chainhash.Hash{0x01}
+	newMasterOutHash            = chainhash.Hash{0x02}
+
+	batchID     = orderT.NewBatchID(startBatchKey)
+	acctIDBig   = matching.NewAccountID(acctKeyBig)
+	acctIDSmall = matching.NewAccountID(acctKeySmall)
+
+	acctIDToPriv = map[matching.AccountID]*btcec.PrivateKey{
+		acctIDBig:   acctBigPriv,
+		acctIDSmall: acctSmallPriv,
+	}
 )
 
-// TestBatchStorer makes sure a batch is prepared correctly for serialization by
-// the batch storer.
-func TestBatchStorer(t *testing.T) {
-	t.Parallel()
-
-	var (
-		storeMock   = agoradb.NewStoreMock(t)
-		storer      = &batchStorer{store: storeMock}
-		batchID     orderT.BatchID
-		acctIDBig   matching.AccountID
-		acctIDSmall matching.AccountID
-	)
-	copy(batchID[:], startBatchKey.SerializeCompressed())
-	copy(acctIDBig[:], acctKeyBig.SerializeCompressed())
-	copy(acctIDSmall[:], acctKeySmall.SerializeCompressed())
-
-	// We'll create two accounts: A smaller one that has one ask for 4 units
-	// that will be completely used up. Then a larger account that has two
-	// bids that are both matched to the ask. This account is large enough
-	// to be recreated. We assume here that no maker/taker fees are applied
-	// and only the matched units are paid for.
-	bigAcct := &account.Account{
+// As set up for all tests in this package, we'll create two accounts: A
+// smaller one that has one ask for 4 units that will be completely used up.
+// Then a larger account that has two bids that are both matched to the ask.
+// This account is large enough to be recreated. We assume here that no
+// maker/taker fees are applied and only the matched units are paid for.
+var (
+	bigAcct = &account.Account{
 		TraderKeyRaw: acctIDBig,
 		Value:        1_000_000,
 		Expiry:       144,
 		State:        account.StateOpen,
 		BatchKey:     startBatchKey,
+		OutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{0x01, 0x01},
+		},
 	}
-	bigTrader := matching.NewTraderFromAccount(bigAcct)
-	smallAcct := &account.Account{
+
+	bigTrader = matching.NewTraderFromAccount(bigAcct)
+
+	smallAcct = &account.Account{
 		TraderKeyRaw: acctIDSmall,
 		Value:        400_000,
 		Expiry:       144,
 		State:        account.StateOpen,
 		BatchKey:     startBatchKey,
+		OutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{0x01, 0x09},
+		},
 	}
-	smallTrader := matching.NewTraderFromAccount(smallAcct)
-	ask := &order.Ask{
+
+	smallTrader = matching.NewTraderFromAccount(smallAcct)
+
+	ask = &order.Ask{
 		Ask: orderT.Ask{
 			Kit: newClientKit(orderT.Nonce{0x01}, 4),
 		},
+		Kit: order.Kit{
+			MultiSigKey: batchID,
+		},
 	}
-	bid1 := &order.Bid{
+
+	bid1 = &order.Bid{
 		Bid: orderT.Bid{
 			Kit: newClientKit(orderT.Nonce{0x02}, 2),
 		},
+		Kit: order.Kit{
+			MultiSigKey: acctIDSmall,
+		},
 	}
-	bid2 := &order.Bid{
+
+	bid2 = &order.Bid{
 		Bid: orderT.Bid{
 			Kit: newClientKit(orderT.Nonce{0x03}, 8),
 		},
+		Kit: order.Kit{
+			MultiSigKey: acctIDBig,
+		},
 	}
-	batchTx := &wire.MsgTx{
+
+	batchTx = &wire.MsgTx{
 		Version: 2,
 		TxOut: []*wire.TxOut{{
 			Value:    600_000,
 			PkScript: []byte{77, 88, 99},
 		}},
 	}
-	accountDiffs := map[matching.AccountID]matching.AccountDiff{
+
+	accountDiffs = map[matching.AccountID]matching.AccountDiff{
 		bigAcct.TraderKeyRaw: {
 			StartingState:   &bigTrader,
 			RecreatedOutput: batchTx.TxOut[0],
@@ -95,41 +113,63 @@ func TestBatchStorer(t *testing.T) {
 		smallAcct.TraderKeyRaw: {
 			StartingState: &smallTrader,
 			AccountTally: &orderT.AccountTally{
-				EndingBalance: 0,
+				EndingBalance: 500,
 			},
 		},
 	}
-	oldMasterAccount := &account.Auctioneer{
+
+	oldMasterAccount = &account.Auctioneer{
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: startBatchKey,
+		},
 		OutPoint: wire.OutPoint{Hash: oldMasterOutHash},
 		Balance:  1337,
 		BatchKey: batchID,
 	}
-	batchResult := &ExecutionResult{
-		Batch: &matching.OrderBatch{
-			Orders: []matching.MatchedOrder{
-				{
-					Details: matching.OrderPair{
-						Ask: ask,
-						Bid: bid1,
-						Quote: matching.PriceQuote{
-							UnitsMatched: 2,
-						},
+
+	orderBatch = &matching.OrderBatch{
+		Orders: []matching.MatchedOrder{
+			{
+				Details: matching.OrderPair{
+					Ask: ask,
+					Bid: bid1,
+					Quote: matching.PriceQuote{
+						UnitsMatched:     2,
+						TotalSatsCleared: 2,
 					},
 				},
-				{
-					Details: matching.OrderPair{
-						Ask: ask,
-						Bid: bid2,
-						Quote: matching.PriceQuote{
-							UnitsMatched: 2,
-						},
-					},
-				},
+				Asker:  smallTrader,
+				Bidder: bigTrader,
 			},
-			FeeReport: matching.TradingFeeReport{
-				AccountDiffs: accountDiffs,
+			{
+				Details: matching.OrderPair{
+					Ask: ask,
+					Bid: bid2,
+					Quote: matching.PriceQuote{
+						UnitsMatched:     2,
+						TotalSatsCleared: 2,
+					},
+				},
+				Asker:  smallTrader,
+				Bidder: bigTrader,
 			},
 		},
+		FeeReport: matching.TradingFeeReport{
+			AccountDiffs: accountDiffs,
+		},
+	}
+)
+
+// TestBatchStorer makes sure a batch is prepared correctly for serialization by
+// the batch storer.
+func TestBatchStorer(t *testing.T) {
+	var (
+		storeMock = agoradb.NewStoreMock(t)
+		storer    = &ExeBatchStorer{store: storeMock}
+	)
+
+	batchResult := &ExecutionResult{
+		Batch: orderBatch,
 		MasterAccountDiff: &batchtx.MasterAccountState{
 			PriorPoint:     oldMasterAccount.OutPoint,
 			OutPoint:       &wire.OutPoint{Hash: newMasterOutHash},
@@ -190,9 +230,9 @@ func TestBatchStorer(t *testing.T) {
 		t.Fatalf("invalid account state, got %d wanted %d",
 			smallAcct.State, account.StateClosed)
 	}
-	if smallAcct.Value != 0 {
+	if smallAcct.Value != 500 {
 		t.Fatalf("invalid account balance, got %d wanted %d",
-			smallAcct.Value, 0)
+			smallAcct.Value, 500)
 	}
 	if smallAcct.Expiry != 144 {
 		t.Fatalf("invalid account expiry, got %d wanted %d",

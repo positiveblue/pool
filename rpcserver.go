@@ -791,9 +791,16 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 	// The trader signed their account inputs.
 	case *clmrpc.ClientAuctionMessage_Sign:
-		sigs := make(map[string][][]byte)
-		for key, value := range msg.Sign.AccountWitness {
-			sigs[key] = value.Witness
+		sigs := make(map[string]*btcec.Signature)
+		for acctString, sigBytes := range msg.Sign.AccountSigs {
+			sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+			if err != nil {
+				comms.err <- fmt.Errorf("unable to parse "+
+					"account sig: %v", err)
+				return
+			}
+
+			sigs[acctString] = sig
 		}
 
 		// De-multiplex the incoming message for the venue.

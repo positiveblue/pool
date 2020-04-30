@@ -14,17 +14,25 @@ import (
 	"github.com/lightninglabs/agora/order"
 )
 
-// batchStorer is a type that implements BatchStorer and can persist a batch to
-// the etcd database.
-type batchStorer struct {
+// ExeBatchStorer is a type that implements BatchStorer and can persist a batch
+// to the etcd database.
+type ExeBatchStorer struct {
 	store agoradb.Store
+}
+
+// NewExeBatchStorer returns a new instance of the ExeBatchStorer given an
+// initialized database.
+func NewExeBatchStorer(store agoradb.Store) *ExeBatchStorer {
+	return &ExeBatchStorer{
+		store: store,
+	}
 }
 
 // Store transforms the execution result of a batch into order and account
 // modifications that are then passed to the store to be persisted.
 //
 // NOTE: This method is part of the BatchStorer interface.
-func (s *batchStorer) Store(ctx context.Context, result *ExecutionResult) error {
+func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) error {
 	batch := result.Batch
 	batchTxHash := result.BatchTx.TxHash()
 

@@ -207,3 +207,41 @@ func (n *MockChainNotifier) RegisterBlockEpochNtfn(
 
 	return n.BlockChan, n.ErrChan, nil
 }
+
+type MockSigner struct {
+	PrivKey *btcec.PrivateKey
+}
+
+func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
+	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
+
+	s := input.MockSigner{
+		Privkeys: []*btcec.PrivateKey{
+			m.PrivKey,
+		},
+	}
+
+	sig, err := s.SignOutputRaw(tx, signDescriptors[0])
+	if err != nil {
+		return nil, err
+	}
+
+	return [][]byte{sig}, nil
+}
+
+func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
+	signDescriptors []*input.SignDescriptor) ([]*input.Script, error) {
+	return nil, nil
+}
+func (m *MockSigner) SignMessage(ctx context.Context, msg []byte,
+	locator keychain.KeyLocator) ([]byte, error) {
+	return nil, nil
+}
+func (m *MockSigner) VerifyMessage(ctx context.Context, msg, sig []byte, pubkey [33]byte) (
+	bool, error) {
+	return false, nil
+}
+func (m *MockSigner) DeriveSharedKey(ctx context.Context, ephemeralPubKey *btcec.PublicKey,
+	keyLocator *keychain.KeyLocator) ([32]byte, error) {
+	return [32]byte{}, nil
+}

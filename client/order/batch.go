@@ -34,6 +34,13 @@ const (
 // execution transaction.
 type BatchID [33]byte
 
+// NewBatchID returns a new batch ID for the given public key.
+func NewBatchID(pub *btcec.PublicKey) BatchID {
+	var b BatchID
+	copy(b[:], pub.SerializeCompressed())
+	return b
+}
+
 // AccountDiff represents a matching+clearing event for a trader's account.
 // This diff shows the total balance delta along with a breakdown for each item
 // for a trader's account.
@@ -187,9 +194,9 @@ type MatchedOrder struct {
 }
 
 // BatchSignature is a map type that is keyed by a trader's account key and
-// contains the witness stack (slice of slice of bytes) for the input that
+// contains the multi-sig signature for the input that
 // spends from the current account in a batch.
-type BatchSignature map[[33]byte][][]byte
+type BatchSignature map[[33]byte]*btcec.Signature
 
 // BatchVerifier is an interface that can verify a batch from the point of view
 // of the trader.
