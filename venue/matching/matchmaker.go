@@ -7,10 +7,10 @@ import (
 	"github.com/lightninglabs/agora/order"
 )
 
-// BatchID is a 32-byte identifier that uniquely identifies this batch. This ID
+// BatchID is a 33-byte identifier that uniquely identifies this batch. This ID
 // will be used later for account key derivation when constructing the batch
 // execution transaction.
-type BatchID [32]byte
+type BatchID [33]byte
 
 // UniformPriceCallMarket is a discrete-batch auction that clears all orders in
 // a batch according to a selected uniform clearing price. This struct will be
