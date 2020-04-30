@@ -43,6 +43,10 @@ var (
 
 	// errBatchSnapshotNotFound is an error returned when we can't locate
 	// the batch snapshot that was requested.
+	//
+	// NOTE: The client relies on this exact error for recovery purposes.
+	// When modifying it, it should also be updated at the client level. The
+	// client cannot import this error since the server code is private.
 	errBatchSnapshotNotFound = errors.New("batch snapshot not found")
 )
 

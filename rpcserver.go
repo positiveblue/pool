@@ -946,6 +946,88 @@ func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
 	}, nil
 }
 
+// RelevantBatchSnapshot returns a slimmed-down snapshot of the requested batch
+// only pertaining to the requested accounts.
+func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
+	req *clmrpc.RelevantBatchRequest) (*clmrpc.RelevantBatch, error) {
+
+	// We'll start by retrieving the snapshot of the requested batch.
+	var batchID orderT.BatchID
+	copy(batchID[:], req.Id)
+
+	// TODO(wilmer): Add caching layer? LRU?
+	batch, err := s.store.GetBatchSnapshot(ctx, batchID)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &clmrpc.RelevantBatch{
+		// TODO(wilmer): Set remaining fields when available.
+		Version:           uint32(orderT.CurrentVersion),
+		Id:                batchID[:],
+		ClearingPriceRate: uint32(batch.ClearingPrice),
+		ExecutionFee:      nil,
+		Transaction:       nil,
+		FeeRateSatPerKw:   0,
+	}
+
+	// With the batch obtained, we'll filter it for the requested accounts.
+	// If there weren't any, we'll just return the batch as is.
+	if len(req.Accounts) == 0 {
+		return resp, nil
+	}
+
+	// This consists of providing the trader with diffs for all of the
+	// requested accounts that participated in the batch, and the orders
+	// matched that resulted in these diffs.
+	accounts := make(map[matching.AccountID]struct{})
+	resp.ChargedAccounts = make([]*clmrpc.AccountDiff, 0, len(req.Accounts))
+	for _, account := range req.Accounts {
+		var accountID matching.AccountID
+		copy(accountID[:], account)
+
+		diff, ok := batch.FeeReport.AccountDiffs[accountID]
+		if !ok {
+			continue
+		}
+		accountDiff, err := marshallAccountDiff(diff)
+		if err != nil {
+			return nil, err
+		}
+
+		accounts[accountID] = struct{}{}
+		resp.ChargedAccounts = append(resp.ChargedAccounts, accountDiff)
+	}
+
+	// An order can be fulfilled by multiple orders of the opposing type, so
+	// make sure we take that into notice.
+	resp.MatchedOrders = make(map[string]*clmrpc.MatchedOrder)
+	for _, order := range batch.Orders {
+		if _, ok := accounts[order.Asker.AccountKey]; ok {
+			nonce := order.Details.Ask.Nonce().String()
+			matchedBid := marshallMatchedBid(
+				order.Details.Bid, order.Details.Quote.UnitsMatched,
+			)
+			resp.MatchedOrders[nonce].MatchedBids = append(
+				resp.MatchedOrders[nonce].MatchedBids, matchedBid,
+			)
+			continue
+		}
+
+		if _, ok := accounts[order.Bidder.AccountKey]; ok {
+			nonce := order.Details.Bid.Nonce().String()
+			matchedAsk := marshallMatchedAsk(
+				order.Details.Ask, order.Details.Quote.UnitsMatched,
+			)
+			resp.MatchedOrders[nonce].MatchedAsks = append(
+				resp.MatchedOrders[nonce].MatchedAsks, matchedAsk,
+			)
+		}
+	}
+
+	return resp, nil
+}
+
 // parseRPCOrder parses the incoming raw RPC order into the go native data
 // types used in the order struct.
 func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
@@ -1019,4 +1101,90 @@ func tokenIDFromContext(ctx context.Context) lsat.TokenID {
 		return token
 	}
 	return zeroToken
+}
+
+// marshallAccountDiff translates a matching.AccountDiff to its RPC counterpart.
+func marshallAccountDiff(diff matching.AccountDiff) (*clmrpc.AccountDiff, error) {
+	// TODO: Need to extend account.OnChainState with DustExtendedOffChain
+	// and DustAddedToFees.
+	//
+	// TODO: AccountDiff doesn't include the new output index.
+	var (
+		endingState clmrpc.AccountDiff_AccountState
+		opIdx       int32
+	)
+	switch state := account.EndingState(diff.EndingBalance); {
+	case state == account.OnChainStateRecreated:
+		endingState = clmrpc.AccountDiff_OUTPUT_RECREATED
+	case state == account.OnChainStateFullySpent:
+		endingState = clmrpc.AccountDiff_OUTPUT_FULLY_SPENT
+		opIdx = -1
+	default:
+		return nil, fmt.Errorf("unhandled state %v", state)
+	}
+
+	return &clmrpc.AccountDiff{
+		EndingBalance: int64(diff.EndingBalance),
+		EndingState:   endingState,
+		OutpointIndex: opIdx,
+		UserSubKey:    diff.StartingState.AccountKey[:],
+	}, nil
+}
+
+// marshallMatchedAsk translates an order.Ask to its RPC counterpart.
+func marshallMatchedAsk(ask *order.Ask,
+	unitsFilled orderT.SupplyUnit) *clmrpc.MatchedAsk {
+
+	return &clmrpc.MatchedAsk{
+		Ask: &clmrpc.ServerAsk{
+			Details:           marshallServerOrder(ask),
+			MaxDurationBlocks: int64(ask.MaxDuration()),
+			Version:           uint32(ask.Version),
+		},
+		UnitsFilled: uint32(unitsFilled),
+	}
+}
+
+// marshallMatchedBid translates an order.Bid to its RPC counterpart.
+func marshallMatchedBid(bid *order.Bid,
+	unitsFilled orderT.SupplyUnit) *clmrpc.MatchedBid {
+
+	return &clmrpc.MatchedBid{
+		Bid: &clmrpc.ServerBid{
+			Details:           marshallServerOrder(bid),
+			MinDurationBlocks: int64(bid.MinDuration()),
+			Version:           uint32(bid.Version),
+		},
+		UnitsFilled: uint32(unitsFilled),
+	}
+}
+
+// marshallServerOrder translates an order.ServerOrder to its RPC counterpart.
+func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
+	nonce := order.Nonce()
+	return &clmrpc.ServerOrder{
+		UserSubKey:  order.ServerDetails().Acct.TraderKeyRaw[:],
+		RateFixed:   int64(order.Details().FixedRate),
+		Amt:         int64(order.Details().Amt),
+		OrderNonce:  nonce[:],
+		OrderSig:    order.ServerDetails().Sig.ToSignatureBytes(),
+		MultiSigKey: order.ServerDetails().MultiSigKey[:],
+		NodePub:     order.ServerDetails().NodeKey[:],
+		NodeAddr:    marshallNodeAddrs(order.ServerDetails().NodeAddrs),
+		// TODO: ChanType should be an enum in RPC?
+		ChanType:               uint32(order.ServerDetails().ChanType),
+		FundingFeeRateSatPerKw: int64(order.Details().FundingFeeRate),
+	}
+}
+
+// marshallNodeAddrs tranlates a []net.Addr to its RPC counterpart.
+func marshallNodeAddrs(addrs []net.Addr) []*clmrpc.NodeAddress {
+	res := make([]*clmrpc.NodeAddress, 0, len(addrs))
+	for _, addr := range addrs {
+		res = append(res, &clmrpc.NodeAddress{
+			Network: addr.Network(),
+			Addr:    addr.String(),
+		})
+	}
+	return res
 }
