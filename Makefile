@@ -48,6 +48,9 @@ XARGS := xargs -L 1
 
 include make/testing_flags.mk
 
+make_ldflags = -ldflags "-X $(LND_PKG)/build.RawTags=$(shell echo $(1) | sed -e 's/ /,/g')"
+LND_ITEST_LDFLAGS := $(call make_ldflags, $(ITEST_TAGS))
+
 LINT = $(LINT_BIN) run -v
 
 GREEN := "\\033[0;32m"
@@ -97,7 +100,7 @@ build:
 
 build-itest:
 	@$(call print, "Building itest lnd.")
-	$(GOBUILD) -tags="$(ITEST_TAGS)" -o itest/lnd-itest $(LDFLAGS) $(LND_PKG)/cmd/lnd
+	$(GOBUILD) -tags="$(ITEST_TAGS)" -o itest/lnd-itest $(LND_ITEST_LDFLAGS) $(LND_PKG)/cmd/lnd
 
 install:
 	@$(call print, "Installing agora.")
