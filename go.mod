@@ -15,10 +15,10 @@ require (
 	github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585
 	github.com/lightninglabs/loop v0.4.1-beta.0.20200218000029-ba6b4e782eff
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.9.0-beta-rc3.0.20200121213302-a2977c4438b5
-	github.com/lightningnetwork/lnd/cert v1.0.0
+	github.com/lightningnetwork/lnd v0.9.0-beta-rc4.0.20200317000703-823a9cc2c21d
+	github.com/lightningnetwork/lnd/cert v1.0.1
 	github.com/urfave/cli v1.20.0
-	golang.org/x/crypto v0.0.0-20200109152110-61a87790db17
+	golang.org/x/crypto v0.0.0-20200115085410-6d4e4cb37c7d
 	google.golang.org/genproto v0.0.0-20191108220845-16a3f7862a1a
 	google.golang.org/grpc v1.25.1
 )

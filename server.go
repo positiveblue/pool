@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/agoradb"
+	"github.com/lightninglabs/agora/chanenforcement"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
@@ -109,6 +110,8 @@ type Server struct {
 
 	auctioneer *Auctioneer
 
+	channelEnforcer *chanenforcement.ChannelEnforcer
+
 	quit chan struct{}
 
 	wg sync.WaitGroup
@@ -195,6 +198,10 @@ func NewServer(cfg *Config) (*Server, error) {
 			},
 			StartingAcctValue: 1_000_000,
 		}),
+		channelEnforcer: chanenforcement.New(&chanenforcement.Config{
+			ChainNotifier: lnd.ChainNotifier,
+			PackageSource: store,
+		}),
 		quit: make(chan struct{}),
 	}
 
@@ -276,6 +283,7 @@ func (s *Server) Start() error {
 		if err := s.store.Init(etcdCtx); err != nil {
 			startErr = fmt.Errorf("unable to initialize etcd "+
 				"store: %v", err)
+			return
 		}
 
 		lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)
@@ -284,6 +292,7 @@ func (s *Server) Start() error {
 		if err != nil {
 			startErr = fmt.Errorf("unable to retrieve lnd node "+
 				"public key: %v", err)
+			return
 		}
 		s.identityPubkey = infoResp.IdentityPubkey
 
@@ -306,6 +315,11 @@ func (s *Server) Start() error {
 		if err := s.batchExecutor.Start(); err != nil {
 			startErr = fmt.Errorf("unable to start batch "+
 				"executor: %v", err)
+			return
+		}
+		if err := s.channelEnforcer.Start(); err != nil {
+			startErr = fmt.Errorf("unable to start channel "+
+				"enforcer: %v", err)
 			return
 		}
 
@@ -352,6 +366,7 @@ func (s *Server) Stop() error {
 				"server: %w", err)
 			return
 		}
+		s.channelEnforcer.Stop()
 		if err := s.batchExecutor.Stop(); err != nil {
 			stopErr = fmt.Errorf("unable to stop batch executor: "+
 				"%w", err)

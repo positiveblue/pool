@@ -2,12 +2,14 @@ package agoradb
 
 import (
 	"context"
+	"encoding/hex"
 	"io/ioutil"
 	"net/url"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/coreos/etcd/embed"
 )
@@ -61,4 +63,10 @@ func newTestEtcdStore(t *testing.T) (*EtcdStore, func()) {
 		etcd.Close()
 		os.RemoveAll(tempDir)
 	}
+}
+
+func fromHex(s string) *btcec.PublicKey {
+	rawKey, _ := hex.DecodeString(s)
+	key, _ := btcec.ParsePubKey(rawKey, btcec.S256())
+	return key
 }
