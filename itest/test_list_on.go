@@ -19,4 +19,8 @@ var testCases = []*testCase{
 		name: "submit order",
 		test: testOrderSubmission,
 	},
+	{
+		name: "batch execution",
+		test: testBatchExecution,
+	},
 }
