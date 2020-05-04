@@ -24,7 +24,7 @@ func testAccountCreation(t *harnessTest) {
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
 	const accountValue = 2000000
-	account := openAccountAndAssert(t, &clmrpc.InitAccountRequest{
+	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
 		AccountValue:  accountValue,
 		AccountExpiry: uint32(currentHeight) + 1000,
 	})
@@ -35,7 +35,7 @@ func testAccountCreation(t *harnessTest) {
 	outputScript, _ := hex.DecodeString(
 		"00203d626e5ad72f78b884333f7db7c612eb448fae27307abe0b27098aab036cb5a7",
 	)
-	closeTx := closeAccountAndAssert(t, &clmrpc.CloseAccountRequest{
+	closeTx := closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
 		Outputs: []*clmrpc.Output{
 			{
@@ -72,7 +72,7 @@ func testAccountSubscription(t *harnessTest) {
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
-	acct := openAccountAndAssert(t, &clmrpc.InitAccountRequest{
+	acct := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
 		AccountValue:  2000000,
 		AccountExpiry: uint32(currentHeight) + 1000,
 	})

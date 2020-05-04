@@ -350,12 +350,12 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 
 // assertTraderAccountState asserts that the account with the corresponding
 // trader key is found in the given state from the PoV of the trader.
-func assertTraderAccountState(t *harnessTest, traderKey []byte,
-	state clmrpc.AccountState) {
+func assertTraderAccountState(t *testing.T, trader *traderHarness,
+	traderKey []byte, state clmrpc.AccountState) {
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
-		list, err := t.trader.ListAccounts(
+		list, err := trader.ListAccounts(
 			ctx, &clmrpc.ListAccountsRequest{},
 		)
 		if err != nil {
@@ -412,10 +412,10 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
-func openAccountAndAssert(t *harnessTest,
+func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *clmrpc.InitAccountRequest) *clmrpc.Account {
 
-	acct, err := t.trader.InitAccount(context.Background(), req)
+	acct, err := trader.InitAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)
 	}
@@ -439,7 +439,9 @@ func openAccountAndAssert(t *harnessTest,
 	}
 	_ = assertTxInBlock(t, block, txHash)
 
-	assertTraderAccountState(t, acct.TraderKey, clmrpc.AccountState_OPEN)
+	assertTraderAccountState(
+		t.t, trader, acct.TraderKey, clmrpc.AccountState_OPEN,
+	)
 	assertAuctioneerAccountState(
 		t, acct.TraderKey, auctioneerAccount.StateOpen,
 	)
@@ -452,13 +454,13 @@ func openAccountAndAssert(t *harnessTest,
 // either the expiration or multi-sig path, depending on whether the account has
 // already expired. Once the spending transaction confirms, we assert that the
 // account is marked as closed.
-func closeAccountAndAssert(t *harnessTest,
+func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *clmrpc.CloseAccountRequest) *wire.MsgTx {
 
 	// Send the close account request and wait for the closing transaction
 	// to be broadcast. The account should also be found in a
 	// StatePendingClosed state.
-	resp, err := t.trader.CloseAccount(context.Background(), req)
+	resp, err := trader.CloseAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not close account %x: %v", req.TraderKey, err)
 	}
@@ -471,7 +473,7 @@ func closeAccountAndAssert(t *harnessTest,
 	}
 
 	assertTraderAccountState(
-		t, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
+		t.t, trader, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
 	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateOpen,
@@ -487,7 +489,9 @@ func closeAccountAndAssert(t *harnessTest,
 	closeTx := assertTxInBlock(t, block, closeTxHash)
 
 	// The account should now be found in a StateClosed state.
-	assertTraderAccountState(t, req.TraderKey, clmrpc.AccountState_CLOSED)
+	assertTraderAccountState(
+		t.t, trader, req.TraderKey, clmrpc.AccountState_CLOSED,
+	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateClosed,
 	)
