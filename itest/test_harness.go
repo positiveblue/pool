@@ -11,12 +11,15 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/go-errors/errors"
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"google.golang.org/grpc/test/bufconn"
@@ -457,6 +460,8 @@ func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *clmrpc.CloseAccountRequest) *wire.MsgTx {
 
+	t.t.Helper()
+
 	// Send the close account request and wait for the closing transaction
 	// to be broadcast. The account should also be found in a
 	// StatePendingClosed state.
@@ -541,4 +546,27 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 		t.Fatalf("trader stream was not registered before timeout: %v",
 			err)
 	}
+}
+
+// traderOutputScript creates a P2WPKH output script that pays to the trader's
+// lnd wallet.
+func traderOutputScript(t *harnessTest, traderNode *lntest.HarnessNode) []byte {
+	ctx := context.Background()
+	resp, err := traderNode.NewAddress(ctx, &lnrpc.NewAddressRequest{
+		Type: lnrpc.AddressType_WITNESS_PUBKEY_HASH,
+	})
+	if err != nil {
+		t.Fatalf("could not create new address: %v", err)
+	}
+	addr, err := btcutil.DecodeAddress(
+		resp.Address, &chaincfg.RegressionNetParams,
+	)
+	if err != nil {
+		t.Fatalf("could not decode address: %v", err)
+	}
+	addrScript, err := txscript.PayToAddrScript(addr)
+	if err != nil {
+		t.Fatalf("could not create pay to address script: %v", err)
+	}
+	return addrScript
 }

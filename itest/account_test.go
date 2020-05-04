@@ -2,7 +2,6 @@ package itest
 
 import (
 	"bytes"
-	"encoding/hex"
 
 	"github.com/lightninglabs/agora/client/clmrpc"
 )
@@ -30,9 +29,7 @@ func testAccountCreation(t *harnessTest) {
 	// Proceed to close it to a custom output where half of the account
 	// value goes towards it and the rest towards fees.
 	const outputValue = defaultAccountValue / 2
-	outputScript, _ := hex.DecodeString(
-		"00203d626e5ad72f78b884333f7db7c612eb448fae27307abe0b27098aab036cb5a7",
-	)
+	outputScript := traderOutputScript(t, t.lndHarness.Bob)
 	closeTx := closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
 		Outputs: []*clmrpc.Output{
