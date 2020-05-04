@@ -26,17 +26,19 @@ type adminRPCServer struct {
 	wg   sync.WaitGroup
 
 	mainRPCServer *rpcServer
+	auctioneer    *Auctioneer
 }
 
 // newAdminRPCServer creates a new adminRPCServer.
 func newAdminRPCServer(mainRPCServer *rpcServer, listener net.Listener,
-	serverOpts []grpc.ServerOption) *adminRPCServer {
+	serverOpts []grpc.ServerOption, auctioneer *Auctioneer) *adminRPCServer {
 
 	return &adminRPCServer{
 		grpcServer:    grpc.NewServer(serverOpts...),
 		listener:      listener,
 		quit:          make(chan struct{}),
 		mainRPCServer: mainRPCServer,
+		auctioneer:    auctioneer,
 	}
 }
 
