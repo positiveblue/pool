@@ -5,11 +5,10 @@ import (
 	"encoding/hex"
 
 	"github.com/lightninglabs/agora/client/clmrpc"
-	"github.com/lightninglabs/loop/lsat"
 )
 
-var (
-	zeroID lsat.TokenID
+const (
+	defaultAccountValue uint32 = 2_000_000
 )
 
 // testAccountCreation tests that the trader can successfully create an account
@@ -23,15 +22,14 @@ func testAccountCreation(t *harnessTest) {
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
-	const accountValue = 2000000
 	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  accountValue,
+		AccountValue:  defaultAccountValue,
 		AccountExpiry: uint32(currentHeight) + 1000,
 	})
 
 	// Proceed to close it to a custom output where half of the account
 	// value goes towards it and the rest towards fees.
-	const outputValue = accountValue / 2
+	const outputValue = defaultAccountValue / 2
 	outputScript, _ := hex.DecodeString(
 		"00203d626e5ad72f78b884333f7db7c612eb448fae27307abe0b27098aab036cb5a7",
 	)
@@ -50,7 +48,7 @@ func testAccountCreation(t *harnessTest) {
 		t.Fatalf("expected 1 output in close transaction, found %v",
 			len(closeTx.TxOut))
 	}
-	if closeTx.TxOut[0].Value != outputValue {
+	if closeTx.TxOut[0].Value != int64(outputValue) {
 		t.Fatalf("expected output value %v, found %v", outputValue,
 			closeTx.TxOut[0].Value)
 	}

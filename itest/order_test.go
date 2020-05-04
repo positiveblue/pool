@@ -4,6 +4,11 @@ import (
 	"context"
 
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/agora/client/order"
+)
+
+const (
+	dayInBlocks int64 = 144
 )
 
 // testOrderSubmission tests that a simple ask order can be created on both the
@@ -20,7 +25,7 @@ func testOrderSubmission(t *harnessTest) {
 	// Start by creating an account over 2M sats that is valid for the next
 	// 1000 blocks.
 	acct := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  2000000,
+		AccountValue:  defaultAccountValue,
 		AccountExpiry: uint32(currentHeight) + 1000,
 	})
 
@@ -35,8 +40,8 @@ func testOrderSubmission(t *harnessTest) {
 					Amt:            1500000,
 					FundingFeeRate: 0,
 				},
-				MaxDurationBlocks: 2 * 144,
-				Version:           0,
+				MaxDurationBlocks: 2 * dayInBlocks,
+				Version:           uint32(order.CurrentVersion),
 			},
 		},
 	})
