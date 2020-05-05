@@ -261,6 +261,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	server.adminServer = newAdminRPCServer(
 		auctioneerServer, adminListener, []grpc.ServerOption{},
+		server.auctioneer,
 	)
 	adminrpc.RegisterAuctionAdminServer(
 		server.adminServer.grpcServer, server.adminServer,
@@ -308,7 +309,7 @@ func (s *Server) Start() error {
 			return
 		}
 		if err := s.auctioneer.Start(); err != nil {
-			startErr = fmt.Errorf("unable to start auctioneer"+
+			startErr = fmt.Errorf("unable to start auctioneer "+
 				"executor: %v", err)
 			return
 		}

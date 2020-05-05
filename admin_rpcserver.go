@@ -26,17 +26,19 @@ type adminRPCServer struct {
 	wg   sync.WaitGroup
 
 	mainRPCServer *rpcServer
+	auctioneer    *Auctioneer
 }
 
 // newAdminRPCServer creates a new adminRPCServer.
 func newAdminRPCServer(mainRPCServer *rpcServer, listener net.Listener,
-	serverOpts []grpc.ServerOption) *adminRPCServer {
+	serverOpts []grpc.ServerOption, auctioneer *Auctioneer) *adminRPCServer {
 
 	return &adminRPCServer{
 		grpcServer:    grpc.NewServer(serverOpts...),
 		listener:      listener,
 		quit:          make(chan struct{}),
 		mainRPCServer: mainRPCServer,
+		auctioneer:    auctioneer,
 	}
 }
 
@@ -135,4 +137,14 @@ func (s *adminRPCServer) ConnectedTraders(_ context.Context,
 	}
 
 	return result, nil
+}
+
+func (s *adminRPCServer) BatchTick(_ context.Context,
+	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
+
+	// Force a new bat ticker event in the main auctioneer state machine.
+	// TODO(guggero): Uncomment after #66 has landed!
+	// s.auctioneer.cfg.BatchTicker.Force <- time.Now()
+
+	return &adminrpc.EmptyResponse{}, nil
 }

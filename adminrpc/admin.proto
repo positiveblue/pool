@@ -7,9 +7,13 @@ package adminrpc;
 service AuctionAdmin {
     rpc MasterAccount (EmptyRequest) returns (MasterAccountResponse);
     rpc ConnectedTraders (EmptyRequest) returns (ConnectedTradersResponse);
+    rpc BatchTick (EmptyRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
+}
+
+message EmptyResponse {
 }
 
 message MasterAccountResponse {

@@ -11,12 +11,15 @@ import (
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/go-errors/errors"
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"google.golang.org/grpc/test/bufconn"
@@ -140,17 +143,20 @@ func (h *harnessTest) restartServer() {
 	// triggered.
 	time.Sleep(300 * time.Millisecond)
 
+	err = prepareServerConnection(h.auctioneer, true)
+	if err != nil {
+		h.t.Fatalf("could not recreate server connection: %v", err)
+	}
 	err = connectServerClient(h.auctioneer, h.trader, true)
 	if err != nil {
 		h.t.Fatalf("could not reconnect server and client: %v", err)
 	}
 }
 
-// connectServerClient creates a new in-memory bufconn connection and connects
-// the client to the server through it. The server will be started in the
-// process, otherwise the client wouldn't be able to connect.
-func connectServerClient(ah *auctioneerHarness, th *traderHarness,
-	isRestart bool) error {
+// prepareServerConnection creates a new bufconn connection in the auctioneer
+// server that clients can connect to. This should only be called once after
+// any (re)start of the auctioneer.
+func prepareServerConnection(ah *auctioneerHarness, isRestart bool) error {
 
 	// Create new in-memory listeners that we are going to use to
 	// communicate with the agora and admin server.
@@ -163,18 +169,20 @@ func connectServerClient(ah *auctioneerHarness, th *traderHarness,
 	ah.serverCfg.RPCListener = auctioneerRPCListener
 	ah.serverCfg.AdminRPCListener = adminRPCListener
 
-	var err error
 	if isRestart {
-		err = ah.runServer()
-	} else {
-		err = ah.start()
+		return ah.runServer()
 	}
-	if err != nil {
-		return err
-	}
+	return ah.start()
+}
+
+// connectServerClient creates a new in-memory bufconn connection and connects
+// the client to the server through it. The server will be started in the
+// process, otherwise the client wouldn't be able to connect.
+func connectServerClient(ah *auctioneerHarness, th *traderHarness,
+	isRestart bool) error {
 
 	// Connect the main client and inject the connection into the harness.
-	auctioneerConn, err := auctioneerRPCListener.Dial()
+	auctioneerConn, err := ah.cfg.RPCListener.Dial()
 	if err != nil {
 		return err
 	}
@@ -195,6 +203,62 @@ func connectServerClient(ah *auctioneerHarness, th *traderHarness,
 		}
 	}
 	return nil
+}
+
+// setupHarnesses creates new server and client harnesses that are connected
+// to each other through an in-memory gRPC connection.
+func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
+	*traderHarness, *auctioneerHarness) {
+
+	// Create the two harnesses but don't start them yet, they need to be
+	// connected through the bufconn first.
+	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
+		BackendCfg: lndHarness.BackendCfg,
+		NetParams:  harnessNetParams,
+		LndNode:    lndHarness.Alice,
+	})
+	if err != nil {
+		t.Fatalf("could not create auction server: %v", err)
+	}
+
+	// Create a new internal bufconn connection in the autioneer server.
+	err = prepareServerConnection(auctioneerHarness, false)
+	if err != nil {
+		t.Fatalf("could not create auctioneer connection: %v", err)
+	}
+
+	// Create a trader that uses Bob and connect it to the auction server.
+	traderHarness := setupTraderHarness(
+		t, lndHarness.BackendCfg, lndHarness.Bob, auctioneerHarness,
+	)
+	return traderHarness, auctioneerHarness
+}
+
+// setupTraderHarness creates a new trader that connects to the given lnd node
+// and to the given auction server.
+func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
+	node *lntest.HarnessNode, auctioneer *auctioneerHarness) *traderHarness {
+
+	traderHarness, err := newTraderHarness(traderConfig{
+		BackendCfg: backend,
+		NetParams:  harnessNetParams,
+		LndNode:    node,
+	})
+	if err != nil {
+		t.Fatalf("could not create trader server: %v", err)
+	}
+
+	// Connect them together through the in-memory connection and then start
+	// them.
+	err = connectServerClient(auctioneer, traderHarness, false)
+	if err != nil {
+		t.Fatalf("could not connect client to server: %v", err)
+	}
+	err = traderHarness.start()
+	if err != nil {
+		t.Fatalf("could not start trader server: %v", err)
+	}
+	return traderHarness
 }
 
 // waitForNTxsInMempool polls until finding the desired number of transactions
@@ -289,12 +353,12 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 
 // assertTraderAccountState asserts that the account with the corresponding
 // trader key is found in the given state from the PoV of the trader.
-func assertTraderAccountState(t *harnessTest, traderKey []byte,
-	state clmrpc.AccountState) {
+func assertTraderAccountState(t *testing.T, trader *traderHarness,
+	traderKey []byte, state clmrpc.AccountState) {
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
-		list, err := t.trader.ListAccounts(
+		list, err := trader.ListAccounts(
 			ctx, &clmrpc.ListAccountsRequest{},
 		)
 		if err != nil {
@@ -351,10 +415,10 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
-func openAccountAndAssert(t *harnessTest,
+func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *clmrpc.InitAccountRequest) *clmrpc.Account {
 
-	acct, err := t.trader.InitAccount(context.Background(), req)
+	acct, err := trader.InitAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)
 	}
@@ -378,7 +442,9 @@ func openAccountAndAssert(t *harnessTest,
 	}
 	_ = assertTxInBlock(t, block, txHash)
 
-	assertTraderAccountState(t, acct.TraderKey, clmrpc.AccountState_OPEN)
+	assertTraderAccountState(
+		t.t, trader, acct.TraderKey, clmrpc.AccountState_OPEN,
+	)
 	assertAuctioneerAccountState(
 		t, acct.TraderKey, auctioneerAccount.StateOpen,
 	)
@@ -391,13 +457,15 @@ func openAccountAndAssert(t *harnessTest,
 // either the expiration or multi-sig path, depending on whether the account has
 // already expired. Once the spending transaction confirms, we assert that the
 // account is marked as closed.
-func closeAccountAndAssert(t *harnessTest,
+func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *clmrpc.CloseAccountRequest) *wire.MsgTx {
+
+	t.t.Helper()
 
 	// Send the close account request and wait for the closing transaction
 	// to be broadcast. The account should also be found in a
 	// StatePendingClosed state.
-	resp, err := t.trader.CloseAccount(context.Background(), req)
+	resp, err := trader.CloseAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not close account %x: %v", req.TraderKey, err)
 	}
@@ -410,7 +478,7 @@ func closeAccountAndAssert(t *harnessTest,
 	}
 
 	assertTraderAccountState(
-		t, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
+		t.t, trader, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
 	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateOpen,
@@ -426,7 +494,9 @@ func closeAccountAndAssert(t *harnessTest,
 	closeTx := assertTxInBlock(t, block, closeTxHash)
 
 	// The account should now be found in a StateClosed state.
-	assertTraderAccountState(t, req.TraderKey, clmrpc.AccountState_CLOSED)
+	assertTraderAccountState(
+		t.t, trader, req.TraderKey, clmrpc.AccountState_CLOSED,
+	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateClosed,
 	)
@@ -476,4 +546,27 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 		t.Fatalf("trader stream was not registered before timeout: %v",
 			err)
 	}
+}
+
+// traderOutputScript creates a P2WPKH output script that pays to the trader's
+// lnd wallet.
+func traderOutputScript(t *harnessTest, traderNode *lntest.HarnessNode) []byte {
+	ctx := context.Background()
+	resp, err := traderNode.NewAddress(ctx, &lnrpc.NewAddressRequest{
+		Type: lnrpc.AddressType_WITNESS_PUBKEY_HASH,
+	})
+	if err != nil {
+		t.Fatalf("could not create new address: %v", err)
+	}
+	addr, err := btcutil.DecodeAddress(
+		resp.Address, &chaincfg.RegressionNetParams,
+	)
+	if err != nil {
+		t.Fatalf("could not decode address: %v", err)
+	}
+	addrScript, err := txscript.PayToAddrScript(addr)
+	if err != nil {
+		t.Fatalf("could not create pay to address script: %v", err)
+	}
+	return addrScript
 }

@@ -15,6 +15,7 @@ var auctionCommands = []cli.Command{
 		Category:  "Auction",
 		Subcommands: []cli.Command{
 			listConnectedTradersCommand,
+			batchTickCommand,
 		},
 	},
 }
@@ -43,4 +44,24 @@ func listConnectedTraders(ctx *cli.Context) error {
 
 	printRespJSON(resp)
 	return nil
+}
+
+var batchTickCommand = cli.Command{
+	Name:      "batchtick",
+	ShortName: "t",
+	Usage:     "manually force a new batch tick event",
+	Action:    batchTick,
+}
+
+func batchTick(ctx *cli.Context) error {
+	client, cleanup, err := getClient(ctx)
+	if err != nil {
+		return err
+	}
+	defer cleanup()
+
+	_, err = client.BatchTick(
+		context.Background(), &adminrpc.EmptyRequest{},
+	)
+	return err
 }
