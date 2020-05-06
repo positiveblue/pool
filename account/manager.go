@@ -106,6 +106,13 @@ type Manager struct {
 	// achieve deterministic account creation.
 	longTermKey *btcec.PublicKey
 
+	// watchMtx guards access to watchingExpiry.
+	watchMtx sync.Mutex
+
+	// watchingExpiry is the set of accounts we're currently tracking the
+	// expiration of.
+	watchingExpiry map[[33]byte]struct{}
+
 	wg   sync.WaitGroup
 	quit chan struct{}
 }
@@ -113,8 +120,9 @@ type Manager struct {
 // NewManager instantiates a new Manager backed by the given config.
 func NewManager(cfg *ManagerConfig) (*Manager, error) {
 	m := &Manager{
-		cfg:  *cfg,
-		quit: make(chan struct{}),
+		cfg:            *cfg,
+		watchingExpiry: make(map[[33]byte]struct{}),
+		quit:           make(chan struct{}),
 	}
 
 	m.watcher = watcher.New(&watcher.Config{
@@ -358,13 +366,21 @@ func (m *Manager) resumeAccount(account *Account) error {
 		if err != nil {
 			return fmt.Errorf("unable to watch for spend: %v", err)
 		}
-		err = m.watcher.WatchAccountExpiration(
-			traderKey, account.Expiry,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to watch for expiration: %v",
-				err)
+
+		// Make sure we don't track the expiry again if we don't have
+		// to.
+		m.watchMtx.Lock()
+		if _, ok := m.watchingExpiry[account.TraderKeyRaw]; !ok {
+			err = m.watcher.WatchAccountExpiration(
+				traderKey, account.Expiry,
+			)
+			if err != nil {
+				m.watchMtx.Unlock()
+				return fmt.Errorf("unable to watch for "+
+					"expiration: %v", err)
+			}
 		}
+		m.watchMtx.Unlock()
 
 	// If the account has already expired or has already been closed,
 	// there's nothing to be done.
@@ -461,23 +477,22 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	// If the witness is for a multi-sig spend, then either an order by the
 	// trader was matched, or the account was closed. If it was closed, then
 	// the account output shouldn't have been recreated.
-	//
-	// TODO(wilmer): What do we do when an order matched and the account was
-	// fully drained?
 	case clmscript.IsMultiSigSpend(spendWitness):
-		// If the account output was recreated, then there's nothing
-		// left for us to do. We'll defer updating the account here, as
-		// we'll want to update it atomically along with the matched
-		// order, which we don't have information of.
-		nextAccountScript, err := account.NextOutputScript()
+		// An account cannot be spent without our knowledge, so we'll
+		// assume we always persist account updates before a broadcast
+		// of the spending transaction. Therefore, since we should
+		// already have the updates applied, we can just look for our
+		// current output in the transaction.
+		accountOutput, err := account.Output()
 		if err != nil {
 			return err
 		}
-		_, ok := clmscript.LocateOutputScript(spendTx, nextAccountScript)
+		_, ok := clmscript.LocateOutputScript(
+			spendTx, accountOutput.PkScript,
+		)
 		if ok {
-			// The account is still open so don't mark it as closed
-			// below.
-			return nil
+			// Proceed with the rest of the flow.
+			return m.resumeAccount(account)
 		}
 
 	default:
