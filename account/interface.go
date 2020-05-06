@@ -256,14 +256,6 @@ func IncrementBatchKey() Modifier {
 	}
 }
 
-// BatchKeyModifier is a functional option that modifies the batch key of an
-// account.
-func BatchKeyModifier(batchKey *btcec.PublicKey) Modifier {
-	return func(account *Account) {
-		account.BatchKey = batchKey
-	}
-}
-
 // OutPointModifier is a functional option that modifies the out point of an
 // account.
 func OutPointModifier(outPoint wire.OutPoint) Modifier {

@@ -141,22 +141,6 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 					diff.StartingState.AccountKey)
 			}
 
-			// To make sure we increase the batch key of the same
-			// version of the account we currently have in memory,
-			// create the modifier here instead of inside the STM.
-			//
-			// TODO(guggero): Instead of just using modifiers, find
-			// a way to also make sure we update from the correct
-			// expected old value. Otherwise we just overwrite
-			// blindly.
-			nextBatchKey, err := btcec.ParsePubKey(
-				diff.StartingState.NextBatchKey[:], btcec.S256(),
-			)
-			if err != nil {
-				return fmt.Errorf("error parsing next batch "+
-					"key: %v", err)
-			}
-
 			modifiers = append(
 				modifiers,
 				account.StateModifier(account.StatePendingUpdate),
@@ -164,7 +148,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 					Index: uint32(outpointIndex),
 					Hash:  batchTxHash,
 				}),
-				account.BatchKeyModifier(nextBatchKey),
+				account.IncrementBatchKey(),
 			)
 
 		// The account was fully spent on-chain. We need to wait for the
