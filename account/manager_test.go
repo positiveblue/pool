@@ -369,7 +369,7 @@ func TestAccountConfirmsAtExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to generate account output: %v", err)
 	}
-	h.confirmAccount(account, false, &chainntnfs.TxConfirmation{
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
 		BlockHeight: account.Expiry,
 		Tx: &wire.MsgTx{
 			Version: 2,

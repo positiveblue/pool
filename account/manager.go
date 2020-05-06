@@ -346,10 +346,6 @@ func (m *Manager) resumeAccount(account *Account) error {
 				"%v", err)
 		}
 
-		// Fallthrough to register a spend and expiry notification as
-		// well.
-		fallthrough
-
 	// If the account has already confirmed, we need to watch for its spend
 	// and expiration on-chain.
 	case StateOpen:
@@ -394,19 +390,6 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 		return err
 	}
 
-	// To not rely on the order of confirmation and block notifications, if
-	// the account confirms at the same height as it expires, we can exit
-	// now and let the account be marked as expired by the watcher.
-	if confDetails.BlockHeight == account.Expiry {
-		return nil
-	}
-
-	// Ensure we don't transition an account that's been closed back to open
-	// if the account was closed before it was open.
-	if account.State != StatePendingOpen {
-		return nil
-	}
-
 	// Ensure the client provided us with the correct output.
 	//
 	// TODO(wilmer): If invalid, ban corresponding token? Add new state for
@@ -416,11 +399,16 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	}
 
 	// Once all validation is completed, we can mark the account as
-	// confirmed.
+	// confirmed and proceed with the rest of the flow.
 	log.Infof("Account %x is now confirmed at height %v!",
 		traderKey.SerializeCompressed(), confDetails.BlockHeight)
 
-	return m.cfg.Store.UpdateAccount(ctx, account, StateModifier(StateOpen))
+	err = m.cfg.Store.UpdateAccount(ctx, account, StateModifier(StateOpen))
+	if err != nil {
+		return err
+	}
+
+	return m.resumeAccount(account)
 }
 
 // validateAccountOutput ensures that the on-chain account output matches what
