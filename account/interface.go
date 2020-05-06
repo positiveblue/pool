@@ -43,17 +43,22 @@ const (
 	// for its confirmation.
 	StatePendingOpen State = 0
 
+	// StatePendingUpdate denotes that the account has undergone an update
+	// on-chain either as part of a matched order or a trader modification
+	// and we are currently waiting for its confirmation.
+	StatePendingUpdate State = 1
+
 	// StateOpen denotes that the account's funding transaction has been
 	// included in the chain with sufficient depth.
-	StateOpen State = 1
+	StateOpen State = 2
 
 	// StateExpired denotes that the account's expiration block height has
 	// been reached.
-	StateExpired State = 2
+	StateExpired State = 3
 
 	// StateClosed denotes that an account has been cooperatively closed out
 	// on-chain by the trader.
-	StateClosed = 3
+	StateClosed State = 4
 )
 
 // String returns a human-readable description of an account's state.
@@ -61,10 +66,14 @@ func (s State) String() string {
 	switch s {
 	case StatePendingOpen:
 		return "StatePendingOpen"
+	case StatePendingUpdate:
+		return "StatePendingUpdate"
 	case StateOpen:
 		return "StateOpen"
 	case StateExpired:
 		return "StateExpired"
+	case StateClosed:
+		return "StateClosed"
 	default:
 		return "unknown"
 	}
@@ -236,6 +245,14 @@ func ValueModifier(value btcutil.Amount) Modifier {
 func ExpiryModifier(expiry uint32) Modifier {
 	return func(account *Account) {
 		account.Expiry = expiry
+	}
+}
+
+// IncrementBatchKey is a functional option that increments the batch key of an
+// account by adding the curve's base point.
+func IncrementBatchKey() Modifier {
+	return func(account *Account) {
+		account.BatchKey = clmscript.IncrementKey(account.BatchKey)
 	}
 }
 

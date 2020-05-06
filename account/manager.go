@@ -330,9 +330,9 @@ func (m *Manager) resumeAccount(account *Account) error {
 	}
 
 	switch account.State {
-	// If the account is in it's initial state, we'll watch for the account
+	// If the account is in a pending state, we'll wait for its confirmation
 	// on-chain.
-	case StatePendingOpen:
+	case StatePendingOpen, StatePendingUpdate:
 		numConfs := numConfsForValue(account.Value)
 		log.Infof("Waiting for %v confirmation(s) of account %x",
 			numConfs, account.TraderKeyRaw[:])
