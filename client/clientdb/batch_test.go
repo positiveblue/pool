@@ -6,14 +6,23 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/coreos/bbolt"
 	"github.com/lightninglabs/agora/client/account"
-	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightningnetwork/lnd/keychain"
 )
 
 var (
 	testBatchID = order.BatchID{0x01, 0x02, 0x03}
+
+	testBatchTx = &wire.MsgTx{
+		Version: 2,
+		TxIn: []*wire.TxIn{
+			wire.NewTxIn(&wire.OutPoint{Index: 1}, nil, nil),
+		},
+	}
 
 	testCases = []struct {
 		name        string
@@ -28,8 +37,8 @@ var (
 				_ *account.Account) error {
 
 				return db.StorePendingBatch(
-					testBatchID, []order.Nonce{a.Nonce()}, nil,
-					nil, nil,
+					testBatchID, testBatchTx,
+					[]order.Nonce{a.Nonce()}, nil, nil, nil,
 				)
 			},
 		},
@@ -40,7 +49,7 @@ var (
 				acct *account.Account) error {
 
 				return db.StorePendingBatch(
-					testBatchID, nil, nil,
+					testBatchID, testBatchTx, nil, nil,
 					[]*account.Account{acct}, nil,
 				)
 			},
@@ -55,8 +64,9 @@ var (
 					order.StateModifier(order.StateExecuted),
 				}}
 				return db.StorePendingBatch(
-					testBatchID, []order.Nonce{{0, 1, 2}},
-					modifiers, nil, nil,
+					testBatchID, testBatchTx,
+					[]order.Nonce{{0, 1, 2}}, modifiers,
+					nil, nil,
 				)
 			},
 		},
@@ -66,53 +76,36 @@ var (
 			runTest: func(db *DB, a *order.Ask, _ *order.Bid,
 				acct *account.Account) error {
 
-				acct.TraderKey.PubKey = clmscript.IncrementKey(
-					acct.TraderKey.PubKey,
-				)
+				acct.TraderKey = &keychain.KeyDescriptor{
+					KeyLocator: acct.TraderKey.KeyLocator,
+					PubKey:     testBatchKey,
+				}
 				modifiers := [][]account.Modifier{{
 					account.StateModifier(account.StateClosed),
 				}}
 				return db.StorePendingBatch(
-					testBatchID, nil, nil,
+					testBatchID, testBatchTx, nil, nil,
 					[]*account.Account{acct}, modifiers,
 				)
 			},
 		},
 		{
 			name:        "no pending batch",
-			expectedErr: order.ErrNoPendingBatch.Error(),
+			expectedErr: account.ErrNoPendingBatch.Error(),
 			runTest: func(db *DB, a *order.Ask, b *order.Bid,
 				acct *account.Account) error {
 
-				_, err := db.PendingBatchID()
+				_, _, err := db.PendingBatch()
 				return err
 			},
 		},
 		{
 			name:        "mark batch complete without pending",
-			expectedErr: order.ErrNoPendingBatch.Error(),
+			expectedErr: account.ErrNoPendingBatch.Error(),
 			runTest: func(db *DB, a *order.Ask, b *order.Bid,
 				acct *account.Account) error {
 
-				return db.MarkBatchComplete(testBatchID)
-			},
-		},
-		{
-			name:        "mark batch complete mismatch",
-			expectedErr: "batch id mismatch",
-			runTest: func(db *DB, a *order.Ask, b *order.Bid,
-				acct *account.Account) error {
-
-				err := db.StorePendingBatch(
-					testBatchID, nil, nil, nil, nil,
-				)
-				if err != nil {
-					return err
-				}
-
-				wrongBatchID := testBatchID
-				wrongBatchID[0] ^= 1
-				return db.MarkBatchComplete(wrongBatchID)
+				return db.MarkBatchComplete()
 			},
 		},
 		{
@@ -135,16 +128,16 @@ var (
 					),
 				}}
 				err := db.StorePendingBatch(
-					testBatchID, orderNonces, orderModifiers,
-					accounts, acctModifiers,
+					testBatchID, testBatchTx, orderNonces,
+					orderModifiers, accounts, acctModifiers,
 				)
 				if err != nil {
 					return err
 				}
 
-				// The pending batch ID should reflect
-				// correctly.
-				dbBatchID, err := db.PendingBatchID()
+				// The pending batch ID and transaction should
+				// reflect correctly.
+				dbBatchID, dbBatchTx, err := db.PendingBatch()
 				if err != nil {
 					return err
 				}
@@ -152,6 +145,12 @@ var (
 					return fmt.Errorf("expected pending "+
 						"batch id %x, got %x",
 						testBatchID, dbBatchID)
+				}
+				if dbBatchTx.TxHash() != testBatchTx.TxHash() {
+					return fmt.Errorf("expected pending "+
+						"batch tx %v, got %v",
+						testBatchTx.TxHash(),
+						dbBatchTx.TxHash())
 				}
 
 				// Verify the updates have not been applied to
@@ -167,8 +166,7 @@ var (
 				}
 
 				// Mark the batch as complete.
-				err = db.MarkBatchComplete(testBatchID)
-				if err != nil {
+				if err := db.MarkBatchComplete(); err != nil {
 					return err
 				}
 
@@ -202,7 +200,7 @@ var (
 				// that updates all order and accounts.
 				orderModifier := order.UnitsFulfilledModifier(42)
 				err := db.StorePendingBatch(
-					testBatchID,
+					testBatchID, testBatchTx,
 					[]order.Nonce{a.Nonce(), b.Nonce()},
 					[][]order.Modifier{
 						{orderModifier}, {orderModifier},
@@ -219,7 +217,7 @@ var (
 				// Then, we'll assume the batch was overwritten,
 				// and now only the ask order is part of it.
 				err = db.StorePendingBatch(
-					testBatchID,
+					testBatchID, testBatchTx,
 					[]order.Nonce{a.Nonce()},
 					[][]order.Modifier{{orderModifier}},
 					nil, nil,
@@ -231,8 +229,7 @@ var (
 				// Mark the batch as complete. We should only
 				// see the update for our ask order applied, but
 				// not the rest.
-				err = db.MarkBatchComplete(testBatchID)
-				if err != nil {
+				if err := db.MarkBatchComplete(); err != nil {
 					return err
 				}
 
@@ -352,4 +349,60 @@ func TestPersistBatchResult(t *testing.T) {
 				err.Error(), tc.expectedErr)
 		})
 	}
+}
+
+// TestDeletePendingBatch ensures that all references of a pending batch have
+// been removed after an invocation of DeletePendingBatch.
+func TestDeletePendingBatch(t *testing.T) {
+	t.Parallel()
+
+	db, cleanup := newTestDB(t)
+	defer cleanup()
+
+	// Helper closure to assert that the sub-keys and sub-buckets of the
+	// root batch bucket exist or not.
+	assertPendingBatch := func(exists bool) {
+		t.Helper()
+
+		err := db.View(func(tx *bbolt.Tx) error {
+			root := tx.Bucket(batchBucketKey)
+
+			if (root.Get(pendingBatchIDKey) != nil) != exists {
+				return fmt.Errorf("found unexpected key %v",
+					string(pendingBatchIDKey))
+			}
+			if (root.Get(pendingBatchTxKey) != nil) != exists {
+				return fmt.Errorf("found unexpected key %v",
+					string(pendingBatchTxKey))
+			}
+			if (root.Bucket(pendingBatchAccountsBucketKey) != nil) != exists {
+				return fmt.Errorf("found unexpected bucket %v",
+					string(pendingBatchAccountsBucketKey))
+			}
+			if (root.Bucket(pendingBatchOrdersBucketKey) != nil) != exists {
+				return fmt.Errorf("found unexpected bucket %v",
+					string(pendingBatchOrdersBucketKey))
+			}
+
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	// Store a pending batch. We should expect to find valid values for all
+	// sub-keys and sub-buckets.
+	err := db.StorePendingBatch(testBatchID, testBatchTx, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("unable to store pending batch: %v", err)
+	}
+	assertPendingBatch(true)
+
+	// Now, delete the pending batch. We should expect to _not_ find any
+	// existing sub-keys or sub-buckets.
+	if err := db.DeletePendingBatch(); err != nil {
+		t.Fatalf("unable to delete pending batch: %v", err)
+	}
+	assertPendingBatch(false)
 }

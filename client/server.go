@@ -13,6 +13,7 @@ import (
 
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/agora/client/auctioneer"
+	"github.com/lightninglabs/agora/client/clientdb"
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/kirin/auth"
@@ -36,6 +37,7 @@ type Server struct {
 	GetIdentity func() (*lsat.TokenID, error)
 
 	cfg          *Config
+	db           *clientdb.DB
 	lndServices  *lndclient.GrpcLndServices
 	traderServer *rpcServer
 	grpcServer   *grpc.Server
@@ -88,8 +90,14 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	log.Infof("Auction server address: %v", cfg.AuctionServer)
 
-	// Setup the LSAT interceptor for the client.
+	// Open the main database.
 	networkDir := filepath.Join(cfg.BaseDir, cfg.Network)
+	db, err := clientdb.New(networkDir)
+	if err != nil {
+		return nil, err
+	}
+
+	// Setup the LSAT interceptor for the client.
 	fileStore, err := lsat.NewFileStore(networkDir)
 	if err != nil {
 		return nil, err
@@ -140,6 +148,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		Signer:        lndServices.Signer,
 		MinBackoff:    cfg.MinBackoff,
 		MaxBackoff:    cfg.MaxBackoff,
+		BatchSource:   db,
 	}
 	auctioneerClient, err := auctioneer.NewClient(clientCfg)
 	if err != nil {
@@ -148,6 +157,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	return &Server{
 		cfg:              cfg,
+		db:               db,
 		lndServices:      lndServices,
 		AuctioneerClient: auctioneerClient,
 		GetIdentity:      getIdentity,
@@ -160,11 +170,7 @@ func (s *Server) Start() error {
 	var err error
 
 	// Instantiate the agorad gRPC server.
-	networkDir := filepath.Join(s.cfg.BaseDir, s.cfg.Network)
-	s.traderServer, err = newRPCServer(s, networkDir)
-	if err != nil {
-		return err
-	}
+	s.traderServer = newRPCServer(s)
 
 	serverOpts := []grpc.ServerOption{}
 	s.grpcServer = grpc.NewServer(serverOpts...)
@@ -257,6 +263,9 @@ func (s *Server) Stop() error {
 		if err != nil {
 			log.Errorf("Error shutting down REST proxy: %v", err)
 		}
+	}
+	if err := s.db.Close(); err != nil {
+		log.Errorf("Error closing DB: %v", err)
 	}
 	s.lndServices.Close()
 	s.wg.Wait()

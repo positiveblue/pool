@@ -16,9 +16,11 @@ type batchStorer struct {
 	getAccount func(*btcec.PublicKey) (*account.Account, error)
 }
 
-// Store makes sure all changes executed by a batch are correctly and atomically
-// stored to the database. It is assumed that the batch has previously been
-// fully validated and that all diffs contained are consistent!
+// StorePendingBatch makes sure all changes executed by a batch are correctly
+// and atomically staged to the database. It is assumed that the batch has
+// previously been fully validated and that all diffs contained are consistent!
+// Once the batch has been finalized/confirmed on-chain, then the stage
+// modifications will be applied atomically as a result of MarkBatchComplete.
 //
 // NOTE: This method is part of the BatchStorer interface.
 func (s *batchStorer) StorePendingBatch(batch *Batch) error {
@@ -113,14 +115,15 @@ func (s *batchStorer) StorePendingBatch(batch *Batch) error {
 
 	// Everything is ready to be persisted now.
 	return s.orderStore.StorePendingBatch(
-		batch.ID, orders, orderModifiers, accounts, accountModifiers,
+		batch.ID, batch.BatchTX, orders, orderModifiers, accounts,
+		accountModifiers,
 	)
 }
 
 // MarkBatchComplete marks a pending batch as complete, allowing a trader to
 // participate in a new batch.
-func (s *batchStorer) MarkBatchComplete(id BatchID) error {
-	return s.orderStore.MarkBatchComplete(id)
+func (s *batchStorer) MarkBatchComplete() error {
+	return s.orderStore.MarkBatchComplete()
 }
 
 // A compile-time constraint to ensure batchStorer implements BatchStorer.

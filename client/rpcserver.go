@@ -42,7 +42,6 @@ type rpcServer struct {
 	server         *Server
 	lndServices    *lndclient.LndServices
 	auctioneer     *auctioneer.Client
-	db             *clientdb.DB
 	accountManager *account.Manager
 	orderManager   *order.Manager
 
@@ -51,24 +50,31 @@ type rpcServer struct {
 	blockNtfnCancel func()
 }
 
+// accountStore is a clientdb.DB wrapper to implement the account.Store
+// interface.
+type accountStore struct {
+	*clientdb.DB
+}
+
+var _ account.Store = (*accountStore)(nil)
+
+func (s *accountStore) PendingBatch() error {
+	_, _, err := s.DB.PendingBatch()
+	return err
+}
+
 // newRPCServer creates a new client-side RPC server that uses the given
 // connection to the trader's lnd node and the auction server. A client side
 // database is created in `serverDir` if it does not yet exist.
-func newRPCServer(server *Server, serverDir string) (*rpcServer, error) {
-
-	db, err := clientdb.New(serverDir)
-	if err != nil {
-		return nil, err
-	}
-
+func newRPCServer(server *Server) *rpcServer {
+	accountStore := &accountStore{server.db}
 	lnd := &server.lndServices.LndServices
 	return &rpcServer{
 		server:      server,
 		lndServices: lnd,
 		auctioneer:  server.AuctioneerClient,
-		db:          db,
 		accountManager: account.NewManager(&account.ManagerConfig{
-			Store:         db,
+			Store:         accountStore,
 			Auctioneer:    server.AuctioneerClient,
 			Wallet:        lnd.WalletKit,
 			Signer:        lnd.Signer,
@@ -76,14 +82,14 @@ func newRPCServer(server *Server, serverDir string) (*rpcServer, error) {
 			TxSource:      lnd.Client,
 		}),
 		orderManager: order.NewManager(&order.ManagerConfig{
-			Store:     db,
-			AcctStore: db,
+			Store:     server.db,
+			AcctStore: accountStore,
 			Lightning: lnd.Client,
 			Wallet:    lnd.WalletKit,
 			Signer:    lnd.Signer,
 		}),
 		quit: make(chan struct{}),
-	}, nil
+	}
 }
 
 // Start starts the rpcServer, making it ready to accept incoming requests.
@@ -158,12 +164,7 @@ func (s *rpcServer) Stop() error {
 	log.Info("Trader server stopping")
 	s.accountManager.Stop()
 	s.orderManager.Stop()
-	err := s.db.Close()
-	if err != nil {
-		log.Errorf("Error closing DB: %v")
-	}
-	err = s.auctioneer.Stop()
-	if err != nil {
+	if err := s.auctioneer.Stop(); err != nil {
 		log.Errorf("Error closing server stream: %v")
 	}
 
@@ -328,7 +329,7 @@ func (s *rpcServer) InitAccount(ctx context.Context,
 func (s *rpcServer) ListAccounts(ctx context.Context,
 	req *clmrpc.ListAccountsRequest) (*clmrpc.ListAccountsResponse, error) {
 
-	accounts, err := s.db.Accounts()
+	accounts, err := s.server.db.Accounts()
 	if err != nil {
 		return nil, err
 	}
@@ -470,7 +471,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	}
 
 	// Verify that the account exists.
-	acct, err := s.db.Account(o.Details().AcctKey)
+	acct, err := s.server.db.Account(o.Details().AcctKey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot accept order: %v", err)
 	}
@@ -488,7 +489,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	err = s.auctioneer.SubmitOrder(ctx, o, serverParams)
 	if err != nil {
 		// TODO(guggero): Put in state failed instead of removing?
-		if err2 := s.db.DelOrder(o.Nonce()); err2 != nil {
+		if err2 := s.server.db.DelOrder(o.Nonce()); err2 != nil {
 			log.Errorf("Could not delete failed order: %v", err2)
 		}
 
@@ -524,7 +525,7 @@ func (s *rpcServer) ListOrders(ctx context.Context, _ *clmrpc.ListOrdersRequest)
 	*clmrpc.ListOrdersResponse, error) {
 
 	// Get all orders from our local store first.
-	dbOrders, err := s.db.GetOrders()
+	dbOrders, err := s.server.db.GetOrders()
 	if err != nil {
 		return nil, err
 	}
