@@ -159,7 +159,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 
 			modifiers = append(
 				modifiers,
-				account.StateModifier(account.StatePendingOpen),
+				account.StateModifier(account.StatePendingUpdate),
 				account.OutPointModifier(wire.OutPoint{
 					Index: uint32(outpointIndex),
 					Hash:  batchTxHash,
