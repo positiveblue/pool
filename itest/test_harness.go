@@ -311,7 +311,7 @@ func assertTxInBlock(t *harnessTest, block *wire.MsgBlock,
 // node blockchain. numTxs should be set to the number of transactions
 // (excluding the coinbase) we expect to be included in the first mined block.
 func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
-	num uint32, numTxs int) []*wire.MsgBlock {
+	num uint32, numTxs int) []*wire.MsgBlock { // nolint:unparam
 
 	// If we expect transactions to be included in the blocks we'll mine,
 	// we wait here until they are seen in the miner's mempool.
@@ -351,6 +351,43 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 	return blocks
 }
 
+// assertTraderAccount asserts that the account with the corresponding trader
+// key is found in the given state.
+func assertTraderAccount(t *harnessTest, traderKey []byte, value btcutil.Amount,
+	state clmrpc.AccountState) {
+
+	ctx := context.Background()
+	err := wait.NoError(func() error {
+		list, err := t.trader.ListAccounts(
+			ctx, &clmrpc.ListAccountsRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("unable to retrieve accounts: %v", err)
+		}
+
+		for _, a := range list.Accounts {
+			if !bytes.Equal(a.TraderKey, traderKey) {
+				continue
+			}
+			if btcutil.Amount(a.Value) != value {
+				return fmt.Errorf("expected account value %v, "+
+					"got %v", value, btcutil.Amount(a.Value))
+			}
+			if a.State != state {
+				return fmt.Errorf("expected account state %v, "+
+					"got %v", state, a.State)
+			}
+
+			return nil
+		}
+
+		return errors.New("account not found")
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
 // assertTraderAccountState asserts that the account with the corresponding
 // trader key is found in the given state from the PoV of the trader.
 func assertTraderAccountState(t *testing.T, trader *traderHarness,
@@ -370,14 +407,47 @@ func assertTraderAccountState(t *testing.T, trader *traderHarness,
 				continue
 			}
 			if a.State != state {
-				return fmt.Errorf("expected account "+
-					"state %v, got %v", state, a.State)
+				return fmt.Errorf("expected account state %v, "+
+					"got %v", state, a.State)
 			}
 
 			return nil
 		}
 
 		return errors.New("account not found")
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
+// assertAuctioneerAccount asserts that the account with the corresponding
+// trader key is found in the given state from the PoV of the auctioneer.
+func assertAuctioneerAccount(t *harnessTest, rawTraderKey []byte,
+	value btcutil.Amount, state auctioneerAccount.State) {
+
+	traderKey, err := btcec.ParsePubKey(rawTraderKey, btcec.S256())
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+
+	ctx := context.Background()
+	err = wait.NoError(func() error {
+		account, err := t.auctioneer.store.Account(ctx, traderKey, true)
+		if err != nil {
+			return fmt.Errorf("unable to retrieve account: %v", err)
+		}
+
+		if account.Value != value {
+			return fmt.Errorf("expected account value %v, got %v",
+				value, account.Value)
+		}
+		if account.State != state {
+			return fmt.Errorf("expected account state %v, got %v",
+				state, account.State)
+		}
+
+		return nil
 	}, defaultWaitTimeout)
 	if err != nil {
 		t.Fatalf(err.Error())
