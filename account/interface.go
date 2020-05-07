@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"math/big"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -222,6 +223,39 @@ func (a *Account) NextOutputScript() ([]byte, error) {
 		a.Expiry, traderKey, a.AuctioneerKey.PubKey, nextBatchKey,
 		a.Secret,
 	)
+}
+
+// Copy returns a deep copy of the account with the given modifiers applied.
+func (a *Account) Copy(modifiers ...Modifier) *Account {
+	accountCopy := &Account{
+		TokenID:      a.TokenID,
+		Value:        a.Value,
+		Expiry:       a.Expiry,
+		TraderKeyRaw: a.TraderKeyRaw,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			KeyLocator: a.AuctioneerKey.KeyLocator,
+			PubKey: &btcec.PublicKey{
+				X:     big.NewInt(0).Set(a.AuctioneerKey.PubKey.X),
+				Y:     big.NewInt(0).Set(a.AuctioneerKey.PubKey.Y),
+				Curve: a.AuctioneerKey.PubKey.Curve,
+			},
+		},
+		BatchKey: &btcec.PublicKey{
+			X:     big.NewInt(0).Set(a.BatchKey.X),
+			Y:     big.NewInt(0).Set(a.BatchKey.Y),
+			Curve: a.BatchKey.Curve,
+		},
+		Secret:     a.Secret,
+		State:      a.State,
+		HeightHint: a.HeightHint,
+		OutPoint:   a.OutPoint,
+	}
+
+	for _, modifier := range modifiers {
+		modifier(accountCopy)
+	}
+
+	return accountCopy
 }
 
 // Modifier abstracts the modification of an account through a function.
