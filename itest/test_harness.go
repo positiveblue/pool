@@ -396,7 +396,7 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 
 	ctx := context.Background()
 	err = wait.NoError(func() error {
-		account, err := t.auctioneer.store.Account(ctx, traderKey)
+		account, err := t.auctioneer.store.Account(ctx, traderKey, true)
 		if err != nil {
 			return fmt.Errorf("unable to retrieve account: %v", err)
 		}

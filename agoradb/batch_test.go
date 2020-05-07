@@ -162,7 +162,7 @@ func TestPersistBatchResult(t *testing.T) {
 
 	// And finally validate that all changes have been written correctly.
 	// Start with the account.
-	a2, err := store.Account(ctx, traderKey)
+	a2, err := store.Account(ctx, traderKey, false)
 	if err != nil {
 		t.Fatalf("error getting account: %v", err)
 	}

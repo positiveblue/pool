@@ -18,6 +18,10 @@ var (
 	// ErrNoReservation is an error returned when we attempt to look up a
 	// reservation but one does not exist.
 	ErrNoReservation = errors.New("no reservation found")
+
+	// ErrNoDiff is an error returned when we attempt to retrieve a staged
+	// diff for an account but it is not found.
+	ErrNoDiff = errors.New("no account diff found")
 )
 
 // Reservation contains information about the different keys required for to
@@ -317,8 +321,24 @@ type Store interface {
 	// modifiers.
 	UpdateAccount(context.Context, *Account, ...Modifier) error
 
+	// StoreAccountDiff stores a pending set of updates that should be
+	// applied to an account after an invocation of CommitAccountDiff.
+	//
+	// In contrast to UpdateAccount, this should be used whenever we need to
+	// stage a pending update of the account that will be committed at some
+	// later point.
+	StoreAccountDiff(context.Context, *btcec.PublicKey, []Modifier) error
+
+	// CommitAccountDiff commits the stored pending set of updates for an
+	// account after a successful modification. If a diff does not exist,
+	// account.ErrNoDiff is returned.
+	CommitAccountDiff(context.Context, *btcec.PublicKey) error
+
 	// Account retrieves the account associated with the given trader key.
-	Account(context.Context, *btcec.PublicKey) (*Account, error)
+	// The boolean indicates whether the account's diff should be returned
+	// instead. If a diff does not exist, then the existing account state is
+	// returned.
+	Account(context.Context, *btcec.PublicKey, bool) (*Account, error)
 
 	// Accounts retrieves all existing accounts.
 	Accounts(context.Context) ([]*Account, error)

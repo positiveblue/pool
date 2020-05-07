@@ -195,7 +195,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		balanceNeeded = orderFee + b.cfg.SubmitFee
 	}
 
-	acct, err := b.cfg.Store.Account(ctx, srvOrder.Details().AcctKey)
+	acct, err := b.cfg.Store.Account(ctx, srvOrder.Details().AcctKey, false)
 	if err != nil {
 		return fmt.Errorf("unable to locate account with key %x: %v",
 			srvOrder.Details().AcctKey.SerializeCompressed(), err)

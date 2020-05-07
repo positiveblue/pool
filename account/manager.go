@@ -401,7 +401,7 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	confDetails *chainntnfs.TxConfirmation) error {
 
 	ctx := context.Background()
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
 	}
@@ -457,7 +457,7 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	spendDetails *chainntnfs.SpendDetail) error {
 
 	ctx := context.Background()
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
 	}
@@ -513,7 +513,7 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 	//
 	// TODO(wilmer): Cancel any remaining active orders at this point?
 	ctx := context.Background()
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
 	}
@@ -545,7 +545,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	newInputs []*wire.TxIn, newOutputs []*wire.TxOut, newParams *Parameters,
 	bestHeight uint32) ([]byte, error) {
 
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return nil, err
 	}

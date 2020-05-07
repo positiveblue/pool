@@ -736,7 +736,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 		// The signature is valid, we can now fetch the account from the
 		// store.
-		acct, err := s.store.Account(stream.Context(), acctPubKey)
+		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
 			comms.err <- fmt.Errorf("error reading account: %v",
 				err)
@@ -1115,7 +1115,7 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	}
 
 	// Make sure the referenced account exists.
-	_, err = s.store.Account(ctx, clientKit.AcctKey)
+	_, err = s.store.Account(ctx, clientKit.AcctKey, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)
 	}
