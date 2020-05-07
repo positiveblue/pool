@@ -2,8 +2,13 @@ package itest
 
 import (
 	"bytes"
+	"context"
 
+	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcd/txscript"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightningnetwork/lnd/lnrpc"
 )
 
 const (
@@ -13,6 +18,8 @@ const (
 // testAccountCreation tests that the trader can successfully create an account
 // on-chain and close it.
 func testAccountCreation(t *harnessTest) {
+	ctx := context.Background()
+
 	// We need the current best block for the account expiry.
 	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
 	if err != nil {
@@ -29,13 +36,21 @@ func testAccountCreation(t *harnessTest) {
 	// Proceed to close it to a custom output where half of the account
 	// value goes towards it and the rest towards fees.
 	const outputValue = defaultAccountValue / 2
-	outputScript := traderOutputScript(t, t.lndHarness.Bob)
+	ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+	resp, err := t.trader.cfg.LndNode.NewAddress(ctxt, &lnrpc.NewAddressRequest{
+		Type: lnrpc.AddressType_WITNESS_PUBKEY_HASH,
+	})
+	if err != nil {
+		t.Fatalf("could not create new address: %v", err)
+	}
+	closeAddr := resp.Address
 	closeTx := closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
 		Outputs: []*clmrpc.Output{
 			{
-				Value:  outputValue,
-				Script: outputScript,
+				Value:   outputValue,
+				Address: closeAddr,
 			},
 		},
 	})
@@ -48,6 +63,14 @@ func testAccountCreation(t *harnessTest) {
 	if closeTx.TxOut[0].Value != int64(outputValue) {
 		t.Fatalf("expected output value %v, found %v", outputValue,
 			closeTx.TxOut[0].Value)
+	}
+	addr, err := btcutil.DecodeAddress(closeAddr, &chaincfg.MainNetParams)
+	if err != nil {
+		t.Fatalf("unable to decode address %v: %v", closeAddr, err)
+	}
+	outputScript, err := txscript.PayToAddrScript(addr)
+	if err != nil {
+		t.Fatalf("unable to construct output script: %v", err)
 	}
 	if !bytes.Equal(closeTx.TxOut[0].PkScript, outputScript) {
 		t.Fatalf("expected output script %x, found %x", outputScript,
