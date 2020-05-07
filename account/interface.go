@@ -102,8 +102,8 @@ const (
 
 // Parameters are the parameters submitted by a trader for an account.
 type Parameters struct {
-	// Value is the value of the account reflected in on-chain output that
-	// backs the existence of an account.
+	// Value is the value of the account reflected in the on-chain output
+	// that backs the existence of an account.
 	Value btcutil.Amount
 
 	// Script is the script of the initial account output that backs the

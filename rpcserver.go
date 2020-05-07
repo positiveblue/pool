@@ -319,16 +319,17 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 		}
 	}
 
-	var newAccountParams *account.Parameters
-	if req.NewAccount != nil {
-		newAccountParams, err = parseRPCAccountParams(req.NewAccount)
-		if err != nil {
-			return nil, err
+	var modifiers []account.Modifier
+	if req.NewParams != nil {
+		if req.NewParams.Value != 0 {
+			value := btcutil.Amount(req.NewParams.Value)
+			m := account.ValueModifier(value)
+			modifiers = append(modifiers, m)
 		}
 	}
 
 	accountSig, err := s.accountManager.ModifyAccount(
-		ctx, traderKey, newInputs, newOutputs, newAccountParams,
+		ctx, traderKey, newInputs, newOutputs, modifiers,
 		s.bestHeight(),
 	)
 	if err != nil {
