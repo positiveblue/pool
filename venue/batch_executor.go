@@ -48,6 +48,10 @@ type PrepareMsg struct {
 	// batch.
 	ChargedAccounts []matching.AccountDiff
 
+	// AccountOutPoint is the new outpoint of user's account on the new
+	// batch execution transaction.
+	AccountOutPoint wire.OutPoint
+
 	// ExecutionFee describes the execution fee used to craft this batch.
 	ExecutionFee orderT.FeeSchedule
 

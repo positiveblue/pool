@@ -3,17 +3,32 @@ package agoradb
 import (
 	"bytes"
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmscript"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/matching"
+)
+
+var (
+	batchTx = &wire.MsgTx{
+		Version: 2,
+		TxIn: []*wire.TxIn{
+			{
+				PreviousOutPoint: wire.OutPoint{
+					Index: 5,
+				},
+			},
+		},
+	}
 )
 
 // TestBatchKey tests the different database operations that can be performed on
@@ -71,13 +86,14 @@ func TestPersistBatchResult(t *testing.T) {
 	// First test the basic sanity tests that are performed.
 	err := store.PersistBatchResult(
 		ctx, []orderT.Nonce{{}}, nil, nil, nil, nil, batchID, nil, nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "order modifier") {
 		t.Fatalf("expected order modifier length mismatch, got %v", err)
 	}
 	err = store.PersistBatchResult(
 		ctx, nil, nil, []*btcec.PublicKey{{}}, nil, nil, batchID, nil,
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "account modifier") {
 		t.Fatalf("expected account modifier length mismatch, got %v",
@@ -138,6 +154,7 @@ func TestPersistBatchResult(t *testing.T) {
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{traderKey}, accountModifiers,
 		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
+		batchTx,
 	)
 	if err != nil {
 		t.Fatalf("error persisting batch result: %v", err)
@@ -176,6 +193,30 @@ func TestPersistBatchResult(t *testing.T) {
 	if !bytes.Equal(ma2.BatchKey[:], testTraderKey.SerializeCompressed()) {
 		t.Fatalf("unexpected batch key, got %x wanted %x", ma2.BatchKey,
 			testTraderKey.SerializeCompressed())
+	}
+
+	// If we query for the batch as is now, we should find that it isn't
+	// marked as "confirmed".
+	isConf, err := store.BatchConfirmed(ctx, batchID)
+	if err != nil {
+		t.Fatalf("unable to look up batch confirmation status: %v", err)
+	}
+
+	if isConf {
+		t.Fatalf("batch shouldn't be marked as confirmed yet")
+	}
+
+	// We'll now mark the batch as confirmed, then requery for its status,
+	// we should find that the batch has been marked as confirmed.
+	if err := store.ConfirmBatch(ctx, batchID); err != nil {
+		t.Fatalf("unable to mark batch as confirmed: %v", err)
+	}
+	isConf, err = store.BatchConfirmed(ctx, batchID)
+	if err != nil {
+		t.Fatalf("unable to look up batch confirmation status: %v", err)
+	}
+	if !isConf {
+		t.Fatalf("batch should be marked as confirmed")
 	}
 }
 
@@ -232,7 +273,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{traderKey}, accountModifiers,
-		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
+		ma1, batchID, &matching.OrderBatch{}, testTraderKey, batchTx,
 	)
 	if err == nil {
 		t.Fatal("expected error persisting batch result, got nil")
@@ -375,11 +416,11 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	// Store the snapshot and then read it back again immediately.
 	var batchID orderT.BatchID
 	copy(batchID[:], initialBatchKeyBytes)
-	err := store.PersistBatchSnapshot(ctx, batchID, batch)
+	err := store.PersistBatchSnapshot(ctx, batchID, batch, batchTx)
 	if err != nil {
 		t.Fatalf("could not store batch snapshot: %v", err)
 	}
-	dbBatch, err := store.GetBatchSnapshot(ctx, batchID)
+	dbBatch, dbBatchTx, err := store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		t.Fatalf("could not read batch snapshot: %v", err)
 	}
@@ -388,6 +429,13 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	// here because our batch contains orders which have net.Addr fields
 	// that aren't reflect.DeepEqual compatible.
 	assertJSONDeepEqual(t, batch, dbBatch)
+
+	// We'll also ensure that we get the exact same batch transaction as
+	// well.
+	if reflect.DeepEqual(dbBatchTx, batchTx) {
+		t.Fatalf("batch tx mismatch: expected %v, got %v",
+			spew.Sdump(dbBatchTx), spew.Sdump(batchTx))
+	}
 }
 
 func toRawKey(pubkey *btcec.PublicKey) [33]byte {

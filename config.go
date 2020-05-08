@@ -72,6 +72,17 @@ const (
 	// defaultMsgTimeout is the default amount of time that we'll wait for
 	// a trader to send us an expected batch execution message.
 	defaultMsgTimeout = time.Second * 10
+
+	// defaultBatchTickInterval is the default amount of time we'll wait
+	// between attempts to create a new batch.
+	defaultBatchTickInterval = time.Minute * 10
+
+	// defaultFeeRatePerMillionths is the default fee rate used for the
+	// system. This ends up being 10 bps, or 0.001, or 0.1%.
+	defaultFeeRatePerMillionths = 10000
+
+	// defaultBaseFee is the base fee we apply for all orders executed.
+	defaultBaseFee = 1
 )
 
 var (

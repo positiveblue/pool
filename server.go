@@ -18,9 +18,11 @@ import (
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue"
+	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd/ticker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -131,10 +133,12 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// With our logging set up, we'll now establish our initial connection
 	// to the backing lnd instance.
-	lnd, err := lndclient.NewLndServices(
-		cfg.Lnd.Host, cfg.Network, cfg.Lnd.MacaroonDir,
-		cfg.Lnd.TLSPath,
-	)
+	lnd, err := lndclient.NewLndServices(&lndclient.LndServicesConfig{
+		LndAddress:  cfg.Lnd.Host,
+		Network:     cfg.Network,
+		MacaroonDir: cfg.Lnd.MacaroonDir,
+		TLSPath:     cfg.Lnd.TLSPath,
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -177,16 +181,17 @@ func NewServer(cfg *Config) (*Server, error) {
 		venue.NewExeBatchStorer(store),
 	)
 
+	orderBook := order.NewBook(&order.BookConfig{
+		Store:     store,
+		Signer:    lnd.Signer,
+		SubmitFee: btcutil.Amount(cfg.OrderSubmitFee),
+	})
 	server := &Server{
 		lnd:            lnd,
 		store:          store,
 		accountManager: accountManager,
-		orderBook: order.NewBook(&order.BookConfig{
-			Store:     store,
-			Signer:    lnd.Signer,
-			SubmitFee: btcutil.Amount(cfg.OrderSubmitFee),
-		}),
-		batchExecutor: batchExecutor,
+		orderBook:      orderBook,
+		batchExecutor:  batchExecutor,
 		auctioneer: NewAuctioneer(AuctioneerConfig{
 			DB: &auctioneerStore{
 				EtcdStore: store,
@@ -197,6 +202,16 @@ func NewServer(cfg *Config) (*Server, error) {
 				LightningClient: lnd.Client,
 			},
 			StartingAcctValue: 1_000_000,
+			BatchTicker:       ticker.NewForce(defaultBatchTickInterval),
+			CallMarket: matching.NewUniformPriceCallMarket(
+				&matching.LastAcceptedBid{},
+				orderT.NewLinearFeeSchedule(
+					defaultBaseFee,
+					defaultFeeRatePerMillionths,
+				),
+			),
+			OrderFeed:     orderBook,
+			BatchExecutor: batchExecutor,
 		}),
 		channelEnforcer: chanenforcement.New(&chanenforcement.Config{
 			ChainNotifier: lnd.ChainNotifier,

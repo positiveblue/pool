@@ -9,7 +9,23 @@ import (
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightningnetwork/lnd/subscribe"
 )
+
+// NewOrderUpdate is an update sent each time a new order has been added.
+type NewOrderUpdate struct {
+	// Order is the order that was added.
+	Order ServerOrder
+}
+
+// CancelledOrderUpdate is an order sent each time an order has been cancelled.
+type CancelledOrderUpdate struct {
+	// Ask indicates if this order was an ask or not.
+	Ask bool
+
+	// Nonce is the nonce of the order that was cancelled.
+	Nonce order.Nonce
+}
 
 // BookStore is the store interface that the order book needs. We need to be
 // able to retrieve accounts as well therefore the order store is not enough.
@@ -41,6 +57,8 @@ type Book struct {
 
 	cfg BookConfig
 
+	ntfnServer *subscribe.Server
+
 	wg   sync.WaitGroup
 	quit chan struct{}
 }
@@ -48,24 +66,32 @@ type Book struct {
 // NewBook instantiates a new Book backed by the given config.
 func NewBook(cfg *BookConfig) *Book {
 	return &Book{
-		cfg:  *cfg,
-		quit: make(chan struct{}),
+		ntfnServer: subscribe.NewServer(),
+		cfg:        *cfg,
+		quit:       make(chan struct{}),
 	}
 }
 
 // Start starts all concurrent tasks the manager is responsible for.
 func (b *Book) Start() error {
-	var err error
+	var startErr error
 	b.started.Do(func() {
 		// TODO(guggero): implement once order book is no longer
 		//  stateless.
+
+		if err := b.ntfnServer.Start(); err != nil {
+			startErr = err
+			return
+		}
 	})
-	return err
+	return startErr
 }
 
 // Stop stops all concurrent tasks the manager is responsible for.
 func (b *Book) Stop() {
 	b.stopped.Do(func() {
+		_ = b.ntfnServer.Stop()
+
 		close(b.quit)
 		b.wg.Wait()
 	})
@@ -78,7 +104,18 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder) error {
 		return err
 	}
 
-	return b.cfg.Store.SubmitOrder(ctx, o)
+	err = b.cfg.Store.SubmitOrder(ctx, o)
+	if err != nil {
+		return err
+	}
+
+	if err := b.ntfnServer.SendUpdate(&NewOrderUpdate{
+		Order: o,
+	}); err != nil {
+		log.Errorf("unable to send order update: %v", err)
+	}
+
+	return nil
 }
 
 // CancelOrder sets an order's state to canceled if it has not yet been
@@ -94,9 +131,22 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 			"'submitted'")
 	}
 
-	return b.cfg.Store.UpdateOrder(
+	err = b.cfg.Store.UpdateOrder(
 		ctx, o.Nonce(), StateModifier(order.StateCanceled),
 	)
+	if err != nil {
+		return err
+	}
+
+	_, isAsk := o.(*Ask)
+	if err := b.ntfnServer.SendUpdate(&CancelledOrderUpdate{
+		Ask:   isAsk,
+		Nonce: nonce,
+	}); err != nil {
+		log.Errorf("unable to send order update: %v", err)
+	}
+
+	return err
 }
 
 // validateOrder makes sure the order is formally correct, has a correct
@@ -159,4 +209,10 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	srvOrder.ServerDetails().Acct = acct
 
 	return nil
+}
+
+// Subscribe returns a new subscription to the order book. Client will receive
+// events each time an order is added, or cancelled.
+func (b *Book) Subscribe() (*subscribe.Client, error) {
+	return b.ntfnServer.Subscribe()
 }

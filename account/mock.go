@@ -226,7 +226,7 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		return nil, err
 	}
 
-	return [][]byte{sig}, nil
+	return [][]byte{sig.Serialize()}, nil
 }
 
 func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,

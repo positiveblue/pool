@@ -41,16 +41,43 @@ const (
 	// OrderSubmitState is the state the client is in once they have an
 	// active and valid account. During this phase the client is free to
 	// submit new orders and modify any existing orders.
+	//
+	// The possible transitions from this state are:
+	//     * OrderSubmitState -> OrderSubmitState (tick but no market)
+	//     * OrderSubmitState -> MatchMakingState (tick and market)
 	OrderSubmitState
 
-	// BatchClearingState is the phase the auction enters once the
-	// OrderSubmitState has ended, and the auctioneer is able to make a
+	// MatchMakingState is the state we enter into when we're attempting to
+	// make anew market. From this state, we'll either go to execute the
+	// market, or possibly go back to the OrderSubmitState if there're no
+	// orders that actually make a market.
+	//
+	// The possible transitions from this state are:
+	//     * MatchMakingState -> OrderSubmitState (fail to make market)
+	//     * MatchMakingState -> BatchExecutionState (market made)
+	MatchMakingState
+
+	// BatchExecutionState is the phase the auction enters once the
+	// MatchMakingState has ended, and the auctioneer is able to make a
 	// market. During this phase, the auctioneer enters into an interactive
 	// protocol with each active trader which is a part of this batch to
 	// sign relevant inputs for the funding transaction, and also to carry
 	// out the normal funding flow process so they receive valid commitment
 	// transactions.
-	BatchClearingState
+	//
+	// The possible transitions from this state are:
+	//     * BatchClearingState -> MatchMakingState (execution fail)
+	//     * BatchClearingState -> BatchClearingState
+	BatchExecutionState
+
+	// BatchCommitState is the final phase of an auction. In this state,
+	// we'll "commit" the batch by broadcasting the batch execution
+	// transaction. As multiple pending batches can exist, once this batch
+	// is confirmed, it'll be marked as finalized on disk.
+	//
+	// The possible transitions from this state are:
+	//     * BatchCommitState -> OrderSubmitState
+	BatchCommitState
 )
 
 // String returns the string representation of the target AuctionState.
@@ -71,8 +98,14 @@ func (a AuctionState) String() string {
 	case OrderSubmitState:
 		return "OrderSubmitState"
 
-	case BatchClearingState:
-		return "BatchClearingState"
+	case MatchMakingState:
+		return "MatchMakingState"
+
+	case BatchExecutionState:
+		return "BatchExecutionState"
+
+	case BatchCommitState:
+		return "BatchCommitState"
 
 	default:
 		return fmt.Sprintf("<unknownState(%v)>", uint32(a))
@@ -94,6 +127,10 @@ const (
 	// ConfirmationEvent is an event sent when a transaction that we're
 	// waiting on confirms.
 	ConfirmationEvent
+
+	// BatchTickEvent is an event that fires once our batch auction
+	// interval has passed.
+	BatchTickEvent
 )
 
 // EventTrigger is an interface which wraps a new AuctionEvent along side some
@@ -137,4 +174,15 @@ type masterAcctReady struct {
 // NOTE: This method is part of the EventTrigger interface.
 func (n *masterAcctReady) Trigger() AuctionEvent {
 	return ConfirmationEvent
+}
+
+// batchIntervalEvent is fired once the batch ticker fires, meaning we should
+// try to make a new market.
+type batchIntervalEvent struct{}
+
+// Trigger returns the AuctionEvent which trigged this event.
+//
+// NOTE: This method is part of the EventTrigger interface.
+func (b *batchIntervalEvent) Trigger() AuctionEvent {
+	return BatchTickEvent
 }
