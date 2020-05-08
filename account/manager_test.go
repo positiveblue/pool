@@ -369,7 +369,7 @@ func TestAccountConfirmsAtExpiry(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to generate account output: %v", err)
 	}
-	h.confirmAccount(account, false, &chainntnfs.TxConfirmation{
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
 		BlockHeight: account.Expiry,
 		Tx: &wire.MsgTx{
 			Version: 2,
@@ -473,6 +473,7 @@ func TestAccountMultiSigSpend(t *testing.T) {
 func TestAccountSpendRecreatesOutput(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
 	h := newTestHarness(t)
 	h.start()
 	defer h.stop()
@@ -497,6 +498,10 @@ func TestAccountSpendRecreatesOutput(t *testing.T) {
 	nextAccountScript, err := account.NextOutputScript()
 	if err != nil {
 		t.Fatalf("unable to generate next account output: %v", err)
+	}
+	err = h.store.UpdateAccount(ctx, account, IncrementBatchKey())
+	if err != nil {
+		t.Fatalf("unable to update account: %v", err)
 	}
 	h.spendAccount(account, StateOpen, &chainntnfs.SpendDetail{
 		SpendingTx: &wire.MsgTx{
