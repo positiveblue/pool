@@ -555,9 +555,13 @@ func (s *rpcServer) SubscribeBatchAuction(
 
 		// The server is shutting down.
 		case <-s.quit:
+			errCode := clmrpc.SubscribeError_SERVER_SHUTDOWN
 			err := stream.Send(&clmrpc.ServerAuctionMessage{
-				Msg: &clmrpc.ServerAuctionMessage_Shutdown{
-					Shutdown: &clmrpc.ServerShutdown{},
+				Msg: &clmrpc.ServerAuctionMessage_Error{
+					Error: &clmrpc.SubscribeError{
+						Error:     "server shutting down",
+						ErrorCode: errCode,
+					},
 				},
 			})
 			if err != nil {
