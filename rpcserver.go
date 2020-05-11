@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -520,6 +521,25 @@ func (s *rpcServer) SubscribeBatchAuction(
 					"subscription: %v", err)
 			}
 
+			// Now that we know everything checks out, send an
+			// acknowledgement message back to the trader. This is
+			// needed so we always send a response to the trader,
+			// both if the account exists and if it doesn't. This is
+			// useful for the recovery so the trader knows
+			// immediately if they can send the request to recover
+			// that account or not.
+			err = stream.Send(&clmrpc.ServerAuctionMessage{
+				Msg: &clmrpc.ServerAuctionMessage_Success{
+					Success: &clmrpc.SubscribeSuccess{
+						TraderKey: newSub.AccountKey[:],
+					},
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("error sending success: %v",
+					err)
+			}
+
 		// Message from the trader to the batch executor.
 		case toServerMsg := <-trader.comms.toServer:
 			err := s.batchExecutor.HandleTraderMsg(toServerMsg)
@@ -545,6 +565,33 @@ func (s *rpcServer) SubscribeBatchAuction(
 		// An error happened anywhere in the process, we need to abort
 		// the connection.
 		case err := <-trader.comms.err:
+			// The trader sent a valid signature for an account that
+			// we don't know of. This either means there is a gap in
+			// the account keys on the trader side because creating
+			// one or more accounts failed. Or it means the trader
+			// got to the next key after the last account key during
+			// recovery.
+			var e *agoradb.AccountNotFoundError
+			if errors.As(err, &e) {
+				errCode := clmrpc.SubscribeError_ACCOUNT_DOES_NOT_EXIST
+				err = stream.Send(&clmrpc.ServerAuctionMessage{
+					Msg: &clmrpc.ServerAuctionMessage_Error{
+						Error: &clmrpc.SubscribeError{
+							Error:     err.Error(),
+							ErrorCode: errCode,
+							TraderKey: e.AcctKey[:],
+						},
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("error sending err "+
+						"msg: %v", err)
+				}
+
+				// We don't punish or disconnect the trader.
+				continue
+			}
+
 			log.Errorf("Error in trader stream: %v", err)
 
 			trader.comms.abort()
@@ -744,11 +791,14 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		}
 
 		// The signature is valid, we can now fetch the account from the
-		// store.
+		// store. If the account does not exist, the trader might be
+		// trying to recover from a lost database state and is going
+		// through their keys to find accounts we know.
 		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
-			comms.err <- fmt.Errorf("error reading account: %v",
-				err)
+			comms.err <- &agoradb.AccountNotFoundError{
+				AcctKey: acctKey,
+			}
 			return
 		}
 
