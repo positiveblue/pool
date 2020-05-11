@@ -1,6 +1,7 @@
 package agora
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
@@ -874,10 +875,91 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			comms.toServer <- traderMsg
 		}
 
+	// The trader wants to recover their lost account. We'll only do this
+	// for accounts that are already subscribed so we can be sure it exists
+	// on our side.
+	case *clmrpc.ClientAuctionMessage_Recover:
+		var traderKey [33]byte
+		copy(traderKey[:], msg.Recover.TraderKey)
+		_, ok := trader.Subscriptions[traderKey]
+		if !ok {
+			comms.err <- fmt.Errorf("account %x not subscribed",
+				traderKey)
+			return
+		}
+
+		// Send the account info to the trader and cancel all open
+		// orders of that account in the process.
+		err := s.sendAccountRecovery(traderKey, stream)
+		if err != nil {
+			comms.err <- fmt.Errorf("could not send recovery: %v",
+				err)
+			return
+		}
+
 	default:
 		comms.err <- fmt.Errorf("unknown trader message: %v", msg)
 		return
 	}
+}
+
+// sendAccountRecovery fetches an account from the database and sends all
+// information the auctioneer has to the trader. All open/pending accounts of
+// that account will be canceled as they cannot be recovered.
+func (s *rpcServer) sendAccountRecovery(traderKey [33]byte,
+	stream clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
+
+	acctPubkey, err := btcec.ParsePubKey(traderKey[:], btcec.S256())
+	if err != nil {
+		return fmt.Errorf("could not parse account key: %v", err)
+	}
+
+	// Load the account from the store. We want to send the latest state of
+	// the account to the trader so we include any diff that's been applied
+	// to it in case a batch cleared recently but hasn't finalized yet.
+	acct, err := s.store.Account(stream.Context(), acctPubkey, true)
+	if err != nil {
+		return fmt.Errorf("could not load account: %v", err)
+	}
+
+	// Cancel all open/pending orders associated with the recovered account
+	// as the trader won't be able to recover those. The order book will
+	// inform the venue to remove the orders from consideration if they're
+	// currently being processed in a batch.
+	activeOrders, err := s.store.GetOrders(stream.Context())
+	if err != nil {
+		return fmt.Errorf("error reading orders: %v", err)
+	}
+	for _, o := range activeOrders {
+		if o.Details().AcctKey == acct.TraderKeyRaw {
+			err = s.orderBook.CancelOrder(
+				stream.Context(), o.Nonce(),
+			)
+			if err != nil {
+				return fmt.Errorf("error canceling order: "+
+					"%v", err)
+			}
+		}
+	}
+
+	// Now that we've updated all orders we can send the recovery
+	// information to the trader. If there's an error on our side here,
+	// after we've updated the orders it doesn't really matter because these
+	// orders will never become active anyway.
+	rpcAcct, err := marshallServerAccount(acct)
+	if err != nil {
+		return fmt.Errorf("error marshalling account: %v", err)
+	}
+	err = stream.Send(&clmrpc.ServerAuctionMessage{
+		Msg: &clmrpc.ServerAuctionMessage_Account{
+			Account: rpcAcct,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error sending recovery: %v", err)
+	}
+
+	return nil
 }
 
 // sendToTrader converts an internal execution message to the gRPC format and
@@ -1290,6 +1372,51 @@ func marshallAccountDiff(diff matching.AccountDiff,
 		OutpointIndex: opIdx,
 		TraderKey:     diff.StartingState.AccountKey[:],
 	}, nil
+}
+
+// marshallServerAccount translates an account.Account into its RPC counterpart.
+func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error) {
+	rpcAcct := &clmrpc.AuctionAccount{
+		Value:         uint64(acct.Value),
+		Expiry:        acct.Expiry,
+		TraderKey:     acct.TraderKeyRaw[:],
+		AuctioneerKey: acct.AuctioneerKey.PubKey.SerializeCompressed(),
+		BatchKey:      acct.BatchKey.SerializeCompressed(),
+		HeightHint:    acct.HeightHint,
+		Outpoint: &clmrpc.OutPoint{
+			Txid:        acct.OutPoint.Hash[:],
+			OutputIndex: acct.OutPoint.Index,
+		},
+	}
+
+	switch acct.State {
+	case account.StatePendingOpen:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_OPEN
+
+	case account.StateOpen:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_OPEN
+
+	case account.StateExpired:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_EXPIRED
+
+	case account.StateClosed:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_CLOSED
+
+		var buf bytes.Buffer
+		err := acct.CloseTx.Serialize(&buf)
+		if err != nil {
+			return nil, err
+		}
+		rpcAcct.CloseTx = buf.Bytes()
+
+	case account.StatePendingUpdate:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_UPDATE
+
+	default:
+		return nil, fmt.Errorf("unknown account state")
+	}
+
+	return rpcAcct, nil
 }
 
 // marshallMatchedAsk translates an order.Ask to its RPC counterpart.
