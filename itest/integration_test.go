@@ -145,35 +145,53 @@ func TestAuctioneerServer(t *testing.T) {
 	}
 
 	t.Logf("Running %v integration tests", len(testCases))
+	masterAccountConfirmed := false
 	for _, testCase := range testCases {
 		logLine := fmt.Sprintf("STARTING ============ %v ============\n",
 			testCase.name)
 
-		// The auction server and client are both freshly created and
-		// later discarded for each test run to assure no state is taken
-		// over between runs.
-		traderHarness, auctioneerHarness := setupHarnesses(
-			t, lndHarness,
-		)
-		err = lndHarness.EnsureConnected(
-			context.Background(), lndHarness.Alice, lndHarness.Bob,
-		)
-		if err != nil {
-			t.Fatalf("unable to connect alice to bob: %v", err)
-		}
-
-		if err := lndHarness.Alice.AddToLog(logLine); err != nil {
-			t.Fatalf("unable to add to log: %v", err)
-		}
-		if err := lndHarness.Bob.AddToLog(logLine); err != nil {
-			t.Fatalf("unable to add to log: %v", err)
-		}
-
 		success := t.Run(testCase.name, func(t1 *testing.T) {
+			// The auction server and client are both freshly
+			// created and later discarded for each test run to
+			// assure no state is taken over between runs.
+			traderHarness, auctioneerHarness := setupHarnesses(
+				t, lndHarness,
+			)
+			err = lndHarness.EnsureConnected(
+				context.Background(), lndHarness.Alice,
+				lndHarness.Bob,
+			)
+			if err != nil {
+				t.Fatalf("unable to connect alice to bob: %v",
+					err)
+			}
+
+			if err := lndHarness.Alice.AddToLog(logLine); err != nil {
+				t.Fatalf("unable to add to log: %v", err)
+			}
+			if err := lndHarness.Bob.AddToLog(logLine); err != nil {
+				t.Fatalf("unable to add to log: %v", err)
+			}
+
 			ht := newHarnessTest(
 				t1, lndHarness, auctioneerHarness,
 				traderHarness,
 			)
+
+			// The auctioneer will create its master account on
+			// startup. For most tests, if run on their own, we want
+			// the auctioneer to be ready before starting the test.
+			// Tests that want to explicitly test the master account
+			// creation can set this flag to true.
+			if !testCase.skipMasterAcctInit && !masterAccountConfirmed {
+				_ = mineBlocks(ht, lndHarness, 1, 1)
+				masterAccountConfirmed = true
+			}
+			if testCase.skipMasterAcctInit {
+				masterAccountConfirmed = true
+			}
+
+			// Now we have everything to run the test case.
 			ht.RunTestCase(testCase)
 
 			// Shut down both client and server to remove all state.

@@ -4,8 +4,9 @@ package itest
 
 var testCases = []*testCase{
 	{
-		name: "master acct init",
-		test: testMasterAcctInit,
+		name:               "master acct init",
+		test:               testMasterAcctInit,
+		skipMasterAcctInit: true,
 	},
 	{
 		name: "create account",
