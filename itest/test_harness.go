@@ -322,7 +322,7 @@ func assertTxInBlock(t *harnessTest, block *wire.MsgBlock,
 // node blockchain. numTxs should be set to the number of transactions
 // (excluding the coinbase) we expect to be included in the first mined block.
 func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
-	num uint32, numTxs int) []*wire.MsgBlock { // nolint:unparam
+	num uint32, numTxs int) []*wire.MsgBlock {
 
 	// If we expect transactions to be included in the blocks we'll mine,
 	// we wait here until they are seen in the miner's mempool.
