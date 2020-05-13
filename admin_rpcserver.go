@@ -6,6 +6,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/lightninglabs/agora/adminrpc"
 	"google.golang.org/grpc"
@@ -143,8 +144,7 @@ func (s *adminRPCServer) BatchTick(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
 	// Force a new bat ticker event in the main auctioneer state machine.
-	// TODO(guggero): Uncomment after #66 has landed!
-	// s.auctioneer.cfg.BatchTicker.Force <- time.Now()
+	s.auctioneer.cfg.BatchTicker.Force <- time.Now()
 
 	return &adminrpc.EmptyResponse{}, nil
 }
