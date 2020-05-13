@@ -381,6 +381,11 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 
 		defer testCtx.Stop()
 
+		testCtx.store.Accs = map[[33]byte]*account.Account{
+			bigAcct.TraderKeyRaw:   bigAcct,
+			smallAcct.TraderKeyRaw: smallAcct,
+		}
+
 		// In this test, we'll have two traders which will be a part of
 		// the batch: bigAcct, and smallAcct. However, we'll only
 		// register an active trader for the bigAcct.
@@ -428,8 +433,13 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	defer testCtx.Stop()
 
 	// Before we start, we'll also insert some initial master account state
-	// that we'll need in order to proceed.
+	// that we'll need in order to proceed, and also the on-disk state of
+	// the orders.
 	testCtx.store.MasterAcct = oldMasterAccount
+	testCtx.store.Accs = map[[33]byte]*account.Account{
+		bigAcct.TraderKeyRaw:   bigAcct,
+		smallAcct.TraderKeyRaw: smallAcct,
+	}
 
 	// We'll now register both traders as online so we're able to proceed
 	// as expected (though we may delay some messages at a point.

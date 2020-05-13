@@ -487,14 +487,24 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			return BatchTempError, env, nil
 		}
 
+		b.Lock()
+
+		// To ensure that we have a fully up to date view of the state
+		// of each of the trader's, we'll sync what we have here, with
+		// the set of traders on disk.
+		if err := b.syncTraderState(); err != nil {
+			b.Unlock()
+			return 0, env, err
+		}
+
 		// Now that we know this batch is valid, we'll populate the set
 		// of active traders in the environment so we can begin our
 		// message passing phase.
-		b.RLock()
 		for trader := range env.batch.FeeReport.AccountDiffs {
 			env.traders[trader] = b.activeTraders[trader]
 		}
-		b.RUnlock()
+
+		b.Unlock()
 
 		// Now that we know the batch is valid, we'll construct the
 		// execution context we need to push things forward, which
@@ -989,7 +999,39 @@ func (b *BatchExecutor) HandleTraderMsg(m TraderMsg) error {
 	return nil
 }
 
-// TODO(roasbeef): remaining
-//  * at client, register shim for orders if bidder
-//  * process begin sign at client (just accept, then actually send sgis)
-//  * double check msg passing between
+// syncTraderState syncs the passed state with the resulting account state
+// after the batch has been applied for all traders involved in the executed
+// batch.
+//
+// NOTE: The write lock MUST be held when calling this method.
+func (b *BatchExecutor) syncTraderState() error {
+	log.Debugf("Syncing account state for %v traders", len(b.activeTraders))
+
+	// For each active trader, we'll attempt to sync the state of our
+	// in-memory representation with the resulting state after the batch
+	// has been applied.
+	//
+	// TODO(roasbeef): optimize by only refreshing traders that were in a
+	// recent batch? for account updates send them to the executor
+	for acctID := range b.activeTraders {
+		acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
+		if err != nil {
+			return err
+		}
+		diskTraderAcct, err := b.store.Account(
+			context.Background(), acctKey, false,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Now that we have the fresh trader state from disk, we'll
+		// update our in-memory map with the latest state.
+		refreshedTrader := matching.NewTraderFromAccount(
+			diskTraderAcct,
+		)
+		b.activeTraders[acctID].Trader = &refreshedTrader
+	}
+
+	return nil
+}
