@@ -42,6 +42,7 @@ type mockStore struct {
 	reservations    map[lsat.TokenID]Reservation
 	newReservations chan *Reservation
 	accounts        map[[33]byte]Account
+	accountDiffs    map[[33]byte]Account
 }
 
 func newMockStore() *mockStore {
@@ -49,6 +50,7 @@ func newMockStore() *mockStore {
 		reservations:    make(map[lsat.TokenID]Reservation),
 		newReservations: make(chan *Reservation, 1),
 		accounts:        make(map[[33]byte]Account),
+		accountDiffs:    make(map[[33]byte]Account),
 	}
 }
 
@@ -111,14 +113,66 @@ func (s *mockStore) UpdateAccount(_ context.Context, account *Account,
 	return nil
 }
 
-func (s *mockStore) Account(_ context.Context,
-	traderKey *btcec.PublicKey) (*Account, error) {
+func (s *mockStore) StoreAccountDiff(_ context.Context,
+	traderKey *btcec.PublicKey, modifiers []Modifier) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	var accountKey [33]byte
 	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	account, ok := s.accounts[accountKey]
+	if !ok {
+		return errors.New("account not found")
+	}
+
+	for _, modifier := range modifiers {
+		modifier(&account)
+	}
+
+	s.accountDiffs[accountKey] = account
+	return nil
+}
+
+func (s *mockStore) CommitAccountDiff(_ context.Context,
+	traderKey *btcec.PublicKey) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	accountDiff, ok := s.accountDiffs[accountKey]
+	if !ok {
+		return ErrNoDiff
+	}
+
+	if _, ok := s.accounts[accountKey]; !ok {
+		return errors.New("account not found")
+	}
+
+	s.accounts[accountKey] = accountDiff
+	delete(s.accountDiffs, accountKey)
+
+	return nil
+}
+
+func (s *mockStore) Account(_ context.Context, traderKey *btcec.PublicKey,
+	includeDiff bool) (*Account, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	if includeDiff {
+		if accountDiff, ok := s.accountDiffs[accountKey]; ok {
+			return &accountDiff, nil
+		}
+	}
 
 	account, ok := s.accounts[accountKey]
 	if !ok {
@@ -146,12 +200,24 @@ func (s *mockStore) BatchKey(context.Context) (*btcec.PublicKey, error) {
 type mockWallet struct {
 	lndclient.WalletKitClient
 	lndclient.SignerClient
+
+	signer *MockSigner
+}
+
+func newMockWallet(privKey *btcec.PrivateKey) *mockWallet {
+	return &mockWallet{signer: &MockSigner{privKey}}
 }
 
 func (w *mockWallet) DeriveKey(ctx context.Context,
 	keyLocator *keychain.KeyLocator) (*keychain.KeyDescriptor, error) {
 
-	return testAuctioneerKeyDesc, nil
+	return &keychain.KeyDescriptor{
+		KeyLocator: keychain.KeyLocator{
+			Family: clmscript.AccountKeyFamily,
+			Index:  0,
+		},
+		PubKey: w.signer.PrivKey.PubKey(),
+	}, nil
 }
 
 func (w *mockWallet) DeriveSharedKey(context.Context, *btcec.PublicKey,
@@ -160,10 +226,10 @@ func (w *mockWallet) DeriveSharedKey(context.Context, *btcec.PublicKey,
 	return sharedSecret, nil
 }
 
-func (w *mockWallet) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
+func (w *mockWallet) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	signDescs []*input.SignDescriptor) ([][]byte, error) {
 
-	return [][]byte{[]byte("auctioneer sig")}, nil
+	return w.signer.SignOutputRaw(ctx, tx, signDescs)
 }
 
 type MockChainNotifier struct {
@@ -220,6 +286,10 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 			m.PrivKey,
 		},
 	}
+
+	// The mock signer relies on the public key being set in the sign
+	// descriptor, so we'll do so now.
+	signDescriptors[0].KeyDesc.PubKey = m.PrivKey.PubKey()
 
 	sig, err := s.SignOutputRaw(tx, signDescriptors[0])
 	if err != nil {

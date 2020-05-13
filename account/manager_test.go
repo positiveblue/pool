@@ -1,17 +1,22 @@
 package account
 
 import (
+	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 
@@ -33,9 +38,13 @@ type testHarness struct {
 }
 
 func newTestHarness(t *testing.T) *testHarness {
+	privKey, _ := btcec.PrivKeyFromBytes(
+		btcec.S256(), []byte{0x1, 0x3, 0x3, 0x7},
+	)
+
 	store := newMockStore()
 	notifier := NewMockChainNotifier()
-	wallet := &mockWallet{}
+	wallet := newMockWallet(privKey)
 	m, err := NewManager(&ManagerConfig{
 		Store:         store,
 		Wallet:        wallet,
@@ -85,7 +94,7 @@ func (h *testHarness) assertExistingReservation() {
 	}
 }
 
-func (h *testHarness) assertAccountExists(expected *Account) {
+func (h *testHarness) assertAccountExists(expected *Account, includeDiff bool) {
 	h.t.Helper()
 
 	ctx := context.Background()
@@ -95,13 +104,26 @@ func (h *testHarness) assertAccountExists(expected *Account) {
 			return err
 		}
 		account, err := h.manager.cfg.Store.Account(
-			ctx, traderKey,
+			ctx, traderKey, includeDiff,
 		)
 		if err != nil {
 			return err
 		}
 
 		if !reflect.DeepEqual(account, expected) {
+			// Nil the public key curves before spew to prevent
+			// extraneous output.
+			if account.traderKey != nil {
+				account.traderKey.Curve = nil
+			}
+			if expected.traderKey != nil {
+				expected.traderKey.Curve = nil
+			}
+			account.AuctioneerKey.PubKey.Curve = nil
+			expected.AuctioneerKey.PubKey.Curve = nil
+			account.BatchKey.Curve = nil
+			expected.BatchKey.Curve = nil
+
 			return fmt.Errorf("expected account: %v\ngot: %v",
 				spew.Sdump(expected), spew.Sdump(account))
 		}
@@ -162,7 +184,7 @@ func (h *testHarness) initAccount() *Account {
 	}
 	copy(account.TraderKeyRaw[:], params.TraderKey.SerializeCompressed())
 
-	h.assertAccountExists(account)
+	h.assertAccountExists(account, false)
 
 	return account
 }
@@ -183,7 +205,7 @@ func (h *testHarness) confirmAccount(a *Account, valid bool,
 		a.State = StateOpen
 	}
 
-	h.assertAccountExists(a)
+	h.assertAccountExists(a, false)
 }
 
 func (h *testHarness) expireAccount(a *Account) {
@@ -197,10 +219,10 @@ func (h *testHarness) expireAccount(a *Account) {
 	}
 
 	a.State = StateExpired
-	h.assertAccountExists(a)
+	h.assertAccountExists(a, false)
 }
 
-func (h *testHarness) spendAccount(a *Account, expectedState State,
+func (h *testHarness) spendAccount(a *Account, mods []Modifier,
 	spendDetails *chainntnfs.SpendDetail) {
 
 	h.t.Helper()
@@ -212,8 +234,46 @@ func (h *testHarness) spendAccount(a *Account, expectedState State,
 			a.TraderKeyRaw)
 	}
 
-	a.State = expectedState
-	h.assertAccountExists(a)
+	for _, mod := range mods {
+		mod(a)
+	}
+
+	h.assertAccountExists(a, false)
+}
+
+func (h *testHarness) obtainExpectedSig(account *Account,
+	spendTx *wire.MsgTx) []byte {
+
+	h.t.Helper()
+
+	traderKey, err := account.TraderKey()
+	if err != nil {
+		h.t.Fatal(err)
+	}
+	witnessScript, err := clmscript.AccountWitnessScript(
+		account.Expiry, traderKey, account.AuctioneerKey.PubKey,
+		account.BatchKey, account.Secret,
+	)
+	if err != nil {
+		h.t.Fatalf("unable to generate account witness script: %v", err)
+	}
+
+	privKey := h.wallet.signer.PrivKey
+	tweak := clmscript.AuctioneerKeyTweak(
+		traderKey, account.AuctioneerKey.PubKey, account.BatchKey,
+		account.Secret,
+	)
+
+	expectedSig, err := txscript.RawTxInWitnessSignature(
+		spendTx, txscript.NewTxSigHashes(spendTx), 0,
+		int64(account.Value), witnessScript, txscript.SigHashAll,
+		input.TweakPrivKey(privKey, tweak),
+	)
+	if err != nil {
+		h.t.Fatalf("unable to generate expected sig: %v", err)
+	}
+
+	return expectedSig
 }
 
 // TestReserveAccount ensures that traders are able to reserve a single account
@@ -407,7 +467,8 @@ func TestAccountExpirySpend(t *testing.T) {
 	// Expire the account by notifying the expiration height.
 	h.expireAccount(account)
 
-	h.spendAccount(account, StateClosed, &chainntnfs.SpendDetail{
+	mods := []Modifier{StateModifier(StateClosed)}
+	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx: &wire.MsgTx{
 			TxIn: []*wire.TxIn{
 				{
@@ -423,10 +484,10 @@ func TestAccountExpirySpend(t *testing.T) {
 	})
 }
 
-// TestAccountMultiSigSpend ensures that the auctioneer properly recognized an
+// TestAccountMultiSigClose ensures that the auctioneer properly recognized an
 // account as closed once a multi-sig spend that doesn't recreate an account's
 // output has confirmed.
-func TestAccountMultiSigSpend(t *testing.T) {
+func TestAccountMultiSigClose(t *testing.T) {
 	t.Parallel()
 
 	h := newTestHarness(t)
@@ -451,7 +512,8 @@ func TestAccountMultiSigSpend(t *testing.T) {
 	// Spend the account with a transaction that doesn't recreate the
 	// output. This should transition the account to StateClosed, since the
 	// witness is that of a multi-sig spend.
-	h.spendAccount(account, StateClosed, &chainntnfs.SpendDetail{
+	mods := []Modifier{StateModifier(StateClosed)}
+	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx: &wire.MsgTx{
 			TxIn: []*wire.TxIn{
 				{
@@ -503,7 +565,8 @@ func TestAccountSpendRecreatesOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to update account: %v", err)
 	}
-	h.spendAccount(account, StateOpen, &chainntnfs.SpendDetail{
+	mods := []Modifier{StateModifier(StateOpen)}
+	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx: &wire.MsgTx{
 			TxIn: []*wire.TxIn{
 				{
@@ -517,5 +580,136 @@ func TestAccountSpendRecreatesOutput(t *testing.T) {
 			TxOut: []*wire.TxOut{{PkScript: nextAccountScript}},
 		},
 		SpenderInputIndex: 0,
+	})
+}
+
+// TestModifyAccountWithdrawal ensures that:
+//
+// 1. The auctioneer provides the correct signature for a trader's withdrawal.
+// 2. The auctioneer stages the account modifications of the withdrawal and
+//    applies them once the spend is notified.
+func TestModifyAccountWithdrawal(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	const bestHeight = 100
+
+	// Create the account and confirm it.
+	accountBeforeWithdrawal := h.initAccount()
+	accountOutput, err := accountBeforeWithdrawal.Output()
+	if err != nil {
+		t.Fatalf("unable to generate account output: %v", err)
+	}
+	h.confirmAccount(accountBeforeWithdrawal, true, &chainntnfs.TxConfirmation{
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// We'll assume the trader is attempting to withdraw to three different
+	// outputs, each with a value of 1/4 of the current account. The trader
+	// wishes to keep their account open with a value of 1/6 the current
+	// account after creating the specified outputs and paying fees.
+	valuePerOutput := accountBeforeWithdrawal.Value / 4
+	newAccountValue := valuePerOutput / 2
+	p2wpkh, _ := hex.DecodeString("0014ccdeffed4f9c91d5bf45c34e4b8f03a5025ec062")
+	p2wsh, _ := hex.DecodeString("00208c2865c87ffd33fc5d698c7df9cf2d0fb39d93103c637a06dea32c848ebc3e1d")
+	np2wpkh, _ := hex.DecodeString("a91458c11505b54582ab04e96d36908f85a8b689459787")
+	outputs := []*wire.TxOut{
+		{
+			Value:    int64(valuePerOutput),
+			PkScript: p2wpkh,
+		},
+		{
+			Value:    int64(valuePerOutput),
+			PkScript: p2wsh,
+		},
+		{
+			Value:    int64(valuePerOutput),
+			PkScript: np2wpkh,
+		},
+	}
+
+	traderKey, err := accountBeforeWithdrawal.TraderKey()
+	if err != nil {
+		t.Fatal(err)
+	}
+	mods := []Modifier{ValueModifier(newAccountValue)}
+
+	// Process the withdrawal request from the trader. This should succeed
+	// and return the auctioneer's signature.
+	sig, err := h.manager.ModifyAccount(
+		ctx, traderKey, nil, outputs, mods, bestHeight,
+	)
+	if err != nil {
+		t.Fatalf("unable to modify account: %v", err)
+	}
+
+	// To ensure the auctioneer signed the proper transaction, we'll obtain
+	// the expected transaction for the trader's withdrawal and sign it.
+	newPkScript, err := accountBeforeWithdrawal.NextOutputScript()
+	if err != nil {
+		t.Fatal(err)
+	}
+	newAccountOutput := &wire.TxOut{
+		Value:    int64(newAccountValue),
+		PkScript: newPkScript,
+	}
+	spendTx := &wire.MsgTx{
+		Version: 2,
+		TxIn: []*wire.TxIn{{
+			PreviousOutPoint: accountBeforeWithdrawal.OutPoint,
+		}},
+		TxOut: append([]*wire.TxOut{newAccountOutput}, outputs...),
+	}
+	expectedSig := h.obtainExpectedSig(accountBeforeWithdrawal, spendTx)
+
+	// The auctioneer's signature should match what we expect.
+	if !bytes.Equal(sig, expectedSig) {
+		t.Fatalf("expected sig %x for tx %v, got %x", expectedSig,
+			spendTx.TxHash(), sig)
+	}
+
+	// We'll then want to make sure that the auctioneer staged the account
+	// modifications due to the withdrawal, without applying them to the
+	// main account state.
+	h.assertAccountExists(accountBeforeWithdrawal, false)
+
+	expectedMods := []Modifier{
+		StateModifier(StatePendingUpdate),
+		OutPointModifier(wire.OutPoint{
+			Hash:  spendTx.TxHash(),
+			Index: 0,
+		}),
+		IncrementBatchKey(),
+	}
+	expectedMods = append(expectedMods, mods...)
+	accountAfterWithdrawal := accountBeforeWithdrawal.Copy(expectedMods...)
+	h.assertAccountExists(accountAfterWithdrawal, true)
+
+	// Then, we'll confirm the spending transaction, which should apply the
+	// staged modifications to the main account state. We'll populate the
+	// spend transaction with a dummy witness to ensure the multi-sig path
+	// is detected.
+	spendTx.TxIn[0].Witness = [][]byte{
+		sig, []byte("trader sig"), []byte("witness script"),
+	}
+	h.spendAccount(
+		accountAfterWithdrawal, nil,
+		&chainntnfs.SpendDetail{SpendingTx: spendTx},
+	)
+
+	// Finally, confirming the account should allow it to transition back to
+	// StateOpen.
+	h.confirmAccount(accountAfterWithdrawal, true, &chainntnfs.TxConfirmation{
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{newAccountOutput},
+		},
 	})
 }

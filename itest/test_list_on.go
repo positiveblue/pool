@@ -12,6 +12,10 @@ var testCases = []*testCase{
 		test: testAccountCreation,
 	},
 	{
+		name: "account withdrawal",
+		test: testAccountWithdrawal,
+	},
+	{
 		name: "create account subscription",
 		test: testAccountSubscription,
 	},

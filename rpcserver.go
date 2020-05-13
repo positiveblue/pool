@@ -319,16 +319,17 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 		}
 	}
 
-	var newAccountParams *account.Parameters
-	if req.NewAccount != nil {
-		newAccountParams, err = parseRPCAccountParams(req.NewAccount)
-		if err != nil {
-			return nil, err
+	var modifiers []account.Modifier
+	if req.NewParams != nil {
+		if req.NewParams.Value != 0 {
+			value := btcutil.Amount(req.NewParams.Value)
+			m := account.ValueModifier(value)
+			modifiers = append(modifiers, m)
 		}
 	}
 
 	accountSig, err := s.accountManager.ModifyAccount(
-		ctx, traderKey, newInputs, newOutputs, newAccountParams,
+		ctx, traderKey, newInputs, newOutputs, modifiers,
 		s.bestHeight(),
 	)
 	if err != nil {
@@ -736,7 +737,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 		// The signature is valid, we can now fetch the account from the
 		// store.
-		acct, err := s.store.Account(stream.Context(), acctPubKey)
+		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
 			comms.err <- fmt.Errorf("error reading account: %v",
 				err)
@@ -1115,7 +1116,7 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	}
 
 	// Make sure the referenced account exists.
-	_, err = s.store.Account(ctx, clientKit.AcctKey)
+	_, err = s.store.Account(ctx, clientKit.AcctKey, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)
 	}

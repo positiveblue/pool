@@ -113,6 +113,18 @@ type Manager struct {
 	// expiration of.
 	watchingExpiry map[[33]byte]struct{}
 
+	// modifyLocksMtx guards access to modifyLocks.
+	modifyLocksMtx sync.Mutex
+
+	// modifyLocks keeps track of an exclusive lock per account that is only
+	// applied when handling account modifications requested by their
+	// respective trader to ensure there is only one concurrent instance
+	// modifying the account.
+	//
+	// NOTE: We use pointers to sync.Mutex to prevent copies when accessing
+	// the map, which are not safe.
+	modifyLocks map[[33]byte]*sync.Mutex
+
 	wg   sync.WaitGroup
 	quit chan struct{}
 }
@@ -122,6 +134,7 @@ func NewManager(cfg *ManagerConfig) (*Manager, error) {
 	m := &Manager{
 		cfg:            *cfg,
 		watchingExpiry: make(map[[33]byte]struct{}),
+		modifyLocks:    make(map[[33]byte]*sync.Mutex),
 		quit:           make(chan struct{}),
 	}
 
@@ -360,8 +373,8 @@ func (m *Manager) resumeAccount(account *Account) error {
 		log.Infof("Watching account %x for spend and expiration",
 			account.TraderKeyRaw[:])
 		err := m.watcher.WatchAccountSpend(
-			traderKey, account.OutPoint,
-			accountOutput.PkScript, account.HeightHint,
+			traderKey, account.OutPoint, accountOutput.PkScript,
+			account.HeightHint,
 		)
 		if err != nil {
 			return fmt.Errorf("unable to watch for spend: %v", err)
@@ -401,7 +414,7 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	confDetails *chainntnfs.TxConfirmation) error {
 
 	ctx := context.Background()
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
 	}
@@ -456,8 +469,10 @@ func validateAccountOutput(account *Account, chainTx *wire.MsgTx) error {
 func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	spendDetails *chainntnfs.SpendDetail) error {
 
+	// Request a version of the account that includes its pending diff, if
+	// any.
 	ctx := context.Background()
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
 	}
@@ -475,8 +490,9 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 		break
 
 	// If the witness is for a multi-sig spend, then either an order by the
-	// trader was matched, or the account was closed. If it was closed, then
-	// the account output shouldn't have been recreated.
+	// trader was matched, the trader has made an account modification, or
+	// the account was closed. If it was closed, then the account output
+	// shouldn't have been recreated.
 	case clmscript.IsMultiSigSpend(spendWitness):
 		// An account cannot be spent without our knowledge, so we'll
 		// assume we always persist account updates before a broadcast
@@ -490,17 +506,31 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 		_, ok := clmscript.LocateOutputScript(
 			spendTx, accountOutput.PkScript,
 		)
-		if ok {
-			// Proceed with the rest of the flow.
-			return m.resumeAccount(account)
+		if !ok {
+			// Proceed further below to mark the account closed.
+			break
 		}
+
+		// Since we requested the account's diff to be returned above,
+		// if any, we'll attempt to commit it now that we've seen the
+		// spend for the account. This will act as a no-op in the event
+		// of a diff not being present.
+		err = m.cfg.Store.CommitAccountDiff(ctx, traderKey)
+		if err != nil && err != ErrNoDiff {
+			return err
+		}
+
+		log.Debugf("Account %x was recreated in transaction %v",
+			traderKey.SerializeCompressed(), spendTx.TxHash())
+
+		return m.resumeAccount(account)
 
 	default:
 		return fmt.Errorf("unknown spend witness %v", spendWitness)
 	}
 
 	log.Infof("Account %x has been closed on-chain with transaction %v",
-		account.TraderKey, spendTx.TxHash())
+		account.TraderKeyRaw, spendTx.TxHash())
 
 	return m.cfg.Store.UpdateAccount(
 		ctx, account, StateModifier(StateClosed),
@@ -513,7 +543,7 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 	//
 	// TODO(wilmer): Cancel any remaining active orders at this point?
 	ctx := context.Background()
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
 	}
@@ -542,18 +572,28 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 // account expires in order to modify it. This method is abstracted such that it
 // can handle any type of account modification requested by the trader.
 func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
-	newInputs []*wire.TxIn, newOutputs []*wire.TxOut, newParams *Parameters,
+	newInputs []*wire.TxIn, newOutputs []*wire.TxOut, modifiers []Modifier,
 	bestHeight uint32) ([]byte, error) {
 
-	account, err := m.cfg.Store.Account(ctx, traderKey)
+	// Obtain the account's modification lock to ensure there are no other
+	// concurrent instances attempting to modify it as well.
+	var rawTraderKey [33]byte
+	copy(rawTraderKey[:], traderKey.SerializeCompressed())
+
+	m.modifyLocksMtx.Lock()
+	modifyLock, ok := m.modifyLocks[rawTraderKey]
+	if !ok {
+		modifyLock = &sync.Mutex{}
+		m.modifyLocks[rawTraderKey] = modifyLock
+	}
+	m.modifyLocksMtx.Unlock()
+
+	modifyLock.Lock()
+	defer modifyLock.Unlock()
+
+	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return nil, err
-	}
-
-	// We can only modify accounts in a StateOpen state.
-	if account.State != StateOpen {
-		return nil, fmt.Errorf("account found in %v must be in %v to "+
-			"be modified", account.State, StateOpen)
 	}
 
 	// TODO(wilmer): Reject if account has pending orders.
@@ -563,12 +603,51 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	//
 	// TODO(wilmer): Create PendingClosed state to prevent any future orders
 	// since we're giving them a valid signature?
-	if newParams == nil {
-		return m.signAccountSpend(ctx, account, newInputs, newOutputs, 0)
+	if len(modifiers) == 0 {
+		if account.State == StateClosed {
+			return nil, errors.New("account has already been closed")
+		}
+
+		sig, _, err := m.signAccountSpend(
+			ctx, account, newInputs, newOutputs, nil,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return sig, nil
 	}
 
-	// TODO(wilmer): Handle modification parameters.
-	return nil, fmt.Errorf("unimplemented")
+	// Otherwise, the trader wishes to modify their account. It can only be
+	// modified in StateOpen.
+	if account.State != StateOpen {
+		return nil, fmt.Errorf("account must be in %v to be modified",
+			StateOpen)
+	}
+
+	// Create the spending transaction for the account including any
+	// additional inputs and outputs provided by the trader, along with any
+	// account modifications.
+	sig, newAccountPoint, err := m.signAccountSpend(
+		ctx, account, newInputs, newOutputs, modifiers,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	// With the transaction crafted, store a pending diff of the account and
+	// broadcast the transaction. We want to avoid updating the account
+	// itself, as we can't guarantee that the trader will end up using our
+	// signature.
+	modifiers = append(modifiers, StateModifier(StatePendingUpdate))
+	modifiers = append(modifiers, OutPointModifier(*newAccountPoint))
+	modifiers = append(modifiers, IncrementBatchKey())
+	err = m.cfg.Store.StoreAccountDiff(ctx, traderKey, modifiers)
+	if err != nil {
+		return nil, err
+	}
+
+	return sig, nil
 }
 
 // signAccountSpend signs the spending transaction of an account that includes
@@ -576,27 +655,31 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 // a newly created account output if newAccountValue is not zero.
 func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	inputs []*wire.TxIn, outputs []*wire.TxOut,
-	newAccountValue btcutil.Amount) ([]byte, error) {
+	modifiers []Modifier) ([]byte, *wire.OutPoint, error) {
 
 	// Construct the spending transaction that we'll sign.
 	tx := wire.NewMsgTx(2)
-	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: account.OutPoint})
 	for _, input := range inputs {
 		tx.AddTxIn(input)
 	}
+	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: account.OutPoint})
 	for _, output := range outputs {
 		tx.AddTxOut(output)
 	}
 
-	// If the account output must be recreated, then include it with the
-	// next output script in the sequence.
-	if newAccountValue != 0 {
-		nextAccountScript, err := account.NextOutputScript()
+	// If the account output must be recreated, then apply the new
+	// parameters and include it with the next output script in the
+	// sequence.
+	var modifiedAccount *Account
+	if len(modifiers) > 0 {
+		modifiedAccount = account.Copy(modifiers...)
+		nextAccountScript, err := modifiedAccount.NextOutputScript()
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
+
 		tx.AddTxOut(&wire.TxOut{
-			Value:    int64(newAccountValue),
+			Value:    int64(modifiedAccount.Value),
 			PkScript: nextAccountScript,
 		})
 	}
@@ -605,17 +688,36 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	// to BIP-69.
 	txsort.InPlaceSort(tx)
 
-	// Ensure the crafted transaction passes some sanity checks.
+	// Ensure the crafted transaction passes some basic sanity checks.
 	err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	// Locate the outpoint of the new account output if it was recreated.
+	var newAccountPoint *wire.OutPoint
+	if modifiedAccount != nil {
+		nextAccountScript, err := modifiedAccount.NextOutputScript()
+		if err != nil {
+			return nil, nil, err
+		}
+		outputIndex, ok := clmscript.LocateOutputScript(
+			tx, nextAccountScript,
+		)
+		if !ok {
+			return nil, nil, errors.New("account output not found")
+		}
+		newAccountPoint = &wire.OutPoint{
+			Hash:  tx.TxHash(),
+			Index: outputIndex,
+		}
 	}
 
 	// Gather the remaining components required to sign the transaction from
 	// the auctioneer's point-of-view and sign it.
 	traderKey, err := account.TraderKey()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
 		traderKey, account.AuctioneerKey.PubKey,
@@ -627,12 +729,12 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		account.BatchKey, account.Secret,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	accountOutput, err := account.Output()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	accountInputIdx := -1
@@ -642,10 +744,12 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		}
 	}
 	if accountInputIdx == -1 {
-		return nil, errors.New("account input not found")
+		return nil, nil, errors.New("account input not found")
 	}
 
 	signDesc := &input.SignDescriptor{
+		// The Signer API expects key locators _only_ when deriving keys
+		// that are not within the wallet's default scopes.
 		KeyDesc: keychain.KeyDescriptor{
 			KeyLocator: account.AuctioneerKey.KeyLocator,
 		},
@@ -657,19 +761,32 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		SigHashes:     txscript.NewTxSigHashes(tx),
 	}
 
-	log.Infof("Signing closing transaction %v for account %x", tx.TxHash(),
-		account.TraderKeyRaw[:])
+	if len(modifiers) == 0 {
+		log.Infof("Signing closing transaction %v for account %x",
+			tx.TxHash(), account.TraderKeyRaw)
+	} else {
+		modifiedAccount := account.Copy(modifiers...)
+		valueDiff := modifiedAccount.Value - account.Value
+
+		action := fmt.Sprintf("%v deposit into", valueDiff)
+		if valueDiff < 0 {
+			action = fmt.Sprintf("%v withdrawal from", -valueDiff)
+		}
+
+		log.Infof("Signing transaction %v for a %v account %x",
+			tx.TxHash(), action, account.TraderKeyRaw)
+	}
 
 	sigs, err := m.cfg.Signer.SignOutputRaw(
 		ctx, tx, []*input.SignDescriptor{signDesc},
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// We'll need to re-append the sighash flag since SignOutputRaw strips
 	// it.
-	return append(sigs[0], byte(signDesc.HashType)), nil
+	return append(sigs[0], byte(signDesc.HashType)), newAccountPoint, nil
 }
 
 // validateAccountParams ensures that a trader has provided sane parameters for

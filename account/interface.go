@@ -3,6 +3,7 @@ package account
 import (
 	"context"
 	"errors"
+	"math/big"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -17,6 +18,10 @@ var (
 	// ErrNoReservation is an error returned when we attempt to look up a
 	// reservation but one does not exist.
 	ErrNoReservation = errors.New("no reservation found")
+
+	// ErrNoDiff is an error returned when we attempt to retrieve a staged
+	// diff for an account but it is not found.
+	ErrNoDiff = errors.New("no account diff found")
 )
 
 // Reservation contains information about the different keys required for to
@@ -97,8 +102,8 @@ const (
 
 // Parameters are the parameters submitted by a trader for an account.
 type Parameters struct {
-	// Value is the value of the account reflected in on-chain output that
-	// backs the existence of an account.
+	// Value is the value of the account reflected in the on-chain output
+	// that backs the existence of an account.
 	Value btcutil.Amount
 
 	// Script is the script of the initial account output that backs the
@@ -224,6 +229,39 @@ func (a *Account) NextOutputScript() ([]byte, error) {
 	)
 }
 
+// Copy returns a deep copy of the account with the given modifiers applied.
+func (a *Account) Copy(modifiers ...Modifier) *Account {
+	accountCopy := &Account{
+		TokenID:      a.TokenID,
+		Value:        a.Value,
+		Expiry:       a.Expiry,
+		TraderKeyRaw: a.TraderKeyRaw,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			KeyLocator: a.AuctioneerKey.KeyLocator,
+			PubKey: &btcec.PublicKey{
+				X:     big.NewInt(0).Set(a.AuctioneerKey.PubKey.X),
+				Y:     big.NewInt(0).Set(a.AuctioneerKey.PubKey.Y),
+				Curve: a.AuctioneerKey.PubKey.Curve,
+			},
+		},
+		BatchKey: &btcec.PublicKey{
+			X:     big.NewInt(0).Set(a.BatchKey.X),
+			Y:     big.NewInt(0).Set(a.BatchKey.Y),
+			Curve: a.BatchKey.Curve,
+		},
+		Secret:     a.Secret,
+		State:      a.State,
+		HeightHint: a.HeightHint,
+		OutPoint:   a.OutPoint,
+	}
+
+	for _, modifier := range modifiers {
+		modifier(accountCopy)
+	}
+
+	return accountCopy
+}
+
 // Modifier abstracts the modification of an account through a function.
 type Modifier func(*Account)
 
@@ -283,8 +321,24 @@ type Store interface {
 	// modifiers.
 	UpdateAccount(context.Context, *Account, ...Modifier) error
 
+	// StoreAccountDiff stores a pending set of updates that should be
+	// applied to an account after an invocation of CommitAccountDiff.
+	//
+	// In contrast to UpdateAccount, this should be used whenever we need to
+	// stage a pending update of the account that will be committed at some
+	// later point.
+	StoreAccountDiff(context.Context, *btcec.PublicKey, []Modifier) error
+
+	// CommitAccountDiff commits the stored pending set of updates for an
+	// account after a successful modification. If a diff does not exist,
+	// account.ErrNoDiff is returned.
+	CommitAccountDiff(context.Context, *btcec.PublicKey) error
+
 	// Account retrieves the account associated with the given trader key.
-	Account(context.Context, *btcec.PublicKey) (*Account, error)
+	// The boolean indicates whether the account's diff should be returned
+	// instead. If a diff does not exist, then the existing account state is
+	// returned.
+	Account(context.Context, *btcec.PublicKey, bool) (*Account, error)
 
 	// Accounts retrieves all existing accounts.
 	Accounts(context.Context) ([]*Account, error)

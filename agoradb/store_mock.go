@@ -94,9 +94,28 @@ func (s *StoreMock) UpdateAccount(_ context.Context, acct *account.Account,
 	return nil
 }
 
+// StoreAccountDiff stores a pending set of updates that should be applied to an
+// account after a successful modification. As a result, the account is
+// transitioned to StatePendingUpdate until the transaction applying the account
+// updates has confirmed.
+func (s *StoreMock) StoreAccountDiff(ctx context.Context,
+	traderKey *btcec.PublicKey, modifiers []account.Modifier) error {
+
+	return nil
+}
+
+// CommitAccountDiff commits the latest stored pending set of updates for an
+// account after a successful modification. Once the updates are committed, the
+// account is transitioned back to StateOpen.
+func (s *StoreMock) CommitAccountDiff(ctx context.Context,
+	traderKey *btcec.PublicKey) error {
+
+	return nil
+}
+
 // Account retrieves the account associated with the given trader key.
-func (s *StoreMock) Account(_ context.Context, traderPubKey *btcec.PublicKey) (
-	*account.Account, error) {
+func (s *StoreMock) Account(_ context.Context, traderPubKey *btcec.PublicKey,
+	_ bool) (*account.Account, error) {
 
 	var traderKey [33]byte
 	copy(traderKey[:], traderPubKey.SerializeCompressed())
@@ -258,7 +277,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	}
 
 	for idx, acctKey := range accounts {
-		acct, err := s.Account(ctx, acctKey)
+		acct, err := s.Account(ctx, acctKey, false)
 		if err != nil {
 			return err
 		}
