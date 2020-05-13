@@ -180,6 +180,12 @@ type Account struct {
 
 	// OutPoint the outpoint of the current account output.
 	OutPoint wire.OutPoint
+
+	// CloseTx is the closing transaction of an account. This will only be
+	// populated if the account is in any of the following states:
+	//
+	//	- StateClosed
+	CloseTx *wire.MsgTx
 }
 
 // Output returns the current on-chain output associated with the account.
@@ -299,6 +305,14 @@ func IncrementBatchKey() Modifier {
 func OutPointModifier(outPoint wire.OutPoint) Modifier {
 	return func(account *Account) {
 		account.OutPoint = outPoint
+	}
+}
+
+// CloseTxModifier is a functional option that modifies the closing transaction
+// of an account.
+func CloseTxModifier(tx *wire.MsgTx) Modifier {
+	return func(account *Account) {
+		account.CloseTx = tx
 	}
 }
 

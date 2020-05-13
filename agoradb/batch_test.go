@@ -144,9 +144,18 @@ func TestPersistBatchResult(t *testing.T) {
 	orderModifiers := [][]order.Modifier{
 		{order.StateModifier(orderT.StatePartiallyFilled)},
 	}
-	accountModifiers := [][]account.Modifier{
-		{account.StateModifier(account.StateClosed)},
-	}
+	accountModifiers := [][]account.Modifier{{
+		account.StateModifier(account.StateClosed),
+		account.CloseTxModifier(&wire.MsgTx{
+			TxIn: []*wire.TxIn{{
+				Witness: wire.TxWitness{
+					nil,
+					[]byte("trader sig"),
+					[]byte("witness script"),
+				},
+			}},
+		}),
+	}}
 	ma1.Balance = 500_000
 
 	// Then call the actual persist method on the store.

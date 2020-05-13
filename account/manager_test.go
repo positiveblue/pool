@@ -467,19 +467,20 @@ func TestAccountExpirySpend(t *testing.T) {
 	// Expire the account by notifying the expiration height.
 	h.expireAccount(account)
 
-	mods := []Modifier{StateModifier(StateClosed)}
-	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
-		SpendingTx: &wire.MsgTx{
-			TxIn: []*wire.TxIn{
-				{
-					Witness: wire.TxWitness{
-						nil,
-						[]byte("trader sig"),
-						[]byte("witness script"),
-					},
+	closeTx := &wire.MsgTx{
+		TxIn: []*wire.TxIn{
+			{
+				Witness: wire.TxWitness{
+					nil,
+					[]byte("trader sig"),
+					[]byte("witness script"),
 				},
 			},
 		},
+	}
+	mods := []Modifier{StateModifier(StateClosed), CloseTxModifier(closeTx)}
+	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
+		SpendingTx:        closeTx,
 		SpenderInputIndex: 0,
 	})
 }
@@ -512,19 +513,20 @@ func TestAccountMultiSigClose(t *testing.T) {
 	// Spend the account with a transaction that doesn't recreate the
 	// output. This should transition the account to StateClosed, since the
 	// witness is that of a multi-sig spend.
-	mods := []Modifier{StateModifier(StateClosed)}
-	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
-		SpendingTx: &wire.MsgTx{
-			TxIn: []*wire.TxIn{
-				{
-					Witness: wire.TxWitness{
-						[]byte("auctioneer sig"),
-						[]byte("trader sig"),
-						[]byte("witness script"),
-					},
+	spendTx := &wire.MsgTx{
+		TxIn: []*wire.TxIn{
+			{
+				Witness: wire.TxWitness{
+					[]byte("auctioneer sig"),
+					[]byte("trader sig"),
+					[]byte("witness script"),
 				},
 			},
 		},
+	}
+	mods := []Modifier{StateModifier(StateClosed), CloseTxModifier(spendTx)}
+	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
+		SpendingTx:        spendTx,
 		SpenderInputIndex: 0,
 	})
 }

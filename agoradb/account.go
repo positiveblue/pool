@@ -379,13 +379,21 @@ func deserializeReservation(r io.Reader) (*account.Reservation, error) {
 	return &reservation, err
 }
 
-func serializeAccount(w io.Writer, account *account.Account) error {
-	return WriteElements(
-		w, account.TokenID, account.Value, account.Expiry,
-		account.TraderKeyRaw, account.AuctioneerKey, account.BatchKey,
-		account.Secret, account.State, account.HeightHint,
-		account.OutPoint,
+func serializeAccount(w io.Writer, a *account.Account) error {
+	err := WriteElements(
+		w, a.TokenID, a.Value, a.Expiry, a.TraderKeyRaw,
+		a.AuctioneerKey, a.BatchKey, a.Secret, a.State,
+		a.HeightHint, a.OutPoint,
 	)
+	if err != nil {
+		return err
+	}
+
+	// The close transaction is only found in the following states.
+	if a.State == account.StateClosed {
+		return WriteElement(w, a.CloseTx)
+	}
+	return nil
 }
 
 func deserializeAccount(r io.Reader) (*account.Account, error) {
@@ -395,5 +403,15 @@ func deserializeAccount(r io.Reader) (*account.Account, error) {
 		&a.AuctioneerKey, &a.BatchKey, &a.Secret, &a.State,
 		&a.HeightHint, &a.OutPoint,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	// The close transaction is only found in the following states.
+	if a.State == account.StateClosed {
+		if err := ReadElement(r, &a.CloseTx); err != nil {
+			return nil, err
+		}
+	}
 	return &a, err
 }

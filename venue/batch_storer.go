@@ -157,6 +157,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 			modifiers = append(
 				modifiers,
 				account.StateModifier(account.StateClosed),
+				account.CloseTxModifier(result.BatchTx),
 			)
 
 		default:

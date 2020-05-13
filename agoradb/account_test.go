@@ -173,6 +173,37 @@ func TestAccounts(t *testing.T) {
 	if err != ErrAccountNotFound {
 		t.Fatalf("expected ErrAccountNotFound, got \"%v\"", err)
 	}
+
+	// Also make sure we can properly serialize an account that has a
+	// closing transaction.
+	a.TraderKeyRaw[0] ^= 0x01
+	correctTraderKey, err := a.TraderKey()
+	if err != nil {
+		t.Fatalf("could not parse correct trader key: %v", err)
+	}
+	closeTx := &wire.MsgTx{
+		Version: 2,
+		TxIn: []*wire.TxIn{{
+			PreviousOutPoint: testAccount.OutPoint,
+			SignatureScript:  []byte{},
+		}},
+		TxOut: []*wire.TxOut{},
+	}
+	err = store.UpdateAccount(
+		ctx, &a, account.StateModifier(account.StateClosed),
+		account.CloseTxModifier(closeTx),
+	)
+	if err != nil {
+		t.Fatalf("could not update account to be closed: %v", err)
+	}
+	closedAcct, err := store.Account(ctx, correctTraderKey, true)
+	if err != nil {
+		t.Fatalf("could not read closed account: %v", err)
+	}
+	if !reflect.DeepEqual(closedAcct.CloseTx, closeTx) {
+		t.Fatalf("expected close TX: %v\ngot: %v",
+			spew.Sdump(closeTx), spew.Sdump(closedAcct.CloseTx))
+	}
 }
 
 // TestAccountDiffs ensures that we can properly stage and commit account diffs
