@@ -755,16 +755,13 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			Send: comms.toTrader,
 			Recv: comms.toServer,
 		}
-		trader := &venue.ActiveTrader{
+		trader := matching.NewTraderFromAccount(acct)
+		activeTrader := &venue.ActiveTrader{
 			CommLine: commLine,
-			Trader: &matching.Trader{
-				AccountKey:      acctKey,
-				AccountExpiry:   acct.Expiry,
-				AccountOutPoint: acct.OutPoint,
-				AccountBalance:  acct.Value,
-			},
+			Trader:   &trader,
 		}
-		comms.newSub <- trader
+
+		comms.newSub <- activeTrader
 
 	// The trader accepts an order execution.
 	case *clmrpc.ClientAuctionMessage_Accept:
