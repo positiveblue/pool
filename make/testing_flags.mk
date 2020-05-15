@@ -15,6 +15,11 @@ TEST_FLAGS += -test.run=$(case)
 UNIT_TARGETED = yes
 endif
 
+# Define the integration test.run filter if the icase argument was provided.
+ifneq ($(icase),)
+TEST_FLAGS += -test.run=TestAuctioneerServer/$(icase)
+endif
+
 # If a timeout was requested, construct initialize the proper flag for the go
 # test command. If not, we set 20m (up from the default 10m).
 ifneq ($(timeout),)

@@ -437,8 +437,9 @@ func (s *rpcServer) SubscribeBatchAuction(
 	// won't be two streams with the same accounts, but it should prevent
 	// a badly implemented client from draining our TCP connections by
 	// accident. The token ID can only be zero when testing locally without
-	// Kirin (or during the integration tests). In a real deployment, Kirin
-	// enforces the token to be set so we don't need an explicit check here.
+	// aperture (or during the integration tests). In a real deployment,
+	// aperture enforces the token to be set so we don't need an explicit
+	// check here.
 	traderID := tokenIDFromContext(stream.Context())
 	s.connectedStreamsMutex.Lock()
 	_, ok := s.connectedStreams[traderID]
@@ -555,9 +556,13 @@ func (s *rpcServer) SubscribeBatchAuction(
 
 		// The server is shutting down.
 		case <-s.quit:
+			errCode := clmrpc.SubscribeError_SERVER_SHUTDOWN
 			err := stream.Send(&clmrpc.ServerAuctionMessage{
-				Msg: &clmrpc.ServerAuctionMessage_Shutdown{
-					Shutdown: &clmrpc.ServerShutdown{},
+				Msg: &clmrpc.ServerAuctionMessage_Error{
+					Error: &clmrpc.SubscribeError{
+						Error:     "server shutting down",
+						ErrorCode: errCode,
+					},
 				},
 			})
 			if err != nil {

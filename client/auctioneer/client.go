@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/agora/client/clmrpc"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightningnetwork/lnd/keychain"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -412,10 +413,10 @@ func (c *Client) OrderState(ctx context.Context, nonce order.Nonce) (
 // same connection. A stream can be long-lived, so this can be called
 // for every account as soon as it's confirmed open.
 func (c *Client) SubscribeAccountUpdates(ctx context.Context,
-	acct *account.Account) error {
+	acctKey *keychain.KeyDescriptor) error {
 
 	var acctPubKey [33]byte
-	copy(acctPubKey[:], acct.TraderKey.PubKey.SerializeCompressed())
+	copy(acctPubKey[:], acctKey.PubKey.SerializeCompressed())
 
 	// Don't subscribe more than once.
 	if _, ok := c.subscribedAccts[acctPubKey]; ok {
@@ -443,7 +444,7 @@ func (c *Client) SubscribeAccountUpdates(ctx context.Context,
 	// Before we can expect to receive any updates, we need to perform the
 	// 3-way authentication handshake.
 	sub := &acctSubscription{
-		acct:          acct,
+		acctKey:       acctKey,
 		sendMsg:       c.SendAuctionMessage,
 		signer:        c.cfg.Signer,
 		challengeChan: make(chan [32]byte),
@@ -607,15 +608,28 @@ func (c *Client) readIncomingStream() {
 			case <-c.quit:
 			}
 
-		case *clmrpc.ServerAuctionMessage_Shutdown:
-			err := c.HandleServerShutdown(nil)
-			if err != nil {
-				select {
-				case c.StreamErrChan <- err:
-				case <-c.quit:
+		// The shutdown message is sent as a general error message. We
+		// only handle this specific case here, the rest is forwarded to
+		// the handler.
+		case *clmrpc.ServerAuctionMessage_Error:
+			errCode := t.Error.ErrorCode
+			if errCode == clmrpc.SubscribeError_SERVER_SHUTDOWN {
+				err := c.HandleServerShutdown(nil)
+				if err != nil {
+					select {
+					case c.StreamErrChan <- err:
+					case <-c.quit:
+					}
 				}
+				return
 			}
-			return
+
+			// All other types of errors should be dealt with by the
+			// handler.
+			select {
+			case c.FromServerChan <- msg:
+			case <-c.quit:
+			}
 
 		// A valid message from the server. Forward it to the handler.
 		default:
@@ -663,13 +677,13 @@ func (c *Client) HandleServerShutdown(err error) error {
 
 	// Subscribe to all accounts again. Remove the old subscriptions in the
 	// same move as new ones will be created.
-	accounts := make([]*account.Account, 0, len(c.subscribedAccts))
+	acctKeys := make([]*keychain.KeyDescriptor, 0, len(c.subscribedAccts))
 	for key, subscription := range c.subscribedAccts {
-		accounts = append(accounts, subscription.acct)
+		acctKeys = append(acctKeys, subscription.acctKey)
 		delete(c.subscribedAccts, key)
 	}
-	for _, acct := range accounts {
-		err := c.SubscribeAccountUpdates(context.Background(), acct)
+	for _, acctKey := range acctKeys {
+		err := c.SubscribeAccountUpdates(context.Background(), acctKey)
 		if err != nil {
 			return err
 		}
