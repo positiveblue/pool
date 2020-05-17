@@ -100,7 +100,11 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	// Now that we have all the required items, we'll query the Signer for
 	// a valid signature for our account output.
 	signDesc := &input.SignDescriptor{
-		KeyDesc:       *a.AuctioneerKey,
+		// The Signer API expects key locators _only_ when deriving keys
+		// that are not within the wallet's default scopes.
+		KeyDesc: keychain.KeyDescriptor{
+			KeyLocator: a.AuctioneerKey.KeyLocator,
+		},
 		SingleTweak:   batchTweak,
 		WitnessScript: witnessScript,
 		Output: &wire.TxOut{
