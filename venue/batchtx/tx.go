@@ -338,7 +338,10 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// our later passes, and also attach the output directly to the
 		// BET (batch execution transaction)
 		traderAccounts[acctID] = traderAccountTxOut
+
 		trader.RecreatedOutput = traderAccountTxOut
+		orderBatch.FeeReport.AccountDiffs[acctID] = trader
+
 		e.ExeTx.AddTxOut(traderAccountTxOut)
 	}
 
