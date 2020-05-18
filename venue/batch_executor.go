@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -433,7 +434,11 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	// With all the information obtained, we'll now generate our half of
 	// the multi-sig.
 	signDesc := &input.SignDescriptor{
-		KeyDesc:       *masterAcct.AuctioneerKey,
+		// The Signer API expects key locators _only_ when deriving keys
+		// that are not within the wallet's default scopes.
+		KeyDesc: keychain.KeyDescriptor{
+			KeyLocator: masterAcct.AuctioneerKey.KeyLocator,
+		},
 		SingleTweak:   auctioneerKeyTweak,
 		WitnessScript: witnessScript,
 		Output:        &traderAcctInput.PrevOutput,
