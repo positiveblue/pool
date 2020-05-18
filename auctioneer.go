@@ -1207,7 +1207,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 					// TODO(roasbeef): just go back to
 					// default state?
 					return 0, fmt.Errorf("terminal "+
-						"execution error: %v", err)
+						"execution error: %v", result.Err)
 				}
 
 				return MatchMakingState, nil
