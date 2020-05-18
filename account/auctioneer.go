@@ -2,6 +2,7 @@ package account
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
@@ -123,7 +124,25 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 		return nil, err
 	}
 
-	// Finally we'll construct the account witness given our witness
-	// script, pubkey, and signature.
-	return AuctioneerWitness(witnessScript, sigs[0]), nil
+	// Next we'll construct the account witness given our witness script,
+	// pubkey, and signature.
+	witness := AuctioneerWitness(witnessScript, sigs[0])
+
+	txCopy := tx.Copy()
+	txCopy.TxIn[inputIndex].Witness = witness
+
+	// As a final step, we'll ensure the signature we just generated above
+	// is valid.
+	vm, err := txscript.NewEngine(
+		pkScript, txCopy, inputIndex, txscript.StandardVerifyFlags,
+		nil, nil, int64(a.Balance),
+	)
+	if err != nil {
+		return nil, err
+	}
+	if err := vm.Execute(); err != nil {
+		return nil, fmt.Errorf("invalid master acct sig: %v", err)
+	}
+
+	return witness, nil
 }
