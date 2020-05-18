@@ -412,8 +412,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 
 	log.Infof("Master Auctioneer Output balance delta: prev_bal=%v, "+
 		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,
-		finalAccountBalance,
-		mAccountDiff.AccountBalance-btcutil.Amount(finalAccountBalance))
+		btcutil.Amount(finalAccountBalance),
+		btcutil.Amount(finalAccountBalance)-mAccountDiff.AccountBalance)
 
 	// Next, we'll derive the account script for the auctioneer itself,
 	// which is the final thing we need in order to generate the batch
