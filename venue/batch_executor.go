@@ -2,6 +2,7 @@ package venue
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -688,7 +689,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			b.RLock()
 			trader := b.activeTraders[src]
 			b.RUnlock()
-			acctSig, ok := signMsg.Sigs[string(src[:])]
+			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
 			if !ok {
 				return 0, env, fmt.Errorf("account witness "+
 					"for %x not found", src)
