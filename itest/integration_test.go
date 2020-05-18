@@ -15,6 +15,7 @@ import (
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 
 // TestAuctioneerServer performs a series of integration tests amongst a
@@ -89,7 +90,9 @@ func TestAuctioneerServer(t *testing.T) {
 	}
 	defer cleanUp()
 
-	if err := miner.SetUp(true, 50); err != nil {
+	// As we mine blocks below to trigger segwit and CSV activation, we
+	// don't need to mine a test chain here.
+	if err := miner.SetUp(false, 0); err != nil {
 		ht.Fatalf("unable to set up mining node: %v", err)
 	}
 	if err := miner.Node.NotifyNewTransactions(false); err != nil {
@@ -132,7 +135,7 @@ func TestAuctioneerServer(t *testing.T) {
 
 	// Next mine enough blocks in order for segwit and the CSV package
 	// soft-fork to activate on SimNet.
-	numBlocks := harnessNetParams.MinerConfirmationWindow * 2
+	numBlocks := harnessNetParams.MinerConfirmationWindow * 4
 	if _, err := miner.Node.Generate(numBlocks); err != nil {
 		ht.Fatalf("unable to generate blocks: %v", err)
 	}
@@ -142,6 +145,29 @@ func TestAuctioneerServer(t *testing.T) {
 	// example: "--debuglevel=debug"
 	if err = lndHarness.SetUp(nil); err != nil {
 		ht.Fatalf("unable to set up test lightning network: %v", err)
+	}
+
+	// Before we continue on below, we'll wait here until the specified
+	// number of blocks has been mined, to ensure we have complete control
+	// over the extension of the chain. 10 extra block are mined as the
+	// SetUp method above mines 10 blocks to confirm the coins it sends to
+	// the first nodes in the harness.
+	targetHeight := int32(numBlocks) + 10
+	err = wait.NoError(func() error {
+		_, blockHeight, err := miner.Node.GetBestBlock()
+		if err != nil {
+			return fmt.Errorf("unable to get best block: %v", err)
+		}
+
+		if blockHeight < targetHeight {
+			return fmt.Errorf("want height %v, got %v",
+				blockHeight, targetHeight)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("test chian never created: %v", err)
 	}
 
 	t.Logf("Running %v integration tests", len(testCases))
