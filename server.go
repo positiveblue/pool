@@ -212,6 +212,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 			OrderFeed:     orderBook,
 			BatchExecutor: batchExecutor,
+			FeeSchedule:   feeSchedule,
 		}),
 		channelEnforcer: chanenforcement.New(&chanenforcement.Config{
 			ChainNotifier: lnd.ChainNotifier,

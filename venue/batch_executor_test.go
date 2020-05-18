@@ -12,9 +12,11 @@ import (
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/agora/client/clmscript"
+	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 var (
@@ -122,7 +124,9 @@ func (e *executorTestHarness) RegisterTrader(acct *account.Account) {
 }
 
 func (e *executorTestHarness) SubmitBatch(batch *matching.OrderBatch) chan *ExecutionResult {
-	respChan, err := e.executor.Submit(batch)
+	respChan, err := e.executor.Submit(
+		batch, &order.LinearFeeSchedule{}, chainfee.FeePerKwFloor,
+	)
 	if err != nil {
 		e.t.Fatalf("unable to submit batch: %v", err)
 	}

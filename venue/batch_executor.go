@@ -933,11 +933,15 @@ func (b *BatchExecutor) executor() {
 }
 
 // Submit submits a new batch for execution to the main state machine.
-func (b *BatchExecutor) Submit(batch *matching.OrderBatch) (chan *ExecutionResult, error) {
-	// TODO(roasbeef): need to populate other parts of the req
+func (b *BatchExecutor) Submit(batch *matching.OrderBatch,
+	feeSchedule orderT.FeeSchedule,
+	batchFeeRate chainfee.SatPerKWeight) (chan *ExecutionResult, error) {
+
 	exeReq := &executionReq{
-		OrderBatch: batch,
-		Result:     make(chan *ExecutionResult, 1),
+		OrderBatch:   batch,
+		feeSchedule:  feeSchedule,
+		batchFeeRate: batchFeeRate,
+		Result:       make(chan *ExecutionResult, 1),
 	}
 
 	select {

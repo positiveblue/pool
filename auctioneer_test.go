@@ -323,7 +323,9 @@ func newMockBatchExecutor() *mockBatchExecutor {
 	}
 }
 
-func (m *mockBatchExecutor) Submit(*matching.OrderBatch) (chan *venue.ExecutionResult, error) {
+func (m *mockBatchExecutor) Submit(*matching.OrderBatch, orderT.FeeSchedule,
+	chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error) {
+
 	return m.resChan, nil
 }
 
