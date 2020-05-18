@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/order"
@@ -163,10 +164,9 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		return fmt.Errorf("unable to digest message for signature "+
 			"verification: %v", err)
 	}
-	var pubKey [33]byte
-	copy(pubKey[:], srvOrder.Details().AcctKey.SerializeCompressed())
 	sigValid, err := b.cfg.Signer.VerifyMessage(
-		ctx, digest[:], kit.Sig.ToSignatureBytes(), pubKey,
+		ctx, digest[:], kit.Sig.ToSignatureBytes(),
+		srvOrder.Details().AcctKey,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to verify order signature: %v", err)
@@ -195,10 +195,16 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		balanceNeeded = orderFee + b.cfg.SubmitFee
 	}
 
-	acct, err := b.cfg.Store.Account(ctx, srvOrder.Details().AcctKey, false)
+	acctKey, err := btcec.ParsePubKey(
+		srvOrder.Details().AcctKey[:], btcec.S256(),
+	)
+	if err != nil {
+		return err
+	}
+	acct, err := b.cfg.Store.Account(ctx, acctKey, false)
 	if err != nil {
 		return fmt.Errorf("unable to locate account with key %x: %v",
-			srvOrder.Details().AcctKey.SerializeCompressed(), err)
+			acctKey.SerializeCompressed(), err)
 	}
 	if acct.Value < balanceNeeded {
 		return ErrInvalidAmt

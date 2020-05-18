@@ -1118,7 +1118,11 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	}
 
 	// Make sure the referenced account exists.
-	_, err = s.store.Account(ctx, clientKit.AcctKey, true)
+	acctKey, err := btcec.ParsePubKey(clientKit.AcctKey[:], btcec.S256())
+	if err != nil {
+		return nil, nil, err
+	}
+	_, err = s.store.Account(ctx, acctKey, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)
 	}
@@ -1237,8 +1241,9 @@ func marshallMatchedBid(bid *order.Bid,
 // marshallServerOrder translates an order.ServerOrder to its RPC counterpart.
 func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
 	nonce := order.Nonce()
+
 	return &clmrpc.ServerOrder{
-		UserSubKey:  order.ServerDetails().Acct.TraderKeyRaw[:],
+		UserSubKey:  order.Details().AcctKey[:],
 		RateFixed:   int64(order.Details().FixedRate),
 		Amt:         int64(order.Details().Amt),
 		OrderNonce:  nonce[:],
