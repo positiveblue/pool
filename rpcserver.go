@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/agora/agoradb"
 	accountT "github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/agora/client/clmscript"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue"
@@ -837,7 +838,8 @@ func (s *rpcServer) sendToTrader(
 	case *venue.PrepareMsg:
 		feeSchedule, ok := m.ExecutionFee.(*orderT.LinearFeeSchedule)
 		if !ok {
-			return fmt.Errorf("FeeSchedule w/o fee rate used")
+			return fmt.Errorf("FeeSchedule w/o fee rate used: %T",
+				m.ExecutionFee)
 		}
 
 		// Each order the user submitted may be matched to one or more
@@ -885,10 +887,13 @@ func (s *rpcServer) sendToTrader(
 		// their portion of the batch.
 		var accountDiffs []*clmrpc.AccountDiff
 		for _, acctDiff := range m.ChargedAccounts {
-			acctDiff, err := marshallAccountDiff(acctDiff)
+			acctDiff, err := marshallAccountDiff(acctDiff, m.AccountOutPoint)
 			if err != nil {
 				return err
 			}
+
+			// TODO(roasbeef): only assumes one acct per user rn,
+			// as the outpoint re-used above
 
 			accountDiffs = append(accountDiffs, acctDiff)
 		}
@@ -1043,7 +1048,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	copy(batchID[:], req.Id)
 
 	// TODO(wilmer): Add caching layer? LRU?
-	batch, _, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batch, batchTx, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
@@ -1077,7 +1082,19 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 		if !ok {
 			continue
 		}
-		accountDiff, err := marshallAccountDiff(diff)
+
+		outputIndex, ok := clmscript.LocateOutputScript(
+			batchTx, diff.RecreatedOutput.PkScript,
+		)
+		if !ok {
+			return nil, fmt.Errorf("unable to find output for trader")
+		}
+		accountOutPoint := wire.OutPoint{
+			Hash:  batchTx.TxHash(),
+			Index: outputIndex,
+		}
+
+		accountDiff, err := marshallAccountDiff(diff, accountOutPoint)
 		if err != nil {
 			return nil, err
 		}
@@ -1195,11 +1212,11 @@ func tokenIDFromContext(ctx context.Context) lsat.TokenID {
 }
 
 // marshallAccountDiff translates a matching.AccountDiff to its RPC counterpart.
-func marshallAccountDiff(diff matching.AccountDiff) (*clmrpc.AccountDiff, error) {
+func marshallAccountDiff(diff matching.AccountDiff,
+	acctOutPoint wire.OutPoint) (*clmrpc.AccountDiff, error) {
+
 	// TODO: Need to extend account.OnChainState with DustExtendedOffChain
 	// and DustAddedToFees.
-	//
-	// TODO: AccountDiff doesn't include the new output index.
 	var (
 		endingState clmrpc.AccountDiff_AccountState
 		opIdx       int32
@@ -1207,6 +1224,7 @@ func marshallAccountDiff(diff matching.AccountDiff) (*clmrpc.AccountDiff, error)
 	switch state := account.EndingState(diff.EndingBalance); {
 	case state == account.OnChainStateRecreated:
 		endingState = clmrpc.AccountDiff_OUTPUT_RECREATED
+		opIdx = int32(acctOutPoint.Index)
 	case state == account.OnChainStateFullySpent:
 		endingState = clmrpc.AccountDiff_OUTPUT_FULLY_SPENT
 		opIdx = -1
