@@ -399,9 +399,17 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	for acctID, traderOutput := range traderAccounts {
 		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
 
+		// Now that we know the fee for this trader, we'll first update
+		// our indexes for our callers.
+		//
 		// TODO(roasbeef): dustiness
 		traderOutput.Value -= int64(traderFee)
 		e.batchFees[acctID] = traderFee
+
+		// With our internal indexes updated, we'll now also need to
+		// update the account diff themselves, which should reflect the
+		// end chain fee aid.
+		orderBatch.FeeReport.AccountDiffs[acctID].EndingBalance -= traderFee
 	}
 
 	// Finally, we'll tack on our master account output, and pay any
