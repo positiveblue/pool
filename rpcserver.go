@@ -845,26 +845,38 @@ func (s *rpcServer) sendToTrader(
 		// representation we use to the proto representation that we
 		// need to send to the client.
 		matchedOrders := make(map[string]*clmrpc.MatchedOrder)
-		for orderNonce, order := range m.MatchedOrders {
-			isAsk := order.Asker.AccountKey == msg.Dest()
-			nonceStr := hex.EncodeToString(orderNonce[:])
-			unitsFilled := order.Details.Quote.UnitsMatched
+		for traderOrderNonce, orderMatches := range m.MatchedOrders {
+			log.Debugf("Order(%x) matched w/ %v orders",
+				traderOrderNonce[:], len(m.MatchedOrders))
 
-			ask, bid := order.Details.Ask, order.Details.Bid
+			// As we support partial patches, this trader nonce
+			// might be matched with a set of other orders, so
+			// we'll unroll this here now.
+			for _, order := range orderMatches {
+				isAsk := order.Asker.AccountKey == msg.Dest()
+				nonceStr := hex.EncodeToString(
+					traderOrderNonce[:],
+				)
+				unitsFilled := order.Details.Quote.UnitsMatched
 
-			// If the client had their bid matched, then we'll send
-			// over the ask information and the other way around if
-			// it's a bid.
-			if !isAsk {
-				matchedOrders[nonceStr].MatchedAsks = append(
-					matchedOrders[nonceStr].MatchedAsks,
-					marshallMatchedAsk(ask, unitsFilled),
-				)
-			} else {
-				matchedOrders[nonceStr].MatchedBids = append(
-					matchedOrders[nonceStr].MatchedBids,
-					marshallMatchedBid(bid, unitsFilled),
-				)
+				ask, bid := order.Details.Ask, order.Details.Bid
+
+				matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
+
+				// If the client had their bid matched, then
+				// we'll send over the ask information and the
+				// other way around if it's a bid.
+				if !isAsk {
+					matchedOrders[nonceStr].MatchedAsks = append(
+						matchedOrders[nonceStr].MatchedAsks,
+						marshallMatchedAsk(ask, unitsFilled),
+					)
+				} else {
+					matchedOrders[nonceStr].MatchedBids = append(
+						matchedOrders[nonceStr].MatchedBids,
+						marshallMatchedBid(bid, unitsFilled),
+					)
+				}
 			}
 		}
 

@@ -38,8 +38,10 @@ type PrepareMsg struct {
 	AcctKey matching.AccountID
 
 	// MatchedOrders is the set of orders that a trader was matched with in
-	// the batch.
-	MatchedOrders map[orderT.Nonce]*matching.MatchedOrder
+	// the batch for the trader. As we support partial matches, this maps
+	// an order nonce to all the other orders it was matched with in the
+	// batch.
+	MatchedOrders map[orderT.Nonce][]*matching.MatchedOrder
 
 	// ClearingPrice is the final clearing price of the batch.
 	ClearingPrice orderT.FixedRatePremium
@@ -601,7 +603,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return PrepareSent, env, nil
 			}
 
-			log.Debugf("Received OrderMatchAccept from trader=%v",
+			log.Debugf("Received OrderMatchAccept from trader=%x",
 				msgRecv.msg.Src())
 
 			env.cancelTimerForTrader(msgRecv.msg.Src())
@@ -670,7 +672,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchSigning, env, nil
 			}
 
-			log.Debugf("Received OrderMatchSign from trader=%v",
+			log.Debugf("Received OrderMatchSign from trader=%x",
 				msgRecv.msg.Src())
 
 			// As we've received the expected message from this
@@ -684,7 +686,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			acctSig, ok := signMsg.Sigs[string(src[:])]
 			if !ok {
 				return 0, env, fmt.Errorf("account witness "+
-					"for %v not found", src)
+					"for %x not found", src)
 			}
 
 			// As we want to fully validate the witness, we'll
