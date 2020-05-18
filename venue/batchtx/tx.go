@@ -432,7 +432,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// As the transaction has just been sorted, we can now index the final
 	// version of the transaction, so we can easily perform the signing
 	// execution in the next phase.
-	masterAcctIndex, err := e.indexBatchTx(
+	masterAcctInputIndex, err := e.indexBatchTx(
 		scriptToOrderNonce, traderAccounts,
 		ordersForTrader, inputToAcct,
 	)
@@ -450,19 +450,19 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// master account.
 	//
 	// TODO(roasbeef): do above in indexBatchTx?
-	_, masterAccountIndex := input.FindScriptOutputIndex(
+	_, masterAccountOutputIndex := input.FindScriptOutputIndex(
 		e.ExeTx, auctioneerAccountScript,
 	)
 	e.MasterAccountDiff = &MasterAccountState{
 		PriorPoint: mAccountDiff.PriorPoint,
 		OutPoint: &wire.OutPoint{
 			Hash:  e.ExeTx.TxHash(),
-			Index: masterAccountIndex,
+			Index: masterAccountOutputIndex,
 		},
 		AccountBalance: btcutil.Amount(finalAccountBalance),
 		AuctioneerKey:  mAccountDiff.AuctioneerKey,
 		BatchKey:       mAccountDiff.BatchKey,
-		InputIndex:     masterAcctIndex,
+		InputIndex:     masterAcctInputIndex,
 	}
 
 	return nil
