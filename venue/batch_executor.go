@@ -522,14 +522,29 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			return 0, env, err
 		}
 		env.masterAcct = masterAcct
+
+		// When we create this master account state, we'll ensure that
+		// we provide the "next" batch key, as this is what will be
+		// used to create the outputs in the BET.
 		masterAcctState := &batchtx.MasterAccountState{
 			PriorPoint:     masterAcct.OutPoint,
 			AccountBalance: masterAcct.Balance,
-			BatchKey:       env.batchID,
 		}
 		copy(
 			masterAcctState.AuctioneerKey[:],
 			masterAcct.AuctioneerKey.PubKey.SerializeCompressed(),
+		)
+
+		batchKeyPub, err := btcec.ParsePubKey(
+			env.batchID[:], btcec.S256(),
+		)
+		if err != nil {
+			return 0, env, err
+		}
+		nextBatchKey := clmscript.IncrementKey(batchKeyPub)
+		copy(
+			masterAcctState.BatchKey[:],
+			nextBatchKey.SerializeCompressed(),
 		)
 
 		env.exeCtx, err = batchtx.New(
@@ -760,7 +775,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// create the witness for the auctioneer's account point.
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
 		auctioneerWitness, err := env.masterAcct.AccountWitness(
-			b.signer, batchTx, auctioneerInputIndex,
+			b.signer, batchTx, int(auctioneerInputIndex),
 		)
 		if err != nil {
 			return 0, env, err
