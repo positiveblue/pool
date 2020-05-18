@@ -26,21 +26,26 @@ func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
 
 var _ orderT.FeeSchedule = (*mockFeeSchedule)(nil)
 
-func genRandMatchedOrders(r *rand.Rand, opts ...orderGenOption) []MatchedOrder {
+func genRandMatchedOrders(r *rand.Rand, acctDB *acctFetcher,
+	opts ...orderGenOption) []MatchedOrder {
+
 	numMatchedOrders := uint16(r.Int31()) % 1000
 	matchedOrders := make([]MatchedOrder, numMatchedOrders)
 	for i := 0; i < int(numMatchedOrders); i++ {
-		ask := genRandAsk(r, opts...)
-		bid := genRandBid(r, opts...)
+		ask := genRandAsk(r, acctDB, opts...)
+		bid := genRandBid(r, acctDB, opts...)
+
+		bidAcct, _ := acctDB.fetchAcct(bid.Bid.AcctKey)
+		askAcct, _ := acctDB.fetchAcct(ask.Ask.AcctKey)
 
 		order := MatchedOrder{
 			Asker: Trader{
-				AccountKey:     ask.Acct.TraderKeyRaw,
-				AccountBalance: ask.Acct.Value,
+				AccountKey:     askAcct.TraderKeyRaw,
+				AccountBalance: askAcct.Value,
 			},
 			Bidder: Trader{
-				AccountKey:     bid.Acct.TraderKeyRaw,
-				AccountBalance: bid.Acct.Value,
+				AccountKey:     bidAcct.TraderKeyRaw,
+				AccountBalance: bidAcct.Value,
 			},
 			Details: OrderPair{
 				Ask: ask,
@@ -66,6 +71,8 @@ const clearingPrice = orderT.FixedRatePremium(10000)
 // orders.
 func TestTradingReportCompletion(t *testing.T) {
 	t.Parallel()
+
+	acctDB := newAcctFetcher()
 
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,
@@ -99,7 +106,9 @@ func TestTradingReportCompletion(t *testing.T) {
 	}
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-			v[0] = reflect.ValueOf(genRandMatchedOrders(r))
+			v[0] = reflect.ValueOf(genRandMatchedOrders(
+				r, acctDB,
+			))
 		},
 	}
 	if err := quick.Check(scenario, &quickCfg); err != nil {
@@ -114,6 +123,8 @@ func TestTradingReportCompletion(t *testing.T) {
 // submitted, and the various fee stats properly computed.
 func TestTradingReportGeneration(t *testing.T) {
 	t.Parallel()
+
+	acctDB := newAcctFetcher()
 
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,
@@ -197,7 +208,8 @@ func TestTradingReportGeneration(t *testing.T) {
 			// We'll also clamp down on the order size as well as
 			// the account size so the number are manageable.
 			v[0] = reflect.ValueOf(
-				genRandMatchedOrders(r,
+				genRandMatchedOrders(
+					r, acctDB,
 					staticDurationGen(2),
 				),
 			)

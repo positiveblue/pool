@@ -210,10 +210,6 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		return ErrInvalidAmt
 	}
 
-	// Finally we'll attach the account to the order itself so the rest of
-	// the system has easy access to the account that made an order.
-	srvOrder.ServerDetails().Acct = acct
-
 	return nil
 }
 
