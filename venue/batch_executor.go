@@ -418,8 +418,6 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	// With the keys obtained, we'll now derive the tweak we need to obtain
 	// our private key, as well as the full witness script of the trader's
 	// account output.
-	// TODO(roasbeef): double check using proper batch key here in actual
-	// execution...
 	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
 		traderKey, masterAcct.AuctioneerKey.PubKey,
 		batchKey, trader.VenueSecret,
@@ -775,7 +773,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// create the witness for the auctioneer's account point.
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
 		auctioneerWitness, err := env.masterAcct.AccountWitness(
-			b.signer, batchTx, int(auctioneerInputIndex),
+			b.signer, batchTx, auctioneerInputIndex,
 		)
 		if err != nil {
 			return 0, env, err

@@ -3,7 +3,9 @@ package itest
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -18,7 +20,9 @@ import (
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -640,4 +644,399 @@ func traderOutputScript(t *harnessTest, traderNode *lntest.HarnessNode) []byte {
 		t.Fatalf("could not create pay to address script: %v", err)
 	}
 	return addrScript
+}
+
+func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode, chanAmt btcutil.Amount,
+	initiator bool, chanPeer [33]byte) {
+
+	req := &lnrpc.PendingChannelsRequest{}
+	err := wait.NoError(func() error {
+		resp, err := node.PendingChannels(context.Background(), req)
+		if err != nil {
+			return err
+		}
+
+		if len(resp.PendingOpenChannels) == 0 {
+			return fmt.Errorf("no pending channels")
+		}
+
+		pendingChan := resp.PendingOpenChannels[0]
+		channel := pendingChan.Channel
+		if channel.Capacity != int64(chanAmt) {
+			return fmt.Errorf("wrong capacity: expected %v, got %v",
+				int64(chanAmt), channel.Capacity)
+		}
+
+		chanPeerStr := hex.EncodeToString(chanPeer[:])
+		if channel.RemoteNodePub != chanPeerStr {
+			return fmt.Errorf("wrong peer: expected %v, got %v",
+				chanPeerStr, channel.RemoteNodePub)
+		}
+
+		switch {
+		case channel.Initiator == lnrpc.Initiator_INITIATOR_LOCAL &&
+			!initiator:
+
+			return fmt.Errorf("intiator mismatch: expected %v, "+
+				"got %v", initiator, channel.Initiator)
+
+		case channel.Initiator == lnrpc.Initiator_INITIATOR_REMOTE &&
+			initiator:
+
+			return fmt.Errorf("intiator mismatch: expected %v, "+
+				"got %v", initiator, channel.Initiator)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("pending channel assertion failed: %v", err)
+	}
+}
+
+// completePaymentRequests sends payments from a lightning node to complete all
+// payment requests. If the awaitResponse parameter is true, this function
+// does not return until all payments successfully complete without errors.
+func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
+	paymentRequests []string, awaitResponse bool) error {
+
+	// We start by getting the current state of the client's channels. This
+	// is needed to ensure the payments actually have been committed before
+	// we return.
+	ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+	req := &lnrpc.ListChannelsRequest{}
+	listResp, err := client.ListChannels(ctxt, req)
+	if err != nil {
+		return err
+	}
+
+	ctxc, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	payStream, err := client.SendPayment(ctxc)
+	if err != nil {
+		return err
+	}
+
+	for _, payReq := range paymentRequests {
+		sendReq := &lnrpc.SendRequest{
+			PaymentRequest: payReq,
+		}
+		err := payStream.Send(sendReq)
+		if err != nil {
+			return err
+		}
+	}
+
+	if awaitResponse {
+		for range paymentRequests {
+			resp, err := payStream.Recv()
+			if err != nil {
+				return err
+			}
+			if resp.PaymentError != "" {
+				return fmt.Errorf("received payment error: %v",
+					resp.PaymentError)
+			}
+		}
+
+		return nil
+	}
+
+	// We are not waiting for feedback in the form of a response, but we
+	// should still wait long enough for the server to receive and handle
+	// the send before cancelling the request. We wait for the number of
+	// updates to one of our channels has increased before we return.
+	err = wait.Predicate(func() bool {
+		ctxt, cancel = context.WithTimeout(ctx, defaultWaitTimeout)
+		defer cancel()
+
+		newListResp, err := client.ListChannels(ctxt, req)
+		if err != nil {
+			return false
+		}
+
+		for _, c1 := range listResp.Channels {
+			for _, c2 := range newListResp.Channels {
+				if c1.ChannelPoint != c2.ChannelPoint {
+					continue
+				}
+
+				// If this channel has an increased numbr of
+				// updates, we assume the payments are
+				// committed, and we can return.
+				if c2.NumUpdates > c1.NumUpdates {
+					return true
+				}
+			}
+		}
+
+		return false
+	}, time.Second*15)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
+	chanAmt int64, fundingTXID chainhash.Hash, thawHeight int64) { // nolint:unparam
+
+	req := &lnrpc.ListChannelsRequest{}
+	err := wait.NoError(func() error {
+		resp, err := node.ListChannels(context.Background(), req)
+		if err != nil {
+			return err
+		}
+
+		if len(resp.Channels) == 0 {
+			return fmt.Errorf("no pending channels")
+		}
+
+		channel := resp.Channels[0]
+		if !channel.Active {
+			return fmt.Errorf("channel not active")
+		}
+		if channel.Capacity != chanAmt {
+			return fmt.Errorf("wrong capacity: expected %v, "+
+				"got %v", channel.Capacity, chanAmt)
+		}
+
+		if !strings.Contains(channel.ChannelPoint, fundingTXID.String()) {
+			return fmt.Errorf("wrong output: %v, should have "+
+				"hash %v", channel.ChannelPoint, fundingTXID.String())
+		}
+
+		// TODO(roasbeef): restore after all nodes wait for lnd to be
+		// fully synced
+		/*if channel.ThawHeight != uint32(thawHeight) {
+			return fmt.Errorf("wrong thaw height: expected %v, "+
+				"got %v", thawHeight, channel.ThawHeight)
+		}*/
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("active channel assertion failed: %v", err)
+	}
+
+}
+
+func submitBidOrder(trader *traderHarness, subKey []byte,
+	rate uint32, amt btcutil.Amount, duration int64,
+	version uint32) (orderT.Nonce, error) {
+
+	var nonce orderT.Nonce
+
+	ctx := context.Background()
+	resp, err := trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
+		Details: &clmrpc.SubmitOrderRequest_Bid{
+			Bid: &clmrpc.Bid{
+				Details: &clmrpc.Order{
+					UserSubKey:     subKey,
+					RateFixed:      int64(rate),
+					Amt:            int64(amt),
+					FundingFeeRate: 0,
+				},
+				MinDurationBlocks: duration,
+				Version:           version,
+			},
+		},
+	})
+	if err != nil {
+		return nonce, err
+	}
+
+	if resp.GetInvalidOrder() != nil {
+		return nonce, fmt.Errorf("invalid order: %v",
+			resp.GetInvalidOrder().FailString)
+	}
+
+	copy(nonce[:], resp.GetAcceptedOrderNonce())
+
+	return nonce, nil
+}
+
+func submitAskOrder(trader *traderHarness, subKey []byte,
+	rate uint32, amt btcutil.Amount, duration int64,
+	version uint32) (orderT.Nonce, error) {
+
+	var nonce orderT.Nonce
+
+	ctx := context.Background()
+	resp, err := trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
+		Details: &clmrpc.SubmitOrderRequest_Ask{
+			Ask: &clmrpc.Ask{
+				Details: &clmrpc.Order{
+					UserSubKey:     subKey,
+					RateFixed:      int64(rate),
+					Amt:            int64(amt),
+					FundingFeeRate: 0,
+				},
+				MaxDurationBlocks: duration,
+				Version:           version,
+			},
+		},
+	})
+	if err != nil {
+		return nonce, err
+	}
+
+	if resp.GetInvalidOrder() != nil {
+		return nonce, fmt.Errorf("invalid order: %v",
+			resp.GetInvalidOrder().FailString)
+	}
+
+	copy(nonce[:], resp.GetAcceptedOrderNonce())
+
+	return nonce, nil
+}
+
+func assertNoOrders(t *harnessTest, trader *traderHarness) {
+	err := wait.NoError(func() error {
+		req := &clmrpc.ListOrdersRequest{}
+		resp, err := trader.ListOrders(context.Background(), req)
+		if err != nil {
+			return err
+		}
+
+		for _, ask := range resp.Asks {
+			if ask.Details.State != orderT.StateExecuted.String() {
+
+				return fmt.Errorf("order in state: %v",
+					ask.Details.State)
+			}
+		}
+
+		for _, bid := range resp.Bids {
+			if bid.Details.State != orderT.StateExecuted.String() {
+
+				return fmt.Errorf("order in state: %v",
+					bid.Details.State)
+			}
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("no order assertion failed: %v", err)
+	}
+}
+
+func assertAskOrderState(t *harnessTest, trader *traderHarness,
+	unfilledUnits uint32, orderNonce orderT.Nonce) {
+
+	// TODO(roasbeef): add LookupORder method for client RPC
+	err := wait.NoError(func() error {
+		req := &clmrpc.ListOrdersRequest{}
+		resp, err := trader.ListOrders(context.Background(), req)
+		if err != nil {
+			return err
+		}
+
+		var orderFound bool
+		for _, order := range resp.Asks {
+			if !bytes.Equal(order.Details.OrderNonce,
+				orderNonce[:]) {
+				continue
+			}
+
+			if order.Details.UnitsUnfulfilled != unfilledUnits {
+				return fmt.Errorf("order has %v units "+
+					"unfilled, expected %v",
+					order.Details.UnitsUnfulfilled,
+					unfilledUnits)
+			}
+
+			orderFound = true
+		}
+
+		if !orderFound {
+			return fmt.Errorf("order not found")
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("order state doesn't match: %v", err)
+	}
+}
+
+// assertChannelClosed asserts that the channel is properly cleaned up after
+// initiating a cooperative or local close.
+func assertChannelClosed(ctx context.Context, t *harnessTest,
+	net *lntest.NetworkHarness, node *lntest.HarnessNode,
+	fundingChanPoint *lnrpc.ChannelPoint,
+	closeUpdates lnrpc.Lightning_CloseChannelClient) *chainhash.Hash {
+
+	txid, err := lnd.GetChanPointFundingTxid(fundingChanPoint)
+	if err != nil {
+		t.Fatalf("unable to get txid: %v", err)
+	}
+	chanPointStr := fmt.Sprintf("%v:%v", txid, fundingChanPoint.OutputIndex)
+
+	// At this point, the channel should now be marked as being in the
+	// state of "waiting close".
+	pendingChansRequest := &lnrpc.PendingChannelsRequest{}
+	err = wait.NoError(func() error {
+		pendingChanResp, err := node.PendingChannels(ctx, pendingChansRequest)
+		if err != nil {
+			return fmt.Errorf("unable to query for pending channels: %v", err)
+		}
+		var found bool
+		for _, pendingClose := range pendingChanResp.WaitingCloseChannels {
+			if pendingClose.Channel.ChannelPoint == chanPointStr {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("no chan found")
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("channel not marked as waiting close: %v", err)
+	}
+
+	// We'll now, generate a single block, wait for the final close status
+	// update, then ensure that the closing transaction was included in the
+	// block.
+	block := mineBlocks(t, net, 1, 1)[0]
+
+	closingTxid, err := net.WaitForChannelClose(ctx, closeUpdates)
+	if err != nil {
+		t.Fatalf("error while waiting for channel close: %v", err)
+	}
+
+	assertTxInBlock(t, block, closingTxid)
+
+	// Finally, the transaction should no longer be in the waiting close
+	// state as we've just mined a block that should include the closing
+	// transaction.
+	err = wait.Predicate(func() bool {
+		pendingChansRequest := &lnrpc.PendingChannelsRequest{}
+		pendingChanResp, err := node.PendingChannels(
+			ctx, pendingChansRequest,
+		)
+		if err != nil {
+			return false
+		}
+
+		for _, pendingClose := range pendingChanResp.WaitingCloseChannels {
+			if pendingClose.Channel.ChannelPoint == chanPointStr {
+				return false
+			}
+		}
+
+		return true
+	}, time.Second*15)
+	if err != nil {
+		t.Fatalf("closing transaction not marked as fully closed")
+	}
+
+	return closingTxid
 }
