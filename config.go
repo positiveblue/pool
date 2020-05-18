@@ -31,14 +31,14 @@ const (
 	// submitting an order.
 	defaultOrderSubmitFee = 1337
 
-	// defaultExecutionFeeBase is the default base fee in satoshis that we
+	// DefaultExecutionFeeBase is the default base fee in satoshis that we
 	// charge per matched order.
-	defaultExecutionFeeBase = 1
+	DefaultExecutionFeeBase = 1
 
-	// defaultExecutionFeeRate is the default variable fee rate in parts
+	// DefaultExecutionFeeRate is the default variable fee rate in parts
 	// per million that we charge per matched order. This ends up being 10
 	// bps, or 0.001, or 0.1%.
-	defaultExecutionFeeRate = 1000
+	DefaultExecutionFeeRate = 1000
 
 	// defaultTLSCertFilename is the default file name for the TLS
 	// certificate.
@@ -152,8 +152,8 @@ var DefaultConfig = &Config{
 	Network:          "mainnet",
 	BaseDir:          DefaultBaseDir,
 	OrderSubmitFee:   defaultOrderSubmitFee,
-	ExecFeeBase:      defaultExecutionFeeBase,
-	ExecFeeRate:      defaultExecutionFeeRate,
+	ExecFeeBase:      DefaultExecutionFeeBase,
+	ExecFeeRate:      DefaultExecutionFeeRate,
 	SubscribeTimeout: defaultSubscribeTimeout,
 	ServerName:       "auction.lightning.today",
 	Insecure:         false,

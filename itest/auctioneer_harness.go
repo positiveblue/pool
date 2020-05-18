@@ -74,18 +74,14 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 	return &auctioneerHarness{
 		cfg: &cfg,
 		serverCfg: &agora.Config{
-			LogDir:           ".",
-			MaxLogFiles:      99,
-			MaxLogFileSize:   999,
 			Network:          cfg.NetParams.Name,
 			Insecure:         true,
 			FakeAuth:         true,
 			BaseDir:          cfg.BaseDir,
 			OrderSubmitFee:   1337,
+			ExecFeeBase:      agora.DefaultExecutionFeeBase,
+			ExecFeeRate:      agora.DefaultExecutionFeeRate,
 			SubscribeTimeout: 500 * time.Millisecond,
-			DebugLevel:       "debug",
-			RPCListener:      cfg.RPCListener,
-			AdminRPCListener: cfg.AdminRPCListener,
 			Lnd: &agora.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,
@@ -96,6 +92,12 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				User:     "",
 				Password: "",
 			},
+			MaxLogFiles:      99,
+			MaxLogFileSize:   999,
+			DebugLevel:       "debug",
+			LogDir:           ".",
+			RPCListener:      cfg.RPCListener,
+			AdminRPCListener: cfg.AdminRPCListener,
 		},
 	}, nil
 }
