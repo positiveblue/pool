@@ -35,9 +35,10 @@ const (
 	// charge per matched order.
 	defaultExecutionFeeBase = 1
 
-	// defaultExecutionFeeRate is the default variable fee rate in parts per
-	// million that we charge per matched order.
-	defaultExecutionFeeRate = 100
+	// defaultExecutionFeeRate is the default variable fee rate in parts
+	// per million that we charge per matched order. This ends up being 10
+	// bps, or 0.001, or 0.1%.
+	defaultExecutionFeeRate = 1000
 
 	// defaultTLSCertFilename is the default file name for the TLS
 	// certificate.
@@ -76,13 +77,6 @@ const (
 	// defaultBatchTickInterval is the default amount of time we'll wait
 	// between attempts to create a new batch.
 	defaultBatchTickInterval = time.Minute * 10
-
-	// defaultFeeRatePerMillionths is the default fee rate used for the
-	// system. This ends up being 10 bps, or 0.001, or 0.1%.
-	defaultFeeRatePerMillionths = 10000
-
-	// defaultBaseFee is the base fee we apply for all orders executed.
-	defaultBaseFee = 1
 )
 
 var (
