@@ -2,10 +2,16 @@ package main
 
 import (
 	"fmt"
+	"net"
+	"net/http"
 	"os"
+	"strconv"
 
 	"github.com/lightninglabs/agora"
 	"github.com/lightningnetwork/lnd/signal"
+
+	// Blank import to set up profiling HTTP handlers.
+	_ "net/http/pprof"
 )
 
 type daemonCommand struct {
@@ -21,6 +27,23 @@ func (x *daemonCommand) Execute(_ []string) error {
 	}
 
 	signal.Intercept()
+
+	// Enable http profiling and Validate profile port number if reqeusted.
+	if x.cfg.Profile != "" {
+		profilePort, err := strconv.Atoi(x.cfg.Profile)
+		if err != nil || profilePort < 1024 || profilePort > 65535 {
+			return fmt.Errorf("the profile port must be between " +
+				"1024 and 65535")
+		}
+
+		go func() {
+			listenAddr := net.JoinHostPort("", x.cfg.Profile)
+			profileRedirect := http.RedirectHandler("/debug/pprof",
+				http.StatusSeeOther)
+			http.Handle("/", profileRedirect)
+			fmt.Println(http.ListenAndServe(listenAddr, nil))
+		}()
+	}
 
 	server, err := agora.NewServer(x.cfg)
 	if err != nil {
