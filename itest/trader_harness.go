@@ -70,6 +70,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 			MaxLogFileSize: 999,
 			Network:        cfg.NetParams.Name,
 			Insecure:       true,
+			FakeAuth:       true,
 			BaseDir:        cfg.BaseDir,
 			DebugLevel:     "debug",
 			MinBackoff:     100 * time.Millisecond,
