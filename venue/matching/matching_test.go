@@ -134,7 +134,7 @@ func genRandAccount(r *rand.Rand, genOptions ...orderGenOption) *account.Account
 	}
 }
 
-func genRandBid(r *rand.Rand, accts *acctFetcher,
+func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	genOptions ...orderGenOption) *order.Bid {
 
 	genCfg := orderGenCfg{}
@@ -175,7 +175,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher,
 	return b
 }
 
-func genRandAsk(r *rand.Rand, accts *acctFetcher,
+func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	genOptions ...orderGenOption) *order.Ask {
 
 	genCfg := orderGenCfg{}
