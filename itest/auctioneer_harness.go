@@ -79,6 +79,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			MaxLogFileSize:   999,
 			Network:          cfg.NetParams.Name,
 			Insecure:         true,
+			FakeAuth:         true,
 			BaseDir:          cfg.BaseDir,
 			OrderSubmitFee:   1337,
 			SubscribeTimeout: 500 * time.Millisecond,

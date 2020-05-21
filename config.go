@@ -140,6 +140,7 @@ type Config struct {
 
 	DebugLevel string `short:"d" long:"debuglevel" description:"Logging level for all subsystems {trace, debug, info, warn, error, critical} -- You may also specify <subsystem>=<level>,<subsystem2>=<level>,... to set the log level for individual subsystems -- Use show to list available subsystems"`
 	Profile    string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65535"`
+	FakeAuth   bool   `long:"fakeauth" description:"Use fake LSAT authentication, allow traders to set fake LSAT ID. For testing only, cannot be set on mainnet."`
 
 	Lnd  *LndConfig  `group:"lnd" namespace:"lnd"`
 	Etcd *EtcdConfig `group:"etcd" namespace:"etcd"`

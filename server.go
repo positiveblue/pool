@@ -226,7 +226,10 @@ func NewServer(cfg *Config) (*Server, error) {
 	// First, we'll set up the series of interceptors for our gRPC server
 	// which we'll initialize shortly below.
 	var interceptor ServerInterceptor = &auth.ServerInterceptor{}
-	if cfg.Network == "regtest" {
+	if cfg.FakeAuth && cfg.Network == "mainnet" {
+		return nil, fmt.Errorf("cannot use fake LSAT auth for mainnet")
+	}
+	if cfg.FakeAuth {
 		interceptor = &regtestInterceptor{}
 	}
 	serverOpts := []grpc.ServerOption{
