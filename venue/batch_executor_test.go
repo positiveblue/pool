@@ -169,6 +169,8 @@ func (e *executorTestHarness) ExpectExecutionError(respChan chan *ExecutionResul
 }
 
 func (e *executorTestHarness) ExpectPrepareMsgForAll() {
+	e.t.Helper()
+
 	for _, traderOutChan := range e.outgoingChans {
 		select {
 		case msg := <-traderOutChan:
@@ -397,7 +399,8 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 
 		// With only one of the accounts registered, we'll attempt to
 		// submit a new batch for execution.
-		respChan := testCtx.SubmitBatch(orderBatch)
+		batch := orderBatch.Copy()
+		respChan := testCtx.SubmitBatch(&batch)
 
 		// In the state machine itself, we should transition from the
 		// NoActiveBatch state to the BatchTempError state.
@@ -426,8 +429,6 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 // includes backing out and removing any traders that fail to send a message in
 // time, or send invalid signatures.
 func TestBatchExecutorNewBatchExecution(t *testing.T) {
-	testBatch := *orderBatch
-
 	// First, we'll create our test harness which includes all the
 	// functionality we need to carry out our tests.
 	msgTimeout := time.Millisecond * 200
@@ -458,7 +459,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	}
 
 	// Next, we'll kick things off by submitting our canned batch.
-	respChan := testCtx.SubmitBatch(&testBatch)
+	batch := orderBatch.Copy()
+	respChan := testCtx.SubmitBatch(&batch)
 
 	// stepPrepareToSign handles simulating execution up to the
 	// BatchSigning phase. If a slow trader is specified, then we'll have
@@ -528,11 +530,14 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// We'll now re-submit the batch once again, this time, sending all
 	// accept messages for each trader, which should transition us to the
 	// next phase.
-	respChan = testCtx.SubmitBatch(&testBatch)
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 
 	stepSignToFinalize := func(invalidSig bool, slowTrader *matching.AccountID,
 		fastTraders ...*ActiveTrader) {
+
+		t.Helper()
 
 		// Now that we're entering the BatchSigning phase, we expect
 		// that the auctioneer sends the SignBeginMsg to all active
@@ -599,7 +604,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// Next we'll execute again (from the top), but one of the traders will
 	// send an invalid witness, this should cause us to again bail out as
 	// we can't proceed with an invalid input.
-	respChan = testCtx.SubmitBatch(&testBatch)
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 	stepSignToFinalize(true, nil, activeSmallTrader, activeBigTrader)
 
@@ -612,7 +618,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// Now we'll move forward with no slow traders and no invalid
 	// signatures, we should proceed to the finalize phase and end up with
 	// a final valid batch.
-	respChan = testCtx.SubmitBatch(&testBatch)
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 	stepSignToFinalize(false, nil, activeSmallTrader, activeBigTrader)
 
