@@ -3,6 +3,7 @@ package venue
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
 
@@ -321,7 +322,7 @@ func (e *executorTestHarness) SendSignMsg(sender *ActiveTrader, invalidSig bool)
 	signMsg := &TraderSignMsg{
 		Trader: sender,
 		Sigs: map[string]*btcec.Signature{
-			string(sender.AccountKey[:]): traderSig,
+			hex.EncodeToString(sender.AccountKey[:]): traderSig,
 		},
 	}
 
