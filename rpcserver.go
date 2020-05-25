@@ -239,7 +239,7 @@ func parseRPCAccountParams(
 		Index: req.AccountPoint.OutputIndex,
 	}
 
-	traderKey, err := btcec.ParsePubKey(req.UserSubKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
 	if err != nil {
 		return nil, err
 	}
@@ -280,7 +280,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 	req *clmrpc.ServerModifyAccountRequest) (
 	*clmrpc.ServerModifyAccountResponse, error) {
 
-	traderKey, err := btcec.ParsePubKey(req.UserSubKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
 	if err != nil {
 		return nil, err
 	}
@@ -367,7 +367,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		}
 		clientAsk := &orderT.Ask{
 			Kit:         *clientKit,
-			MaxDuration: uint32(a.MaxDurationBlocks),
+			MaxDuration: a.MaxDurationBlocks,
 		}
 		o = &order.Ask{
 			Ask: *clientAsk,
@@ -384,7 +384,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		}
 		clientBid := &orderT.Bid{
 			Kit:         *clientKit,
-			MinDuration: uint32(b.MinDurationBlocks),
+			MinDuration: b.MinDurationBlocks,
 		}
 		o = &order.Bid{
 			Bid: *clientBid,
@@ -699,7 +699,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		// Parse their public key to validate the signature and later
 		// retrieve it from the store.
 		acctPubKey, err := btcec.ParsePubKey(
-			msg.Subscribe.UserSubKey, btcec.S256(),
+			msg.Subscribe.TraderKey, btcec.S256(),
 		)
 		if err != nil {
 			comms.err <- fmt.Errorf("error parsing account key: %v",
@@ -905,11 +905,11 @@ func (s *rpcServer) sendToTrader(
 					ClearingPriceRate: uint32(m.ClearingPrice),
 					ChargedAccounts:   accountDiffs,
 					ExecutionFee: &clmrpc.ExecutionFee{
-						BaseFee: int64(m.ExecutionFee.BaseFee()),
-						FeeRate: int64(feeSchedule.FeeRate()),
+						BaseFee: uint64(m.ExecutionFee.BaseFee()),
+						FeeRate: uint64(feeSchedule.FeeRate()),
 					},
 					BatchTransaction: m.BatchTx,
-					FeeRateSatPerKw:  int64(m.FeeRate),
+					FeeRateSatPerKw:  uint64(m.FeeRate),
 					BatchId:          m.BatchID[:],
 					BatchVersion:     m.BatchVersion,
 				},
@@ -1032,8 +1032,8 @@ func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
 
 	return &clmrpc.FeeQuoteResponse{
 		ExecutionFee: &clmrpc.ExecutionFee{
-			BaseFee: int64(s.feeSchedule.BaseFee()),
-			FeeRate: int64(s.feeSchedule.FeeRate()),
+			BaseFee: uint64(s.feeSchedule.BaseFee()),
+			FeeRate: uint64(s.feeSchedule.FeeRate()),
 		},
 	}, nil
 }
@@ -1233,10 +1233,10 @@ func marshallAccountDiff(diff matching.AccountDiff,
 	}
 
 	return &clmrpc.AccountDiff{
-		EndingBalance: int64(diff.EndingBalance),
+		EndingBalance: uint64(diff.EndingBalance),
 		EndingState:   endingState,
 		OutpointIndex: opIdx,
-		UserSubKey:    diff.StartingState.AccountKey[:],
+		TraderKey:     diff.StartingState.AccountKey[:],
 	}, nil
 }
 
@@ -1247,7 +1247,7 @@ func marshallMatchedAsk(ask *order.Ask,
 	return &clmrpc.MatchedAsk{
 		Ask: &clmrpc.ServerAsk{
 			Details:           marshallServerOrder(ask),
-			MaxDurationBlocks: int64(ask.MaxDuration()),
+			MaxDurationBlocks: ask.MaxDuration(),
 			Version:           uint32(ask.Version),
 		},
 		UnitsFilled: uint32(unitsFilled),
@@ -1261,7 +1261,7 @@ func marshallMatchedBid(bid *order.Bid,
 	return &clmrpc.MatchedBid{
 		Bid: &clmrpc.ServerBid{
 			Details:           marshallServerOrder(bid),
-			MinDurationBlocks: int64(bid.MinDuration()),
+			MinDurationBlocks: bid.MinDuration(),
 			Version:           uint32(bid.Version),
 		},
 		UnitsFilled: uint32(unitsFilled),
@@ -1273,9 +1273,9 @@ func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
 	nonce := order.Nonce()
 
 	return &clmrpc.ServerOrder{
-		UserSubKey:  order.Details().AcctKey[:],
-		RateFixed:   int64(order.Details().FixedRate),
-		Amt:         int64(order.Details().Amt),
+		TraderKey:   order.Details().AcctKey[:],
+		RateFixed:   order.Details().FixedRate,
+		Amt:         uint64(order.Details().Amt),
 		OrderNonce:  nonce[:],
 		OrderSig:    order.ServerDetails().Sig.ToSignatureBytes(),
 		MultiSigKey: order.ServerDetails().MultiSigKey[:],
@@ -1283,7 +1283,7 @@ func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
 		NodeAddr:    marshallNodeAddrs(order.ServerDetails().NodeAddrs),
 		// TODO: ChanType should be an enum in RPC?
 		ChanType:               uint32(order.ServerDetails().ChanType),
-		FundingFeeRateSatPerKw: int64(order.Details().FundingFeeRate),
+		FundingFeeRateSatPerKw: uint64(order.Details().FundingFeeRate),
 	}
 }
 

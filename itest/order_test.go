@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	dayInBlocks int64 = 144
+	dayInBlocks uint32 = 144
 )
 
 // testOrderSubmission tests that a simple ask order can be created on both the
@@ -35,7 +35,7 @@ func testOrderSubmission(t *harnessTest) {
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					UserSubKey:     acct.TraderKey,
+					TraderKey:      acct.TraderKey,
 					RateFixed:      100,
 					Amt:            1500000,
 					FundingFeeRate: 0,

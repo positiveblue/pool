@@ -166,7 +166,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
 		Msg: &clmrpc.ClientAuctionMessage_Subscribe{
 			Subscribe: &clmrpc.AccountSubscription{
-				UserSubKey:  testRawTraderKey,
+				TraderKey:   testRawTraderKey,
 				CommitNonce: testTraderNonce[:],
 				AuthSig:     testSignature,
 			},

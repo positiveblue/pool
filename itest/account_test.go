@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultAccountValue uint32 = 2_000_000
+	defaultAccountValue uint64 = 2_000_000
 )
 
 // testAccountCreation tests that the trader can successfully create an account
@@ -111,7 +111,7 @@ func testAccountWithdrawal(t *harnessTest) {
 				Address: "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
 			},
 		},
-		SatPerByte: 1,
+		SatPerVbyte: 1,
 	}
 	_, err = t.trader.WithdrawAccount(ctx, withdrawReq)
 	isInvalidAddrErr := err != nil &&

@@ -782,7 +782,7 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 }
 
 func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
-	chanAmt int64, fundingTXID chainhash.Hash, thawHeight int64) { // nolint:unparam
+	chanAmt int64, fundingTXID chainhash.Hash, thawHeight uint32) { // nolint:unparam
 
 	req := &lnrpc.ListChannelsRequest{}
 	err := wait.NoError(func() error {
@@ -825,7 +825,7 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 }
 
 func submitBidOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration int64,
+	rate uint32, amt btcutil.Amount, duration uint32,
 	version uint32) (orderT.Nonce, error) {
 
 	var nonce orderT.Nonce
@@ -835,9 +835,9 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 		Details: &clmrpc.SubmitOrderRequest_Bid{
 			Bid: &clmrpc.Bid{
 				Details: &clmrpc.Order{
-					UserSubKey:     subKey,
-					RateFixed:      int64(rate),
-					Amt:            int64(amt),
+					TraderKey:      subKey,
+					RateFixed:      rate,
+					Amt:            uint64(amt),
 					FundingFeeRate: 0,
 				},
 				MinDurationBlocks: duration,
@@ -860,7 +860,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 }
 
 func submitAskOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration int64,
+	rate uint32, amt btcutil.Amount, duration uint32,
 	version uint32) (orderT.Nonce, error) {
 
 	var nonce orderT.Nonce
@@ -870,9 +870,9 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					UserSubKey:     subKey,
-					RateFixed:      int64(rate),
-					Amt:            int64(amt),
+					TraderKey:      subKey,
+					RateFixed:      rate,
+					Amt:            uint64(amt),
 					FundingFeeRate: 0,
 				},
 				MaxDurationBlocks: duration,

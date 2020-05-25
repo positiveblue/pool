@@ -157,10 +157,11 @@ func testBatchExecution(t *harnessTest) {
 	}
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
-		int64(bestHeight)+dayInBlocks,
+		uint32(bestHeight)+dayInBlocks,
 	)
 	assertActiveChannel(
-		t, charlie, int64(bidAmt), *batchTXID, int64(bestHeight)+dayInBlocks,
+		t, charlie, int64(bidAmt), *batchTXID,
+		uint32(bestHeight)+dayInBlocks,
 	)
 
 	// To make sure the channels works as expected, we'll send a payment
