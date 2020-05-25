@@ -216,7 +216,9 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 
 	// TODO(guggero): Make sure we enforce maxAccountsPerTrader here.
 
-	reservation, err := s.accountManager.ReserveAccount(ctx, tokenID)
+	reservation, err := s.accountManager.ReserveAccount(
+		ctx, btcutil.Amount(req.AccountValue), tokenID,
+	)
 	if err != nil {
 		return nil, err
 	}

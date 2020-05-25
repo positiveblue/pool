@@ -77,6 +77,10 @@ const (
 	// defaultBatchTickInterval is the default amount of time we'll wait
 	// between attempts to create a new batch.
 	defaultBatchTickInterval = time.Minute * 10
+
+	// defaultMaxAcctValue is the default maximum account value we enforce
+	// if no other configuration value is set.
+	defaultMaxAcctValue int64 = btcutil.SatoshiPerBitcoin
 )
 
 var (
@@ -119,6 +123,8 @@ type Config struct {
 	ExecFeeBase int64 `long:"execfeebase" description:"The execution base fee in satoshis that is charged per matched order."`
 	ExecFeeRate int64 `long:"execfeerate" description:"The execution fee rate in parts per million that is charged per matched order."`
 
+	MaxAcctValue int64 `long:"maxacctvalue" description:"The maximum account value we enforce on the auctioneer side."`
+
 	ServerName string `long:"servername" description:"Server name to use for the tls certificate"`
 	Insecure   bool   `long:"insecure" description:"disable tls"`
 	AutoCert   bool   `long:"autocert" description:"automatically create a Let's Encrypt cert using ServerName"`
@@ -154,6 +160,7 @@ var DefaultConfig = &Config{
 	OrderSubmitFee:   defaultOrderSubmitFee,
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
+	MaxAcctValue:     defaultMaxAcctValue,
 	SubscribeTimeout: defaultSubscribeTimeout,
 	ServerName:       "auction.lightning.today",
 	Insecure:         false,

@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lsat"
@@ -25,8 +26,9 @@ const (
 )
 
 var (
-	testTokenID  = lsat.TokenID{10, 11, 12}
-	zeroOutPoint wire.OutPoint
+	testTokenID      = lsat.TokenID{10, 11, 12}
+	zeroOutPoint     wire.OutPoint
+	testAccountValue btcutil.Amount = btcutil.SatoshiPerBitcoin
 )
 
 type testHarness struct {
@@ -50,6 +52,7 @@ func newTestHarness(t *testing.T) *testHarness {
 		Wallet:        wallet,
 		Signer:        wallet,
 		ChainNotifier: notifier,
+		MaxAcctValue:  testAccountValue,
 	})
 	if err != nil {
 		t.Fatalf("unable to create account manager: %v", err)
@@ -140,14 +143,16 @@ func (h *testHarness) initAccount() *Account {
 
 	ctx := context.Background()
 	tokenID := testTokenID
-	reservation, err := h.manager.ReserveAccount(ctx, tokenID)
+	reservation, err := h.manager.ReserveAccount(
+		ctx, testAccountValue, tokenID,
+	)
 	if err != nil {
 		h.t.Fatalf("unable to reserve account: %v", err)
 	}
 
 	heightHint := uint32(1)
 	params := &Parameters{
-		Value:     maxAccountValue,
+		Value:     testAccountValue,
 		OutPoint:  zeroOutPoint,
 		TraderKey: testTraderKey,
 		Expiry:    uint32(maxAccountExpiry),
@@ -293,8 +298,17 @@ func TestReserveAccount(t *testing.T) {
 		t.Fatalf("expected error ErrNoReservation, got \"%v\"", err)
 	}
 
-	// Proceed to make a reservation now. We should be able to query for it.
-	if _, err := h.manager.ReserveAccount(ctx, testTokenID); err != nil {
+	// Try to create a reservation over an amount that is too big.
+	_, err = h.manager.ReserveAccount(ctx, testAccountValue*2, testTokenID)
+	if err == nil {
+		t.Fatalf("expected error on reservation with invalid amount")
+	}
+
+	// Proceed to make a valid reservation now. We should be able to query
+	// for it.
+	if _, err := h.manager.ReserveAccount(
+		ctx, testAccountValue, testTokenID,
+	); err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
 	h.assertNewReservation()
@@ -305,7 +319,9 @@ func TestReserveAccount(t *testing.T) {
 
 	// It's not possible to make a reservation for another account while
 	// one's already in flight.
-	if _, err := h.manager.ReserveAccount(ctx, testTokenID); err != nil {
+	if _, err := h.manager.ReserveAccount(
+		ctx, testAccountValue, testTokenID,
+	); err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
 	h.assertExistingReservation()
@@ -326,7 +342,9 @@ func TestReserveAccount(t *testing.T) {
 	}
 
 	// A new reservation should be made.
-	if _, err := h.manager.ReserveAccount(ctx, testTokenID); err != nil {
+	if _, err := h.manager.ReserveAccount(
+		ctx, testAccountValue, testTokenID,
+	); err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
 	h.assertNewReservation()

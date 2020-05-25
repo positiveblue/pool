@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
+	accountT "github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/account/watcher"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lndclient"
@@ -28,12 +29,6 @@ const (
 	// open.
 	minConfs = 3
 	maxConfs = 6
-
-	// minAccountValue and maxAccountValue represent the thresholds at both
-	// extremes for valid account values. The maximum value is based on the
-	// maximum channel size plus some leeway to account for chain fees.
-	minAccountValue btcutil.Amount = 100000
-	maxAccountValue btcutil.Amount = btcutil.SatoshiPerBitcoin
 
 	// minAccountExpiry and maxAccountExpiry represent the thresholds at
 	// both extremes for valid account expirations.
@@ -87,6 +82,9 @@ type ManagerConfig struct {
 	// ChainNotifier is responsible for requesting confirmation and spend
 	// notifications for accounts.
 	ChainNotifier lndclient.ChainNotifierClient
+
+	// MaxAcctValue is the maximum account output value we currently allow.
+	MaxAcctValue btcutil.Amount
 }
 
 // Manager is responsible for the management of accounts on-chain.
@@ -199,8 +197,13 @@ func (m *Manager) Stop() {
 
 // ReserveAccount reserves a new account for a trader associated with the given
 // token ID.
-func (m *Manager) ReserveAccount(ctx context.Context,
+func (m *Manager) ReserveAccount(ctx context.Context, value btcutil.Amount,
 	tokenID lsat.TokenID) (*Reservation, error) {
+
+	// First, make sure we have a valid account value.
+	if err := m.validateAccountValue(value); err != nil {
+		return nil, err
+	}
 
 	// Check whether we have an existing reservation already.
 	//
@@ -250,7 +253,7 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	params *Parameters, bestHeight uint32) error {
 
 	// First, make sure we have valid parameters to create the account.
-	if err := validateAccountParams(params, bestHeight); err != nil {
+	if err := m.validateAccountParams(params, bestHeight); err != nil {
 		return err
 	}
 
@@ -354,7 +357,7 @@ func (m *Manager) resumeAccount(account *Account) error {
 	// If the account is in a pending state, we'll wait for its confirmation
 	// on-chain.
 	case StatePendingOpen, StatePendingUpdate:
-		numConfs := numConfsForValue(account.Value)
+		numConfs := m.numConfsForValue(account.Value)
 		log.Infof("Waiting for %v confirmation(s) of account %x",
 			numConfs, account.TraderKeyRaw[:])
 
@@ -790,18 +793,29 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	return append(sigs[0], byte(signDesc.HashType)), newAccountPoint, nil
 }
 
-// validateAccountParams ensures that a trader has provided sane parameters for
-// the creation of a new account.
-func validateAccountParams(params *Parameters, bestHeight uint32) error {
-	if params.Value < minAccountValue {
+// validateAccountValue ensures that a trader has requested a valid account
+// output value.
+func (m *Manager) validateAccountValue(value btcutil.Amount) error {
+	if value < accountT.MinAccountValue {
 		return fmt.Errorf("minimum account value allowed is %v",
-			minAccountValue)
+			accountT.MinAccountValue)
 	}
-	if params.Value > maxAccountValue {
+	if value > m.cfg.MaxAcctValue {
 		return fmt.Errorf("maximum account value allowed is %v",
-			maxAccountValue)
+			m.cfg.MaxAcctValue)
 	}
 
+	return nil
+}
+
+// validateAccountParams ensures that a trader has provided sane parameters for
+// the creation of a new account.
+func (m *Manager) validateAccountParams(params *Parameters,
+	bestHeight uint32) error {
+
+	if err := m.validateAccountValue(params.Value); err != nil {
+		return err
+	}
 	if params.Expiry < bestHeight+minAccountExpiry {
 		return fmt.Errorf("current minimum account expiry allowed is "+
 			"height %v", bestHeight+minAccountExpiry)
@@ -821,8 +835,8 @@ func validateAccountParams(params *Parameters, bestHeight uint32) error {
 // particular output size given the current block reward and a user's "risk
 // threshold" (basically a multiplier for the amount of work/fiat-burnt that
 // would need to be done to undo N blocks).
-func numConfsForValue(value btcutil.Amount) uint32 {
-	confs := maxConfs * value / maxAccountValue
+func (m *Manager) numConfsForValue(value btcutil.Amount) uint32 {
+	confs := maxConfs * value / m.cfg.MaxAcctValue
 	if confs < minConfs {
 		confs = minConfs
 	}
