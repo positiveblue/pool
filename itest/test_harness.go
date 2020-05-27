@@ -903,7 +903,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, ask := range resp.Asks {
-			if ask.Details.State != orderT.StateExecuted.String() {
+			if ask.Details.State != clmrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					ask.Details.State)
@@ -911,7 +911,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, bid := range resp.Bids {
-			if bid.Details.State != orderT.StateExecuted.String() {
+			if bid.Details.State != clmrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					bid.Details.State)

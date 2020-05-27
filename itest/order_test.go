@@ -68,8 +68,9 @@ func testOrderSubmission(t *harnessTest) {
 		t.Fatalf("unexpected number of asks. got %d, expected %d",
 			len(list.Asks), 1)
 	}
-	if list.Asks[0].Details.State != "submitted" {
-		t.Fatalf("unexpected account state. got %s, expected %s",
-			list.Asks[0].Details.State, "submitted")
+	if list.Asks[0].Details.State != clmrpc.OrderState_ORDER_SUBMITTED {
+		t.Fatalf("unexpected account state. got %v, expected %v",
+			list.Asks[0].Details.State,
+			clmrpc.OrderState_ORDER_SUBMITTED)
 	}
 }
