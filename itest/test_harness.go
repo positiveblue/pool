@@ -126,6 +126,12 @@ func (h *harnessTest) Log(args ...interface{}) {
 
 // shutdown stops both the auction and trader server.
 func (h *harnessTest) shutdown() error {
+	// First close the direct connection to the auctioneer we opened
+	// manually for the itest.
+	if h.trader.cfg.AuctioneerConn != nil {
+		_ = h.trader.cfg.AuctioneerConn.Close()
+	}
+
 	// Allow both server and client to stop but only return the first error
 	// that occurs.
 	err := h.trader.stop()
