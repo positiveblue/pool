@@ -16,6 +16,8 @@ import (
 func TestCallMarketConsiderForgetOrders(t *testing.T) {
 	t.Parallel()
 
+	acctDB := newAcctFetcher()
+
 	// In this scenario, we test that given a set of bids (clamping to
 	// ensure we don't have too long a runtime. We're able to add all the
 	// bids, then remove all of them resulting in an empty set of bids. The
@@ -23,6 +25,7 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 	scenario := func(orders orderSet) bool {
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			acctDB.fetchAcct,
 		)
 
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
@@ -141,7 +144,7 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 			// When generating the random set below, we'll cap the
 			// number of orders on both sides to ensure the test
 			// completes in a timely manner.
-			randOrderSet := genRandOrderSet(r, 1000)
+			randOrderSet := genRandOrderSet(r, acctDB, 1000)
 
 			v[0] = reflect.ValueOf(randOrderSet)
 		},
@@ -156,8 +159,10 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 func TestMaybeClearNoOrders(t *testing.T) {
 	t.Parallel()
 
+	acctDB := newAcctFetcher()
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		acctDB.fetchAcct,
 	)
 
 	_, err := callMarket.MaybeClear(BatchID{})
@@ -171,16 +176,19 @@ func TestMaybeClearNoOrders(t *testing.T) {
 func TestMaybeClearNoClearPossible(t *testing.T) {
 	t.Parallel()
 
+	acctDB := newAcctFetcher()
+
 	// First, we'll generate a bid and ask that can't match as the rate
 	// they request is incompatible.
 	r := rand.New(rand.NewSource(time.Now().Unix()))
-	bid := genRandBid(r, staticRateGen(100))
-	ask := genRandAsk(r, staticRateGen(1000))
+	bid := genRandBid(r, acctDB, staticRateGen(100))
+	ask := genRandAsk(r, acctDB, staticRateGen(1000))
 
 	// Next, we'll create our call market, and add these two incompatible
 	// orders.
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		acctDB.fetchAcct,
 	)
 	if err := callMarket.ConsiderBids(bid); err != nil {
 		t.Fatalf("unable to add bids")
@@ -212,11 +220,14 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 	t.Parallel()
 
+	acctDB := newAcctFetcher()
+
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
 		// We'll start with making a new call market,
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			acctDB.fetchAcct,
 		)
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
 			t.Logf("unable to add bids")
@@ -320,12 +331,13 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 			// orders, as we'll get to test both the case where no
 			// orders match, or only a sub-set of the orders match
 			// and the intermediate state needs to be updated.
-			randOrderSet := genRandOrderSet(r, 1000)
+			randOrderSet := genRandOrderSet(r, acctDB, 1000)
 
 			// We'll also supplements this set of orders with an
 			// pair of orders that we know will be totally filled.
 			sameUnitSet := genRandOrderSet(
-				r, 1,
+				r, acctDB,
+				1,
 				staticRateGen(1000),
 				staticUnitGen(1000),
 				staticDurationGen(2),

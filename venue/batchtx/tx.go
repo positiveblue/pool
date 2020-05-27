@@ -338,7 +338,10 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// our later passes, and also attach the output directly to the
 		// BET (batch execution transaction)
 		traderAccounts[acctID] = traderAccountTxOut
+
 		trader.RecreatedOutput = traderAccountTxOut
+		orderBatch.FeeReport.AccountDiffs[acctID] = trader
+
 		e.ExeTx.AddTxOut(traderAccountTxOut)
 	}
 
@@ -396,9 +399,17 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	for acctID, traderOutput := range traderAccounts {
 		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
 
+		// Now that we know the fee for this trader, we'll first update
+		// our indexes for our callers.
+		//
 		// TODO(roasbeef): dustiness
 		traderOutput.Value -= int64(traderFee)
 		e.batchFees[acctID] = traderFee
+
+		// With our internal indexes updated, we'll now also need to
+		// update the account diff themselves, which should reflect the
+		// end chain fee aid.
+		orderBatch.FeeReport.AccountDiffs[acctID].EndingBalance -= traderFee
 	}
 
 	// Finally, we'll tack on our master account output, and pay any
@@ -412,8 +423,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 
 	log.Infof("Master Auctioneer Output balance delta: prev_bal=%v, "+
 		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,
-		finalAccountBalance,
-		mAccountDiff.AccountBalance-btcutil.Amount(finalAccountBalance))
+		btcutil.Amount(finalAccountBalance),
+		btcutil.Amount(finalAccountBalance)-mAccountDiff.AccountBalance)
 
 	// Next, we'll derive the account script for the auctioneer itself,
 	// which is the final thing we need in order to generate the batch
@@ -432,7 +443,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// As the transaction has just been sorted, we can now index the final
 	// version of the transaction, so we can easily perform the signing
 	// execution in the next phase.
-	masterAcctIndex, err := e.indexBatchTx(
+	masterAcctInputIndex, err := e.indexBatchTx(
 		scriptToOrderNonce, traderAccounts,
 		ordersForTrader, inputToAcct,
 	)
@@ -450,19 +461,19 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// master account.
 	//
 	// TODO(roasbeef): do above in indexBatchTx?
-	_, masterAccountIndex := input.FindScriptOutputIndex(
+	_, masterAccountOutputIndex := input.FindScriptOutputIndex(
 		e.ExeTx, auctioneerAccountScript,
 	)
 	e.MasterAccountDiff = &MasterAccountState{
 		PriorPoint: mAccountDiff.PriorPoint,
 		OutPoint: &wire.OutPoint{
 			Hash:  e.ExeTx.TxHash(),
-			Index: masterAccountIndex,
+			Index: masterAccountOutputIndex,
 		},
 		AccountBalance: btcutil.Amount(finalAccountBalance),
 		AuctioneerKey:  mAccountDiff.AuctioneerKey,
 		BatchKey:       mAccountDiff.BatchKey,
-		InputIndex:     masterAcctIndex,
+		InputIndex:     masterAcctInputIndex,
 	}
 
 	return nil

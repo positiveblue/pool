@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
@@ -204,14 +205,21 @@ func NewServer(cfg *Config) (*Server, error) {
 			StartingAcctValue: 1_000_000,
 			BatchTicker:       ticker.NewForce(defaultBatchTickInterval),
 			CallMarket: matching.NewUniformPriceCallMarket(
-				&matching.LastAcceptedBid{},
-				orderT.NewLinearFeeSchedule(
-					defaultBaseFee,
-					defaultFeeRatePerMillionths,
-				),
+				&matching.LastAcceptedBid{}, feeSchedule,
+				func(acctID matching.AccountID) (*account.Account, error) {
+					acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
+					if err != nil {
+						return nil, err
+					}
+
+					return store.Account(
+						context.Background(), acctKey, false,
+					)
+				},
 			),
 			OrderFeed:     orderBook,
 			BatchExecutor: batchExecutor,
+			FeeSchedule:   feeSchedule,
 		}),
 		channelEnforcer: chanenforcement.New(&chanenforcement.Config{
 			ChainNotifier: lnd.ChainNotifier,

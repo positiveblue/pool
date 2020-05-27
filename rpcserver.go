@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/agora/agoradb"
 	accountT "github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/agora/client/clmscript"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue"
@@ -755,16 +756,13 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			Send: comms.toTrader,
 			Recv: comms.toServer,
 		}
-		trader := &venue.ActiveTrader{
+		trader := matching.NewTraderFromAccount(acct)
+		activeTrader := &venue.ActiveTrader{
 			CommLine: commLine,
-			Trader: &matching.Trader{
-				AccountKey:      acctKey,
-				AccountExpiry:   acct.Expiry,
-				AccountOutPoint: acct.OutPoint,
-				AccountBalance:  acct.Value,
-			},
+			Trader:   &trader,
 		}
-		comms.newSub <- trader
+
+		comms.newSub <- activeTrader
 
 	// The trader accepts an order execution.
 	case *clmrpc.ClientAuctionMessage_Accept:
@@ -840,7 +838,8 @@ func (s *rpcServer) sendToTrader(
 	case *venue.PrepareMsg:
 		feeSchedule, ok := m.ExecutionFee.(*orderT.LinearFeeSchedule)
 		if !ok {
-			return fmt.Errorf("FeeSchedule w/o fee rate used")
+			return fmt.Errorf("FeeSchedule w/o fee rate used: %T",
+				m.ExecutionFee)
 		}
 
 		// Each order the user submitted may be matched to one or more
@@ -848,26 +847,38 @@ func (s *rpcServer) sendToTrader(
 		// representation we use to the proto representation that we
 		// need to send to the client.
 		matchedOrders := make(map[string]*clmrpc.MatchedOrder)
-		for orderNonce, order := range m.MatchedOrders {
-			isAsk := order.Asker.AccountKey == msg.Dest()
-			nonceStr := hex.EncodeToString(orderNonce[:])
-			unitsFilled := order.Details.Quote.UnitsMatched
+		for traderOrderNonce, orderMatches := range m.MatchedOrders {
+			log.Debugf("Order(%x) matched w/ %v orders",
+				traderOrderNonce[:], len(m.MatchedOrders))
 
-			ask, bid := order.Details.Ask, order.Details.Bid
+			// As we support partial patches, this trader nonce
+			// might be matched with a set of other orders, so
+			// we'll unroll this here now.
+			for _, order := range orderMatches {
+				isAsk := order.Asker.AccountKey == msg.Dest()
+				nonceStr := hex.EncodeToString(
+					traderOrderNonce[:],
+				)
+				unitsFilled := order.Details.Quote.UnitsMatched
 
-			// If the client had their bid matched, then we'll send
-			// over the ask information and the other way around if
-			// it's a bid.
-			if !isAsk {
-				matchedOrders[nonceStr].MatchedAsks = append(
-					matchedOrders[nonceStr].MatchedAsks,
-					marshallMatchedAsk(ask, unitsFilled),
-				)
-			} else {
-				matchedOrders[nonceStr].MatchedBids = append(
-					matchedOrders[nonceStr].MatchedBids,
-					marshallMatchedBid(bid, unitsFilled),
-				)
+				ask, bid := order.Details.Ask, order.Details.Bid
+
+				matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
+
+				// If the client had their bid matched, then
+				// we'll send over the ask information and the
+				// other way around if it's a bid.
+				if !isAsk {
+					matchedOrders[nonceStr].MatchedAsks = append(
+						matchedOrders[nonceStr].MatchedAsks,
+						marshallMatchedAsk(ask, unitsFilled),
+					)
+				} else {
+					matchedOrders[nonceStr].MatchedBids = append(
+						matchedOrders[nonceStr].MatchedBids,
+						marshallMatchedBid(bid, unitsFilled),
+					)
+				}
 			}
 		}
 
@@ -876,10 +887,13 @@ func (s *rpcServer) sendToTrader(
 		// their portion of the batch.
 		var accountDiffs []*clmrpc.AccountDiff
 		for _, acctDiff := range m.ChargedAccounts {
-			acctDiff, err := marshallAccountDiff(acctDiff)
+			acctDiff, err := marshallAccountDiff(acctDiff, m.AccountOutPoint)
 			if err != nil {
 				return err
 			}
+
+			// TODO(roasbeef): only assumes one acct per user rn,
+			// as the outpoint re-used above
 
 			accountDiffs = append(accountDiffs, acctDiff)
 		}
@@ -1034,7 +1048,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	copy(batchID[:], req.Id)
 
 	// TODO(wilmer): Add caching layer? LRU?
-	batch, _, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batch, batchTx, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
@@ -1068,7 +1082,19 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 		if !ok {
 			continue
 		}
-		accountDiff, err := marshallAccountDiff(diff)
+
+		outputIndex, ok := clmscript.LocateOutputScript(
+			batchTx, diff.RecreatedOutput.PkScript,
+		)
+		if !ok {
+			return nil, fmt.Errorf("unable to find output for trader")
+		}
+		accountOutPoint := wire.OutPoint{
+			Hash:  batchTx.TxHash(),
+			Index: outputIndex,
+		}
+
+		accountDiff, err := marshallAccountDiff(diff, accountOutPoint)
 		if err != nil {
 			return nil, err
 		}
@@ -1121,7 +1147,11 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	}
 
 	// Make sure the referenced account exists.
-	_, err = s.store.Account(ctx, clientKit.AcctKey, true)
+	acctKey, err := btcec.ParsePubKey(clientKit.AcctKey[:], btcec.S256())
+	if err != nil {
+		return nil, nil, err
+	}
+	_, err = s.store.Account(ctx, acctKey, true)
 	if err != nil {
 		return nil, nil, fmt.Errorf("account not found: %v", err)
 	}
@@ -1182,11 +1212,11 @@ func tokenIDFromContext(ctx context.Context) lsat.TokenID {
 }
 
 // marshallAccountDiff translates a matching.AccountDiff to its RPC counterpart.
-func marshallAccountDiff(diff matching.AccountDiff) (*clmrpc.AccountDiff, error) {
+func marshallAccountDiff(diff matching.AccountDiff,
+	acctOutPoint wire.OutPoint) (*clmrpc.AccountDiff, error) {
+
 	// TODO: Need to extend account.OnChainState with DustExtendedOffChain
 	// and DustAddedToFees.
-	//
-	// TODO: AccountDiff doesn't include the new output index.
 	var (
 		endingState clmrpc.AccountDiff_AccountState
 		opIdx       int32
@@ -1194,6 +1224,7 @@ func marshallAccountDiff(diff matching.AccountDiff) (*clmrpc.AccountDiff, error)
 	switch state := account.EndingState(diff.EndingBalance); {
 	case state == account.OnChainStateRecreated:
 		endingState = clmrpc.AccountDiff_OUTPUT_RECREATED
+		opIdx = int32(acctOutPoint.Index)
 	case state == account.OnChainStateFullySpent:
 		endingState = clmrpc.AccountDiff_OUTPUT_FULLY_SPENT
 		opIdx = -1
@@ -1240,8 +1271,9 @@ func marshallMatchedBid(bid *order.Bid,
 // marshallServerOrder translates an order.ServerOrder to its RPC counterpart.
 func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
 	nonce := order.Nonce()
+
 	return &clmrpc.ServerOrder{
-		UserSubKey:  order.ServerDetails().Acct.TraderKeyRaw[:],
+		UserSubKey:  order.Details().AcctKey[:],
 		RateFixed:   int64(order.Details().FixedRate),
 		Amt:         int64(order.Details().Amt),
 		OrderNonce:  nonce[:],

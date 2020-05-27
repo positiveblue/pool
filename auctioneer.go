@@ -125,7 +125,8 @@ type OrderFeed interface {
 type BatchExecutor interface {
 	// Submit submits the target batch for execution. If the batch is
 	// invalid, then an error should be returned.
-	Submit(batch *matching.OrderBatch) (chan *venue.ExecutionResult, error)
+	Submit(*matching.OrderBatch, orderT.FeeSchedule,
+		chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error)
 }
 
 // AuctioneerConfig contains all the interfaces the auctioneer needs to carry
@@ -163,6 +164,10 @@ type AuctioneerConfig struct {
 	// batch, or gathering all the account signatures we need to actually
 	// broadcast a batch execution transaction.
 	BatchExecutor BatchExecutor
+
+	// FeeSchedule describes how we charge the traders in an executed
+	// batch.
+	FeeSchedule orderT.FeeSchedule
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -517,7 +522,7 @@ func (a *Auctioneer) blockFeeder(newBlockChan chan int32,
 	for {
 		select {
 		case newBlock := <-newBlockChan:
-			log.Infof("New block(height=%v", newBlock)
+			log.Infof("New block(height=%v)", newBlock)
 
 			atomic.StoreUint32(
 				&a.bestHeight, uint32(newBlock),
@@ -1162,7 +1167,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
 		executionResult, err := a.cfg.BatchExecutor.Submit(
-			a.eligibleBatch,
+			a.eligibleBatch, a.cfg.FeeSchedule,
+			chainfee.FeePerKwFloor,
 		)
 		if err != nil {
 			return 0, err
@@ -1207,7 +1213,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 					// TODO(roasbeef): just go back to
 					// default state?
 					return 0, fmt.Errorf("terminal "+
-						"execution error: %v", err)
+						"execution error: %v", result.Err)
 				}
 
 				return MatchMakingState, nil

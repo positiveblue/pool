@@ -78,6 +78,7 @@ func newRPCServer(server *Server) *rpcServer {
 	return &rpcServer{
 		server:      server,
 		lndServices: lnd,
+		lndClient:   server.lndClient,
 		auctioneer:  server.AuctioneerClient,
 		accountManager: account.NewManager(&account.ManagerConfig{
 			Store:         accountStore,
@@ -314,6 +315,17 @@ func (s *rpcServer) deriveFundingShim(ourOrder order.Order,
 		thawHeight = matchedOrder.Order.(*order.Bid).MinDuration
 	}
 
+	// The thaw height is absolute, so we'll need to offset it relative to
+	// the current best block from the PoV of our backing node.
+	//
+	// TODO(roasbeef): this is racey, should have it based on an absolute
+	// height?
+	nodeInfo, err := s.lndServices.Client.GetInfo(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("unable to get best height: %v", err)
+	}
+	thawHeight += nodeInfo.BlockHeight
+
 	pendingChanID := order.PendingChanKey(
 		askNonce, bidNonce,
 	)
@@ -332,7 +344,7 @@ func (s *rpcServer) deriveFundingShim(ourOrder order.Order,
 	}
 	_, fundingOutput, err := input.GenFundingPkScript(
 		ourMultiSigKey.PubKey.SerializeCompressed(),
-		matchedOrder.MultiSigKey[:], 0,
+		matchedOrder.MultiSigKey[:], int64(chanSize),
 	)
 	if err != nil {
 		return nil, err
@@ -873,7 +885,13 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	}
 
 	// Verify that the account exists.
-	acct, err := s.server.db.Account(o.Details().AcctKey)
+	acctKey, err := btcec.ParsePubKey(
+		o.Details().AcctKey[:], btcec.S256(),
+	)
+	if err != nil {
+		return nil, err
+	}
+	acct, err := s.server.db.Account(acctKey)
 	if err != nil {
 		return nil, fmt.Errorf("cannot accept order: %v", err)
 	}
@@ -899,6 +917,8 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		// provided, then return this as a nice string instead of an
 		// error type.
 		if userErr, ok := err.(*order.UserError); ok {
+			log.Warnf("Invalid order details: %v", userErr)
+
 			return &clmrpc.SubmitOrderResponse{
 				Details: &clmrpc.SubmitOrderResponse_InvalidOrder{
 					InvalidOrder: userErr.Details,
@@ -912,10 +932,13 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 			"%v", err)
 	}
 
+	log.Infof("New order submitted: nonce=%v, type=%v", o.Nonce(), o.Type())
+
 	// ServerOrder is accepted.
+	orderNonce := o.Nonce()
 	return &clmrpc.SubmitOrderResponse{
-		Details: &clmrpc.SubmitOrderResponse_Accepted{
-			Accepted: true,
+		Details: &clmrpc.SubmitOrderResponse_AcceptedOrderNonce{
+			AcceptedOrderNonce: orderNonce[:],
 		},
 	}, nil
 }
@@ -949,7 +972,7 @@ func (s *rpcServer) ListOrders(ctx context.Context, _ *clmrpc.ListOrdersRequest)
 
 		dbDetails := dbOrder.Details()
 		details := &clmrpc.Order{
-			UserSubKey:       dbDetails.AcctKey.SerializeCompressed(),
+			UserSubKey:       dbDetails.AcctKey[:],
 			RateFixed:        int64(dbDetails.FixedRate),
 			Amt:              int64(dbDetails.Amt),
 			FundingFeeRate:   int64(dbDetails.FixedRate),
@@ -1044,10 +1067,8 @@ func (s *rpcServer) sendAcceptBatch(batch *order.Batch) error {
 	// Prepare the list of nonces we accept by serializing them to a slice
 	// of byte slices.
 	nonces := make([][]byte, 0, len(batch.MatchedOrders))
-	idx := 0
 	for nonce := range batch.MatchedOrders {
-		nonces[idx] = nonce[:]
-		idx++
+		nonces = append(nonces, nonce[:])
 	}
 
 	// Send the message to the server.

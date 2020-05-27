@@ -72,16 +72,10 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	orders := make([]orderT.Nonce, len(uniqueOrders))
 	orderModifiers := make([][]order.Modifier, len(orders))
 	orderIndex := 0
-	for nonce, matchedOrder := range uniqueOrders {
+	for _, matchedOrder := range uniqueOrders {
 		orders[orderIndex] = matchedOrder.Nonce()
 
-		// Find out if the order has unfulfilled units left or not.
-		// The order details themselves are pointing to the order state
-		// as it was stored in the database before the batch was
-		// executed. Therefore UnitsFulfilled should always be greater
-		// than zero.
 		unitsUnfulfilled := matchedOrder.Details().UnitsUnfulfilled
-		unitsUnfulfilled -= unitsFilled[nonce]
 		switch {
 		// The order has been fully filled and can be archived.
 		case unitsUnfulfilled == 0:

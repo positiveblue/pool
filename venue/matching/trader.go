@@ -79,6 +79,3 @@ func NewTraderFromAccount(acct *account.Account) Trader {
 
 	return t
 }
-
-// TODO(roasbeef): methods to update state given execution context?
-// * auctioneer calls this after each batch, calls with info from disk

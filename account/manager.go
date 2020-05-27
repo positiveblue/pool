@@ -53,7 +53,7 @@ var (
 	// the user/trader is tweaked with their key in order to achieve
 	// deterministic account creation.
 	LongTermKeyLocator = keychain.KeyLocator{
-		Family: clmscript.AccountKeyFamily,
+		Family: AuctioneerKeyFamily,
 		Index:  0,
 	}
 

@@ -3,6 +3,7 @@ package matching
 import (
 	"sort"
 
+	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
 )
@@ -16,16 +17,21 @@ type MultiUnitMatchMaker struct {
 	// each active order.
 	orderRemainders map[orderT.Nonce]orderT.SupplyUnit
 
-	// TODO(roasbeef): move partialMatchState here?
+	fetchAcct AccountFetcher
 }
+
+// AccountFetcher denotes a function that's able to fetch the latest state of
+// an account which is identified the its trader public key (or acctID).
+type AccountFetcher func(AccountID) (*account.Account, error)
 
 // NewMultiUnitMatchMaker creates a new instance of the MultiUnitMatchMaker.
 //
 // TODO(roasbeef): comparator function for tie-breaking? can be sued to give
 // preferred fulfils if needed
-func NewMultiUnitMatchMaker() *MultiUnitMatchMaker {
+func NewMultiUnitMatchMaker(acctFetcher AccountFetcher) *MultiUnitMatchMaker {
 	return &MultiUnitMatchMaker{
 		orderRemainders: make(map[orderT.Nonce]orderT.SupplyUnit),
+		fetchAcct:       acctFetcher,
 	}
 }
 
@@ -33,8 +39,6 @@ func NewMultiUnitMatchMaker() *MultiUnitMatchMaker {
 // possible. Note that this method doesn't clear any orders (update balances or
 // partial fills). Instead this method is a pure function and should be used to
 // determine if a match can take place, and how to clear the matched orders.
-//
-// TODO(roasbeef): rename to MaybeMatch?
 //
 // NOTE: This method is part of the MatchMaker interface.
 func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
@@ -68,7 +72,7 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	switch {
 	// Ensure that if the order is made by the same trader, then we reject
 	// the match as making a channel to yourself doesn't make any sense.
-	case ask.Acct.TraderKeyRaw == bid.Acct.TraderKeyRaw:
+	case ask.AcctKey == bid.AcctKey:
 		return NullQuote, false
 
 	// If the highest bid is below the lowest ask, then no match at all is
@@ -262,9 +266,18 @@ func (m *MultiUnitMatchMaker) MatchBatch(bids []*order.Bid,
 			matchedIndex[bid.Nonce()] = struct{}{}
 			matchedIndex[ask.Nonce()] = struct{}{}
 
+			bidAcct, err := m.fetchAcct(bid.AcctKey)
+			if err != nil {
+				return nil, err
+			}
+			askAcct, err := m.fetchAcct(ask.AcctKey)
+			if err != nil {
+				return nil, err
+			}
+
 			matchedOrder := MatchedOrder{
-				Asker:  NewTraderFromAccount(ask.Acct),
-				Bidder: NewTraderFromAccount(bid.Acct),
+				Asker:  NewTraderFromAccount(askAcct),
+				Bidder: NewTraderFromAccount(bidAcct),
 				Details: OrderPair{
 					Ask:   ask,
 					Bid:   bid,

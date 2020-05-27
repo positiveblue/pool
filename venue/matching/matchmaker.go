@@ -41,17 +41,24 @@ type UniformPriceCallMarket struct {
 	// be used to determine how much to charge traders in venue and
 	// execution fees.
 	feeSchedule orderT.FeeSchedule
+
+	// acctFetcher is the function that'll be used to fetch the latest
+	// state of an account from disk so we can do things like compute the
+	// fee report using the latest account balance for a trader.
+	acctFetcher AccountFetcher
 }
 
 // NewUniformPriceCallMarket returns a new instance of the
 // UniformPriceCallMarket struct given the price clearer and fee schedule for
 // this current batch epoch.
 func NewUniformPriceCallMarket(priceClearer PriceClearer,
-	feeSchedule orderT.FeeSchedule) *UniformPriceCallMarket {
+	feeSchedule orderT.FeeSchedule,
+	acctFetcher AccountFetcher) *UniformPriceCallMarket {
 
 	u := &UniformPriceCallMarket{
 		priceClearer: priceClearer,
 		feeSchedule:  feeSchedule,
+		acctFetcher:  acctFetcher,
 	}
 	u.resetOrderState()
 
@@ -76,7 +83,7 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 func (u *UniformPriceCallMarket) MaybeClear(BatchID) (*OrderBatch, error) {
 	// At this point we know we have a set of orders, so we'll create the
 	// match maker for usage below.
-	matchMaker := NewMultiUnitMatchMaker()
+	matchMaker := NewMultiUnitMatchMaker(u.acctFetcher)
 
 	// At this point, there's may be at least a single order that we can
 	// execute, so we'll attempt to match the entire pending batch.

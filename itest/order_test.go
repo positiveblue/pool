@@ -49,7 +49,7 @@ func testOrderSubmission(t *harnessTest) {
 		t.Fatalf("could not submit order: %v", err)
 	}
 	switch details := ask.Details.(type) {
-	case *clmrpc.SubmitOrderResponse_Accepted:
+	case *clmrpc.SubmitOrderResponse_AcceptedOrderNonce:
 		// Great, order accepted.
 
 	case *clmrpc.SubmitOrderResponse_InvalidOrder:

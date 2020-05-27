@@ -280,3 +280,9 @@ func newClientKit(nonce orderT.Nonce, units orderT.SupplyUnit) orderT.Kit {
 	kit.State = orderT.StateSubmitted
 	return *kit
 }
+
+func init() {
+	ask.UnitsUnfulfilled = 0
+	bid1.UnitsUnfulfilled = 0
+	bid2.UnitsUnfulfilled = 6
+}

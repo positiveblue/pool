@@ -2,6 +2,7 @@ package venue
 
 import (
 	"context"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/input"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -38,8 +40,10 @@ type PrepareMsg struct {
 	AcctKey matching.AccountID
 
 	// MatchedOrders is the set of orders that a trader was matched with in
-	// the batch.
-	MatchedOrders map[orderT.Nonce]*matching.MatchedOrder
+	// the batch for the trader. As we support partial matches, this maps
+	// an order nonce to all the other orders it was matched with in the
+	// batch.
+	MatchedOrders map[orderT.Nonce][]*matching.MatchedOrder
 
 	// ClearingPrice is the final clearing price of the batch.
 	ClearingPrice orderT.FixedRatePremium
@@ -414,8 +418,6 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	// With the keys obtained, we'll now derive the tweak we need to obtain
 	// our private key, as well as the full witness script of the trader's
 	// account output.
-	// TODO(roasbeef): double check using proper batch key here in actual
-	// execution...
 	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
 		traderKey, masterAcct.AuctioneerKey.PubKey,
 		batchKey, trader.VenueSecret,
@@ -431,7 +433,11 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	// With all the information obtained, we'll now generate our half of
 	// the multi-sig.
 	signDesc := &input.SignDescriptor{
-		KeyDesc:       *masterAcct.AuctioneerKey,
+		// The Signer API expects key locators _only_ when deriving keys
+		// that are not within the wallet's default scopes.
+		KeyDesc: keychain.KeyDescriptor{
+			KeyLocator: masterAcct.AuctioneerKey.KeyLocator,
+		},
 		SingleTweak:   auctioneerKeyTweak,
 		WitnessScript: witnessScript,
 		Output:        &traderAcctInput.PrevOutput,
@@ -487,14 +493,24 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			return BatchTempError, env, nil
 		}
 
+		b.Lock()
+
+		// To ensure that we have a fully up to date view of the state
+		// of each of the trader's, we'll sync what we have here, with
+		// the set of traders on disk.
+		if err := b.syncTraderState(); err != nil {
+			b.Unlock()
+			return 0, env, err
+		}
+
 		// Now that we know this batch is valid, we'll populate the set
 		// of active traders in the environment so we can begin our
 		// message passing phase.
-		b.RLock()
 		for trader := range env.batch.FeeReport.AccountDiffs {
 			env.traders[trader] = b.activeTraders[trader]
 		}
-		b.RUnlock()
+
+		b.Unlock()
 
 		// Now that we know the batch is valid, we'll construct the
 		// execution context we need to push things forward, which
@@ -504,14 +520,29 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			return 0, env, err
 		}
 		env.masterAcct = masterAcct
+
+		// When we create this master account state, we'll ensure that
+		// we provide the "next" batch key, as this is what will be
+		// used to create the outputs in the BET.
 		masterAcctState := &batchtx.MasterAccountState{
 			PriorPoint:     masterAcct.OutPoint,
 			AccountBalance: masterAcct.Balance,
-			BatchKey:       env.batchID,
 		}
 		copy(
 			masterAcctState.AuctioneerKey[:],
 			masterAcct.AuctioneerKey.PubKey.SerializeCompressed(),
+		)
+
+		batchKeyPub, err := btcec.ParsePubKey(
+			env.batchID[:], btcec.S256(),
+		)
+		if err != nil {
+			return 0, env, err
+		}
+		nextBatchKey := clmscript.IncrementKey(batchKeyPub)
+		copy(
+			masterAcctState.BatchKey[:],
+			nextBatchKey.SerializeCompressed(),
 		)
 
 		env.exeCtx, err = batchtx.New(
@@ -591,7 +622,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return PrepareSent, env, nil
 			}
 
-			log.Debugf("Received OrderMatchAccept from trader=%v",
+			log.Debugf("Received OrderMatchAccept from trader=%x",
 				msgRecv.msg.Src())
 
 			env.cancelTimerForTrader(msgRecv.msg.Src())
@@ -660,7 +691,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchSigning, env, nil
 			}
 
-			log.Debugf("Received OrderMatchSign from trader=%v",
+			log.Debugf("Received OrderMatchSign from trader=%x",
 				msgRecv.msg.Src())
 
 			// As we've received the expected message from this
@@ -671,10 +702,10 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			b.RLock()
 			trader := b.activeTraders[src]
 			b.RUnlock()
-			acctSig, ok := signMsg.Sigs[string(src[:])]
+			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
 			if !ok {
 				return 0, env, fmt.Errorf("account witness "+
-					"for %v not found", src)
+					"for %x not found", src)
 			}
 
 			// As we want to fully validate the witness, we'll
@@ -923,11 +954,15 @@ func (b *BatchExecutor) executor() {
 }
 
 // Submit submits a new batch for execution to the main state machine.
-func (b *BatchExecutor) Submit(batch *matching.OrderBatch) (chan *ExecutionResult, error) {
-	// TODO(roasbeef): need to populate other parts of the req
+func (b *BatchExecutor) Submit(batch *matching.OrderBatch,
+	feeSchedule orderT.FeeSchedule,
+	batchFeeRate chainfee.SatPerKWeight) (chan *ExecutionResult, error) {
+
 	exeReq := &executionReq{
-		OrderBatch: batch,
-		Result:     make(chan *ExecutionResult, 1),
+		OrderBatch:   batch,
+		feeSchedule:  feeSchedule,
+		batchFeeRate: batchFeeRate,
+		Result:       make(chan *ExecutionResult, 1),
 	}
 
 	select {
@@ -989,7 +1024,39 @@ func (b *BatchExecutor) HandleTraderMsg(m TraderMsg) error {
 	return nil
 }
 
-// TODO(roasbeef): remaining
-//  * at client, register shim for orders if bidder
-//  * process begin sign at client (just accept, then actually send sgis)
-//  * double check msg passing between
+// syncTraderState syncs the passed state with the resulting account state
+// after the batch has been applied for all traders involved in the executed
+// batch.
+//
+// NOTE: The write lock MUST be held when calling this method.
+func (b *BatchExecutor) syncTraderState() error {
+	log.Debugf("Syncing account state for %v traders", len(b.activeTraders))
+
+	// For each active trader, we'll attempt to sync the state of our
+	// in-memory representation with the resulting state after the batch
+	// has been applied.
+	//
+	// TODO(roasbeef): optimize by only refreshing traders that were in a
+	// recent batch? for account updates send them to the executor
+	for acctID := range b.activeTraders {
+		acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
+		if err != nil {
+			return err
+		}
+		diskTraderAcct, err := b.store.Account(
+			context.Background(), acctKey, false,
+		)
+		if err != nil {
+			return err
+		}
+
+		// Now that we have the fresh trader state from disk, we'll
+		// update our in-memory map with the latest state.
+		refreshedTrader := matching.NewTraderFromAccount(
+			diskTraderAcct,
+		)
+		b.activeTraders[acctID].Trader = &refreshedTrader
+	}
+
+	return nil
+}

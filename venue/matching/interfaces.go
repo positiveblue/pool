@@ -1,6 +1,7 @@
 package matching
 
 import (
+	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/order"
@@ -147,6 +148,58 @@ type OrderBatch struct {
 	// ClearingPrice is the single clearing price that all traders in the
 	// batch will pay as computed within the FeeReport above.
 	ClearingPrice orderT.FixedRatePremium
+}
+
+// Copy performs a deep copy of the passed OrderBatch instance.
+func (o *OrderBatch) Copy() OrderBatch {
+	orders := make([]MatchedOrder, 0, len(o.Orders))
+	for _, matchedOrder := range o.Orders {
+		ask := order.Ask{
+			Ask: matchedOrder.Details.Ask.Ask,
+			Kit: matchedOrder.Details.Ask.Kit,
+		}
+		bid := order.Bid{
+			Bid: matchedOrder.Details.Bid.Bid,
+			Kit: matchedOrder.Details.Bid.Kit,
+		}
+
+		orders = append(orders, MatchedOrder{
+			Asker:  matchedOrder.Asker,
+			Bidder: matchedOrder.Bidder,
+			Details: OrderPair{
+				Ask:   &ask,
+				Bid:   &bid,
+				Quote: matchedOrder.Details.Quote,
+			},
+		})
+	}
+
+	feeReport := TradingFeeReport{
+		AccountDiffs:          make(map[AccountID]AccountDiff),
+		AuctioneerFeesAccrued: o.FeeReport.AuctioneerFeesAccrued,
+	}
+	for acctID, accountDiff := range o.FeeReport.AccountDiffs {
+		var output *wire.TxOut
+		if accountDiff.RecreatedOutput != nil {
+			o := *accountDiff.RecreatedOutput
+			output = &o
+		}
+
+		trader := *accountDiff.StartingState
+		tally := *accountDiff.AccountTally
+
+		feeReport.AccountDiffs[acctID] = AccountDiff{
+			StartingState:   &trader,
+			RecreatedOutput: output,
+			AccountTally:    &tally,
+		}
+	}
+
+	return OrderBatch{
+		Orders:        orders,
+		ClearingPrice: o.ClearingPrice,
+		FeeReport:     feeReport,
+	}
 }
 
 // BatchAuctioneer is the main entry point of this package. The BatchAuctioneer

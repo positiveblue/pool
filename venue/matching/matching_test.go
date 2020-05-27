@@ -1,6 +1,7 @@
 package matching
 
 import (
+	"fmt"
 	"math/rand"
 	"reflect"
 	"testing"
@@ -116,6 +117,7 @@ func (o *orderGenCfg) traderKey(r *rand.Rand) [33]byte { // nolint:interfacer
 
 	var key [33]byte
 	_, _ = r.Read(key[:])
+
 	return key
 }
 
@@ -132,7 +134,9 @@ func genRandAccount(r *rand.Rand, genOptions ...orderGenOption) *account.Account
 	}
 }
 
-func genRandBid(r *rand.Rand, genOptions ...orderGenOption) *order.Bid {
+func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
+	genOptions ...orderGenOption) *order.Bid {
+
 	genCfg := orderGenCfg{}
 	for _, optionModifier := range genOptions {
 		optionModifier(&genCfg)
@@ -144,14 +148,13 @@ func genRandBid(r *rand.Rand, genOptions ...orderGenOption) *order.Bid {
 	var nonce orderT.Nonce
 	_, _ = r.Read(nonce[:])
 
+	acct := genRandAccount(r, genOptions...)
+
 	numUnits := genCfg.supplyUnits(r)
 	b := &order.Bid{
 		Bid: orderT.Bid{
 			Kit:         *orderT.NewKit(nonce),
 			MinDuration: genCfg.leaseDuration(r),
-		},
-		Kit: order.Kit{
-			Acct: genRandAccount(r, genOptions...),
 		},
 	}
 	b.Amt = numUnits.ToSatoshis()
@@ -159,16 +162,22 @@ func genRandBid(r *rand.Rand, genOptions ...orderGenOption) *order.Bid {
 	b.UnitsUnfulfilled = numUnits
 	b.FixedRate = genCfg.rate(r)
 
+	copy(b.Bid.Kit.AcctKey[:], acct.TraderKeyRaw[:])
+
 	// If the trader's account doesn't have at least the total amount of
 	// the order, then we'll clamp the value.
-	if b.Acct.Value < b.Amt {
-		b.Acct.Value = b.Amt
+	if acct.Value < b.Amt {
+		acct.Value = b.Amt
 	}
+
+	accts.accts[acct.TraderKeyRaw] = acct
 
 	return b
 }
 
-func genRandAsk(r *rand.Rand, genOptions ...orderGenOption) *order.Ask {
+func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
+	genOptions ...orderGenOption) *order.Ask {
+
 	genCfg := orderGenCfg{}
 	for _, optionModifier := range genOptions {
 		optionModifier(&genCfg)
@@ -177,14 +186,13 @@ func genRandAsk(r *rand.Rand, genOptions ...orderGenOption) *order.Ask {
 	var nonce orderT.Nonce
 	_, _ = r.Read(nonce[:])
 
+	acct := genRandAccount(r, genOptions...)
+
 	numUnits := genCfg.supplyUnits(r)
 	a := &order.Ask{
 		Ask: orderT.Ask{
 			Kit:         *orderT.NewKit(nonce),
 			MaxDuration: genCfg.leaseDuration(r),
-		},
-		Kit: order.Kit{
-			Acct: genRandAccount(r, genOptions...),
 		},
 	}
 	a.Amt = numUnits.ToSatoshis()
@@ -192,11 +200,15 @@ func genRandAsk(r *rand.Rand, genOptions ...orderGenOption) *order.Ask {
 	a.UnitsUnfulfilled = numUnits
 	a.FixedRate = genCfg.rate(r)
 
+	copy(a.Ask.Kit.AcctKey[:], acct.TraderKeyRaw[:])
+
 	// If the trader's account doesn't have at least the total amount of
 	// the order, then we'll clamp the value.
-	if a.Acct.Value < a.Amt {
-		a.Acct.Value = a.Amt
+	if acct.Value < a.Amt {
+		acct.Value = a.Amt
 	}
+
+	accts.accts[acct.TraderKeyRaw] = acct
 
 	return a
 }
@@ -206,12 +218,32 @@ type orderPair struct {
 	Ask *order.Ask
 }
 
+type acctFetcher struct {
+	accts map[[33]byte]*account.Account
+}
+
+func newAcctFetcher() *acctFetcher {
+	return &acctFetcher{
+		accts: make(map[[33]byte]*account.Account),
+	}
+}
+
+func (a *acctFetcher) fetchAcct(k AccountID) (*account.Account, error) {
+	acct, ok := a.accts[k]
+	if !ok {
+		return nil, fmt.Errorf("unable to find acct")
+	}
+
+	return acct, nil
+}
+
 // TestMatchPossibleSpreadNeverMatches tests that given a bid and an ask, if
 // the bid has a price lower than the ask, then a match never occurs.
 func TestMatchPossibleSpreadNeverMatches(t *testing.T) {
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -250,8 +282,8 @@ func TestMatchPossibleSpreadNeverMatches(t *testing.T) {
 		Values: func(v []reflect.Value, r *rand.Rand) {
 
 			randOrderPair := orderPair{
-				Bid: genRandBid(r),
-				Ask: genRandAsk(r),
+				Bid: genRandBid(r, acctDB),
+				Ask: genRandAsk(r, acctDB),
 			}
 
 			v[0] = reflect.ValueOf(randOrderPair)
@@ -269,7 +301,8 @@ func TestMatchPossibleSpreadNeverMatches(t *testing.T) {
 func TestMatchPossibleDurationIncompatability(t *testing.T) {
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -307,8 +340,8 @@ func TestMatchPossibleDurationIncompatability(t *testing.T) {
 		Values: func(v []reflect.Value, r *rand.Rand) {
 
 			randOrderPair := orderPair{
-				Bid: genRandBid(r),
-				Ask: genRandAsk(r),
+				Bid: genRandBid(r, acctDB),
+				Ask: genRandAsk(r, acctDB),
 			}
 
 			v[0] = reflect.ValueOf(randOrderPair)
@@ -327,7 +360,8 @@ func TestMatchPossibleDurationIncompatability(t *testing.T) {
 func TestMatchPossibleMatchPartialBid(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -395,8 +429,8 @@ func TestMatchPossibleMatchPartialBid(t *testing.T) { // nolint:dupl
 		Values: func(v []reflect.Value, r *rand.Rand) {
 
 			randOrderPair := orderPair{
-				Bid: genRandBid(r),
-				Ask: genRandAsk(r),
+				Bid: genRandBid(r, acctDB),
+				Ask: genRandAsk(r, acctDB),
 			}
 
 			v[0] = reflect.ValueOf(randOrderPair)
@@ -415,7 +449,8 @@ func TestMatchPossibleMatchPartialBid(t *testing.T) { // nolint:dupl
 func TestMatchPossibleMatchPartialAsk(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -483,8 +518,8 @@ func TestMatchPossibleMatchPartialAsk(t *testing.T) { // nolint:dupl
 		Values: func(v []reflect.Value, r *rand.Rand) {
 
 			randOrderPair := orderPair{
-				Bid: genRandBid(r),
-				Ask: genRandAsk(r),
+				Bid: genRandBid(r, acctDB),
+				Ask: genRandAsk(r, acctDB),
 			}
 
 			v[0] = reflect.ValueOf(randOrderPair)
@@ -503,7 +538,8 @@ func TestMatchPossibleMatchPartialAsk(t *testing.T) { // nolint:dupl
 func TestMatchPossibleMatchFullFill(t *testing.T) {
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -580,8 +616,8 @@ func TestMatchPossibleMatchFullFill(t *testing.T) {
 			numUnits := orderT.SupplyUnit(r.Int31())
 
 			randOrderPair := orderPair{
-				Bid: genRandBid(r, staticUnitGen(numUnits)),
-				Ask: genRandAsk(r, staticUnitGen(numUnits)),
+				Bid: genRandBid(r, acctDB, staticUnitGen(numUnits)),
+				Ask: genRandAsk(r, acctDB, staticUnitGen(numUnits)),
 			}
 
 			v[0] = reflect.ValueOf(randOrderPair)
@@ -615,7 +651,8 @@ type orderSet struct {
 func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -722,6 +759,7 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 			randOrderSet.Bids = make([]*order.Bid, 1)
 			randOrderSet.Bids[0] = genRandBid(
 				r,
+				acctDB,
 				staticUnitGen(orderT.SupplyUnit(totalSupply)),
 				staticDurationGen(bidDuration),
 				staticRateGen(bidRate),
@@ -756,6 +794,7 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 				// everything matches with the bid above.
 				randOrderSet.Asks = append(randOrderSet.Asks, genRandAsk(
 					r,
+					acctDB,
 					staticUnitGen(orderT.SupplyUnit(askSupply)),
 					minDurationGenBound(bidDuration, r),
 					maxRateGenBound(bidRate, r),
@@ -778,7 +817,8 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -884,6 +924,7 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 			randOrderSet.Asks = make([]*order.Ask, 1)
 			randOrderSet.Asks[0] = genRandAsk(
 				r,
+				acctDB,
 				staticUnitGen(orderT.SupplyUnit(totalSupply)),
 				staticDurationGen(askDuration),
 				staticRateGen(askRate),
@@ -922,6 +963,7 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 					randOrderSet.Bids,
 					genRandBid(
 						r,
+						acctDB,
 						staticUnitGen(orderT.SupplyUnit(bidSupply)),
 						maxDurationGenBound(askDuration, r),
 						minRateGenBound(askRate, r),
@@ -944,7 +986,8 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 func TestMatchBatchNoMatch(t *testing.T) {
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -1013,7 +1056,7 @@ func TestMatchBatchNoMatch(t *testing.T) {
 			randOrderSet.Bids = make([]*order.Bid, numBids)
 			for i := 0; i < int(numBids); i++ {
 				randOrderSet.Bids[i] = genRandBid(
-					r, staticRateGen(bidRate),
+					r, acctDB, staticRateGen(bidRate),
 				)
 			}
 
@@ -1021,7 +1064,7 @@ func TestMatchBatchNoMatch(t *testing.T) {
 			randOrderSet.Asks = make([]*order.Ask, numAsks)
 			for i := 0; i < int(numAsks); i++ {
 				randOrderSet.Asks[i] = genRandAsk(
-					r, staticRateGen(askRate),
+					r, acctDB, staticRateGen(askRate),
 				)
 			}
 
@@ -1035,21 +1078,21 @@ func TestMatchBatchNoMatch(t *testing.T) {
 	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
 }
 
-func genRandOrderSet(r *rand.Rand, numMaxOrders uint32,
-	genOptions ...orderGenOption) orderSet {
+func genRandOrderSet(r *rand.Rand, acctDB *acctFetcher,
+	numMaxOrders uint32, genOptions ...orderGenOption) orderSet {
 
 	var randOrderSet orderSet
 
 	numBids := uint16(r.Int31n(int32(numMaxOrders))) + 1
 	randOrderSet.Bids = make([]*order.Bid, numBids)
 	for i := 0; i < int(numBids); i++ {
-		randOrderSet.Bids[i] = genRandBid(r, genOptions...)
+		randOrderSet.Bids[i] = genRandBid(r, acctDB, genOptions...)
 	}
 
 	numAsks := uint16(r.Int31n(int32(numMaxOrders))) + 1
 	randOrderSet.Asks = make([]*order.Ask, numAsks)
 	for i := 0; i < int(numAsks); i++ {
-		randOrderSet.Asks[i] = genRandAsk(r, genOptions...)
+		randOrderSet.Asks[i] = genRandAsk(r, acctDB, genOptions...)
 	}
 
 	return randOrderSet
@@ -1060,7 +1103,8 @@ func genRandOrderSet(r *rand.Rand, numMaxOrders uint32,
 func TestMatchMakingBatch(t *testing.T) {
 	t.Parallel()
 
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -1173,7 +1217,7 @@ func TestMatchMakingBatch(t *testing.T) {
 			// When generating the random set below, we'll cap the
 			// number of orders on both sides to ensure the test
 			// completes in a timely manner.
-			randOrderSet := genRandOrderSet(r, 1000)
+			randOrderSet := genRandOrderSet(r, acctDB, 1000)
 
 			v[0] = reflect.ValueOf(randOrderSet)
 		},
@@ -1192,12 +1236,17 @@ func TestMatchingNoSelfOrderMatch(t *testing.T) {
 	t.Parallel()
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
-	matchMaker := NewMultiUnitMatchMaker()
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 
 	traderAcct := genRandAccount(r)
 
-	bid := genRandBid(r, staticAccountKeyGen(traderAcct.TraderKeyRaw))
-	ask := genRandAsk(r, staticAccountKeyGen(traderAcct.TraderKeyRaw))
+	bid := genRandBid(
+		r, acctDB, staticAccountKeyGen(traderAcct.TraderKeyRaw),
+	)
+	ask := genRandAsk(
+		r, acctDB, staticAccountKeyGen(traderAcct.TraderKeyRaw),
+	)
 
 	_, match := matchMaker.MatchPossible(bid, ask)
 	if match {
@@ -1212,6 +1261,8 @@ func TestMatchingNoSelfOrderMatch(t *testing.T) {
 func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 	t.Parallel()
 
+	acctDB := newAcctFetcher()
+
 	// We'll create a single ask, fixing the parameters that are critical
 	// for matching.
 	askDuration := uint32(1000)
@@ -1221,6 +1272,7 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 	asks := []*order.Ask{
 		genRandAsk(
 			r,
+			acctDB,
 			staticUnitGen(orderT.SupplyUnit(askSupply)),
 			staticDurationGen(askDuration),
 			staticRateGen(targetRate),
@@ -1235,6 +1287,7 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 		// duration, so it can be matched with the ask above.
 		genRandBid(
 			r,
+			acctDB,
 			staticUnitGen(orderT.SupplyUnit(askSupply)),
 			staticDurationGen(askDuration*2),
 			staticRateGen(targetRate*2),
@@ -1243,13 +1296,14 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 		// This bid will match exactly with the ask above.
 		genRandBid(
 			r,
+			acctDB,
 			staticUnitGen(orderT.SupplyUnit(askSupply)),
 			staticDurationGen(askDuration),
 			staticRateGen(targetRate),
 		),
 	}
 
-	matchMaker := NewMultiUnitMatchMaker()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
 	matchSet, err := matchMaker.MatchBatch(bids, asks)
 	if err != nil {
 		t.Fatalf("unable to match orders: %v", err)

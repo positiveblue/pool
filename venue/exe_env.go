@@ -156,7 +156,7 @@ func (e *environment) sendPrepareMsg() error {
 		// For a given trader, we'll filter out all the orders that it
 		// belongs to, and also update our map tracking the order for
 		// each trader.
-		matchedOrders := make(map[orderT.Nonce]*matching.MatchedOrder)
+		matchedOrders := make(map[orderT.Nonce][]*matching.MatchedOrder)
 		e.traderToOrders = make(map[matching.AccountID][]orderT.Nonce)
 		for _, order := range e.batch.Orders {
 			order := order
@@ -176,7 +176,9 @@ func (e *environment) sendPrepareMsg() error {
 				continue
 			}
 
-			matchedOrders[orderNonce] = &order
+			matchedOrders[orderNonce] = append(
+				matchedOrders[orderNonce], &order,
+			)
 
 			e.traderToOrders[traderKey] = append(
 				e.traderToOrders[traderKey],

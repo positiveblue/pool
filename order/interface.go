@@ -5,7 +5,6 @@ import (
 	"errors"
 	"net"
 
-	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -62,13 +61,6 @@ type Kit struct {
 
 	// Lsat is the LSAT token that was used to submit the order.
 	Lsat lsat.TokenID
-
-	// Acct is a pointer to the current active account instance for the
-	// trader that made this order.
-	//
-	// TODO(roasbeef): account.Snapshot?
-	//  * need to ensure server side always populated
-	Acct *account.Account
 }
 
 // ServerDetails returns the Kit of the server order.

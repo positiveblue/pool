@@ -33,9 +33,9 @@ func init() {
 	addSubLogger("SGNL", signal.UseLogger)
 	addSubLogger(account.Subsystem, account.UseLogger)
 	addSubLogger(order.Subsystem, order.UseLogger)
+	addSubLogger(batchtx.Subsystem, batchtx.UseLogger)
+	addSubLogger(venue.Subsystem, venue.UseLogger)
 	addSubLogger(auth.Subsystem, auth.UseLogger)
-	addSubLogger(batchtx.Subsystem, auth.UseLogger)
-	addSubLogger(venue.Subsystem, auth.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the
