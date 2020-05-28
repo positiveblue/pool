@@ -126,6 +126,12 @@ func (h *harnessTest) Log(args ...interface{}) {
 
 // shutdown stops both the auction and trader server.
 func (h *harnessTest) shutdown() error {
+	// First close the direct connection to the auctioneer we opened
+	// manually for the itest.
+	if h.trader.cfg.AuctioneerConn != nil {
+		_ = h.trader.cfg.AuctioneerConn.Close()
+	}
+
 	// Allow both server and client to stop but only return the first error
 	// that occurs.
 	err := h.trader.stop()
@@ -782,7 +788,7 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 }
 
 func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
-	chanAmt int64, fundingTXID chainhash.Hash, thawHeight int64) { // nolint:unparam
+	chanAmt int64, fundingTXID chainhash.Hash, thawHeight uint32) { // nolint:unparam
 
 	req := &lnrpc.ListChannelsRequest{}
 	err := wait.NoError(func() error {
@@ -825,7 +831,7 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 }
 
 func submitBidOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration int64,
+	rate uint32, amt btcutil.Amount, duration uint32,
 	version uint32) (orderT.Nonce, error) {
 
 	var nonce orderT.Nonce
@@ -835,9 +841,9 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 		Details: &clmrpc.SubmitOrderRequest_Bid{
 			Bid: &clmrpc.Bid{
 				Details: &clmrpc.Order{
-					UserSubKey:     subKey,
-					RateFixed:      int64(rate),
-					Amt:            int64(amt),
+					TraderKey:      subKey,
+					RateFixed:      rate,
+					Amt:            uint64(amt),
 					FundingFeeRate: 0,
 				},
 				MinDurationBlocks: duration,
@@ -860,7 +866,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 }
 
 func submitAskOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration int64,
+	rate uint32, amt btcutil.Amount, duration uint32,
 	version uint32) (orderT.Nonce, error) {
 
 	var nonce orderT.Nonce
@@ -870,9 +876,9 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					UserSubKey:     subKey,
-					RateFixed:      int64(rate),
-					Amt:            int64(amt),
+					TraderKey:      subKey,
+					RateFixed:      rate,
+					Amt:            uint64(amt),
 					FundingFeeRate: 0,
 				},
 				MaxDurationBlocks: duration,
@@ -903,7 +909,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, ask := range resp.Asks {
-			if ask.Details.State != orderT.StateExecuted.String() {
+			if ask.Details.State != clmrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					ask.Details.State)
@@ -911,7 +917,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, bid := range resp.Bids {
-			if bid.Details.State != orderT.StateExecuted.String() {
+			if bid.Details.State != clmrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					bid.Details.State)

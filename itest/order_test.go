@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	dayInBlocks int64 = 144
+	dayInBlocks uint32 = 144
 )
 
 // testOrderSubmission tests that a simple ask order can be created on both the
@@ -35,7 +35,7 @@ func testOrderSubmission(t *harnessTest) {
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					UserSubKey:     acct.TraderKey,
+					TraderKey:      acct.TraderKey,
 					RateFixed:      100,
 					Amt:            1500000,
 					FundingFeeRate: 0,
@@ -68,8 +68,9 @@ func testOrderSubmission(t *harnessTest) {
 		t.Fatalf("unexpected number of asks. got %d, expected %d",
 			len(list.Asks), 1)
 	}
-	if list.Asks[0].Details.State != "submitted" {
-		t.Fatalf("unexpected account state. got %s, expected %s",
-			list.Asks[0].Details.State, "submitted")
+	if list.Asks[0].Details.State != clmrpc.OrderState_ORDER_SUBMITTED {
+		t.Fatalf("unexpected account state. got %v, expected %v",
+			list.Asks[0].Details.State,
+			clmrpc.OrderState_ORDER_SUBMITTED)
 	}
 }

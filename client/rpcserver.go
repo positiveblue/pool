@@ -728,7 +728,7 @@ func marshallAccount(a *account.Account) (*clmrpc.Account, error) {
 			Txid:        a.OutPoint.Hash[:],
 			OutputIndex: a.OutPoint.Index,
 		},
-		Value:            uint32(a.Value),
+		Value:            uint64(a.Value),
 		ExpirationHeight: a.Expiry,
 		State:            rpcState,
 		CloseTxid:        closeTxHash[:],
@@ -757,7 +757,7 @@ func (s *rpcServer) WithdrawAccount(ctx context.Context,
 	}
 
 	// Enforce a minimum fee rate of 1 sat/vbyte.
-	feeRate := chainfee.SatPerKVByte(req.SatPerByte * 1000).FeePerKWeight()
+	feeRate := chainfee.SatPerKVByte(req.SatPerVbyte * 1000).FeePerKWeight()
 	if feeRate < chainfee.FeePerKwFloor {
 		log.Infof("Manual fee rate input of %d sat/kw is too low, "+
 			"using %d sat/kw instead", feeRate,
@@ -866,7 +866,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		}
 		o = &order.Ask{
 			Kit:         *kit,
-			MaxDuration: uint32(a.MaxDurationBlocks),
+			MaxDuration: a.MaxDurationBlocks,
 		}
 
 	case *clmrpc.SubmitOrderRequest_Bid:
@@ -877,7 +877,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		}
 		o = &order.Bid{
 			Kit:         *kit,
-			MinDuration: uint32(b.MinDurationBlocks),
+			MinDuration: b.MinDurationBlocks,
 		}
 
 	default:
@@ -962,9 +962,7 @@ func (s *rpcServer) ListOrders(ctx context.Context, _ *clmrpc.ListOrdersRequest)
 		nonce := dbOrder.Nonce()
 
 		// Ask the server about the order's current status.
-		state, unitsUnfullfilled, err := s.auctioneer.OrderState(
-			ctx, nonce,
-		)
+		orderStateResp, err := s.auctioneer.OrderState(ctx, nonce)
 		if err != nil {
 			return nil, fmt.Errorf("unable to query order state on"+
 				"server for order %v: %v", nonce.String(), err)
@@ -972,21 +970,21 @@ func (s *rpcServer) ListOrders(ctx context.Context, _ *clmrpc.ListOrdersRequest)
 
 		dbDetails := dbOrder.Details()
 		details := &clmrpc.Order{
-			UserSubKey:       dbDetails.AcctKey[:],
-			RateFixed:        int64(dbDetails.FixedRate),
-			Amt:              int64(dbDetails.Amt),
-			FundingFeeRate:   int64(dbDetails.FixedRate),
+			TraderKey:        dbDetails.AcctKey[:],
+			RateFixed:        dbDetails.FixedRate,
+			Amt:              uint64(dbDetails.Amt),
+			FundingFeeRate:   uint64(dbDetails.FundingFeeRate),
 			OrderNonce:       nonce[:],
-			State:            state.String(),
+			State:            orderStateResp.State,
 			Units:            uint32(dbDetails.Units),
-			UnitsUnfulfilled: unitsUnfullfilled,
+			UnitsUnfulfilled: orderStateResp.UnitsUnfulfilled,
 		}
 
 		switch o := dbOrder.(type) {
 		case *order.Ask:
 			rpcAsk := &clmrpc.Ask{
 				Details:           details,
-				MaxDurationBlocks: int64(o.MaxDuration),
+				MaxDurationBlocks: o.MaxDuration,
 				Version:           uint32(o.Version),
 			}
 			asks = append(asks, rpcAsk)
@@ -994,7 +992,7 @@ func (s *rpcServer) ListOrders(ctx context.Context, _ *clmrpc.ListOrdersRequest)
 		case *order.Bid:
 			rpcBid := &clmrpc.Bid{
 				Details:           details,
-				MinDurationBlocks: int64(o.MinDuration),
+				MinDurationBlocks: o.MinDuration,
 				Version:           uint32(o.Version),
 			}
 			bids = append(bids, rpcBid)

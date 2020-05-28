@@ -161,6 +161,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		Wallet:        lnd.WalletKit,
 		Signer:        lnd.Signer,
 		ChainNotifier: lnd.ChainNotifier,
+		MaxAcctValue:  btcutil.Amount(cfg.MaxAcctValue),
 	})
 	if err != nil {
 		return nil, err

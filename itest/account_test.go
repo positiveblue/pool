@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultAccountValue uint32 = 2_000_000
+	defaultAccountValue uint64 = 2_000_000
 )
 
 // testAccountCreation tests that the trader can successfully create an account
@@ -79,6 +79,20 @@ func testAccountCreation(t *harnessTest) {
 		t.Fatalf("expected output script %x, found %x", outputScript,
 			closeTx.TxOut[0].PkScript)
 	}
+
+	// Make sure the default account limit is enforced on the auctioneer
+	// side.
+	_, err = t.trader.InitAccount(ctx, &clmrpc.InitAccountRequest{
+		AccountValue:  uint64(btcutil.SatoshiPerBitcoin + 1),
+		AccountExpiry: uint32(currentHeight) + 1000,
+	})
+	if err == nil {
+		t.Fatalf("expected error when exceeding account value limit")
+	}
+	if !strings.Contains(err.Error(), "maximum account value") {
+		t.Fatalf("unexpected error, got '%s' wanted '%s'", err.Error(),
+			"maximum account value allowed is 1 BTC")
+	}
 }
 
 // testAccountWithdrawal tests that the auctioneer is able to handle a trader's
@@ -111,7 +125,7 @@ func testAccountWithdrawal(t *harnessTest) {
 				Address: "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
 			},
 		},
-		SatPerByte: 1,
+		SatPerVbyte: 1,
 	}
 	_, err = t.trader.WithdrawAccount(ctx, withdrawReq)
 	isInvalidAddrErr := err != nil &&

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
+	"github.com/btcsuite/btcutil"
 	"github.com/coreos/etcd/embed"
 	"github.com/lightninglabs/agora"
 	"github.com/lightninglabs/agora/adminrpc"
@@ -81,6 +82,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			OrderSubmitFee:   1337,
 			ExecFeeBase:      agora.DefaultExecutionFeeBase,
 			ExecFeeRate:      agora.DefaultExecutionFeeRate,
+			MaxAcctValue:     btcutil.SatoshiPerBitcoin,
 			SubscribeTimeout: 500 * time.Millisecond,
 			Lnd: &agora.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
