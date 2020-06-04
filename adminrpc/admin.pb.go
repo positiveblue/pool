@@ -9,6 +9,8 @@ import (
 	proto "github.com/golang/protobuf/proto"
 	_ "google.golang.org/genproto/googleapis/api/annotations"
 	grpc "google.golang.org/grpc"
+	codes "google.golang.org/grpc/codes"
+	status "google.golang.org/grpc/status"
 	math "math"
 )
 
@@ -502,6 +504,20 @@ type AuctionAdminServer interface {
 	MasterAccount(context.Context, *EmptyRequest) (*MasterAccountResponse, error)
 	ConnectedTraders(context.Context, *EmptyRequest) (*ConnectedTradersResponse, error)
 	BatchTick(context.Context, *EmptyRequest) (*EmptyResponse, error)
+}
+
+// UnimplementedAuctionAdminServer can be embedded to have forward compatible implementations.
+type UnimplementedAuctionAdminServer struct {
+}
+
+func (*UnimplementedAuctionAdminServer) MasterAccount(ctx context.Context, req *EmptyRequest) (*MasterAccountResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MasterAccount not implemented")
+}
+func (*UnimplementedAuctionAdminServer) ConnectedTraders(ctx context.Context, req *EmptyRequest) (*ConnectedTradersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ConnectedTraders not implemented")
+}
+func (*UnimplementedAuctionAdminServer) BatchTick(ctx context.Context, req *EmptyRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchTick not implemented")
 }
 
 func RegisterAuctionAdminServer(s *grpc.Server, srv AuctionAdminServer) {
