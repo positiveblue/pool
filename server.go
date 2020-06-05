@@ -381,19 +381,9 @@ func (s *Server) Stop() error {
 	s.stopOnce.Do(func() {
 		close(s.quit)
 
-		err := s.adminServer.Stop()
-		if err != nil {
-			stopErr = fmt.Errorf("error shutting down admin "+
-				"server: %w", err)
-			return
-		}
+		s.adminServer.Stop()
+		s.rpcServer.Stop()
 
-		err = s.rpcServer.Stop()
-		if err != nil {
-			stopErr = fmt.Errorf("error shutting down auction "+
-				"server: %w", err)
-			return
-		}
 		s.channelEnforcer.Stop()
 		if err := s.batchExecutor.Stop(); err != nil {
 			stopErr = fmt.Errorf("unable to stop batch executor: "+

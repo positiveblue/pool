@@ -185,9 +185,9 @@ func (s *rpcServer) Start() error {
 }
 
 // Stop stops the server.
-func (s *rpcServer) Stop() error {
+func (s *rpcServer) Stop() {
 	if !atomic.CompareAndSwapUint32(&s.stopped, 0, 1) {
-		return nil
+		return
 	}
 
 	log.Info("Stopping auction server")
@@ -196,15 +196,11 @@ func (s *rpcServer) Stop() error {
 	s.wg.Wait()
 
 	log.Info("Stopping lnd client, gRPC server and listener")
-	s.grpcServer.GracefulStop()
-	err := s.listener.Close()
-	if err != nil {
-		return fmt.Errorf("error closing gRPC listener: %v", err)
-	}
+	s.grpcServer.Stop()
+
 	s.serveWg.Wait()
 
 	log.Info("Auction server stopped")
-	return nil
 }
 
 func (s *rpcServer) ReserveAccount(ctx context.Context,

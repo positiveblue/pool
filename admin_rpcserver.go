@@ -69,9 +69,9 @@ func (s *adminRPCServer) Start() error {
 }
 
 // Stop stops the server.
-func (s *adminRPCServer) Stop() error {
+func (s *adminRPCServer) Stop() {
 	if !atomic.CompareAndSwapUint32(&s.stopped, 0, 1) {
-		return nil
+		return
 	}
 
 	log.Info("Stopping admin server")
@@ -80,15 +80,10 @@ func (s *adminRPCServer) Stop() error {
 	s.wg.Wait()
 
 	log.Info("Stopping admin gRPC server and listener")
-	s.grpcServer.GracefulStop()
-	err := s.listener.Close()
-	if err != nil {
-		return fmt.Errorf("error closing admin gRPC listener: %v", err)
-	}
+	s.grpcServer.Stop()
 	s.serveWg.Wait()
 
 	log.Info("Admin server stopped")
-	return nil
 }
 
 func (s *adminRPCServer) MasterAccount(ctx context.Context,
