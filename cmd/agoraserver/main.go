@@ -39,7 +39,7 @@ func start() error {
 		return err
 	}
 
-	configFile := filepath.Join(networkDir, defaultConfigFilename)
+	configFile := filepath.Join(cfg.BaseDir, defaultConfigFilename)
 	if err := flags.IniParse(configFile, cfg); err != nil {
 		// If it's a parsing related error, then we'll return
 		// immediately, otherwise we can proceed as possibly the cfg
