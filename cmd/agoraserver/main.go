@@ -27,6 +27,9 @@ func main() {
 func start() error {
 	// Pre-parse command line so that cfg.Network is set.
 	cfg, err := preParse()
+	if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -36,7 +39,7 @@ func start() error {
 		return err
 	}
 
-	configFile := filepath.Join(networkDir, defaultConfigFilename)
+	configFile := filepath.Join(cfg.BaseDir, defaultConfigFilename)
 	if err := flags.IniParse(configFile, cfg); err != nil {
 		// If it's a parsing related error, then we'll return
 		// immediately, otherwise we can proceed as possibly the cfg
@@ -79,9 +82,6 @@ func preParse() (*agora.Config, error) {
 		return nil
 	}
 	_, err := preParser.Parse()
-	if e, ok := err.(*flags.Error); ok && e.Type == flags.ErrHelp {
-		return &cfg, nil
-	}
 	if err != nil {
 		return nil, err
 	}
