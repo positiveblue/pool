@@ -1,9 +1,11 @@
 package agora
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -183,9 +185,9 @@ func (s *rpcServer) Start() error {
 }
 
 // Stop stops the server.
-func (s *rpcServer) Stop() error {
+func (s *rpcServer) Stop() {
 	if !atomic.CompareAndSwapUint32(&s.stopped, 0, 1) {
-		return nil
+		return
 	}
 
 	log.Info("Stopping auction server")
@@ -194,15 +196,11 @@ func (s *rpcServer) Stop() error {
 	s.wg.Wait()
 
 	log.Info("Stopping lnd client, gRPC server and listener")
-	s.grpcServer.GracefulStop()
-	err := s.listener.Close()
-	if err != nil {
-		return fmt.Errorf("error closing gRPC listener: %v", err)
-	}
+	s.grpcServer.Stop()
+
 	s.serveWg.Wait()
 
 	log.Info("Auction server stopped")
-	return nil
 }
 
 func (s *rpcServer) ReserveAccount(ctx context.Context,
@@ -520,6 +518,25 @@ func (s *rpcServer) SubscribeBatchAuction(
 					"subscription: %v", err)
 			}
 
+			// Now that we know everything checks out, send an
+			// acknowledgement message back to the trader. This is
+			// needed so we always send a response to the trader,
+			// both if the account exists and if it doesn't. This is
+			// useful for the recovery so the trader knows
+			// immediately if they can send the request to recover
+			// that account or not.
+			err = stream.Send(&clmrpc.ServerAuctionMessage{
+				Msg: &clmrpc.ServerAuctionMessage_Success{
+					Success: &clmrpc.SubscribeSuccess{
+						TraderKey: newSub.AccountKey[:],
+					},
+				},
+			})
+			if err != nil {
+				return fmt.Errorf("error sending success: %v",
+					err)
+			}
+
 		// Message from the trader to the batch executor.
 		case toServerMsg := <-trader.comms.toServer:
 			err := s.batchExecutor.HandleTraderMsg(toServerMsg)
@@ -545,6 +562,33 @@ func (s *rpcServer) SubscribeBatchAuction(
 		// An error happened anywhere in the process, we need to abort
 		// the connection.
 		case err := <-trader.comms.err:
+			// The trader sent a valid signature for an account that
+			// we don't know of. This either means there is a gap in
+			// the account keys on the trader side because creating
+			// one or more accounts failed. Or it means the trader
+			// got to the next key after the last account key during
+			// recovery.
+			var e *agoradb.AccountNotFoundError
+			if errors.As(err, &e) {
+				errCode := clmrpc.SubscribeError_ACCOUNT_DOES_NOT_EXIST
+				err = stream.Send(&clmrpc.ServerAuctionMessage{
+					Msg: &clmrpc.ServerAuctionMessage_Error{
+						Error: &clmrpc.SubscribeError{
+							Error:     err.Error(),
+							ErrorCode: errCode,
+							TraderKey: e.AcctKey[:],
+						},
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("error sending err "+
+						"msg: %v", err)
+				}
+
+				// We don't punish or disconnect the trader.
+				continue
+			}
+
 			log.Errorf("Error in trader stream: %v", err)
 
 			trader.comms.abort()
@@ -744,11 +788,14 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		}
 
 		// The signature is valid, we can now fetch the account from the
-		// store.
+		// store. If the account does not exist, the trader might be
+		// trying to recover from a lost database state and is going
+		// through their keys to find accounts we know.
 		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
-			comms.err <- fmt.Errorf("error reading account: %v",
-				err)
+			comms.err <- &agoradb.AccountNotFoundError{
+				AcctKey: acctKey,
+			}
 			return
 		}
 
@@ -824,10 +871,91 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			comms.toServer <- traderMsg
 		}
 
+	// The trader wants to recover their lost account. We'll only do this
+	// for accounts that are already subscribed so we can be sure it exists
+	// on our side.
+	case *clmrpc.ClientAuctionMessage_Recover:
+		var traderKey [33]byte
+		copy(traderKey[:], msg.Recover.TraderKey)
+		_, ok := trader.Subscriptions[traderKey]
+		if !ok {
+			comms.err <- fmt.Errorf("account %x not subscribed",
+				traderKey)
+			return
+		}
+
+		// Send the account info to the trader and cancel all open
+		// orders of that account in the process.
+		err := s.sendAccountRecovery(traderKey, stream)
+		if err != nil {
+			comms.err <- fmt.Errorf("could not send recovery: %v",
+				err)
+			return
+		}
+
 	default:
 		comms.err <- fmt.Errorf("unknown trader message: %v", msg)
 		return
 	}
+}
+
+// sendAccountRecovery fetches an account from the database and sends all
+// information the auctioneer has to the trader. All open/pending accounts of
+// that account will be canceled as they cannot be recovered.
+func (s *rpcServer) sendAccountRecovery(traderKey [33]byte,
+	stream clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
+
+	acctPubkey, err := btcec.ParsePubKey(traderKey[:], btcec.S256())
+	if err != nil {
+		return fmt.Errorf("could not parse account key: %v", err)
+	}
+
+	// Load the account from the store. We want to send the latest state of
+	// the account to the trader so we include any diff that's been applied
+	// to it in case a batch cleared recently but hasn't finalized yet.
+	acct, err := s.store.Account(stream.Context(), acctPubkey, true)
+	if err != nil {
+		return fmt.Errorf("could not load account: %v", err)
+	}
+
+	// Cancel all open/pending orders associated with the recovered account
+	// as the trader won't be able to recover those. The order book will
+	// inform the venue to remove the orders from consideration if they're
+	// currently being processed in a batch.
+	activeOrders, err := s.store.GetOrders(stream.Context())
+	if err != nil {
+		return fmt.Errorf("error reading orders: %v", err)
+	}
+	for _, o := range activeOrders {
+		if o.Details().AcctKey == acct.TraderKeyRaw {
+			err = s.orderBook.CancelOrder(
+				stream.Context(), o.Nonce(),
+			)
+			if err != nil {
+				return fmt.Errorf("error canceling order: "+
+					"%v", err)
+			}
+		}
+	}
+
+	// Now that we've updated all orders we can send the recovery
+	// information to the trader. If there's an error on our side here,
+	// after we've updated the orders it doesn't really matter because these
+	// orders will never become active anyway.
+	rpcAcct, err := marshallServerAccount(acct)
+	if err != nil {
+		return fmt.Errorf("error marshalling account: %v", err)
+	}
+	err = stream.Send(&clmrpc.ServerAuctionMessage{
+		Msg: &clmrpc.ServerAuctionMessage_Account{
+			Account: rpcAcct,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("error sending recovery: %v", err)
+	}
+
+	return nil
 }
 
 // sendToTrader converts an internal execution message to the gRPC format and
@@ -1240,6 +1368,51 @@ func marshallAccountDiff(diff matching.AccountDiff,
 		OutpointIndex: opIdx,
 		TraderKey:     diff.StartingState.AccountKey[:],
 	}, nil
+}
+
+// marshallServerAccount translates an account.Account into its RPC counterpart.
+func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error) {
+	rpcAcct := &clmrpc.AuctionAccount{
+		Value:         uint64(acct.Value),
+		Expiry:        acct.Expiry,
+		TraderKey:     acct.TraderKeyRaw[:],
+		AuctioneerKey: acct.AuctioneerKey.PubKey.SerializeCompressed(),
+		BatchKey:      acct.BatchKey.SerializeCompressed(),
+		HeightHint:    acct.HeightHint,
+		Outpoint: &clmrpc.OutPoint{
+			Txid:        acct.OutPoint.Hash[:],
+			OutputIndex: acct.OutPoint.Index,
+		},
+	}
+
+	switch acct.State {
+	case account.StatePendingOpen:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_OPEN
+
+	case account.StateOpen:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_OPEN
+
+	case account.StateExpired:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_EXPIRED
+
+	case account.StateClosed:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_CLOSED
+
+		var buf bytes.Buffer
+		err := acct.CloseTx.Serialize(&buf)
+		if err != nil {
+			return nil, err
+		}
+		rpcAcct.CloseTx = buf.Bytes()
+
+	case account.StatePendingUpdate:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_UPDATE
+
+	default:
+		return nil, fmt.Errorf("unknown account state")
+	}
+
+	return rpcAcct, nil
 }
 
 // marshallMatchedAsk translates an order.Ask to its RPC counterpart.

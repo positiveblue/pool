@@ -120,16 +120,15 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder) error {
 }
 
 // CancelOrder sets an order's state to canceled if it has not yet been
-// processed and is still pending.
+// archived yet and is still pending.
 func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	o, err := b.cfg.Store.GetOrder(ctx, nonce)
 	if err != nil {
 		return err
 	}
 
-	if o.Details().State != order.StateSubmitted {
-		return fmt.Errorf("cannot cancel order that is not in status " +
-			"'submitted'")
+	if o.Details().State.Archived() {
+		return fmt.Errorf("cannot cancel archived")
 	}
 
 	err = b.cfg.Store.UpdateOrder(

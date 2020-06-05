@@ -3,6 +3,7 @@ package itest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -11,11 +12,15 @@ import (
 	"github.com/btcsuite/btcutil"
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"google.golang.org/grpc/metadata"
 )
 
 const (
 	defaultAccountValue uint64 = 2_000_000
+	validTestAddr       string = "bcrt1qwajhg774mykrkz0nvqpxleqnl708pgvzkfuqm2"
 )
 
 // testAccountCreation tests that the trader can successfully create an account
@@ -135,7 +140,7 @@ func testAccountWithdrawal(t *harnessTest) {
 	}
 
 	// Now try a valid address.
-	withdrawReq.Outputs[0].Address = "bcrt1qwajhg774mykrkz0nvqpxleqnl708pgvzkfuqm2"
+	withdrawReq.Outputs[0].Address = validTestAddr
 	withdrawResp, err := t.trader.WithdrawAccount(ctx, withdrawReq)
 	if err != nil {
 		t.Fatalf("unable to process account withdrawal: %v", err)
@@ -214,4 +219,181 @@ func testAccountSubscription(t *harnessTest) {
 	// a while.
 	t.restartServer()
 	assertTraderSubscribed(t, *tokenID, acct)
+}
+
+// testServerAssistedAccountRecovery tests that a trader can recover all
+// accounts with the help of the auctioneer in case they lose their local data
+// directory. This assumes that the connected lnd instance still runs with the
+// same seed the accounts originally were created with.
+func testServerAssistedAccountRecovery(t *harnessTest) {
+	ctxb := context.Background()
+
+	// We need the current best block for the account expiry.
+	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
+	if err != nil {
+		t.Fatalf("could not query current block height: %v", err)
+	}
+
+	// We create three accounts. One that is closed again, one that remains
+	// open and one that is pending open, waiting for on-chain confirmation.
+	closed := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+		AccountValue:  2000000,
+		AccountExpiry: uint32(currentHeight) + 1000,
+	})
+	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+		TraderKey: closed.TraderKey,
+		Outputs: []*clmrpc.Output{{
+			Value:   defaultAccountValue / 2,
+			Address: validTestAddr,
+		}},
+	})
+	open := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+		AccountValue:  2000000,
+		AccountExpiry: uint32(currentHeight) + 1000,
+	})
+	pending, err := t.trader.InitAccount(ctxb, &clmrpc.InitAccountRequest{
+		AccountValue:  2000000,
+		AccountExpiry: uint32(currentHeight) + 1000,
+	})
+	if err != nil {
+		t.Fatalf("could not create account: %v", err)
+	}
+	_, err = waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.t.Fatalf("open tx not published in time: %v", err)
+	}
+
+	// Also create an order for the open account so we can make sure it'll
+	// be canceled on recovery. We need to fetch the nonce of it so we can
+	// query it directly.
+	_, err = t.trader.SubmitOrder(ctxb, &clmrpc.SubmitOrderRequest{
+		Details: &clmrpc.SubmitOrderRequest_Ask{
+			Ask: &clmrpc.Ask{
+				Details: &clmrpc.Order{
+					TraderKey:      open.TraderKey,
+					RateFixed:      100,
+					Amt:            1500000,
+					FundingFeeRate: 0,
+				},
+				MaxDurationBlocks: 2 * dayInBlocks,
+				Version:           uint32(order.CurrentVersion),
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("could not submit order: %v", err)
+	}
+	list, err := t.trader.ListOrders(ctxb, &clmrpc.ListOrdersRequest{})
+	if err != nil {
+		t.Fatalf("could not list orders: %v", err)
+	}
+	if len(list.Asks) != 1 {
+		t.Fatalf("unexpected number of asks. got %d, expected %d",
+			len(list.Asks), 1)
+	}
+	askNonce := list.Asks[0].Details.OrderNonce
+
+	// Now we simulate data loss by shutting down the trader and removing
+	// its data directory completely.
+	err = t.trader.stop()
+	if err != nil {
+		t.Fatalf("could not stop trader: %v", err)
+	}
+
+	// Now we just create a new trader, connected to the same lnd instance.
+	t.trader = setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, t.lndHarness.Bob, t.auctioneer,
+	)
+
+	// Make sure the trader doesn't remember any accounts anymore.
+	accounts, err := t.trader.ListAccounts(
+		ctxb, &clmrpc.ListAccountsRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not query accounts: %v", err)
+	}
+	if len(accounts.Accounts) != 0 {
+		t.Fatalf("unexpected number of accounts. got %d wanted %d",
+			len(accounts.Accounts), 0)
+	}
+
+	// Start the recovery process. We expect three accounts to be recovered.
+	recovery, err := t.trader.RecoverAccounts(
+		ctxb, &clmrpc.RecoverAccountsRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not recover accounts: %v", err)
+	}
+	if recovery.NumRecoveredAccounts != 3 {
+		t.Fatalf("unexpected number of recovered accounts. got %d "+
+			"wanted %d", recovery.NumRecoveredAccounts, 3)
+	}
+
+	// Now make sure the accounts are all in the correct state.
+	accounts, err = t.trader.ListAccounts(
+		ctxb, &clmrpc.ListAccountsRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not query accounts: %v", err)
+	}
+	if len(accounts.Accounts) != 3 {
+		t.Fatalf("unexpected number of accounts. got %d wanted %d",
+			len(accounts.Accounts), 3)
+	}
+	assertTraderAccountState(
+		t.t, t.trader, closed.TraderKey, clmrpc.AccountState_CLOSED,
+	)
+	assertTraderAccountState(
+		t.t, t.trader, open.TraderKey, clmrpc.AccountState_OPEN,
+	)
+	assertTraderAccountState(
+		t.t, t.trader, pending.TraderKey,
+		clmrpc.AccountState_PENDING_OPEN,
+	)
+
+	// Mine the rest of the blocks to make the pending account fully
+	// confirmed. Then check its state again.
+	_ = mineBlocks(t, t.lndHarness, 5, 0)
+	assertTraderAccountState(
+		t.t, t.trader, pending.TraderKey, clmrpc.AccountState_OPEN,
+	)
+
+	// Finally, make sure we can close out both open accounts.
+	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+		TraderKey: open.TraderKey,
+		Outputs: []*clmrpc.Output{{
+			Value:   defaultAccountValue / 2,
+			Address: validTestAddr,
+		}},
+	})
+	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+		TraderKey: pending.TraderKey,
+		Outputs: []*clmrpc.Output{{
+			Value:   defaultAccountValue / 2,
+			Address: validTestAddr,
+		}},
+	})
+
+	// Query the auctioneer directly about the status of the ask we
+	// submitted earlier.
+	tokenID, err := t.trader.server.GetIdentity()
+	if err != nil {
+		t.Fatalf("could not get the trader's identity: %v", err)
+	}
+	idStr := fmt.Sprintf("LSATID %x", tokenID)
+	idCtx := metadata.AppendToOutgoingContext(
+		ctxb, auth.HeaderAuthorization, idStr,
+	)
+	resp, err := t.auctioneer.OrderState(
+		idCtx, &clmrpc.ServerOrderStateRequest{OrderNonce: askNonce},
+	)
+	if err != nil {
+		t.Fatalf("could not query order status: %v", err)
+	}
+	if resp.State != clmrpc.OrderState_ORDER_CANCELED {
+		t.Fatalf("unexpected order state, got %d wanted %d",
+			resp.State, clmrpc.OrderState_ORDER_CANCELED)
+	}
 }

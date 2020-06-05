@@ -173,6 +173,13 @@ func TestRPCServerBatchAuction(t *testing.T) {
 		},
 	}
 
+	// The server should find the account and acknowledge the successful
+	// subscription.
+	subMsg := <-mockStream.toClient
+	if _, ok := subMsg.Msg.(*clmrpc.ServerAuctionMessage_Success); !ok {
+		t.Fatalf("server didn't send expected success message")
+	}
+
 	// Make sure the trader stream was registered.
 	err := wait.NoError(func() error {
 		if len(rpcServer.connectedStreams) != 1 {

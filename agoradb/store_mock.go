@@ -85,7 +85,7 @@ func (s *StoreMock) UpdateAccount(_ context.Context, acct *account.Account,
 
 	a, ok := s.Accs[acct.TraderKeyRaw]
 	if !ok {
-		return ErrAccountNotFound
+		return &AccountNotFoundError{AcctKey: acct.TraderKeyRaw}
 	}
 	for _, modifier := range modifiers {
 		modifier(a)
@@ -121,7 +121,7 @@ func (s *StoreMock) Account(_ context.Context, traderPubKey *btcec.PublicKey,
 	copy(traderKey[:], traderPubKey.SerializeCompressed())
 	a, ok := s.Accs[traderKey]
 	if !ok {
-		return nil, ErrAccountNotFound
+		return nil, NewErrAccountNotFound(traderPubKey)
 	}
 	return a, nil
 }

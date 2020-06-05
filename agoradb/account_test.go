@@ -3,6 +3,7 @@ package agoradb
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"reflect"
 	"testing"
 
@@ -170,8 +171,8 @@ func TestAccounts(t *testing.T) {
 	err = store.UpdateAccount(
 		ctx, &a, account.StateModifier(account.StateOpen),
 	)
-	if err != ErrAccountNotFound {
-		t.Fatalf("expected ErrAccountNotFound, got \"%v\"", err)
+	if !errors.Is(err, ErrAccountNotFound) {
+		t.Fatalf("expected AccountNotFoundError, got \"%v\"", err)
 	}
 
 	// Also make sure we can properly serialize an account that has a

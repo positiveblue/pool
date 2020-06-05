@@ -28,4 +28,8 @@ var testCases = []*testCase{
 		name: "batch execution",
 		test: testBatchExecution,
 	},
+	{
+		name: "server-assisted recover accounts",
+		test: testServerAssistedAccountRecovery,
+	},
 }
