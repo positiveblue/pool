@@ -57,8 +57,8 @@ func testAccountCreation(t *harnessTest) {
 		TraderKey: account.TraderKey,
 		Outputs: []*clmrpc.Output{
 			{
-				Value:   outputValue,
-				Address: closeAddr,
+				ValueSat: outputValue,
+				Address:  closeAddr,
 			},
 		},
 	})
@@ -126,8 +126,8 @@ func testAccountWithdrawal(t *harnessTest) {
 		TraderKey: account.TraderKey,
 		Outputs: []*clmrpc.Output{
 			{
-				Value:   withdrawValue,
-				Address: "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
+				ValueSat: withdrawValue,
+				Address:  "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
 			},
 		},
 		SatPerVbyte: 1,
@@ -192,6 +192,82 @@ func testAccountWithdrawal(t *harnessTest) {
 	})
 }
 
+// testAccountDeposit tests that the auctioneer is able to handle a trader's
+// request to deposit funds into an account.
+func testAccountDeposit(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need the current best block for the account expiry.
+	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
+	if err != nil {
+		t.Fatalf("could not query current block height: %v", err)
+	}
+
+	// Create an account for 500K sats that is valid for the next 1000
+	// blocks and validate its confirmation on-chain.
+	const initialAccountValue = 500_000
+	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+		AccountValue:  initialAccountValue,
+		AccountExpiry: uint32(currentHeight) + 1_000,
+	})
+
+	// With the account open, we'll now attempt to deposit the same amount
+	// we initially funded the account with. The new value of the account
+	// should therefore be twice that its initial value.
+	const valueAfterDeposit = initialAccountValue * 2
+	depositReq := &clmrpc.DepositAccountRequest{
+		TraderKey:   account.TraderKey,
+		AmountSat:   initialAccountValue,
+		SatPerVbyte: 1,
+	}
+	depositResp, err := t.trader.DepositAccount(ctx, depositReq)
+	if err != nil {
+		t.Fatalf("unable to process account deposit: %v", err)
+	}
+
+	// We should expect to see the transaction causing the deposit.
+	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("deposit transaction not found in mempool: %v", err)
+	}
+	if !txids[0].IsEqual(depositTxid) {
+		t.Fatalf("found mempool transaction %v instead of %v",
+			txids[0], depositTxid)
+	}
+
+	// Assert that the account state is reflected correctly for both the
+	// trader and auctioneer while the deposit hasn't confirmed.
+	assertTraderAccount(
+		t, depositResp.Account.TraderKey, valueAfterDeposit,
+		clmrpc.AccountState_PENDING_UPDATE,
+	)
+	assertAuctioneerAccount(
+		t, depositResp.Account.TraderKey, valueAfterDeposit,
+		auctioneerAccount.StatePendingUpdate,
+	)
+
+	// Confirm the deposit, and once again assert that the account state
+	// is reflected correctly.
+	block := mineBlocks(t, t.lndHarness, 6, 1)[0]
+	_ = assertTxInBlock(t, block, depositTxid)
+	assertTraderAccount(
+		t, depositResp.Account.TraderKey, valueAfterDeposit,
+		clmrpc.AccountState_OPEN,
+	)
+	assertAuctioneerAccount(
+		t, depositResp.Account.TraderKey, valueAfterDeposit,
+		auctioneerAccount.StateOpen,
+	)
+
+	// Finally, end the test by closing the account.
+	_ = closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+		TraderKey: account.TraderKey,
+	})
+}
+
 // testAccountSubscription tests that a trader registers for an account after
 // opening one and that the reconnection mechanism works if the server is
 // stopped for maintenance.
@@ -243,8 +319,8 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: closed.TraderKey,
 		Outputs: []*clmrpc.Output{{
-			Value:   defaultAccountValue / 2,
-			Address: validTestAddr,
+			ValueSat: defaultAccountValue / 2,
+			Address:  validTestAddr,
 		}},
 	})
 	open := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
@@ -364,15 +440,15 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: open.TraderKey,
 		Outputs: []*clmrpc.Output{{
-			Value:   defaultAccountValue / 2,
-			Address: validTestAddr,
+			ValueSat: defaultAccountValue / 2,
+			Address:  validTestAddr,
 		}},
 	})
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: pending.TraderKey,
 		Outputs: []*clmrpc.Output{{
-			Value:   defaultAccountValue / 2,
-			Address: validTestAddr,
+			ValueSat: defaultAccountValue / 2,
+			Address:  validTestAddr,
 		}},
 	})
 
