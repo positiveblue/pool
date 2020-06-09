@@ -349,7 +349,7 @@ func newServer(store agoradb.Store) *rpcServer {
 			WalletKit:     mockLnd.WalletKit,
 			ChainNotifier: mockLnd.ChainNotifier,
 			Signer:        mockLnd.Signer,
-			Invoices:      mockLnd.Invoices,
+			Invoices:      mockLnd.LndServices.Invoices,
 			Router:        mockLnd.Router,
 			ChainParams:   mockLnd.ChainParams,
 		},
