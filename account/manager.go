@@ -711,6 +711,15 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		if !ok {
 			return nil, nil, errors.New("account output not found")
 		}
+
+		// Verify that the new account value is sane.
+		err = m.validateAccountValue(
+			btcutil.Amount(tx.TxOut[outputIndex].Value),
+		)
+		if err != nil {
+			return nil, nil, err
+		}
+
 		newAccountPoint = &wire.OutPoint{
 			Hash:  tx.TxHash(),
 			Index: outputIndex,
@@ -797,12 +806,10 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 // output value.
 func (m *Manager) validateAccountValue(value btcutil.Amount) error {
 	if value < accountT.MinAccountValue {
-		return fmt.Errorf("minimum account value allowed is %v",
-			accountT.MinAccountValue)
+		return newErrBelowMinAccountValue(accountT.MinAccountValue)
 	}
 	if value > m.cfg.MaxAcctValue {
-		return fmt.Errorf("maximum account value allowed is %v",
-			m.cfg.MaxAcctValue)
+		return newErrAboveMaxAccountValue(m.cfg.MaxAcctValue)
 	}
 
 	return nil

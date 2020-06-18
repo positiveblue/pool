@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/btcsuite/btcd/blockchain"
@@ -13,13 +14,14 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
+	"github.com/btcsuite/btcwallet/wallet/txrules"
 	"github.com/lightninglabs/agora/client/account/watcher"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
-	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/lnwallet/chanfunding"
 )
 
 const (
@@ -69,6 +71,10 @@ const (
 type spendPackage struct {
 	// tx is the spending transaction of the account.
 	tx *wire.MsgTx
+
+	// accountInputIdx is the index of the account input in the spending
+	// transaction.
+	accountInputIdx int
 
 	// witnessScript is the witness script of the account input being spent.
 	witnessScript []byte
@@ -697,6 +703,73 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 	return nil
 }
 
+// DepositAccount attempts to deposit funds into the account associated with the
+// given trader key such that the new account value is met using inputs sourced
+// from the backing lnd node's wallet. If needed, a change output that does back
+// to lnd may be added to the deposit transaction.
+func (m *Manager) DepositAccount(ctx context.Context,
+	traderKey *btcec.PublicKey, depositAmount btcutil.Amount,
+	feeRate chainfee.SatPerKWeight, bestHeight uint32) (*Account,
+	*wire.MsgTx, error) {
+
+	// The account can only be modified in `StateOpen` and its new value
+	// should not exceed the maximum allowed.
+	account, err := m.cfg.Store.Account(traderKey)
+	if err != nil {
+		return nil, nil, err
+	}
+	if account.State != StateOpen {
+		return nil, nil, fmt.Errorf("account must be in %v to be"+
+			"modified", StateOpen)
+	}
+	newAccountValue := account.Value + depositAmount
+	if newAccountValue > maxAccountValue {
+		return nil, nil, fmt.Errorf("new account value is above "+
+			"accepted maximum of %v", maxAccountValue)
+	}
+
+	// TODO(wilmer): Reject if account has pending orders.
+
+	// To start, we'll need to perform coin selection in order to meet the
+	// required new value of the account as part of the deposit. The
+	// selected inputs, along with a change output if needed, will then be
+	// included in the deposit transaction we'll broadcast.
+	witnessType := determineWitnessType(account, bestHeight)
+	inputs, releaseInputs, changeOutput, err := m.inputsForDeposit(
+		ctx, depositAmount, witnessType, feeRate,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
+	newAccountOutput, modifiers, err := createNewAccountOutput(
+		account, newAccountValue,
+	)
+	if err != nil {
+		releaseInputs()
+		return nil, nil, err
+	}
+
+	// We'll tack on the change output if it was needed and an additional
+	// `StatePendingUpdate` modifier to our account and proceed with the
+	// rest of the flow. This should request a signature from the auctioneer
+	// and assuming it's valid, broadcast the deposit transaction.
+	outputs := []*wire.TxOut{newAccountOutput}
+	if changeOutput != nil {
+		outputs = append(outputs, changeOutput)
+	}
+	modifiers = append(modifiers, StateModifier(StatePendingUpdate))
+	modifiedAccount, spendPkg, err := m.spendAccount(
+		ctx, account, inputs, outputs, witnessType, modifiers, false,
+		bestHeight,
+	)
+	if err != nil {
+		releaseInputs()
+		return nil, nil, err
+	}
+
+	return modifiedAccount, spendPkg.tx, nil
+}
+
 // WithdrawAccount attempts to withdraw funds from the account associated with
 // the given trader key into the provided outputs.
 func (m *Manager) WithdrawAccount(ctx context.Context,
@@ -704,11 +777,11 @@ func (m *Manager) WithdrawAccount(ctx context.Context,
 	feeRate chainfee.SatPerKWeight,
 	bestHeight uint32) (*Account, *wire.MsgTx, error) {
 
+	// The account can only be modified in `StateOpen`.
 	account, err := m.cfg.Store.Account(traderKey)
 	if err != nil {
 		return nil, nil, err
 	}
-
 	if account.State != StateOpen {
 		return nil, nil, fmt.Errorf("account must be in %v to be"+
 			"modified", StateOpen)
@@ -716,19 +789,31 @@ func (m *Manager) WithdrawAccount(ctx context.Context,
 
 	// TODO(wilmer): Reject if account has pending orders.
 
+	// To start, we'll need to determine the new value of the account after
+	// creating the outputs specified as part of the withdrawal, which we'll
+	// then use to create the new account output.
 	witnessType := determineWitnessType(account, bestHeight)
-	newAccountOutput, modifiers, err := createNewAccountOutput(
+	newAccountValue, err := valueAfterWithdrawal(
 		account, outputs, witnessType, feeRate,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
+	newAccountOutput, modifiers, err := createNewAccountOutput(
+		account, newAccountValue,
+	)
+	if err != nil {
+		return nil, nil, err
+	}
 
+	// With the output created, we'll tack on an additional
+	// `StatePendingUpdate` modifier to our account and proceed with the
+	// rest of the flow. This should request a signature from the auctioneer
+	// and assuming it's valid, broadcast the withdrawal transaction.
 	outputs = append(outputs, newAccountOutput)
 	modifiers = append(modifiers, StateModifier(StatePendingUpdate))
-
 	modifiedAccount, spendPkg, err := m.spendAccount(
-		ctx, account, outputs, witnessType, modifiers, false,
+		ctx, account, nil, outputs, witnessType, modifiers, false,
 		bestHeight,
 	)
 	if err != nil {
@@ -776,7 +861,7 @@ func (m *Manager) CloseAccount(ctx context.Context, traderKey *btcec.PublicKey,
 
 	modifiers := []Modifier{StateModifier(StatePendingClosed)}
 	_, spendPkg, err := m.spendAccount(
-		ctx, account, closeOutputs, witnessType, modifiers, true,
+		ctx, account, nil, closeOutputs, witnessType, modifiers, true,
 		bestHeight,
 	)
 	if err != nil {
@@ -794,8 +879,9 @@ func (m *Manager) CloseAccount(ctx context.Context, traderKey *btcec.PublicKey,
 // able to resume the spend of an account upon restarts if they happen to
 // shutdown mid-process.
 func (m *Manager) spendAccount(ctx context.Context, account *Account,
-	outputs []*wire.TxOut, witnessType witnessType, modifiers []Modifier,
-	isClose bool, bestHeight uint32) (*Account, *spendPackage, error) {
+	inputs []chanfunding.Coin, outputs []*wire.TxOut, witnessType witnessType,
+	modifiers []Modifier, isClose bool, bestHeight uint32) (*Account,
+	*spendPackage, error) {
 
 	// Create the spending transaction of an account based on the provided
 	// witness type.
@@ -817,7 +903,7 @@ func (m *Manager) spendAccount(ctx context.Context, account *Account,
 		)
 
 	case multiSigWitness:
-		spendPkg, err = m.createSpendTx(ctx, account, outputs, 0)
+		spendPkg, err = m.createSpendTx(ctx, account, inputs, outputs, 0)
 	}
 	if err != nil {
 		return nil, nil, err
@@ -862,9 +948,7 @@ func (m *Manager) spendAccount(ctx context.Context, account *Account,
 		if err != nil {
 			return nil, nil, err
 		}
-		// TODO(wilmer): Use proper input index when multiple inputs are
-		// supported.
-		spendPkg.tx.TxIn[0].Witness = witness
+		spendPkg.tx.TxIn[spendPkg.accountInputIdx].Witness = witness
 	}
 
 	if err := m.cfg.Wallet.PublishTransaction(ctx, spendPkg.tx); err != nil {
@@ -937,7 +1021,7 @@ func determineWitnessType(account *Account, bestHeight uint32) witnessType {
 func (m *Manager) spendAccountExpiry(ctx context.Context, account *Account,
 	outputs []*wire.TxOut, bestHeight uint32) (*spendPackage, error) {
 
-	spendPkg, err := m.createSpendTx(ctx, account, outputs, bestHeight)
+	spendPkg, err := m.createSpendTx(ctx, account, nil, outputs, bestHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -968,16 +1052,22 @@ func (m *Manager) constructMultiSigWitness(ctx context.Context,
 			ctx, account, nil, spendPkg.tx.TxOut, nil,
 		)
 	} else {
-		// Otherwise, the account output is being recreated due to a
-		// modification, so we need to filter it out from the spending
-		// transaction as the auctioneer can reconstruct it themselves.
-		idx := account.Copy(modifiers...).OutPoint.Index
-		outputs := make([]*wire.TxOut, len(spendPkg.tx.TxOut)-1)
-		copy(outputs, spendPkg.tx.TxOut[:idx])
-		copy(outputs, spendPkg.tx.TxOut[idx+1:])
+		// Otherwise, the account output is being re-created due to a
+		// modification, so we need to filter out its spent input and
+		// re-created output from the spending transaction as the
+		// auctioneer can reconstruct those themselves.
+		inputIdx := spendPkg.accountInputIdx
+		inputs := make([]*wire.TxIn, 0, len(spendPkg.tx.TxIn)-1)
+		inputs = append(inputs, spendPkg.tx.TxIn[:inputIdx]...)
+		inputs = append(inputs, spendPkg.tx.TxIn[inputIdx+1:]...)
+
+		outputIdx := account.Copy(modifiers...).OutPoint.Index
+		outputs := make([]*wire.TxOut, 0, len(spendPkg.tx.TxOut)-1)
+		outputs = append(outputs, spendPkg.tx.TxOut[:outputIdx]...)
+		outputs = append(outputs, spendPkg.tx.TxOut[outputIdx+1:]...)
 
 		auctioneerSig, err = m.cfg.Auctioneer.ModifyAccount(
-			ctx, account, nil, outputs, modifiers,
+			ctx, account, inputs, outputs, modifiers,
 		)
 	}
 	if err != nil {
@@ -994,12 +1084,23 @@ func (m *Manager) constructMultiSigWitness(ctx context.Context,
 // the lock time of the transaction, otherwise it is 0. The transaction has its
 // inputs and outputs sorted according to BIP-69.
 func (m *Manager) createSpendTx(ctx context.Context, account *Account,
-	outputs []*wire.TxOut, bestHeight uint32) (*spendPackage, error) {
+	inputs []chanfunding.Coin, outputs []*wire.TxOut,
+	bestHeight uint32) (*spendPackage, error) {
 
 	// Construct the transaction that we'll sign.
 	tx := wire.NewMsgTx(2)
 	tx.LockTime = bestHeight
 	tx.AddTxIn(&wire.TxIn{PreviousOutPoint: account.OutPoint})
+
+	// We'll need a way to reference inputs to their corresponding UTXO.
+	inputMap := make(map[wire.OutPoint]chanfunding.Coin, len(inputs))
+	for _, input := range inputs {
+		tx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: input.OutPoint,
+		})
+		inputMap[input.OutPoint] = input
+	}
+
 	for _, output := range outputs {
 		tx.AddTxOut(output)
 	}
@@ -1010,37 +1111,83 @@ func (m *Manager) createSpendTx(ctx context.Context, account *Account,
 
 	// Ensure the transaction crafted passes some basic sanity checks before
 	// we attempt to sign it.
-	if err := sanityCheckAccountSpendTx(tx, account); err != nil {
+	if err := sanityCheckAccountSpendTx(tx, account, inputMap); err != nil {
+		return nil, err
+	}
+
+	// Determine the new index of the account input now that the transaction
+	// has been sorted.
+	accountInputIdx, err := locateAccountInput(tx, account)
+	if err != nil {
 		return nil, err
 	}
 
 	// Gather the remaining components required to sign the transaction
-	// fully.
+	// fully. This includes signing the account input and any additional
+	// ones.
 	sigHashes := txscript.NewTxSigHashes(tx)
 	sigHashType := txscript.SigHashAll
+	for i, txIn := range tx.TxIn {
+		if i == accountInputIdx {
+			continue
+		}
 
-	// TODO(wilmer): Should sign proper input once multiple inputs are
-	// supported.
+		inputScript, err := m.signInput(
+			ctx, tx, inputMap[txIn.PreviousOutPoint], i,
+			sigHashType, sigHashes,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		txIn.SignatureScript = inputScript.SigScript
+		txIn.Witness = inputScript.Witness
+	}
+
+	// Our account input signature isn't always all that's required to spend
+	// it, so we'll take care of forming a proper signature later.
 	witnessScript, ourSig, err := m.signAccountInput(
-		ctx, tx, account, sigHashType, sigHashes,
+		ctx, tx, account, accountInputIdx, sigHashType, sigHashes,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &spendPackage{
-		tx:            tx,
-		witnessScript: witnessScript,
-		ourSig:        ourSig,
+		tx:              tx,
+		accountInputIdx: accountInputIdx,
+		witnessScript:   witnessScript,
+		ourSig:          ourSig,
 	}, nil
 }
 
-// createNewAccountOutput creates the next account output in the sequence for a
-// an account spending transaction that spends to the provided outputs at the
-// given fee rate.
-func createNewAccountOutput(account *Account, outputs []*wire.TxOut,
-	witnessType witnessType, feeRate chainfee.SatPerKWeight) (*wire.TxOut,
-	[]Modifier, error) {
+// addBaseAccountModificationWeight adds the estimated weight units for a
+// transaction that modifies an account by spending the current account input
+// and creating the new account output according to the provided `witnessType`.
+func addBaseAccountModificationWeight(weightEstimator *input.TxWeightEstimator,
+	witnessType witnessType) error {
+
+	var accountInputWitnessSize int
+	switch witnessType {
+	case expiryWitness:
+		accountInputWitnessSize = clmscript.ExpiryWitnessSize
+	case multiSigWitness:
+		accountInputWitnessSize = clmscript.MultiSigWitnessSize
+	default:
+		return fmt.Errorf("unknown witness type %v", witnessType)
+	}
+
+	weightEstimator.AddWitnessInput(accountInputWitnessSize)
+	weightEstimator.AddP2WSHOutput()
+
+	return nil
+}
+
+// valueAfterWithdrawal determines the new value of an account after processing
+// a withdrawal to the specified outputs at the provided fee rate.
+func valueAfterWithdrawal(accountBeforeWithdrawl *Account,
+	withdrawalOutputs []*wire.TxOut, witnessType witnessType,
+	feeRate chainfee.SatPerKWeight) (btcutil.Amount, error) {
 
 	// To determine the new value of the account, we'll need to subtract the
 	// values of all additional outputs and the resulting fee of the
@@ -1049,33 +1196,22 @@ func createNewAccountOutput(account *Account, outputs []*wire.TxOut,
 	// Right off the bat, we'll add weight estimates for the existing
 	// account output that we're spending, and the new account output being
 	// created.
-	var accountInputWitnessSize int
-	switch witnessType {
-	case expiryWitness:
-		accountInputWitnessSize = clmscript.ExpiryWitnessSize
-	case multiSigWitness:
-		accountInputWitnessSize = clmscript.MultiSigWitnessSize
-	default:
-		return nil, nil, fmt.Errorf("unknown witness type %v",
-			witnessType)
-	}
-
 	var weightEstimator input.TxWeightEstimator
-	weightEstimator.AddWitnessInput(accountInputWitnessSize)
-	weightEstimator.AddP2WSHOutput()
-
-	inputTotal := account.Value
+	err := addBaseAccountModificationWeight(&weightEstimator, witnessType)
+	if err != nil {
+		return 0, err
+	}
 
 	// We'll then add the weight estimates for any additional outputs
 	// provided, keeping track of the total output value sum as we go.
 	var outputTotal btcutil.Amount
-	for _, out := range outputs {
+	for _, out := range withdrawalOutputs {
 		// To determine the proper weight of the output, we'll need to
 		// know its type.
 		pkScript, err := txscript.ParsePkScript(out.PkScript)
 		if err != nil {
-			return nil, nil, fmt.Errorf("unable to parse output "+
-				"script %x: %v", out.PkScript, err)
+			return 0, fmt.Errorf("unable to parse output script "+
+				"%x: %v", out.PkScript, err)
 		}
 
 		switch pkScript.Class() {
@@ -1086,8 +1222,8 @@ func createNewAccountOutput(account *Account, outputs []*wire.TxOut,
 		case txscript.WitnessV0ScriptHashTy:
 			weightEstimator.AddP2WSHOutput()
 		default:
-			return nil, nil, fmt.Errorf("unsupported output "+
-				"script %x", out.PkScript)
+			return 0, fmt.Errorf("unsupported output script %x",
+				out.PkScript)
 		}
 
 		outputTotal += btcutil.Amount(out.Value)
@@ -1097,11 +1233,124 @@ func createNewAccountOutput(account *Account, outputs []*wire.TxOut,
 	// from our input total and ensure our new account value isn't below our
 	// required minimum.
 	fee := feeRate.FeeForWeight(int64(weightEstimator.Weight()))
-	newAmount := inputTotal - outputTotal - fee
-	if newAmount < MinAccountValue {
-		return nil, nil, fmt.Errorf("new account value is below "+
-			"accepted minimum of %v", MinAccountValue)
+	newAccountValue := accountBeforeWithdrawl.Value - outputTotal - fee
+	if newAccountValue < MinAccountValue {
+		return 0, fmt.Errorf("new account value is below accepted "+
+			"minimum of %v", MinAccountValue)
 	}
+
+	return newAccountValue, nil
+}
+
+// inputsForDeposit returns a list of inputs sources from the backing lnd node's
+// wallet which we can use to satisfy an account deposit. A closure to release
+// the inputs is also provided to use when coming across an unexpected failure.
+// If needed, a change output from the backing lnd node's wallet may be returned
+// as well.
+func (m *Manager) inputsForDeposit(ctx context.Context,
+	depositAmount btcutil.Amount, witnessType witnessType,
+	feeRate chainfee.SatPerKWeight) ([]chanfunding.Coin, func(),
+	*wire.TxOut, error) {
+
+	// We'll start by obtaining our global lock ID.
+	lockID, err := m.cfg.Store.LockID()
+	if err != nil {
+		return nil, nil, nil, err
+	}
+
+	// Then, we'll perform a series of coin selection attempts until we can
+	// lease every output needed.
+	var (
+		inputs    []chanfunding.Coin
+		changeAmt btcutil.Amount
+	)
+
+	// Before doing so, we'll define a helper closure to release the inputs
+	// in case we come across an unexpected failure.
+	releaseInputs := func() {
+		for _, input := range inputs {
+			_ = m.cfg.Wallet.ReleaseOutput(
+				ctx, lockID, input.OutPoint,
+			)
+		}
+	}
+
+coinSelection:
+	for {
+		utxos, err := m.cfg.Wallet.ListUnspent(ctx, 1, math.MaxInt32)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		coins := make([]chanfunding.Coin, 0, len(utxos))
+		for _, utxo := range utxos {
+			coins = append(coins, chanfunding.Coin{
+				TxOut: wire.TxOut{
+					Value:    int64(utxo.Value),
+					PkScript: utxo.PkScript,
+				},
+				OutPoint: utxo.OutPoint,
+			})
+		}
+
+		inputs, changeAmt, err = coinSelection(
+			coins, depositAmount, witnessType, feeRate,
+		)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+
+		// Leasing outputs can fail if they were leased by another
+		// process, so we'll need to handle this carefully. Keep track
+		// of any inputs we've leased, so that we can release them if we
+		// fail at any point.
+		for i, input := range inputs {
+			_, err := m.cfg.Wallet.LeaseOutput(
+				ctx, lockID, input.OutPoint,
+			)
+			if err != nil {
+				log.Debugf("Unable to lease output %v: %v",
+					input.OutPoint, err)
+
+				// Only release those which we've leased.
+				inputs = inputs[:i]
+				releaseInputs()
+				continue coinSelection
+			}
+		}
+
+		break
+	}
+
+	// A change output will only exist as long as the remaining amount is
+	// above the network's dust limit.
+	var changeOutput *wire.TxOut
+	dustLimit := txrules.GetDustThreshold(
+		input.P2WPKHSize, txrules.DefaultRelayFeePerKb,
+	)
+	if changeAmt >= dustLimit {
+		addr, err := m.cfg.Wallet.NextAddr(context.Background())
+		if err != nil {
+			releaseInputs()
+			return nil, nil, nil, err
+		}
+		script, err := txscript.PayToAddrScript(addr)
+		if err != nil {
+			releaseInputs()
+			return nil, nil, nil, err
+		}
+		changeOutput = &wire.TxOut{
+			Value:    int64(changeAmt),
+			PkScript: script,
+		}
+	}
+
+	return inputs, releaseInputs, changeOutput, nil
+}
+
+// createNewAccountOutput creates the next account output in the sequence using
+// the new account value.
+func createNewAccountOutput(account *Account, newAccountValue btcutil.Amount) (
+	*wire.TxOut, []Modifier, error) {
 
 	// Use the next output script in the sequence to avoid script reuse.
 	newPkScript, err := account.NextOutputScript()
@@ -1110,16 +1359,22 @@ func createNewAccountOutput(account *Account, outputs []*wire.TxOut,
 	}
 
 	newAccountOutput := &wire.TxOut{
-		Value:    int64(newAmount),
+		Value:    int64(newAccountValue),
 		PkScript: newPkScript,
 	}
-	modifiers := []Modifier{ValueModifier(newAmount), IncrementBatchKey()}
+	modifiers := []Modifier{
+		ValueModifier(newAccountValue),
+		IncrementBatchKey(),
+	}
+
 	return newAccountOutput, modifiers, nil
 }
 
 // sanityCheckAccountSpendTx ensures that the spending transaction of an account
 // is well-formed by performing various sanity checks on its inputs and outputs.
-func sanityCheckAccountSpendTx(tx *wire.MsgTx, account *Account) error {
+func sanityCheckAccountSpendTx(tx *wire.MsgTx, account *Account,
+	inputs map[wire.OutPoint]chanfunding.Coin) error {
+
 	err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx))
 	if err != nil {
 		return err
@@ -1130,8 +1385,16 @@ func sanityCheckAccountSpendTx(tx *wire.MsgTx, account *Account) error {
 	//
 	// TODO(wilmer): Calculate the fee for this transaction and assert that
 	// it is greater than the lowest possible fee for it?
-	inputTotal := account.Value
-	var outputTotal btcutil.Amount
+	var inputTotal, outputTotal btcutil.Amount
+	for _, input := range tx.TxIn {
+		if input.PreviousOutPoint == account.OutPoint {
+			inputTotal += account.Value
+		} else {
+			inputTotal += btcutil.Amount(
+				inputs[input.PreviousOutPoint].Value,
+			)
+		}
+	}
 	for _, output := range tx.TxOut {
 		outputTotal += btcutil.Amount(output.Value)
 	}
@@ -1144,11 +1407,46 @@ func sanityCheckAccountSpendTx(tx *wire.MsgTx, account *Account) error {
 	return nil
 }
 
+// locateAccountInput locates the index of the account input in the provided
+// transaction or returns an error.
+func locateAccountInput(tx *wire.MsgTx, account *Account) (int, error) {
+	for i, txIn := range tx.TxIn {
+		if txIn.PreviousOutPoint == account.OutPoint {
+			return i, nil
+		}
+	}
+	return 0, errors.New("account input not found")
+}
+
+// signInput signs a P2WKH or NP2WKH input of a transaction.
+func (m *Manager) signInput(ctx context.Context, tx *wire.MsgTx,
+	in chanfunding.Coin, idx int, sigHashType txscript.SigHashType,
+	sigHashes *txscript.TxSigHashes) (*input.Script, error) {
+
+	signDesc := &input.SignDescriptor{
+		Output: &wire.TxOut{
+			Value:    in.Value,
+			PkScript: in.PkScript,
+		},
+		HashType:   sigHashType,
+		InputIndex: idx,
+		SigHashes:  sigHashes,
+	}
+	inputScripts, err := m.cfg.Signer.ComputeInputScript(
+		ctx, tx, []*input.SignDescriptor{signDesc},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return inputScripts[0], nil
+}
+
 // signAccountInput signs the account input in the spending transaction of an
 // account. If the account is being spent with cooperation of the auctioneer,
 // their signature will be required as well.
 func (m *Manager) signAccountInput(ctx context.Context, tx *wire.MsgTx,
-	account *Account, sigHashType txscript.SigHashType,
+	account *Account, idx int, sigHashType txscript.SigHashType,
 	sigHashes *txscript.TxSigHashes) ([]byte, []byte, error) {
 
 	traderKeyTweak := clmscript.TraderKeyTweak(
@@ -1168,14 +1466,12 @@ func (m *Manager) signAccountInput(ctx context.Context, tx *wire.MsgTx,
 	}
 
 	signDesc := &input.SignDescriptor{
-		KeyDesc: keychain.KeyDescriptor{
-			KeyLocator: account.TraderKey.KeyLocator,
-		},
+		KeyDesc:       *account.TraderKey,
 		SingleTweak:   traderKeyTweak,
 		WitnessScript: witnessScript,
 		Output:        accountOutput,
 		HashType:      sigHashType,
-		InputIndex:    0,
+		InputIndex:    idx,
 		SigHashes:     sigHashes,
 	}
 	sigs, err := m.cfg.Signer.SignOutputRaw(

@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
+	accountT "github.com/lightninglabs/agora/client/account"
 	"github.com/lightninglabs/agora/client/clmscript"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -601,6 +602,56 @@ func TestAccountSpendRecreatesOutput(t *testing.T) {
 		},
 		SpenderInputIndex: 0,
 	})
+}
+
+// TestModifyAccountValueBounds ensures that we will not process a trader
+// modification if the new account's value is outside of the allowed bounds.
+func TestModifyAccountValueBounds(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	const bestHeight = 100
+
+	// Create the account and confirm it.
+	account := h.initAccount()
+	accountOutput, err := account.Output()
+	if err != nil {
+		t.Fatalf("unable to generate account output: %v", err)
+	}
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// Attempt to modify the account's value to be below the minimum. This
+	// should result in a ErrBelowMinAccountValue error.
+	traderKey, err := account.TraderKey()
+	if err != nil {
+		t.Fatalf("unable to retrieve trader key: %v", err)
+	}
+	mods := []Modifier{ValueModifier(accountT.MinAccountValue - 1)}
+	_, err = h.manager.ModifyAccount(
+		ctx, traderKey, nil, nil, mods, bestHeight,
+	)
+	if err, ok := err.(ErrBelowMinAccountValue); !ok {
+		t.Fatalf("expected ErrBelowMinAccountValue, got %T", err)
+	}
+
+	// Attempt to modify the account's value to be above the maximum. This
+	// should result in a ErrAboveMaxAccountValue error.
+	mods = []Modifier{ValueModifier(h.manager.cfg.MaxAcctValue + 1)}
+	_, err = h.manager.ModifyAccount(
+		ctx, traderKey, nil, nil, mods, bestHeight,
+	)
+	if err, ok := err.(ErrAboveMaxAccountValue); !ok {
+		t.Fatalf("expected ErrAboveMaxAccountValue, got %T", err)
+	}
 }
 
 // TestModifyAccountWithdrawal ensures that:
