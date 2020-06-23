@@ -5,7 +5,7 @@ import (
 	"errors"
 	"net"
 
-	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lnwire"
 )

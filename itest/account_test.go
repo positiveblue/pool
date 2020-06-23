@@ -12,7 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"google.golang.org/grpc/metadata"

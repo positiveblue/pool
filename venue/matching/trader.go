@@ -7,7 +7,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/client/clmscript"
+	"github.com/lightninglabs/llm/clmscript"
 )
 
 // AccountID is the account ID that uniquely identifies a trader.

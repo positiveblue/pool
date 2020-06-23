@@ -10,7 +10,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/account"
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"

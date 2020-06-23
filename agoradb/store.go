@@ -14,7 +14,7 @@ import (
 	"github.com/coreos/etcd/clientv3"
 	conc "github.com/coreos/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/matching"
 )

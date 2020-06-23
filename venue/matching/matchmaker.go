@@ -3,7 +3,7 @@ package matching
 import (
 	"container/list"
 
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/agora/order"
 )
 

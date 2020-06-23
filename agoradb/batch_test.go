@@ -12,8 +12,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/matching"
 )

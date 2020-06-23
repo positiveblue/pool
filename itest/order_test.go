@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/order"
 )
 
 const (

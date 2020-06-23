@@ -6,7 +6,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/client/clientdb"
+	"github.com/lightninglabs/llm/clientdb"
 	"github.com/lightninglabs/agora/order"
 	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lsat"

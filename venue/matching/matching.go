@@ -4,7 +4,7 @@ import (
 	"sort"
 
 	"github.com/lightninglabs/agora/account"
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/agora/order"
 )
 

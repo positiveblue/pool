@@ -8,7 +8,7 @@ import (
 	"testing/quick"
 	"time"
 
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 )
 
 // TestCallMarketConsiderForgetOrders tests that we're able to properly add and

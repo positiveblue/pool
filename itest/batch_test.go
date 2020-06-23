@@ -11,7 +11,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/order"
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
 

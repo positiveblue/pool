@@ -1,6 +1,6 @@
 package matching
 
-import orderT "github.com/lightninglabs/agora/client/order"
+import orderT "github.com/lightninglabs/llm/order"
 
 // LastAcceptedBid is a uniform clearing price algorithm that selects the
 // clearing price to the lowest bid within the candidate batch.

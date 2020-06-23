@@ -20,7 +20,7 @@ import (
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/llm/clmrpc"
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc"

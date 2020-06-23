@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/lightninglabs/agora/client"
+	"github.com/lightninglabs/llm"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
@@ -21,8 +21,8 @@ import (
 // start an instance of the trader server.
 type traderHarness struct {
 	cfg       *traderConfig
-	server    *client.Server
-	clientCfg *client.Config
+	server    *llm.Server
+	clientCfg *llm.Config
 	listener  *bufconn.Listener
 
 	clmrpc.TraderClient
@@ -64,7 +64,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 	return &traderHarness{
 		cfg:      &cfg,
 		listener: listener,
-		clientCfg: &client.Config{
+		clientCfg: &llm.Config{
 			LogDir:         ".",
 			MaxLogFiles:    99,
 			MaxLogFileSize: 999,
@@ -76,7 +76,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 			MinBackoff:     100 * time.Millisecond,
 			MaxBackoff:     500 * time.Millisecond,
 			RPCListener:    listener,
-			Lnd: &client.LndConfig{
+			Lnd: &llm.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,
 				TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
@@ -88,7 +88,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 // start spins up the trader server listening for gRPC connections on a bufconn.
 func (hs *traderHarness) start() error {
 	var err error
-	hs.server, err = client.NewServer(hs.clientCfg)
+	hs.server, err = llm.NewServer(hs.clientCfg)
 	if err != nil {
 		return fmt.Errorf("could not create trader server %v", err)
 	}
