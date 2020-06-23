@@ -41,11 +41,23 @@ var (
 		PubKey:     testAuctioneerKey,
 	}
 
-	testTraderKeyStr = "036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21" +
-		"a0af58e0c9395446ba09"
+	testTraderKeyStr = "036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0a" +
+		"f58e0c9395446ba09"
 	testRawTraderKey, _ = hex.DecodeString(testTraderKeyStr)
-	testTokenID         = lsat.TokenID{1, 2, 3}
-	testAccount         = account.Account{
+	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+
+	testRawTraderKey2, _ = hex.DecodeString("037265ea5016fb5d5e05538e360e" +
+		"1d17f557aa9a3aca7431bf78666931d5c8afd7")
+	testTraderKey2, _ = btcec.ParsePubKey(testRawTraderKey2, btcec.S256())
+
+	initialBatchKeyBytes, _ = hex.DecodeString("02824d0cbac65e01712124c50" +
+		"ff2cc74ce22851d7b444c1bf2ae66afefb8eaf27f")
+	initialBatchKey, _ = btcec.ParsePubKey(
+		initialBatchKeyBytes, btcec.S256(),
+	)
+
+	testTokenID = lsat.TokenID{1, 2, 3}
+	testAccount = account.Account{
 		TokenID:       testTokenID,
 		Value:         1337,
 		Expiry:        100,
@@ -53,9 +65,17 @@ var (
 		State:         account.StateOpen,
 		HeightHint:    100,
 		OutPoint:      wire.OutPoint{Index: 1},
+		TraderKeyRaw:  toRawKey(testTraderKey),
+		BatchKey:      initialBatchKey,
 	}
-	testTraderNonce       = [32]byte{9, 8, 7, 6}
-	testSignature         = []byte{33, 77, 33}
+	testTraderNonce = [32]byte{9, 8, 7, 6}
+	testSignature   = []byte{33, 77, 33}
+	testReservation = account.Reservation{
+		AuctioneerKey:   testAuctioneerKeyDesc,
+		InitialBatchKey: initialBatchKey,
+		TraderKeyRaw:    toRawKey(testTraderKey2),
+		HeightHint:      100,
+	}
 	mockLnd               = test.NewMockLnd()
 	defaultTimeout        = 100 * time.Millisecond
 	errGenericStreamError = errors.New("an expected error")
@@ -132,51 +152,10 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	// connecting.
 	_ = mockStore.CompleteReservation(context.Background(), &testAccount)
 
-	// The 3-way handshake begins. The trader sends its commitment.
-	var (
-		traderKey [33]byte
-		challenge [32]byte
-	)
-	copy(traderKey[:], testRawTraderKey)
-	testCommitHash := accountT.CommitAccount(traderKey, testTraderNonce)
-	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
-		Msg: &clmrpc.ClientAuctionMessage_Commit{
-			Commit: &clmrpc.AccountCommitment{
-				CommitHash: testCommitHash[:],
-			},
-		},
-	}
-
-	// The server sends the challenge next.
-	select {
-	case msg := <-mockStream.toClient:
-		challengeMsg, ok := msg.Msg.(*clmrpc.ServerAuctionMessage_Challenge)
-		if !ok {
-			t.Fatalf("unexpected first message from server: %v", msg)
-		}
-		copy(challenge[:], challengeMsg.Challenge.Challenge)
-
-	case <-time.After(defaultTimeout):
-		t.Fatalf("server didn't send expected challenge in time")
-	}
-
-	// Step 3 of 3 is the trader sending their signature over the auth hash.
-	authHash := accountT.AuthHash(testCommitHash, challenge)
-	mockLnd.SignatureMsg = string(authHash[:])
-	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
-		Msg: &clmrpc.ClientAuctionMessage_Subscribe{
-			Subscribe: &clmrpc.AccountSubscription{
-				TraderKey:   testRawTraderKey,
-				CommitNonce: testTraderNonce[:],
-				AuthSig:     testSignature,
-			},
-		},
-	}
-
-	// The server should find the account and acknowledge the successful
-	// subscription.
-	subMsg := <-mockStream.toClient
-	if _, ok := subMsg.Msg.(*clmrpc.ServerAuctionMessage_Success); !ok {
+	// Make sure we can normally complete the subscription handshake for our
+	// normal, completed account.
+	resp := testHandshake(t, toRawKey(testTraderKey), mockStream)
+	if _, ok := resp.Msg.(*clmrpc.ServerAuctionMessage_Success); !ok {
 		t.Fatalf("server didn't send expected success message")
 	}
 
@@ -215,6 +194,134 @@ func TestRPCServerBatchAuction(t *testing.T) {
 
 		default:
 			t.Fatalf("received unexpected message: %v", typedMsg)
+		}
+
+	case <-time.After(defaultTimeout):
+		t.Fatalf("trader client stream didn't receive a message")
+	}
+
+	// Disconnect the trader client and make sure everything is cleaned up
+	// nicely and the streams are closed.
+	mockStream.recErr <- io.EOF
+	streamWg.Wait()
+	if len(rpcServer.connectedStreams) != 0 {
+		t.Fatalf("stream was not cleaned up after disconnect")
+	}
+	_, ok := <-comms.quitConn
+	if ok {
+		t.Fatalf("expected abort channel to be closed")
+	}
+
+	// The stream should close without an error on the server side as the
+	// client did an ordinary close.
+	select {
+	case err := <-streamErr:
+		t.Fatalf("unexpected error in server stream: %v", err)
+
+	default:
+	}
+}
+
+// TestRPCServerBatchAuctionRecovery tests the recovery flow of a client
+// connecting, opening a stream, registering subscription for an account then
+// asking for recovery.
+func TestRPCServerBatchAuctionRecovery(t *testing.T) {
+	var (
+		ctxb    = context.Background()
+		authCtx = auth.AddToContext(
+			ctxb, auth.KeyTokenID, testTokenID,
+		)
+		mockStore  = subastadb.NewStoreMock(t)
+		rpcServer  = newServer(mockStore)
+		mockStream = &mockStream{
+			ctx:      authCtx,
+			toClient: make(chan *clmrpc.ServerAuctionMessage),
+			toServer: make(chan *clmrpc.ClientAuctionMessage),
+			recErr:   make(chan error, 1),
+		}
+		streamErr = make(chan error)
+		streamWg  sync.WaitGroup
+	)
+	mockLnd.Signature = testSignature
+	mockLnd.NodePubkey = testTraderKeyStr
+
+	// Start the stream. This will block until either the client disconnects
+	// or an error happens, so we'll run it in a goroutine.
+	streamWg.Add(1)
+	go func() {
+		defer streamWg.Done()
+
+		err := rpcServer.SubscribeBatchAuction(mockStream)
+		if err != nil {
+			t.Logf("Error in subscribe batch auction: %v", err)
+			streamErr <- err
+		}
+	}()
+
+	// We'll add a reservation for an account that we later try to recover.
+	_ = mockStore.ReserveAccount(ctxb, testTokenID, &testReservation)
+
+	// We should get an error for the account where we only have created a
+	// reservation.
+	resp := testHandshake(t, toRawKey(testTraderKey2), mockStream)
+	if resp.GetError() == nil {
+		t.Fatalf("server didn't send expected error: %v", resp)
+	}
+	errCode := resp.GetError().ErrorCode
+	if errCode != clmrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION {
+		t.Fatalf("server didn't send expected error code, got %v "+
+			"wanted %v", errCode,
+			clmrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION)
+	}
+
+	// Let's add an account to our store and register for updates on that
+	// account. This is the first message we'll get from new clients after
+	// connecting.
+	_ = mockStore.CompleteReservation(ctxb, &testAccount)
+
+	// Make sure we can normally complete the subscription handshake for our
+	// normal, completed account.
+	resp = testHandshake(t, toRawKey(testTraderKey), mockStream)
+	if resp.GetSuccess() == nil {
+		t.Fatalf("server didn't send expected success message")
+	}
+
+	// Make sure the trader stream was registered.
+	err := wait.NoError(func() error {
+		if len(rpcServer.connectedStreams) != 1 {
+			return fmt.Errorf("unexpected number of trader "+
+				"streams, got %d expected %d",
+				len(rpcServer.connectedStreams), 1)
+		}
+		if _, ok := rpcServer.connectedStreams[testTokenID]; !ok {
+			return fmt.Errorf("trader stream for token %v not "+
+				"found", testTokenID)
+		}
+		return nil
+
+	}, defaultTimeout)
+	if err != nil {
+		t.Fatalf("trader stream was not registered before timeout: %v",
+			err)
+	}
+	comms := rpcServer.connectedStreams[testTokenID].comms
+
+	// Simulate a recovery message from the trader now.
+	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
+		Msg: &clmrpc.ClientAuctionMessage_Recover{
+			Recover: &clmrpc.AccountRecovery{
+				TraderKey: testRawTraderKey,
+			},
+		},
+	}
+	select {
+	case rpcMsg := <-mockStream.toClient:
+		switch {
+		case rpcMsg.GetAccount() != nil:
+			// This is what we expected.
+
+		default:
+			t.Fatalf("received unexpected message: %v", rpcMsg)
 		}
 
 	case <-time.After(defaultTimeout):
@@ -369,6 +476,55 @@ func newServer(store subastadb.Store) *rpcServer {
 	)
 }
 
-func init() {
-	copy(testAccount.TraderKeyRaw[:], testRawTraderKey)
+// testHandshake completes the default 3-way-handshake and returns the final
+// message sent by the auctioneer.
+func testHandshake(t *testing.T, traderKey [33]byte,
+	mockStream *mockStream) *clmrpc.ServerAuctionMessage {
+
+	// The 3-way handshake begins. The trader sends its commitment.
+	var challenge [32]byte
+	testCommitHash := accountT.CommitAccount(traderKey, testTraderNonce)
+	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
+		Msg: &clmrpc.ClientAuctionMessage_Commit{
+			Commit: &clmrpc.AccountCommitment{
+				CommitHash: testCommitHash[:],
+			},
+		},
+	}
+
+	// The server sends the challenge next.
+	select {
+	case msg := <-mockStream.toClient:
+		challengeMsg, ok := msg.Msg.(*clmrpc.ServerAuctionMessage_Challenge)
+		if !ok {
+			t.Fatalf("unexpected first message from server: %v", msg)
+		}
+		copy(challenge[:], challengeMsg.Challenge.Challenge)
+
+	case <-time.After(defaultTimeout):
+		t.Fatalf("server didn't send expected challenge in time")
+	}
+
+	// Step 3 of 3 is the trader sending their signature over the auth hash.
+	authHash := accountT.AuthHash(testCommitHash, challenge)
+	mockLnd.SignatureMsg = string(authHash[:])
+	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
+		Msg: &clmrpc.ClientAuctionMessage_Subscribe{
+			Subscribe: &clmrpc.AccountSubscription{
+				TraderKey:   traderKey[:],
+				CommitNonce: testTraderNonce[:],
+				AuthSig:     testSignature,
+			},
+		},
+	}
+
+	// The server should find the account and acknowledge the successful
+	// subscription or return an error.
+	return <-mockStream.toClient
+}
+
+func toRawKey(pubkey *btcec.PublicKey) [33]byte {
+	var result [33]byte
+	copy(result[:], pubkey.SerializeCompressed())
+	return result
 }
