@@ -27,8 +27,12 @@ var (
 	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
 
 	testReservation = account.Reservation{
+		Value:           1337,
 		AuctioneerKey:   testAuctioneerKeyDesc,
 		InitialBatchKey: initialBatchKey,
+		TraderKeyRaw:    toRawKey(testTraderKey),
+		Expiry:          100,
+		HeightHint:      12345,
 	}
 
 	testTokenID = lsat.TokenID{1, 2, 3}
@@ -49,6 +53,9 @@ var (
 func assertEqualReservation(t *testing.T, exp, got *account.Reservation) {
 	t.Helper()
 
+	if got.Value != exp.Value {
+		t.Fatalf("expected value %d, got %d", exp.Value, got.Value)
+	}
 	if got.AuctioneerKey.KeyLocator != exp.AuctioneerKey.KeyLocator {
 		t.Fatalf("expected auctioneer key locator: %v\ngot: %v",
 			spew.Sdump(exp.AuctioneerKey.KeyLocator),
@@ -63,6 +70,17 @@ func assertEqualReservation(t *testing.T, exp, got *account.Reservation) {
 		t.Fatalf("expected initial batch key %x, got %x",
 			exp.InitialBatchKey.SerializeCompressed(),
 			got.InitialBatchKey.SerializeCompressed())
+	}
+	if got.TraderKeyRaw != exp.TraderKeyRaw {
+		t.Fatalf("expected trader key %x, got %x", exp.TraderKeyRaw,
+			got.TraderKeyRaw)
+	}
+	if got.Expiry != exp.Expiry {
+		t.Fatalf("expected expiry %d, got %d", exp.Expiry, got.Expiry)
+	}
+	if got.HeightHint != exp.HeightHint {
+		t.Fatalf("expected height hint %d, got %d", exp.HeightHint,
+			got.HeightHint)
 	}
 }
 

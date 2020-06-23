@@ -363,14 +363,18 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 
 func serializeReservation(w io.Writer, reservation *account.Reservation) error {
 	return WriteElements(
-		w, reservation.AuctioneerKey, reservation.InitialBatchKey,
+		w, reservation.Value, reservation.AuctioneerKey,
+		reservation.InitialBatchKey, reservation.Expiry,
+		reservation.HeightHint, reservation.TraderKeyRaw,
 	)
 }
 
 func deserializeReservation(r io.Reader) (*account.Reservation, error) {
 	var reservation account.Reservation
 	err := ReadElements(
-		r, &reservation.AuctioneerKey, &reservation.InitialBatchKey,
+		r, &reservation.Value, &reservation.AuctioneerKey,
+		&reservation.InitialBatchKey, &reservation.Expiry,
+		&reservation.HeightHint, &reservation.TraderKeyRaw,
 	)
 	return &reservation, err
 }

@@ -27,6 +27,10 @@ var (
 // Reservation contains information about the different keys required for to
 // create a new account.
 type Reservation struct {
+	// Value is the value of the account reflected in the on-chain output
+	// that backs the existence of an account.
+	Value btcutil.Amount
+
 	// AuctioneerKey is the base auctioneer's key in the 2-of-2 multi-sig
 	// construction of a CLM account. This key will never be included in the
 	// account script, but rather it will be tweaked with the per-batch
@@ -37,6 +41,25 @@ type Reservation struct {
 	// InitialBatchKey is the initial batch key that is used to tweak the
 	// trader key of an account.
 	InitialBatchKey *btcec.PublicKey
+
+	// Expiry is the expiration block height of an account. After this
+	// point, the trader is able to withdraw the funds from their account
+	// without cooperation of the auctioneer.
+	Expiry uint32
+
+	// HeightHint is the block height of the auctioneer at the time of the
+	// reservation. The trader shouldn't have published the transaction yet
+	// but we record the hint in case a recovery from a reservation becomes
+	// necessary.
+	HeightHint uint32
+
+	// TraderKeyRaw is the base trader's key in the 2-of-2 multi-sig
+	// construction of a CLM account. We store it in the reservation already
+	// in case the trader crashes or loses data just after publishing the
+	// opening transaction but before confirming it with the auctioneer. In
+	// that case they can still recover, if the transaction is ever
+	// confirmed.
+	TraderKeyRaw [33]byte
 }
 
 // State describes the different possible states of an account.
