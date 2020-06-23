@@ -263,8 +263,10 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 
 // InitAccount handles a new account request from a trader identified by the
 // provided token ID.
-func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
+func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 	params *Parameters, bestHeight uint32) error {
+
+	tokenID := &currentID
 
 	// First, make sure we have valid parameters to create the account.
 	if err := m.validateAccountParams(params, bestHeight); err != nil {
@@ -284,9 +286,20 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	//   2. A trader is resubmitting a valid request to ensure we've
 	//      received it.
 	//      TODO(wilmer): Verify that we have the account on-disk?
-	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
+	reservation, err := m.cfg.Store.HasReservation(ctx, *tokenID)
 	if err == ErrNoReservation {
-		return nil
+		// In case the trader lost its state, including the LSAT, it
+		// might be possible that there still is a reservation with
+		// another token but the same key. We want to allow this so the
+		// trader can coop close the account after recovering it.
+		reservation, tokenID, err = m.cfg.Store.HasReservationForKey(
+			ctx, params.TraderKey,
+		)
+
+		// Still no reservation? Then we don't care.
+		if err == ErrNoReservation {
+			return nil
+		}
 	}
 	if err != nil {
 		return err
@@ -339,7 +352,7 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// we have a transaction that funds the account. Once that's done, we'll
 	// complete the remaining field.
 	account := &Account{
-		TokenID:       tokenID,
+		TokenID:       *tokenID,
 		Value:         params.Value,
 		Expiry:        params.Expiry,
 		AuctioneerKey: reservation.AuctioneerKey,
