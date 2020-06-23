@@ -48,6 +48,10 @@ type BookConfig struct {
 	// services of keeping an order book and matching orders. This
 	// represents a flat, one-time fee in satoshis.
 	SubmitFee btcutil.Amount
+
+	// MaxDuration is the maximum value for a bid's min duration or an ask's
+	// max duration.
+	MaxDuration uint32
 }
 
 // Book is the representation of the auctioneer's order book and is responsible
@@ -77,9 +81,6 @@ func NewBook(cfg *BookConfig) *Book {
 func (b *Book) Start() error {
 	var startErr error
 	b.started.Do(func() {
-		// TODO(guggero): implement once order book is no longer
-		//  stateless.
-
 		if err := b.ntfnServer.Start(); err != nil {
 			startErr = err
 			return
@@ -183,11 +184,19 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		if o.MaxDuration() == 0 {
 			return fmt.Errorf("invalid max duration")
 		}
+		if o.MaxDuration() > b.cfg.MaxDuration {
+			return fmt.Errorf("maximum allowed value for max "+
+				"duration is %d", b.cfg.MaxDuration)
+		}
 		balanceNeeded = o.Amt + b.cfg.SubmitFee
 
 	case *Bid:
 		if o.MinDuration() == 0 {
 			return fmt.Errorf("invalid min duration")
+		}
+		if o.MinDuration() > b.cfg.MaxDuration {
+			return fmt.Errorf("maximum allowed value for min "+
+				"duration is %d", b.cfg.MaxDuration)
 		}
 		rate := order.FixedRatePremium(o.FixedRate)
 		orderFee := rate.LumpSumPremium(o.Amt, o.MinDuration())
