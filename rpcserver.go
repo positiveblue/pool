@@ -215,8 +215,20 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 
 	// TODO(guggero): Make sure we enforce maxAccountsPerTrader here.
 
+	// Parse the trader key to make sure it's a valid pubkey. More cannot
+	// be checked at this moment.
+	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+
+	params := &account.Parameters{
+		Value:     btcutil.Amount(req.AccountValue),
+		Expiry:    req.AccountExpiry,
+		TraderKey: traderKey,
+	}
 	reservation, err := s.accountManager.ReserveAccount(
-		ctx, btcutil.Amount(req.AccountValue), tokenID,
+		ctx, params, tokenID, s.bestHeight(),
 	)
 	if err != nil {
 		return nil, err
