@@ -93,8 +93,6 @@ lnd:
 
 build:
 	@$(call print, "Building agora.")
-	$(GOBUILD) $(PKG)/client/cmd/agora
-	$(GOBUILD) $(PKG)/client/cmd/agorad
 	$(GOBUILD) $(PKG)/cmd/agoraserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
 
@@ -104,8 +102,6 @@ build-itest:
 
 install:
 	@$(call print, "Installing agora.")
-	$(GOINSTALL) $(PKG)/client/cmd/agora
-	$(GOINSTALL) $(PKG)/client/cmd/agorad
 	$(GOINSTALL) $(PKG)/cmd/agoraserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
 
@@ -184,8 +180,6 @@ rpc:
 
 clean:
 	@$(call print, "Cleaning source.$(NC)")
-	$(RM) ./agora
-	$(RM) ./agorad
 	$(RM) ./agoradserver
 	$(RM) ./auctioncli
 	$(RM) coverage.txt
