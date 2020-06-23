@@ -4,7 +4,6 @@ require (
 	github.com/btcsuite/btcd v0.20.1-beta.0.20200515232429-9f0179fd2c46
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcutil v1.0.2
-	github.com/coreos/etcd v3.3.22+incompatible
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-errors/errors v1.0.1
 	github.com/golang/protobuf v1.3.3
@@ -17,9 +16,14 @@ require (
 	github.com/lightningnetwork/lnd/cert v1.0.2
 	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/urfave/cli v1.20.0
+	go.etcd.io/etcd v3.3.22+incompatible
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
 	google.golang.org/genproto v0.0.0-20200513103714-09dca8ec2884
 	google.golang.org/grpc v1.29.1
 )
 
 go 1.13
+
+// Fix incompatibility of etcd go.mod package.
+// See https://github.com/etcd-io/etcd/issues/11154
+replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20200520232829-54ba9589114f

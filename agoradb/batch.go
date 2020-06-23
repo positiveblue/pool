@@ -11,7 +11,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	conc "github.com/coreos/etcd/clientv3/concurrency"
+	conc "go.etcd.io/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"

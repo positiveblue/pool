@@ -11,7 +11,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/coreos/etcd/embed"
+	"go.etcd.io/etcd/embed"
 )
 
 const (

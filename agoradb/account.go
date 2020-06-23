@@ -9,8 +9,8 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/coreos/etcd/clientv3"
-	conc "github.com/coreos/etcd/clientv3/concurrency"
+	"go.etcd.io/etcd/clientv3"
+	conc "go.etcd.io/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/loop/lsat"
 )

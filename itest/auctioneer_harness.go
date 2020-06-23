@@ -12,7 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
-	"github.com/coreos/etcd/embed"
+	"go.etcd.io/etcd/embed"
 	"github.com/lightninglabs/agora"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/agoradb"

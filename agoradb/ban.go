@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
-	conc "github.com/coreos/etcd/clientv3/concurrency"
+	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
 const (
