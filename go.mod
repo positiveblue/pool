@@ -9,7 +9,7 @@ require (
 	github.com/golang/protobuf v1.3.3
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585
-	github.com/lightninglabs/llm v0.0.0-20200624075455-336a72e54563
+	github.com/lightninglabs/llm v0.0.0-20200625074626-468bb3e7e49c
 	github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200615174244-103c59a4889f
