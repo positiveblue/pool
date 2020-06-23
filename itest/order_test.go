@@ -30,33 +30,39 @@ func testOrderSubmission(t *harnessTest) {
 	})
 
 	// Now that the account is confirmed, submit an order over part of the
-	// account balance.
+	// account balance. First, try with an invalid duration to check it is
+	// enforced. The order shouldn't be stored.
+	rpcAsk := &clmrpc.Ask{
+		Details: &clmrpc.Order{
+			TraderKey:      acct.TraderKey,
+			RateFixed:      100,
+			Amt:            1500000,
+			FundingFeeRate: 0,
+		},
+		MaxDurationBlocks: 365*144 + 1,
+		Version:           uint32(order.CurrentVersion),
+	}
+	_, err = t.trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
+		Details: &clmrpc.SubmitOrderRequest_Ask{
+			Ask: rpcAsk,
+		},
+	})
+	if err == nil {
+		t.Fatalf("expected invalid order to fail but err was nil")
+	}
+
+	// Now try a correct one.
+	rpcAsk.MaxDurationBlocks = 2 * dayInBlocks
 	ask, err := t.trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
 		Details: &clmrpc.SubmitOrderRequest_Ask{
-			Ask: &clmrpc.Ask{
-				Details: &clmrpc.Order{
-					TraderKey:      acct.TraderKey,
-					RateFixed:      100,
-					Amt:            1500000,
-					FundingFeeRate: 0,
-				},
-				MaxDurationBlocks: 2 * dayInBlocks,
-				Version:           uint32(order.CurrentVersion),
-			},
+			Ask: rpcAsk,
 		},
 	})
 	if err != nil {
 		t.Fatalf("could not submit order: %v", err)
 	}
-	switch details := ask.Details.(type) {
-	case *clmrpc.SubmitOrderResponse_AcceptedOrderNonce:
-		// Great, order accepted.
-
-	case *clmrpc.SubmitOrderResponse_InvalidOrder:
-		t.Fatalf("order submission failed: %v", details)
-
-	default:
-		t.Fatalf("unknown response in order submission: %v", details)
+	if ask.GetAcceptedOrderNonce() == nil || ask.GetInvalidOrder() != nil {
+		t.Fatalf("order submission failed: %v", ask)
 	}
 
 	// Now list all orders and validate order status.
