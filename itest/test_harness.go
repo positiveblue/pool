@@ -19,7 +19,7 @@ import (
 	"github.com/go-errors/errors"
 	auctioneerAccount "github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/adminrpc"
-	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd"

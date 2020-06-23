@@ -11,7 +11,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/agora/client"
-	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"

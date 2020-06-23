@@ -16,7 +16,7 @@ import (
 	"github.com/lightninglabs/agora"
 	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"

@@ -16,7 +16,7 @@ import (
 	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/agora/agoradb"
 	accountT "github.com/lightninglabs/agora/client/account"
-	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/agora/venue"
 	"github.com/lightninglabs/agora/venue/matching"

@@ -10,7 +10,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/agora/adminrpc"
-	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
