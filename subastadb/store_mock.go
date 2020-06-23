@@ -59,6 +59,25 @@ func (s *StoreMock) HasReservation(_ context.Context, tokenID lsat.TokenID) (
 	return res, nil
 }
 
+// HasReservationForKey determines whether we have an existing reservation
+// associated with a trader key. ErrNoReservation is returned if a reservation
+// does not exist.
+func (s *StoreMock) HasReservationForKey(_ context.Context,
+	traderKey *btcec.PublicKey) (*account.Reservation, *lsat.TokenID,
+	error) {
+
+	var traderKeyRaw [33]byte
+	copy(traderKeyRaw[:], traderKey.SerializeCompressed())
+
+	for _, res := range s.Res {
+		if res.TraderKeyRaw == traderKeyRaw {
+			return res, &lsat.TokenID{}, nil
+		}
+	}
+
+	return nil, nil, account.ErrNoReservation
+}
+
 // ReserveAccount makes a reservation for an auctioneer key for a trader
 // associated to a token.
 func (s *StoreMock) ReserveAccount(_ context.Context, tokenID lsat.TokenID,

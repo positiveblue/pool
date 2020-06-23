@@ -346,6 +346,12 @@ type Store interface {
 	// reservation does not exist.
 	HasReservation(context.Context, lsat.TokenID) (*Reservation, error)
 
+	// HasReservationForKey determines whether we have an existing
+	// reservation associated with a trader key. ErrNoReservation is
+	// returned if a reservation does not exist.
+	HasReservationForKey(context.Context, *btcec.PublicKey) (*Reservation,
+		*lsat.TokenID, error)
+
 	// ReserveAccount makes a reservation for an auctioneer key for a trader
 	// associated to a token.
 	ReserveAccount(context.Context, lsat.TokenID, *Reservation) error

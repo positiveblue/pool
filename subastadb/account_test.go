@@ -109,6 +109,19 @@ func TestAccountReservation(t *testing.T) {
 	}
 	assertEqualReservation(t, &reservation, storedReservation)
 
+	// A reservation should also be found with the trader key in case it
+	// needs to be recovered.
+	storedReservation, storedToken, err := store.HasReservationForKey(
+		ctx, testTraderKey,
+	)
+	if err != nil {
+		t.Fatalf("unable to determine existing reservation: %v", err)
+	}
+	assertEqualReservation(t, &reservation, storedReservation)
+	if storedToken == nil || *storedToken != testTokenID {
+		t.Fatalf("reservation found under wrong token: %v", storedToken)
+	}
+
 	// Complete the reservation with an account. The reservation should no
 	// longer exist after this.
 	if err := store.CompleteReservation(ctx, &testAccount); err != nil {

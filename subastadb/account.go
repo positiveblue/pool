@@ -93,6 +93,51 @@ func (s *EtcdStore) HasReservation(ctx context.Context,
 	return deserializeReservation(bytes.NewReader(resp.Kvs[0].Value))
 }
 
+// HasReservationForKey determines whether we have an existing
+// reservation associated with a trader key. ErrNoReservation is
+// returned if a reservation does not exist.
+func (s *EtcdStore) HasReservationForKey(ctx context.Context,
+	traderKey *btcec.PublicKey) (*account.Reservation, *lsat.TokenID,
+	error) {
+
+	if !s.initialized {
+		return nil, nil, errNotInitialized
+	}
+
+	k := s.getKeyPrefix(reservationDir)
+	resp, err := s.client.Get(ctx, k, clientv3.WithPrefix())
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(resp.Kvs) == 0 {
+		return nil, nil, account.ErrNoReservation
+	}
+
+	var traderKeyRaw [33]byte
+	copy(traderKeyRaw[:], traderKey.SerializeCompressed())
+
+	for _, kv := range resp.Kvs {
+		res, err := deserializeReservation(bytes.NewReader(kv.Value))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Parse the token ID from the last part of the key.
+		keyParts := strings.Split(string(kv.Key), keyDelimiter)
+		tokenPart := keyParts[len(keyParts)-1]
+		tokenID, err := lsat.MakeIDFromString(tokenPart)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if res.TraderKeyRaw == traderKeyRaw {
+			return res, &tokenID, nil
+		}
+	}
+
+	return nil, nil, account.ErrNoReservation
+}
+
 // ReserveAccount makes a reservation for an auctioneer key for a trader
 // associated to a token.
 func (s *EtcdStore) ReserveAccount(ctx context.Context,
