@@ -140,7 +140,7 @@ func (s *StoreMock) Account(_ context.Context, traderPubKey *btcec.PublicKey,
 	copy(traderKey[:], traderPubKey.SerializeCompressed())
 	a, ok := s.Accs[traderKey]
 	if !ok {
-		return nil, NewErrAccountNotFound(traderPubKey)
+		return nil, NewAccountNotFoundError(traderPubKey)
 	}
 	return a, nil
 }

@@ -242,7 +242,7 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 	k := s.getAccountKey(acctKey)
 	resp := stm.Get(k)
 	if resp == "" {
-		return NewErrAccountNotFound(acctKey)
+		return NewAccountNotFoundError(acctKey)
 	}
 	dbAccount, err := deserializeAccount(bytes.NewReader([]byte(resp)))
 	if err != nil {
@@ -282,7 +282,7 @@ func (s *EtcdStore) StoreAccountDiff(ctx context.Context,
 		accountKey := s.getAccountKey(traderKey)
 		rawAccount := stm.Get(accountKey)
 		if len(rawAccount) == 0 {
-			return NewErrAccountNotFound(traderKey)
+			return NewAccountNotFoundError(traderKey)
 		}
 
 		// We'll also make sure a diff is not already present.
@@ -324,7 +324,7 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		accountKey := s.getAccountKey(traderKey)
 		if len(stm.Get(accountKey)) == 0 {
-			return NewErrAccountNotFound(traderKey)
+			return NewAccountNotFoundError(traderKey)
 		}
 
 		accountDiffKey := s.getAccountDiffKey(traderKey)
@@ -369,7 +369,7 @@ func (s *EtcdStore) Account(ctx context.Context,
 		accountKey := s.getAccountKey(traderKey)
 		rawAccount := stm.Get(accountKey)
 		if len(rawAccount) == 0 {
-			return NewErrAccountNotFound(traderKey)
+			return NewAccountNotFoundError(traderKey)
 		}
 
 		var err error
