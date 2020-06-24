@@ -59,7 +59,7 @@ func (i *banInfo) exceedsBanExpiration(currentHeight uint32) bool {
 // account ban info.
 //
 // The key path is represented as follows:
-//	bitcoin/clm/agora/ban/account/{account_key}
+//	bitcoin/clm/subasta/ban/account/{account_key}
 func (s *EtcdStore) banAccountKeyPath(accountKey *btcec.PublicKey) string {
 	accountKeyStr := hex.EncodeToString(accountKey.SerializeCompressed())
 	parts := []string{banDir, banAccountDir, accountKeyStr}
@@ -70,7 +70,7 @@ func (s *EtcdStore) banAccountKeyPath(accountKey *btcec.PublicKey) string {
 // ban info.
 //
 // The key path is represented as follows:
-//	bitcoin/clm/agora/ban/node/{node_key}
+//	bitcoin/clm/subasta/ban/node/{node_key}
 func (s *EtcdStore) banNodeKeyPath(nodeKey *btcec.PublicKey) string {
 	nodeKeyStr := hex.EncodeToString(nodeKey.SerializeCompressed())
 	parts := []string{banDir, banNodeDir, nodeKeyStr}

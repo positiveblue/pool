@@ -64,7 +64,7 @@ var (
 // perBatchKeyPath returns the full path under which we store the current
 // per-batch key.
 func (s *EtcdStore) perBatchKeyPath() string {
-	// bitcoin/clm/agora/<network>/batch/key.
+	// bitcoin/clm/subasta/<network>/batch/key.
 	parts := []string{batchDir, perBatchKey}
 	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
 }
@@ -72,7 +72,7 @@ func (s *EtcdStore) perBatchKeyPath() string {
 // batchSnapshotKeyPath returns the full path under which we store a batch
 // snapshot.
 func (s *EtcdStore) batchSnapshotKeyPath(id orderT.BatchID) string {
-	// bitcoin/clm/agora/<network>/batch/<batchID>.
+	// bitcoin/clm/subasta/<network>/batch/<batchID>.
 	parts := []string{batchDir, hex.EncodeToString(id[:])}
 	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
 }
@@ -80,7 +80,7 @@ func (s *EtcdStore) batchSnapshotKeyPath(id orderT.BatchID) string {
 // batchStatusKeyPath returns the full path under which we store a batch
 // status.
 func (s *EtcdStore) batchStatusKeyPath(id orderT.BatchID) string {
-	// bitcoin/clm/agora/<network>/batch/<batchID>/status.
+	// bitcoin/clm/subasta/<network>/batch/<batchID>/status.
 	parts := []string{batchDir, hex.EncodeToString(id[:]), batchStatusKey}
 	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
 }

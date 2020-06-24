@@ -38,7 +38,7 @@ var (
 var (
 	// topLevelDir is the top level directory that we'll use to store all
 	// the production auction data.
-	topLevelDir = "bitcoin/clm/agora"
+	topLevelDir = "bitcoin/clm/subasta"
 
 	// versionPrefix is the key prefix that we'll use to store the current
 	// version of the auction data for the target network.
@@ -117,7 +117,7 @@ func NewEtcdStore(activeNet chaincfg.Params,
 
 // getKeyPrefix returns the key prefix path for the given prefix.
 func (s *EtcdStore) getKeyPrefix(prefix string) string {
-	// bitcoin/clm/agora/<network>/<prefix>.
+	// bitcoin/clm/subasta/<network>/<prefix>.
 	return strings.Join(
 		[]string{topLevelDir, s.networkID, prefix}, keyDelimiter,
 	)

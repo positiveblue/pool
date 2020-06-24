@@ -29,7 +29,7 @@ var (
 	// numOrderKeyParts is the number of parts that a full order key can be
 	// split into when using the / character as delimiter. A full path looks
 	// like this:
-	// bitcoin/clm/agora/<network>/order/<archive>/<nonce>.
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>.
 	numOrderKeyParts = 7
 
 	// nonceKeyIndex is the index of the nonce in a key split by the key
@@ -38,7 +38,7 @@ var (
 
 	// orderPrefix is the prefix that we'll use to store all order specific
 	// order data. From the top level directory, this path is:
-	// bitcoin/clm/agora/<network>/order.
+	// bitcoin/clm/subasta/<network>/order.
 	orderPrefix = "order"
 )
 
@@ -260,7 +260,7 @@ func (s *EtcdStore) GetArchivedOrders(ctx context.Context) ([]order.ServerOrder,
 
 // getKeyOrderPrefix returns the key prefix path for the given order.
 func (s *EtcdStore) getKeyOrderPrefix(nonce orderT.Nonce) string {
-	// bitcoin/clm/agora/<network>/order/<archive>/<nonce>.
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>.
 	return strings.Join(
 		[]string{s.getKeyOrderArchivePrefix(false), nonce.String()},
 		keyDelimiter,
@@ -269,7 +269,7 @@ func (s *EtcdStore) getKeyOrderPrefix(nonce orderT.Nonce) string {
 
 // getKeyOrderPrefixArchive returns the key prefix path for the given order.
 func (s *EtcdStore) getKeyOrderPrefixArchive(nonce orderT.Nonce) string {
-	// bitcoin/clm/agora/<network>/order/<archive>/<nonce>.
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>.
 	return strings.Join(
 		[]string{s.getKeyOrderArchivePrefix(true), nonce.String()},
 		keyDelimiter,
@@ -279,7 +279,7 @@ func (s *EtcdStore) getKeyOrderPrefixArchive(nonce orderT.Nonce) string {
 // getKeyOrderArchivePrefix returns the key prefix path for active/inactive
 // orders.
 func (s *EtcdStore) getKeyOrderArchivePrefix(archive bool) string {
-	// bitcoin/clm/agora/<network>/order/<archive>.
+	// bitcoin/clm/subasta/<network>/order/<archive>.
 	return strings.Join([]string{
 		s.getKeyPrefix(orderPrefix), strconv.FormatBool(archive),
 	}, keyDelimiter)

@@ -34,7 +34,7 @@ var (
 // channels lifetime enforcement packages.
 //
 // The key path prefix is represented as follows:
-//	bitcoin/clm/agora/lifetime-packages
+//	bitcoin/clm/subasta/lifetime-packages
 func (s *EtcdStore) lifetimeKeyPathPrefix() string {
 	parts := []string{lifetimePackageDir}
 	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
@@ -44,7 +44,7 @@ func (s *EtcdStore) lifetimeKeyPathPrefix() string {
 // lifetime enforcement package.
 //
 // The key path is represented as follows:
-//	bitcoin/clm/agora/lifetime-packages/{channel_point}
+//	bitcoin/clm/subasta/lifetime-packages/{channel_point}
 func (s *EtcdStore) lifetimeKeyPath(pkg *chanenforcement.LifetimePackage) string {
 	parts := []string{s.lifetimeKeyPathPrefix(), pkg.ChannelPoint.String()}
 	return strings.Join(parts, keyDelimiter)
