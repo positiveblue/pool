@@ -26,8 +26,8 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -117,7 +117,7 @@ type rpcServer struct {
 
 	orderBook *order.Book
 
-	store agoradb.Store
+	store subastadb.Store
 
 	batchExecutor *venue.BatchExecutor
 
@@ -138,7 +138,7 @@ type rpcServer struct {
 }
 
 // newRPCServer creates a new rpcServer.
-func newRPCServer(store agoradb.Store, lnd *lndclient.GrpcLndServices,
+func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	feeSchedule *orderT.LinearFeeSchedule, listener net.Listener,
@@ -569,7 +569,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 			// one or more accounts failed. Or it means the trader
 			// got to the next key after the last account key during
 			// recovery.
-			var e *agoradb.AccountNotFoundError
+			var e *subastadb.AccountNotFoundError
 			if errors.As(err, &e) {
 				errCode := clmrpc.SubscribeError_ACCOUNT_DOES_NOT_EXIST
 				err = stream.Send(&clmrpc.ServerAuctionMessage{
@@ -794,7 +794,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		// through their keys to find accounts we know.
 		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
-			comms.err <- &agoradb.AccountNotFoundError{
+			comms.err <- &subastadb.AccountNotFoundError{
 				AcctKey: acctKey,
 			}
 			return

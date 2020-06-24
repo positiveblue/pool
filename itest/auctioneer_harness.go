@@ -15,7 +15,7 @@ import (
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
-	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/lntest"
 	"go.etcd.io/etcd/embed"
 	"google.golang.org/grpc"
@@ -37,7 +37,7 @@ type auctioneerHarness struct {
 	server    *subasta.Server
 
 	etcd  *embed.Etcd
-	store agoradb.Store
+	store subastadb.Store
 
 	clmrpc.ChannelAuctioneerClient
 	adminrpc.AuctionAdminClient
@@ -204,7 +204,7 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 		return fmt.Errorf("server took too long to start")
 	}
 
-	hs.store, err = agoradb.NewEtcdStore(
+	hs.store, err = subastadb.NewEtcdStore(
 		*hs.cfg.LndNode.Cfg.NetParams, etcdListenAddr, "", "",
 	)
 	if err != nil {

@@ -15,8 +15,8 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -86,7 +86,7 @@ func (m *mockAuctioneerState) FetchAuctioneerAccount(ctx context.Context,
 	defer m.RUnlock()
 
 	if m.acct == nil {
-		return nil, agoradb.ErrNoAuctioneerAccount
+		return nil, subastadb.ErrNoAuctioneerAccount
 	}
 
 	return m.acct, nil
@@ -135,7 +135,7 @@ func (m *mockAuctioneerState) BatchConfirmed(ctx context.Context,
 
 	confirmed, ok := m.batchStates[bid]
 	if !ok {
-		return false, agoradb.ErrNoBatchExists
+		return false, subastadb.ErrNoBatchExists
 	}
 
 	return confirmed, nil

@@ -10,19 +10,19 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 )
 
 // ExeBatchStorer is a type that implements BatchStorer and can persist a batch
 // to the etcd database.
 type ExeBatchStorer struct {
-	store agoradb.Store
+	store subastadb.Store
 }
 
 // NewExeBatchStorer returns a new instance of the ExeBatchStorer given an
 // initialized database.
-func NewExeBatchStorer(store agoradb.Store) *ExeBatchStorer {
+func NewExeBatchStorer(store subastadb.Store) *ExeBatchStorer {
 	return &ExeBatchStorer{
 		store: store,
 	}

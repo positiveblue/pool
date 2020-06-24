@@ -1,4 +1,4 @@
-package agoradb
+package subastadb
 
 import (
 	"github.com/btcsuite/btclog"

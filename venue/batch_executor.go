@@ -18,7 +18,7 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
@@ -262,7 +262,7 @@ type executionReq struct {
 // adds methods for storing and reading the current execution state. This
 // interface makes writing unit tests of expected state transitions easier.
 type ExecutorStore interface {
-	agoradb.Store
+	subastadb.Store
 
 	// ExecutionState returns the current execution state.
 	ExecutionState() (ExecutionState, error)

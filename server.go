@@ -18,9 +18,9 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/ticker"
@@ -45,7 +45,7 @@ type auctioneerStore struct {
 	// NOTE: This MUST be used atomically
 	state uint32
 
-	*agoradb.EtcdStore
+	*subastadb.EtcdStore
 }
 
 // UpdateAuctionState updates the current state of the auction.
@@ -79,7 +79,7 @@ type executorStore struct {
 	// NOTE: This MUST be used atomically
 	state uint32
 
-	agoradb.Store
+	subastadb.Store
 }
 
 // ExecutionState returns the current execution state.
@@ -103,7 +103,7 @@ type Server struct {
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
 
-	store agoradb.Store
+	store subastadb.Store
 
 	accountManager *account.Manager
 
@@ -146,7 +146,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// Next, we'll open our primary connection to the main backing
 	// database.
-	store, err := agoradb.NewEtcdStore(
+	store, err := subastadb.NewEtcdStore(
 		*lnd.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
 		cfg.Etcd.Password,
 	)

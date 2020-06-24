@@ -21,7 +21,7 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -100,7 +100,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 		authCtx = auth.AddToContext(
 			context.Background(), auth.KeyTokenID, testTokenID,
 		)
-		mockStore  = agoradb.NewStoreMock(t)
+		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
@@ -250,7 +250,7 @@ func TestRPCServerBatchAuctionStreamError(t *testing.T) {
 		authCtx = auth.AddToContext(
 			context.Background(), auth.KeyTokenID, testTokenID,
 		)
-		mockStore  = agoradb.NewStoreMock(t)
+		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
@@ -301,7 +301,7 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 		authCtx = auth.AddToContext(
 			context.Background(), auth.KeyTokenID, testTokenID,
 		)
-		mockStore  = agoradb.NewStoreMock(t)
+		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
@@ -342,7 +342,7 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 	}
 }
 
-func newServer(store agoradb.Store) *rpcServer {
+func newServer(store subastadb.Store) *rpcServer {
 	lndServices := &lndclient.GrpcLndServices{
 		LndServices: lndclient.LndServices{
 			Client:        mockLnd.Client,

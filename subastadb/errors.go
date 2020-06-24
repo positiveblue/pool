@@ -1,4 +1,4 @@
-package agoradb
+package subastadb
 
 import (
 	"errors"

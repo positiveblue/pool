@@ -7,8 +7,8 @@ import (
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightningnetwork/lnd/build"
@@ -28,7 +28,7 @@ var (
 
 func init() {
 	setSubLogger(Subsystem, log, nil)
-	addSubLogger(agoradb.Subsystem, agoradb.UseLogger)
+	addSubLogger(subastadb.Subsystem, subastadb.UseLogger)
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("SGNL", signal.UseLogger)
 	addSubLogger(account.Subsystem, account.UseLogger)

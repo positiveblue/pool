@@ -11,8 +11,8 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -164,7 +164,7 @@ var (
 // the batch storer.
 func TestBatchStorer(t *testing.T) {
 	var (
-		storeMock = agoradb.NewStoreMock(t)
+		storeMock = subastadb.NewStoreMock(t)
 		storer    = &ExeBatchStorer{store: storeMock}
 	)
 

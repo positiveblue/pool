@@ -17,8 +17,8 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -489,13 +489,13 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 	var batchID orderT.BatchID
 	copy(batchID[:], priorBatchKey.SerializeCompressed())
 	batchConfirmed, err := a.cfg.DB.BatchConfirmed(ctxb, batchID)
-	if err != nil && err != agoradb.ErrNoBatchExists {
+	if err != nil && err != subastadb.ErrNoBatchExists {
 		return err
 	}
 
 	// If this batch is confirmed (or a batch has never existed), then we
 	// can exit early.
-	if batchConfirmed || err == agoradb.ErrNoBatchExists {
+	if batchConfirmed || err == subastadb.ErrNoBatchExists {
 		return nil
 	}
 
@@ -925,7 +925,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// NoMasterAcctState, meaning we need to obtain one somehow. In
 		// this state (the first time the system starts up), we'll rely
 		// on the block notification moving us to the next state.
-		case err == agoradb.ErrNoAuctioneerAccount:
+		case err == subastadb.ErrNoAuctioneerAccount:
 			log.Infof("No Master Account found, starting genesis " +
 				"transaction creation")
 

@@ -13,7 +13,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -32,7 +32,7 @@ func (m *mockBatchStorer) Store(_ context.Context, _ *ExecutionResult) error {
 }
 
 type mockExecutorStore struct {
-	*agoradb.StoreMock
+	*subastadb.StoreMock
 
 	exeState ExecutionState
 
@@ -41,7 +41,7 @@ type mockExecutorStore struct {
 
 func newMockExecutorStore(t *testing.T) *mockExecutorStore {
 	return &mockExecutorStore{
-		StoreMock:        agoradb.NewStoreMock(t),
+		StoreMock:        subastadb.NewStoreMock(t),
 		stateTransitions: make(chan ExecutionState, 1),
 	}
 }
