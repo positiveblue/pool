@@ -92,8 +92,8 @@ lnd:
 # ============
 
 build:
-	@$(call print, "Building agora.")
-	$(GOBUILD) $(PKG)/cmd/agoraserver
+	@$(call print, "Building auction server and cli.")
+	$(GOBUILD) $(PKG)/cmd/auctionserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
 
 build-itest:
@@ -101,8 +101,8 @@ build-itest:
 	$(GOBUILD) -tags="$(ITEST_TAGS)" -o itest/lnd-itest $(LND_ITEST_LDFLAGS) $(LND_PKG)/cmd/lnd
 
 install:
-	@$(call print, "Installing agora.")
-	$(GOINSTALL) $(PKG)/cmd/agoraserver
+	@$(call print, "Installing auction server and cli.")
+	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
 
 scratch: build
@@ -180,6 +180,6 @@ rpc:
 
 clean:
 	@$(call print, "Cleaning source.$(NC)")
-	$(RM) ./agoradserver
+	$(RM) ./auctionserver
 	$(RM) ./auctioncli
 	$(RM) coverage.txt

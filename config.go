@@ -57,7 +57,7 @@ const (
 
 	// defaultLogFilename is the default file name for the auctioneer log
 	// file.
-	defaultLogFilename = "agoraserver.log"
+	defaultLogFilename = "auctionserver.log"
 
 	// defaultMaxLogFiles is the default number of log files to keep.
 	defaultMaxLogFiles = 3
@@ -84,11 +84,11 @@ const (
 )
 
 var (
-	// DefaultBaseDir is the default root data directory where agoraserver
+	// DefaultBaseDir is the default root data directory where auctionserver
 	// will store all its data. On UNIX like systems this will resolve to
-	// ~/.agoraserver. Below this directory the logs and network directory
+	// ~/.auctionserver. Below this directory the logs and network directory
 	// will be created.
-	DefaultBaseDir = btcutil.AppDataDir("agoraserver", false)
+	DefaultBaseDir = btcutil.AppDataDir("auctionserver", false)
 
 	defaultAuctioneerAddr = fmt.Sprintf(":%d", defaultAuctioneerRPCPort)
 	defaultAdminAddr      = fmt.Sprintf("127.0.0.1:%d", defaultAdminRPCPort)
@@ -115,7 +115,7 @@ type EtcdConfig struct {
 
 type Config struct {
 	Network string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
-	BaseDir string `long:"basedir" description:"The base directory where agoraserver stores all its data"`
+	BaseDir string `long:"basedir" description:"The base directory where auctionserver stores all its data"`
 
 	OrderSubmitFee   int64         `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
 	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
@@ -145,7 +145,7 @@ type Config struct {
 	Lnd  *LndConfig  `group:"lnd" namespace:"lnd"`
 	Etcd *EtcdConfig `group:"etcd" namespace:"etcd"`
 
-	// RPCListener is a network listener that the default agoraserver
+	// RPCListener is a network listener that the default auctionserver
 	// should listen on.
 	RPCListener net.Listener
 

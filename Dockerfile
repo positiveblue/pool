@@ -27,7 +27,7 @@ EXPOSE 12009
 EXPOSE 13370
 
 # Copy over both the daemon and CLI binaries from the builder image.
-COPY --from=builder /go/bin/agoraserver /bin/
+COPY --from=builder /go/bin/auctionserver /bin/
 COPY --from=builder /go/bin/auctioncli /bin/
 
 # Add bash.
@@ -36,4 +36,4 @@ RUN apk add --no-cache \
     ca-certificates
 
 # Specify the start command and entrypoint as the subasta daemon.
-ENTRYPOINT ["agoraserver", "daemon"]
+ENTRYPOINT ["auctionserver", "daemon"]

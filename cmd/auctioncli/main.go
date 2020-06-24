@@ -43,7 +43,7 @@ func main() {
 		cli.StringFlag{
 			Name:  "rpcserver",
 			Value: "localhost:13370",
-			Usage: "agoraserver daemon admin address host:port",
+			Usage: "auctionserver daemon admin address host:port",
 		},
 	}
 	app.Commands = append(app.Commands, masterAccountCommands...)

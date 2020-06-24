@@ -12,7 +12,7 @@ import (
 var (
 	// defaultConfigFilename is the default file name for the configuration
 	// file for the auctioneer server.
-	defaultConfigFilename = "agoraserver.conf"
+	defaultConfigFilename = "auctionserver.conf"
 )
 
 func main() {
@@ -57,7 +57,7 @@ func start() error {
 	return err
 }
 
-// getParser returns a parser with the required options for agoraserver.
+// getParser returns a parser with the required options for auctionserver.
 func getParser(cfg *subasta.Config) *flags.Parser {
 	parser := flags.NewParser(cfg, flags.Default)
 

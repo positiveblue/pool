@@ -59,7 +59,7 @@ type auctioneerConfig struct {
 func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 	if cfg.BaseDir == "" {
 		var err error
-		cfg.BaseDir, err = ioutil.TempDir("", "itest-agoraserver")
+		cfg.BaseDir, err = ioutil.TempDir("", "itest-auctionserver")
 		if err != nil {
 			return nil, err
 		}
