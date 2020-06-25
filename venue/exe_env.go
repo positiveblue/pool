@@ -9,11 +9,11 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/venue/batchtx"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 

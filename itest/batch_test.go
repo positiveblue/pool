@@ -9,9 +9,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/adminrpc"
-	"github.com/lightninglabs/agora/client/clmrpc"
-	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
 

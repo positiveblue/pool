@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // timerWithQuit couples a timer along with a quit channel that can be used to

@@ -46,9 +46,7 @@ profile.tmp
 
 .vscode
 
-/agora
-/agorad
-/agoraserver
+/auctionserver
 /auctioncli
 /itest/lnd-itest
 /itest/regtest/*.log

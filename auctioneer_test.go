@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -12,13 +12,13 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -86,7 +86,7 @@ func (m *mockAuctioneerState) FetchAuctioneerAccount(ctx context.Context,
 	defer m.RUnlock()
 
 	if m.acct == nil {
-		return nil, agoradb.ErrNoAuctioneerAccount
+		return nil, subastadb.ErrNoAuctioneerAccount
 	}
 
 	return m.acct, nil
@@ -135,7 +135,7 @@ func (m *mockAuctioneerState) BatchConfirmed(ctx context.Context,
 
 	confirmed, ok := m.batchStates[bid]
 	if !ok {
-		return false, agoradb.ErrNoBatchExists
+		return false, subastadb.ErrNoBatchExists
 	}
 
 	return confirmed, nil

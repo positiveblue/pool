@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
@@ -489,13 +489,13 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 	var batchID orderT.BatchID
 	copy(batchID[:], priorBatchKey.SerializeCompressed())
 	batchConfirmed, err := a.cfg.DB.BatchConfirmed(ctxb, batchID)
-	if err != nil && err != agoradb.ErrNoBatchExists {
+	if err != nil && err != subastadb.ErrNoBatchExists {
 		return err
 	}
 
 	// If this batch is confirmed (or a batch has never existed), then we
 	// can exit early.
-	if batchConfirmed || err == agoradb.ErrNoBatchExists {
+	if batchConfirmed || err == subastadb.ErrNoBatchExists {
 		return nil
 	}
 
@@ -925,7 +925,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// NoMasterAcctState, meaning we need to obtain one somehow. In
 		// this state (the first time the system starts up), we'll rely
 		// on the block notification moving us to the next state.
-		case err == agoradb.ErrNoAuctioneerAccount:
+		case err == subastadb.ErrNoAuctioneerAccount:
 			log.Infof("No Master Account found, starting genesis " +
 				"transaction creation")
 

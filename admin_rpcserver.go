@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/lightninglabs/agora/adminrpc"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"google.golang.org/grpc"
 )
 

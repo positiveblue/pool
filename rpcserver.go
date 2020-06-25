@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"bytes"
@@ -18,18 +18,19 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
-	accountT "github.com/lightninglabs/agora/client/account"
-	"github.com/lightninglabs/agora/client/clmrpc"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/kirin/auth"
+	accountT "github.com/lightninglabs/llm/account"
+	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"google.golang.org/grpc"
 )
@@ -116,7 +117,7 @@ type rpcServer struct {
 
 	orderBook *order.Book
 
-	store agoradb.Store
+	store subastadb.Store
 
 	batchExecutor *venue.BatchExecutor
 
@@ -137,7 +138,7 @@ type rpcServer struct {
 }
 
 // newRPCServer creates a new rpcServer.
-func newRPCServer(store agoradb.Store, lnd *lndclient.GrpcLndServices,
+func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	feeSchedule *orderT.LinearFeeSchedule, listener net.Listener,
@@ -568,7 +569,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 			// one or more accounts failed. Or it means the trader
 			// got to the next key after the last account key during
 			// recovery.
-			var e *agoradb.AccountNotFoundError
+			var e *subastadb.AccountNotFoundError
 			if errors.As(err, &e) {
 				errCode := clmrpc.SubscribeError_ACCOUNT_DOES_NOT_EXIST
 				err = stream.Send(&clmrpc.ServerAuctionMessage{
@@ -793,7 +794,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		// through their keys to find accounts we know.
 		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
-			comms.err <- &agoradb.AccountNotFoundError{
+			comms.err <- &subastadb.AccountNotFoundError{
 				AcctKey: acctKey,
 			}
 			return
@@ -1268,7 +1269,7 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	details *clmrpc.ServerOrder) (*orderT.Kit, *order.Kit, error) {
 
 	// Parse the RPC fields into the common client struct.
-	clientKit, nodeKey, addrs, multiSigKey, err := orderT.ParseRPCServerOrder(
+	clientKit, nodeKey, addrs, multiSigKey, err := parseRPCServerOrder(
 		version, details,
 	)
 	if err != nil {
@@ -1472,4 +1473,67 @@ func marshallNodeAddrs(addrs []net.Addr) []*clmrpc.NodeAddress {
 		})
 	}
 	return res
+}
+
+// parseRPCServerOrder parses the incoming raw RPC server order into the go
+// native data types used in the order struct.
+func parseRPCServerOrder(version uint32,
+	details *clmrpc.ServerOrder) (*orderT.Kit, [33]byte, []net.Addr,
+	[33]byte, error) {
+
+	var (
+		nonce       orderT.Nonce
+		nodeKey     [33]byte
+		nodeAddrs   = make([]net.Addr, 0, len(details.NodeAddr))
+		multiSigKey [33]byte
+	)
+
+	copy(nonce[:], details.OrderNonce)
+	kit := orderT.NewKit(nonce)
+	kit.Version = orderT.Version(version)
+	kit.FixedRate = details.RateFixed
+	kit.Amt = btcutil.Amount(details.Amt)
+	kit.Units = orderT.NewSupplyFromSats(kit.Amt)
+	kit.UnitsUnfulfilled = kit.Units
+	kit.FundingFeeRate = chainfee.SatPerKWeight(
+		details.FundingFeeRateSatPerKw,
+	)
+
+	// The trader must supply a nonce.
+	if nonce == orderT.ZeroNonce {
+		return nil, nodeKey, nodeAddrs, multiSigKey,
+			fmt.Errorf("invalid nonce")
+	}
+
+	copy(kit.AcctKey[:], details.TraderKey)
+
+	nodePubKey, err := btcec.ParsePubKey(details.NodePub, btcec.S256())
+	if err != nil {
+		return nil, nodeKey, nodeAddrs, multiSigKey,
+			fmt.Errorf("unable to parse node pub key: %v",
+				err)
+	}
+	copy(nodeKey[:], nodePubKey.SerializeCompressed())
+	if len(details.NodeAddr) == 0 {
+		return nil, nodeKey, nodeAddrs, multiSigKey,
+			fmt.Errorf("invalid node addresses")
+	}
+	for _, rpcAddr := range details.NodeAddr {
+		addr, err := net.ResolveTCPAddr(rpcAddr.Network, rpcAddr.Addr)
+		if err != nil {
+			return nil, nodeKey, nodeAddrs, multiSigKey,
+				fmt.Errorf("unable to parse node ddr: %v", err)
+		}
+		nodeAddrs = append(nodeAddrs, addr)
+	}
+	multiSigPubkey, err := btcec.ParsePubKey(
+		details.MultiSigKey, btcec.S256(),
+	)
+	if err != nil {
+		return nil, nodeKey, nodeAddrs, multiSigKey,
+			fmt.Errorf("unable to parse multi sig pub key: %v", err)
+	}
+	copy(multiSigKey[:], multiSigPubkey.SerializeCompressed())
+
+	return kit, nodeKey, nodeAddrs, multiSigKey, nil
 }

@@ -2,10 +2,10 @@ package batchtx
 
 import (
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )

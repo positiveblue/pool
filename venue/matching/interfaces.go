@@ -3,8 +3,8 @@ package matching
 import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/order"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/order"
 )
 
 // FulfillType is an enum-like variable that expresses the "nature" of a match.

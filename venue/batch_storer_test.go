@@ -8,13 +8,13 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/client/clmscript"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue/batchtx"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/llm/clmscript"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -164,7 +164,7 @@ var (
 // the batch storer.
 func TestBatchStorer(t *testing.T) {
 	var (
-		storeMock = agoradb.NewStoreMock(t)
+		storeMock = subastadb.NewStoreMock(t)
 		storer    = &ExeBatchStorer{store: storeMock}
 	)
 

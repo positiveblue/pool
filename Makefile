@@ -1,5 +1,5 @@
-PKG := github.com/lightninglabs/agora
-ESCPKG := github.com\/lightninglabs\/agora
+PKG := github.com/lightninglabs/subasta
+ESCPKG := github.com\/lightninglabs\/subasta
 
 BTCD_PKG := github.com/btcsuite/btcd
 LND_PKG := github.com/lightningnetwork/lnd
@@ -92,10 +92,8 @@ lnd:
 # ============
 
 build:
-	@$(call print, "Building agora.")
-	$(GOBUILD) $(PKG)/client/cmd/agora
-	$(GOBUILD) $(PKG)/client/cmd/agorad
-	$(GOBUILD) $(PKG)/cmd/agoraserver
+	@$(call print, "Building auction server and cli.")
+	$(GOBUILD) $(PKG)/cmd/auctionserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
 
 build-itest:
@@ -103,10 +101,8 @@ build-itest:
 	$(GOBUILD) -tags="$(ITEST_TAGS)" -o itest/lnd-itest $(LND_ITEST_LDFLAGS) $(LND_PKG)/cmd/lnd
 
 install:
-	@$(call print, "Installing agora.")
-	$(GOINSTALL) $(PKG)/client/cmd/agora
-	$(GOINSTALL) $(PKG)/client/cmd/agorad
-	$(GOINSTALL) $(PKG)/cmd/agoraserver
+	@$(call print, "Installing auction server and cli.")
+	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
 
 scratch: build
@@ -180,13 +176,10 @@ list:
 
 rpc:
 	@$(call print, "Compiling protos.")
-	cd ./client/clmrpc; ./gen_protos.sh
 	cd ./adminrpc; ./gen_protos.sh
 
 clean:
 	@$(call print, "Cleaning source.$(NC)")
-	$(RM) ./agora
-	$(RM) ./agorad
-	$(RM) ./agoradserver
+	$(RM) ./auctionserver
 	$(RM) ./auctioncli
 	$(RM) coverage.txt

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil"
-	orderT "github.com/lightninglabs/agora/client/order"
+	orderT "github.com/lightninglabs/llm/order"
 )
 
 type mockFeeSchedule struct {

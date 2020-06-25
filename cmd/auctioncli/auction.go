@@ -3,7 +3,7 @@ package main
 import (
 	"context"
 
-	"github.com/lightninglabs/agora/adminrpc"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/urfave/cli"
 )
 

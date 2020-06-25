@@ -10,10 +10,10 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
-	auctioneerAccount "github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/client/clmrpc"
-	"github.com/lightninglabs/agora/client/order"
 	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/order"
+	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"google.golang.org/grpc/metadata"
 )

@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/lightninglabs/agora/client"
-	"github.com/lightninglabs/agora/client/clmrpc"
+	"github.com/lightninglabs/llm"
+	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -21,8 +21,8 @@ import (
 // start an instance of the trader server.
 type traderHarness struct {
 	cfg       *traderConfig
-	server    *client.Server
-	clientCfg *client.Config
+	server    *llm.Server
+	clientCfg *llm.Config
 	listener  *bufconn.Listener
 
 	clmrpc.TraderClient
@@ -44,14 +44,14 @@ type traderConfig struct {
 func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 	if cfg.BaseDir == "" {
 		var err error
-		cfg.BaseDir, err = ioutil.TempDir("", "itest-agorad")
+		cfg.BaseDir, err = ioutil.TempDir("", "itest-llmd")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// Create new in-memory listener that we are going to use to communicate
-	// with the agorad.
+	// with the llmd.
 	listener := bufconn.Listen(100)
 
 	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
@@ -64,7 +64,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 	return &traderHarness{
 		cfg:      &cfg,
 		listener: listener,
-		clientCfg: &client.Config{
+		clientCfg: &llm.Config{
 			LogDir:         ".",
 			MaxLogFiles:    99,
 			MaxLogFileSize: 999,
@@ -76,7 +76,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 			MinBackoff:     100 * time.Millisecond,
 			MaxBackoff:     500 * time.Millisecond,
 			RPCListener:    listener,
-			Lnd: &client.LndConfig{
+			Lnd: &llm.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,
 				TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
@@ -88,7 +88,7 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 // start spins up the trader server listening for gRPC connections on a bufconn.
 func (hs *traderHarness) start() error {
 	var err error
-	hs.server, err = client.NewServer(hs.clientCfg)
+	hs.server, err = llm.NewServer(hs.clientCfg)
 	if err != nil {
 		return fmt.Errorf("could not create trader server %v", err)
 	}
@@ -122,7 +122,7 @@ func (hs *traderHarness) stop() error {
 }
 
 // auctionServerDialOpts creates the dial options that are needed to connect
-// over the harness' connection to the agora server.
+// over the harness' connection to the auction server.
 func (hs *traderHarness) auctionServerDialOpts(serverCertPath string) (
 	[]grpc.DialOption, error) {
 

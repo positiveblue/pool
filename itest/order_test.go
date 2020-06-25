@@ -3,8 +3,8 @@ package itest
 import (
 	"context"
 
-	"github.com/lightninglabs/agora/client/clmrpc"
-	"github.com/lightninglabs/agora/client/order"
+	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/order"
 )
 
 const (

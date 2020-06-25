@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/adminrpc"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 )
 

@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -11,18 +11,18 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/adminrpc"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/chanenforcement"
-	"github.com/lightninglabs/agora/client/clmrpc"
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/llm/clmrpc"
+	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/ticker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -45,7 +45,7 @@ type auctioneerStore struct {
 	// NOTE: This MUST be used atomically
 	state uint32
 
-	*agoradb.EtcdStore
+	*subastadb.EtcdStore
 }
 
 // UpdateAuctionState updates the current state of the auction.
@@ -79,7 +79,7 @@ type executorStore struct {
 	// NOTE: This MUST be used atomically
 	state uint32
 
-	agoradb.Store
+	subastadb.Store
 }
 
 // ExecutionState returns the current execution state.
@@ -95,7 +95,7 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
 
-// Server is the main agora auctioneer server.
+// Server is the main auction auctioneer server.
 type Server struct {
 	rpcServer   *rpcServer
 	adminServer *adminRPCServer
@@ -103,7 +103,7 @@ type Server struct {
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
 
-	store agoradb.Store
+	store subastadb.Store
 
 	accountManager *account.Manager
 
@@ -146,7 +146,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// Next, we'll open our primary connection to the main backing
 	// database.
-	store, err := agoradb.NewEtcdStore(
+	store, err := subastadb.NewEtcdStore(
 		*lnd.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
 		cfg.Etcd.Password,
 	)

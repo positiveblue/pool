@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	orderT "github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 const (

@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/lightninglabs/agora"
-	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/protobuf-hex-display/jsonpb"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
+	"github.com/lightninglabs/subasta"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )
@@ -36,14 +36,14 @@ func fatal(err error) {
 func main() {
 	app := cli.NewApp()
 
-	app.Version = agora.Version()
+	app.Version = subasta.Version()
 	app.Name = "auctioncli"
 	app.Usage = "control plane for the auctioneer server"
 	app.Flags = []cli.Flag{
 		cli.StringFlag{
 			Name:  "rpcserver",
 			Value: "localhost:13370",
-			Usage: "agoraserver daemon admin address host:port",
+			Usage: "auctionserver daemon admin address host:port",
 		},
 	}
 	app.Commands = append(app.Commands, masterAccountCommands...)

@@ -10,11 +10,11 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/client/clmscript"
-	"github.com/lightninglabs/agora/client/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/llm/clmscript"
+	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -32,7 +32,7 @@ func (m *mockBatchStorer) Store(_ context.Context, _ *ExecutionResult) error {
 }
 
 type mockExecutorStore struct {
-	*agoradb.StoreMock
+	*subastadb.StoreMock
 
 	exeState ExecutionState
 
@@ -41,7 +41,7 @@ type mockExecutorStore struct {
 
 func newMockExecutorStore(t *testing.T) *mockExecutorStore {
 	return &mockExecutorStore{
-		StoreMock:        agoradb.NewStoreMock(t),
+		StoreMock:        subastadb.NewStoreMock(t),
 		stateTransitions: make(chan ExecutionState, 1),
 	}
 }
