@@ -81,6 +81,11 @@ const (
 	// defaultMaxAcctValue is the default maximum account value we enforce
 	// if no other configuration value is set.
 	defaultMaxAcctValue int64 = btcutil.SatoshiPerBitcoin
+
+	// defaultMaxDuration is the default maximum value for an order's min
+	// duration (bid) or max duration (ask). The default is equal to the
+	// number of blocks in a year.
+	defaultMaxDuration uint32 = 365 * 144
 )
 
 var (
@@ -123,7 +128,8 @@ type Config struct {
 	ExecFeeBase int64 `long:"execfeebase" description:"The execution base fee in satoshis that is charged per matched order."`
 	ExecFeeRate int64 `long:"execfeerate" description:"The execution fee rate in parts per million that is charged per matched order."`
 
-	MaxAcctValue int64 `long:"maxacctvalue" description:"The maximum account value we enforce on the auctioneer side."`
+	MaxAcctValue int64  `long:"maxacctvalue" description:"The maximum account value we enforce on the auctioneer side."`
+	MaxDuration  uint32 `long:"maxduration" description:"The maximum value for the min/max order duration values."`
 
 	ServerName string `long:"servername" description:"Server name to use for the tls certificate"`
 	Insecure   bool   `long:"insecure" description:"disable tls"`
@@ -161,6 +167,7 @@ var DefaultConfig = &Config{
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
 	MaxAcctValue:     defaultMaxAcctValue,
+	MaxDuration:      defaultMaxDuration,
 	SubscribeTimeout: defaultSubscribeTimeout,
 	ServerName:       "auction.lightning.today",
 	Insecure:         false,
