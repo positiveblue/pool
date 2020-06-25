@@ -27,7 +27,7 @@ jobs:
     - stage: Build
       script:
         - make unit pkg=... case=_NONE_
-        - make lint
+        - make lint workers=1
         - make btcd
     - stage: Test
       script: make travis-race

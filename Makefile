@@ -42,10 +42,16 @@ XARGS := xargs -L 1
 
 include make/testing_flags.mk
 
+# Linting uses a lot of memory, so keep it under control by limiting the number
+# of workers if requested.
+ifneq ($(workers),)
+LINT_WORKERS = --concurrency=$(workers)
+endif
+
 make_ldflags = -ldflags "-X $(LND_PKG)/build.RawTags=$(shell echo $(1) | sed -e 's/ /,/g')"
 LND_ITEST_LDFLAGS := $(call make_ldflags, $(ITEST_TAGS))
 
-LINT = $(LINT_BIN) run -v
+LINT = $(LINT_BIN) run -v $(LINT_WORKERS)
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"
