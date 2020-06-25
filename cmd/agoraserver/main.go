@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/jessevdk/go-flags"
-	"github.com/lightninglabs/agora"
+	"github.com/lightninglabs/subasta"
 )
 
 var (
@@ -58,11 +58,11 @@ func start() error {
 }
 
 // getParser returns a parser with the required options for agoraserver.
-func getParser(cfg *agora.Config) *flags.Parser {
+func getParser(cfg *subasta.Config) *flags.Parser {
 	parser := flags.NewParser(cfg, flags.Default)
 
 	_, _ = parser.AddCommand(
-		"daemon", "Run agora server", "",
+		"daemon", "Run auction server", "",
 		&daemonCommand{cfg: cfg},
 	)
 
@@ -71,8 +71,8 @@ func getParser(cfg *agora.Config) *flags.Parser {
 
 // preParse parses the command line to make the network option available. This
 // is required to find the correct config file path.
-func preParse() (*agora.Config, error) {
-	cfg := *agora.DefaultConfig
+func preParse() (*subasta.Config, error) {
+	cfg := *subasta.DefaultConfig
 	preParser := getParser(&cfg)
 
 	// Don't execute commands during pre-parsing.

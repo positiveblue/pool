@@ -1,7 +1,7 @@
 FROM golang:1.13-alpine as builder
 
 # Copy in the local repository to build from.
-COPY . /go/src/github.com/lightninglabs/agora
+COPY . /go/src/github.com/lightninglabs/subasta
 
 # Force Go to use the cgo based DNS resolver. This is required to ensure DNS
 # queries required to connect to linked containers succeed.
@@ -15,7 +15,7 @@ ENV GO111MODULE on
 RUN apk add --no-cache --update alpine-sdk \
     git \
     make \
-&&  cd /go/src/github.com/lightninglabs/agora/cmd \
+&&  cd /go/src/github.com/lightninglabs/subasta/cmd \
 &&  go install -v ./...
 
 # Start a new, final image to reduce size.

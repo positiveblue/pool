@@ -1,4 +1,4 @@
-module github.com/lightninglabs/agora
+module github.com/lightninglabs/subasta
 
 require (
 	github.com/btcsuite/btcd v0.20.1-beta.0.20200515232429-9f0179fd2c46

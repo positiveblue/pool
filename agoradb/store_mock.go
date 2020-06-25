@@ -7,11 +7,11 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // StoreMock is a type to hold mocked orders.

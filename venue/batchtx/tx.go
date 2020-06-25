@@ -8,10 +8,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
-	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )

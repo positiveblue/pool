@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -11,18 +11,18 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/adminrpc"
-	"github.com/lightninglabs/agora/agoradb"
-	"github.com/lightninglabs/agora/chanenforcement"
+	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
-	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/ticker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
@@ -95,7 +95,7 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
 
-// Server is the main agora auctioneer server.
+// Server is the main auction auctioneer server.
 type Server struct {
 	rpcServer   *rpcServer
 	adminServer *adminRPCServer

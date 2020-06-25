@@ -13,14 +13,14 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/venue/batchtx"
-	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -258,9 +258,9 @@ type executionReq struct {
 	Result chan *ExecutionResult
 }
 
-// ExecutorStore is a small wrapper around the agora.Store interface which adds
-// methods for storing and reading the current execution state. This interface
-// makes writing unit tests of expected state transitions easier.
+// ExecutorStore is a small wrapper around the subastadb.Store interface which
+// adds methods for storing and reading the current execution state. This
+// interface makes writing unit tests of expected state transitions easier.
 type ExecutorStore interface {
 	agoradb.Store
 

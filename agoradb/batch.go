@@ -11,12 +11,12 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
-	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/venue/matching"
+	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
 var (

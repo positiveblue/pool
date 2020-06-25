@@ -6,7 +6,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/chanenforcement"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightningnetwork/lnd/chanbackup"
 )
 

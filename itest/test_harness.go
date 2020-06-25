@@ -17,11 +17,11 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/go-errors/errors"
-	auctioneerAccount "github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/adminrpc"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lsat"
+	auctioneerAccount "github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -170,7 +170,7 @@ func (h *harnessTest) restartServer() {
 func prepareServerConnection(ah *auctioneerHarness, isRestart bool) error {
 
 	// Create new in-memory listeners that we are going to use to
-	// communicate with the agora and admin server.
+	// communicate with the auction and admin server.
 	auctioneerRPCListener := bufconn.Listen(100)
 	adminRPCListener := bufconn.Listen(100)
 

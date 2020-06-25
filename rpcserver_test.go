@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -13,17 +13,17 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
+	"github.com/lightninglabs/kirin/auth"
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
-	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/test"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"google.golang.org/grpc"

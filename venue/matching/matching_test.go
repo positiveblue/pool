@@ -10,9 +10,9 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
 )
 
 var emptyAcct [33]byte

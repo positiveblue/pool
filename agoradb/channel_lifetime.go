@@ -7,9 +7,9 @@ import (
 	"io"
 	"strings"
 
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
-	"github.com/lightninglabs/agora/chanenforcement"
 )
 
 const (

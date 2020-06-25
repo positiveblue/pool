@@ -7,7 +7,7 @@ import (
 	"testing/quick"
 
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 

@@ -1,7 +1,7 @@
 package venue
 
 import (
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 type (

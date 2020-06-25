@@ -4,7 +4,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/subasta/order"
 )
 
 // FulfillType is an enum-like variable that expresses the "nature" of a match.

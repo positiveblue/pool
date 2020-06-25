@@ -4,7 +4,7 @@ import (
 	"container/list"
 
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/subasta/order"
 )
 
 // BatchID is a 33-byte identifier that uniquely identifies this batch. This ID

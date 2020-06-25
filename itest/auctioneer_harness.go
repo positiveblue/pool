@@ -12,12 +12,12 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
-	"go.etcd.io/etcd/embed"
-	"github.com/lightninglabs/agora"
-	"github.com/lightninglabs/agora/adminrpc"
-	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/subasta"
+	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/agoradb"
 	"github.com/lightningnetwork/lnd/lntest"
+	"go.etcd.io/etcd/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
@@ -33,8 +33,8 @@ var (
 type auctioneerHarness struct {
 	cfg *auctioneerConfig
 
-	serverCfg *agora.Config
-	server    *agora.Server
+	serverCfg *subasta.Config
+	server    *subasta.Server
 
 	etcd  *embed.Etcd
 	store agoradb.Store
@@ -74,22 +74,22 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 
 	return &auctioneerHarness{
 		cfg: &cfg,
-		serverCfg: &agora.Config{
+		serverCfg: &subasta.Config{
 			Network:          cfg.NetParams.Name,
 			Insecure:         true,
 			FakeAuth:         true,
 			BaseDir:          cfg.BaseDir,
 			OrderSubmitFee:   1337,
-			ExecFeeBase:      agora.DefaultExecutionFeeBase,
-			ExecFeeRate:      agora.DefaultExecutionFeeRate,
+			ExecFeeBase:      subasta.DefaultExecutionFeeBase,
+			ExecFeeRate:      subasta.DefaultExecutionFeeRate,
 			MaxAcctValue:     btcutil.SatoshiPerBitcoin,
 			SubscribeTimeout: 500 * time.Millisecond,
-			Lnd: &agora.LndConfig{
+			Lnd: &subasta.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,
 				TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
 			},
-			Etcd: &agora.EtcdConfig{
+			Etcd: &subasta.EtcdConfig{
 				Host:     etcdListenAddr,
 				User:     "",
 				Password: "",
@@ -121,7 +121,7 @@ func (hs *auctioneerHarness) start() error {
 // up again after it was turned off with halt().
 func (hs *auctioneerHarness) runServer() error {
 	var err error
-	hs.server, err = agora.NewServer(hs.serverCfg)
+	hs.server, err = subasta.NewServer(hs.serverCfg)
 	if err != nil {
 		return fmt.Errorf("unable to create server: %v", err)
 	}
@@ -222,7 +222,7 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 }
 
 // ConnectAuctioneerRPC uses the in-memory buffer connection to dial to the
-// agora server.
+// auction server.
 func ConnectAuctioneerRPC(conn net.Conn, serverCertPath string) (
 	*grpc.ClientConn, error) {
 

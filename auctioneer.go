@@ -1,4 +1,4 @@
-package agora
+package subasta
 
 import (
 	"context"
@@ -13,14 +13,14 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue"
-	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"

@@ -1,5 +1,5 @@
-PKG := github.com/lightninglabs/agora
-ESCPKG := github.com\/lightninglabs\/agora
+PKG := github.com/lightninglabs/subasta
+ESCPKG := github.com\/lightninglabs\/subasta
 
 BTCD_PKG := github.com/btcsuite/btcd
 LND_PKG := github.com/lightningnetwork/lnd

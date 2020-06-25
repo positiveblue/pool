@@ -11,12 +11,12 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
-	"github.com/lightninglabs/agora/account"
-	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue/matching"
 )
 
 var (
@@ -37,7 +37,7 @@ var (
 
 var (
 	// topLevelDir is the top level directory that we'll use to store all
-	// the production agora data.
+	// the production auction data.
 	topLevelDir = "bitcoin/clm/agora"
 
 	// versionPrefix is the key prefix that we'll use to store the current

@@ -3,9 +3,9 @@ package matching
 import (
 	"sort"
 
-	"github.com/lightninglabs/agora/account"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
 )
 
 // MultiUnitMatchMaker is a conrete implemtantion of the MatchMaker interface.

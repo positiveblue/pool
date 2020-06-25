@@ -5,7 +5,7 @@ import (
 	"time"
 
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // timerWithQuit couples a timer along with a quit channel that can be used to

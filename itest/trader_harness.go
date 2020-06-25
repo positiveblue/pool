@@ -44,14 +44,14 @@ type traderConfig struct {
 func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 	if cfg.BaseDir == "" {
 		var err error
-		cfg.BaseDir, err = ioutil.TempDir("", "itest-agorad")
+		cfg.BaseDir, err = ioutil.TempDir("", "itest-llmd")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// Create new in-memory listener that we are going to use to communicate
-	// with the agorad.
+	// with the llmd.
 	listener := bufconn.Listen(100)
 
 	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
@@ -122,7 +122,7 @@ func (hs *traderHarness) stop() error {
 }
 
 // auctionServerDialOpts creates the dial options that are needed to connect
-// over the harness' connection to the agora server.
+// over the harness' connection to the auction server.
 func (hs *traderHarness) auctionServerDialOpts(serverCertPath string) (
 	[]grpc.DialOption, error) {
 

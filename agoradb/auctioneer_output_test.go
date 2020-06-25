@@ -7,7 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/subasta/account"
 )
 
 // TestFetchUpdateAuctioneerAccount tests that we're able to retrieve and

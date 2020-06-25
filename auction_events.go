@@ -1,9 +1,9 @@
-package agora
+package subasta
 
 import (
 	"fmt"
 
-	"github.com/lightninglabs/agora/account"
+	"github.com/lightninglabs/subasta/account"
 )
 
 // AuctionState is an enum-like variable that describes the current phase of

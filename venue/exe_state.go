@@ -3,7 +3,7 @@ package venue
 import (
 	"fmt"
 
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // ExecutionState tracks the current state of the batch execution state machine.

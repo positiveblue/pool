@@ -7,11 +7,11 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/agora/account"
-	"github.com/lightninglabs/agora/agoradb"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/agoradb"
+	"github.com/lightninglabs/subasta/order"
 )
 
 // ExeBatchStorer is a type that implements BatchStorer and can persist a batch

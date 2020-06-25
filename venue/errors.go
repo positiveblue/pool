@@ -4,7 +4,7 @@ import (
 	"fmt"
 
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // ErrMissingTraders is returned if when we attempt to start a batch, some or

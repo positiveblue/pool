@@ -7,9 +7,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/subscribe"
 )
 

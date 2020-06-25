@@ -10,8 +10,8 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 

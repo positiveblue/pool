@@ -5,7 +5,7 @@ import (
 	"time"
 
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/venue/matching"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 const (

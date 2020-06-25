@@ -7,8 +7,8 @@ import (
 	"io"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/lightninglabs/subasta/account"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
-	"github.com/lightninglabs/agora/account"
 )
 
 const (

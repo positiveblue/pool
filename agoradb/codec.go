@@ -5,11 +5,11 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/agora/account"
 	"github.com/lightninglabs/llm/clientdb"
-	"github.com/lightninglabs/agora/order"
-	"github.com/lightninglabs/agora/venue/matching"
 	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lnwire"
 )

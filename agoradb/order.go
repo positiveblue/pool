@@ -10,11 +10,11 @@ import (
 	"strconv"
 	"strings"
 
-	"go.etcd.io/etcd/clientv3"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
 	"github.com/lightninglabs/llm/clientdb"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/agora/order"
+	"github.com/lightninglabs/subasta/order"
+	"go.etcd.io/etcd/clientv3"
+	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
 var (

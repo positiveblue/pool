@@ -7,7 +7,7 @@ import (
 	"os"
 	"strconv"
 
-	"github.com/lightninglabs/agora"
+	"github.com/lightninglabs/subasta"
 	"github.com/lightningnetwork/lnd/signal"
 
 	// Blank import to set up profiling HTTP handlers.
@@ -15,14 +15,14 @@ import (
 )
 
 type daemonCommand struct {
-	cfg *agora.Config
+	cfg *subasta.Config
 }
 
 func (x *daemonCommand) Execute(_ []string) error {
 	// Special show command to list supported subsystems and exit.
 	if x.cfg.DebugLevel == "show" {
 		fmt.Printf("Supported subsystems: %v\n",
-			agora.SupportedSubsystems())
+			subasta.SupportedSubsystems())
 		os.Exit(0)
 	}
 
@@ -45,7 +45,7 @@ func (x *daemonCommand) Execute(_ []string) error {
 		}()
 	}
 
-	server, err := agora.NewServer(x.cfg)
+	server, err := subasta.NewServer(x.cfg)
 	if err != nil {
 		return fmt.Errorf("unable to create server: %v", err)
 	}
