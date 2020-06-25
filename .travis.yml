@@ -30,7 +30,7 @@ jobs:
         - make lint workers=1
         - make btcd
     - stage: Test
-      script: make travis-race
+      script: make unit-race
       name: Unit Race
     - script: make itest
       name: Btcd Integration
