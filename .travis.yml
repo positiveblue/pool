@@ -6,6 +6,15 @@ cache:
 go:
   - "1.13.x"
 
+# Remove Travis' default flag --depth=50 from the git clone command to make sure
+# we have the whole git history, including the commit we lint against.
+git:
+  depth: false
+
+# Allow fetching of private repos by using SSH instead of HTTPS for go mod.
+before_install:
+  - git config --global url."git@github.com:lightninglabs".insteadOf "https://github.com/lightninglabs"
+
 env:
   global:
     - GOCACHE=$HOME/.go-build
