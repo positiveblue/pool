@@ -186,6 +186,7 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 	tempDir := filepath.Join(hs.cfg.BaseDir, "etcd")
 
 	cfg := embed.NewConfig()
+	cfg.Logger = "zap"
 	cfg.Dir = tempDir
 	cfg.LCUrls = []url.URL{{Host: etcdListenAddr}}
 	cfg.LPUrls = []url.URL{{Host: "127.0.0.1:9126"}}

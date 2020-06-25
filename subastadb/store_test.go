@@ -32,6 +32,7 @@ func newTestEtcdStore(t *testing.T) (*EtcdStore, func()) {
 	}
 
 	cfg := embed.NewConfig()
+	cfg.Logger = "zap"
 	cfg.Dir = tempDir
 	cfg.LCUrls = []url.URL{{Host: clientHost}}
 	cfg.LPUrls = []url.URL{{Host: "127.0.0.1:9126"}}
