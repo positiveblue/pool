@@ -23,12 +23,6 @@ BTCD_COMMIT := $(shell cat go.mod | \
 		awk -F " " '{ print $$2 }' | \
 		awk -F "/" '{ print $$1 }')
 
-LND_COMMIT := $(shell cat go.mod | \
-		grep $(LND_PKG) | \
-		tail -n1 | \
-		awk -F " " '{ print $$2 }' | \
-		awk -F "/" '{ print $$1 }')
-
 LINT_COMMIT := v1.18.0
 GOACC_COMMIT := ddc355013f90fea78d83d3a6c71f1d37ac07ecd5
 
@@ -82,10 +76,6 @@ $(GOACC_BIN):
 btcd:
 	@$(call print, "Installing btcd.")
 	$(DEPGET) $(BTCD_PKG)@$(BTCD_COMMIT)
-
-lnd:
-	@$(call print, "Installing lnd.")
-	$(DEPGET) $(LND_PKG)@$(LND_COMMIT)
 
 # ============
 # INSTALLATION
