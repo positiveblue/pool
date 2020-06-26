@@ -191,18 +191,19 @@ func (e *environment) sendPrepareMsg() error {
 		acctOutpoint, _ := e.exeCtx.AcctOutputForTrader(traderKey)
 		select {
 		case trader.CommLine.Send <- &PrepareMsg{
-			AcctKey:       trader.AccountKey,
 			MatchedOrders: matchedOrders,
 			ClearingPrice: e.batch.ClearingPrice,
 			ChargedAccounts: []matching.AccountDiff{
 				accountDiffs[trader.AccountKey],
 			},
-			AccountOutPoint: acctOutpoint,
-			ExecutionFee:    e.exeFee,
-			BatchTx:         batchTxBuf.Bytes(),
-			FeeRate:         e.feeRate,
-			BatchID:         e.batchID,
-			BatchVersion:    e.batchVersion,
+			AccountOutPoints: []wire.OutPoint{
+				acctOutpoint,
+			},
+			ExecutionFee: e.exeFee,
+			BatchTx:      batchTxBuf.Bytes(),
+			FeeRate:      e.feeRate,
+			BatchID:      e.batchID,
+			BatchVersion: e.batchVersion,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
@@ -221,7 +222,6 @@ func (e *environment) sendSignBeginMsg() error {
 		select {
 		case trader.CommLine.Send <- &SignBeginMsg{
 			BatchID: e.batchID,
-			AcctKey: trader.AccountKey,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
@@ -239,7 +239,6 @@ func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 	for _, trader := range e.traders {
 		select {
 		case trader.CommLine.Send <- &FinalizeMsg{
-			AcctKey:   trader.AccountKey,
 			BatchID:   e.batchID,
 			BatchTxID: batchTxID,
 		}:

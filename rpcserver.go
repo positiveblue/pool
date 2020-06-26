@@ -898,8 +898,10 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
+			var batchID orderT.BatchID
+			copy(batchID[:], msg.Accept.BatchId)
 			traderMsg := &venue.TraderAcceptMsg{
-				BatchID: msg.Accept.BatchId,
+				BatchID: batchID,
 				Trader:  subscribedTrader,
 				Orders:  nonces,
 			}
@@ -910,8 +912,10 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 	case *clmrpc.ClientAuctionMessage_Reject:
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
+			var batchID orderT.BatchID
+			copy(batchID[:], msg.Reject.BatchId)
 			traderMsg := &venue.TraderRejectMsg{
-				BatchID: msg.Reject.BatchId,
+				BatchID: batchID,
 				Trader:  subscribedTrader,
 				Reason:  msg.Reject.Reason,
 			}
@@ -1055,14 +1059,27 @@ func (s *rpcServer) sendToTrader(
 			// As we support partial patches, this trader nonce
 			// might be matched with a set of other orders, so
 			// we'll unroll this here now.
-			for _, order := range orderMatches {
-				isAsk := order.Asker.AccountKey == msg.Dest()
+			for _, o := range orderMatches {
+				// Find out if the recipient of the message is
+				// the asker or bidder. Traders with the same
+				// token can't be matched so we know that if the
+				// asker's account is in the list of charged
+				// accounts, the trader is the asker.
+				isAsk := false
+				for _, acct := range m.ChargedAccounts {
+					acctKey := acct.StartingState.AccountKey
+					if o.Asker.AccountKey == acctKey {
+						isAsk = true
+						break
+					}
+				}
+
 				nonceStr := hex.EncodeToString(
 					traderOrderNonce[:],
 				)
-				unitsFilled := order.Details.Quote.UnitsMatched
+				unitsFilled := o.Details.Quote.UnitsMatched
 
-				ask, bid := order.Details.Ask, order.Details.Bid
+				ask, bid := o.Details.Ask, o.Details.Bid
 
 				matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
 
@@ -1087,14 +1104,13 @@ func (s *rpcServer) sendToTrader(
 		// we'll generate a similar RPC account diff so they can verify
 		// their portion of the batch.
 		var accountDiffs []*clmrpc.AccountDiff
-		for _, acctDiff := range m.ChargedAccounts {
-			acctDiff, err := marshallAccountDiff(acctDiff, m.AccountOutPoint)
+		for idx, acctDiff := range m.ChargedAccounts {
+			acctDiff, err := marshallAccountDiff(
+				acctDiff, m.AccountOutPoints[idx],
+			)
 			if err != nil {
 				return err
 			}
-
-			// TODO(roasbeef): only assumes one acct per user rn,
-			// as the outpoint re-used above
 
 			accountDiffs = append(accountDiffs, acctDiff)
 		}
