@@ -14,6 +14,7 @@ git:
 # Allow fetching of private repos by using SSH instead of HTTPS for go mod.
 before_install:
   - git config --global url."git@github.com:lightninglabs".insteadOf "https://github.com/lightninglabs"
+  - git config --global url."git@github.com:guggero".insteadOf "https://github.com/guggero"
 
 env:
   global:
