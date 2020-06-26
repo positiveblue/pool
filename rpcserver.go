@@ -1069,6 +1069,11 @@ func (s *rpcServer) sendToTrader(
 			log.Debugf("Order(%x) matched w/ %v orders",
 				traderOrderNonce[:], len(m.MatchedOrders))
 
+			nonceStr := hex.EncodeToString(
+				traderOrderNonce[:],
+			)
+			matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
+
 			// As we support partial patches, this trader nonce
 			// might be matched with a set of other orders, so
 			// we'll unroll this here now.
@@ -1087,18 +1092,12 @@ func (s *rpcServer) sendToTrader(
 					}
 				}
 
-				nonceStr := hex.EncodeToString(
-					traderOrderNonce[:],
-				)
 				unitsFilled := o.Details.Quote.UnitsMatched
-
-				ask, bid := o.Details.Ask, o.Details.Bid
-
-				matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
 
 				// If the client had their bid matched, then
 				// we'll send over the ask information and the
 				// other way around if it's a bid.
+				ask, bid := o.Details.Ask, o.Details.Bid
 				if !isAsk {
 					matchedOrders[nonceStr].MatchedAsks = append(
 						matchedOrders[nonceStr].MatchedAsks,
