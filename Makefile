@@ -23,12 +23,6 @@ BTCD_COMMIT := $(shell cat go.mod | \
 		awk -F " " '{ print $$2 }' | \
 		awk -F "/" '{ print $$1 }')
 
-LND_COMMIT := $(shell cat go.mod | \
-		grep $(LND_PKG) | \
-		tail -n1 | \
-		awk -F " " '{ print $$2 }' | \
-		awk -F "/" '{ print $$1 }')
-
 LINT_COMMIT := v1.18.0
 GOACC_COMMIT := ddc355013f90fea78d83d3a6c71f1d37ac07ecd5
 
@@ -48,10 +42,16 @@ XARGS := xargs -L 1
 
 include make/testing_flags.mk
 
+# Linting uses a lot of memory, so keep it under control by limiting the number
+# of workers if requested.
+ifneq ($(workers),)
+LINT_WORKERS = --concurrency=$(workers)
+endif
+
 make_ldflags = -ldflags "-X $(LND_PKG)/build.RawTags=$(shell echo $(1) | sed -e 's/ /,/g')"
 LND_ITEST_LDFLAGS := $(call make_ldflags, $(ITEST_TAGS))
 
-LINT = $(LINT_BIN) run -v
+LINT = $(LINT_BIN) run -v $(LINT_WORKERS)
 
 GREEN := "\\033[0;32m"
 NC := "\\033[0m"
@@ -82,10 +82,6 @@ $(GOACC_BIN):
 btcd:
 	@$(call print, "Installing btcd.")
 	$(DEPGET) $(BTCD_PKG)@$(BTCD_COMMIT)
-
-lnd:
-	@$(call print, "Installing lnd.")
-	$(DEPGET) $(LND_PKG)@$(LND_COMMIT)
 
 # ============
 # INSTALLATION
@@ -128,12 +124,6 @@ unit-race:
 goveralls: $(GOVERALLS_BIN)
 	@$(call print, "Sending coverage report.")
 	$(GOVERALLS_BIN) -coverprofile=coverage.txt -service=travis-ci
-
-travis-race: lint unit-race
-
-travis-cover: lint unit-cover goveralls
-
-travis-itest: lint
 
 itest: btcd build-itest itest-only
 
