@@ -33,9 +33,9 @@ func (e *AccountNotFoundError) Unwrap() error {
 	return ErrAccountNotFound
 }
 
-// NewErrAccountNotFound creates a new AccountNotFoundError error from an account
-// key in the EC public key format.
-func NewErrAccountNotFound(acctKey *btcec.PublicKey) *AccountNotFoundError {
+// NewAccountNotFoundError creates a new AccountNotFoundError error from an
+// account key in the EC public key format.
+func NewAccountNotFoundError(acctKey *btcec.PublicKey) *AccountNotFoundError {
 	result := &AccountNotFoundError{}
 	copy(result.AcctKey[:], acctKey.SerializeCompressed())
 	return result

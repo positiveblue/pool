@@ -93,6 +93,51 @@ func (s *EtcdStore) HasReservation(ctx context.Context,
 	return deserializeReservation(bytes.NewReader(resp.Kvs[0].Value))
 }
 
+// HasReservationForKey determines whether we have an existing
+// reservation associated with a trader key. ErrNoReservation is
+// returned if a reservation does not exist.
+func (s *EtcdStore) HasReservationForKey(ctx context.Context,
+	traderKey *btcec.PublicKey) (*account.Reservation, *lsat.TokenID,
+	error) {
+
+	if !s.initialized {
+		return nil, nil, errNotInitialized
+	}
+
+	k := s.getKeyPrefix(reservationDir)
+	resp, err := s.client.Get(ctx, k, clientv3.WithPrefix())
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(resp.Kvs) == 0 {
+		return nil, nil, account.ErrNoReservation
+	}
+
+	var traderKeyRaw [33]byte
+	copy(traderKeyRaw[:], traderKey.SerializeCompressed())
+
+	for _, kv := range resp.Kvs {
+		res, err := deserializeReservation(bytes.NewReader(kv.Value))
+		if err != nil {
+			return nil, nil, err
+		}
+
+		// Parse the token ID from the last part of the key.
+		keyParts := strings.Split(string(kv.Key), keyDelimiter)
+		tokenPart := keyParts[len(keyParts)-1]
+		tokenID, err := lsat.MakeIDFromString(tokenPart)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		if res.TraderKeyRaw == traderKeyRaw {
+			return res, &tokenID, nil
+		}
+	}
+
+	return nil, nil, account.ErrNoReservation
+}
+
 // ReserveAccount makes a reservation for an auctioneer key for a trader
 // associated to a token.
 func (s *EtcdStore) ReserveAccount(ctx context.Context,
@@ -197,7 +242,7 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 	k := s.getAccountKey(acctKey)
 	resp := stm.Get(k)
 	if resp == "" {
-		return NewErrAccountNotFound(acctKey)
+		return NewAccountNotFoundError(acctKey)
 	}
 	dbAccount, err := deserializeAccount(bytes.NewReader([]byte(resp)))
 	if err != nil {
@@ -237,7 +282,7 @@ func (s *EtcdStore) StoreAccountDiff(ctx context.Context,
 		accountKey := s.getAccountKey(traderKey)
 		rawAccount := stm.Get(accountKey)
 		if len(rawAccount) == 0 {
-			return NewErrAccountNotFound(traderKey)
+			return NewAccountNotFoundError(traderKey)
 		}
 
 		// We'll also make sure a diff is not already present.
@@ -279,7 +324,7 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		accountKey := s.getAccountKey(traderKey)
 		if len(stm.Get(accountKey)) == 0 {
-			return NewErrAccountNotFound(traderKey)
+			return NewAccountNotFoundError(traderKey)
 		}
 
 		accountDiffKey := s.getAccountDiffKey(traderKey)
@@ -324,7 +369,7 @@ func (s *EtcdStore) Account(ctx context.Context,
 		accountKey := s.getAccountKey(traderKey)
 		rawAccount := stm.Get(accountKey)
 		if len(rawAccount) == 0 {
-			return NewErrAccountNotFound(traderKey)
+			return NewAccountNotFoundError(traderKey)
 		}
 
 		var err error
@@ -363,14 +408,18 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 
 func serializeReservation(w io.Writer, reservation *account.Reservation) error {
 	return WriteElements(
-		w, reservation.AuctioneerKey, reservation.InitialBatchKey,
+		w, reservation.Value, reservation.AuctioneerKey,
+		reservation.InitialBatchKey, reservation.Expiry,
+		reservation.HeightHint, reservation.TraderKeyRaw,
 	)
 }
 
 func deserializeReservation(r io.Reader) (*account.Reservation, error) {
 	var reservation account.Reservation
 	err := ReadElements(
-		r, &reservation.AuctioneerKey, &reservation.InitialBatchKey,
+		r, &reservation.Value, &reservation.AuctioneerKey,
+		&reservation.InitialBatchKey, &reservation.Expiry,
+		&reservation.HeightHint, &reservation.TraderKeyRaw,
 	)
 	return &reservation, err
 }

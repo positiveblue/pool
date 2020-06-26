@@ -20,6 +20,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/kirin/auth"
 	accountT "github.com/lightninglabs/llm/account"
+	"github.com/lightninglabs/llm/auctioneer"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
@@ -215,8 +216,20 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 
 	// TODO(guggero): Make sure we enforce maxAccountsPerTrader here.
 
+	// Parse the trader key to make sure it's a valid pubkey. More cannot
+	// be checked at this moment.
+	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+
+	params := &account.Parameters{
+		Value:     btcutil.Amount(req.AccountValue),
+		Expiry:    req.AccountExpiry,
+		TraderKey: traderKey,
+	}
 	reservation, err := s.accountManager.ReserveAccount(
-		ctx, btcutil.Amount(req.AccountValue), tokenID,
+		ctx, params, tokenID, s.bestHeight(),
 	)
 	if err != nil {
 		return nil, err
@@ -590,6 +603,45 @@ func (s *rpcServer) SubscribeBatchAuction(
 				continue
 			}
 
+			// The trader sent a valid signature for an account that
+			// we only have a reservation for. This is yet another
+			// special case that we need to handle separately
+			// because we can't create a normal account subscription
+			// as there's no account yet. Instead we can just send
+			// back the recovery information now as this must be a
+			// recovery attempt. The trader normally would never try
+			// to subscribe to an account with a reservation only.
+			var e2 *auctioneer.AcctResNotCompletedError
+			if errors.As(err, &e2) {
+				errCode := clmrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION
+				partialAcct := &clmrpc.AuctionAccount{
+					Value:         uint64(e2.Value),
+					TraderKey:     e2.AcctKey[:],
+					AuctioneerKey: e2.AuctioneerKey[:],
+					BatchKey:      e2.InitialBatchKey[:],
+					Expiry:        e2.Expiry,
+					HeightHint:    e2.HeightHint,
+				}
+				errMsg := &clmrpc.SubscribeError{
+					Error:              err.Error(),
+					ErrorCode:          errCode,
+					TraderKey:          e2.AcctKey[:],
+					AccountReservation: partialAcct,
+				}
+				err = stream.Send(&clmrpc.ServerAuctionMessage{
+					Msg: &clmrpc.ServerAuctionMessage_Error{
+						Error: errMsg,
+					},
+				})
+				if err != nil {
+					return fmt.Errorf("error sending err "+
+						"msg: %v", err)
+				}
+
+				// We don't punish or disconnect the trader.
+				continue
+			}
+
 			log.Errorf("Error in trader stream: %v", err)
 
 			trader.comms.abort()
@@ -788,8 +840,25 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			return
 		}
 
-		// The signature is valid, we can now fetch the account from the
-		// store. If the account does not exist, the trader might be
+		// The signature is valid, the trader proved that they are in
+		// possession of the trader private key. We now check if the
+		// account exists on our side. First we need to determine if the
+		// account ever made it out of the reservation state.
+		res, _, err := s.store.HasReservationForKey(
+			stream.Context(), acctPubKey,
+		)
+		if err == nil {
+			// There is a reservation. We cannot create a full
+			// subscription as we don't have a full account to do so
+			// with. Send back our state of the reservation to allow
+			// the trader to recover (if the TX ever made it to the
+			// chain.
+			comms.err <- newAcctResNotCompletedError(res)
+			return
+		}
+
+		// There is no reservation, we can now fetch the account from
+		// the store. If the account does not exist, the trader might be
 		// trying to recover from a lost database state and is going
 		// through their keys to find accounts we know.
 		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
@@ -1536,4 +1605,26 @@ func parseRPCServerOrder(version uint32,
 	copy(multiSigKey[:], multiSigPubkey.SerializeCompressed())
 
 	return kit, nodeKey, nodeAddrs, multiSigKey, nil
+}
+
+// newAcctResNotCompletedError creates a new AcctResNotCompletedError error from
+// an account reservation.
+func newAcctResNotCompletedError(
+	res *account.Reservation) *auctioneer.AcctResNotCompletedError {
+
+	result := &auctioneer.AcctResNotCompletedError{
+		Value:      res.Value,
+		AcctKey:    res.TraderKeyRaw,
+		Expiry:     res.Expiry,
+		HeightHint: res.HeightHint,
+	}
+	copy(
+		result.AuctioneerKey[:],
+		res.AuctioneerKey.PubKey.SerializeCompressed(),
+	)
+	copy(
+		result.InitialBatchKey[:],
+		res.InitialBatchKey.SerializeCompressed(),
+	)
+	return result
 }

@@ -6,15 +6,21 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/loop/lsat"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
+	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -303,18 +309,25 @@ func testAccountSubscription(t *harnessTest) {
 // same seed the accounts originally were created with.
 func testServerAssistedAccountRecovery(t *harnessTest) {
 	ctxb := context.Background()
+	tokenID, err := t.trader.server.GetIdentity()
+	if err != nil {
+		t.Fatalf("could not get the trader's identity: %v", err)
+	}
+	idCtx := getTokenContext(tokenID)
 
 	// We need the current best block for the account expiry.
 	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
 	if err != nil {
 		t.Fatalf("could not query current block height: %v", err)
 	}
+	defaultExpiration := uint32(currentHeight) + 1000
 
-	// We create three accounts. One that is closed again, one that remains
-	// open and one that is pending open, waiting for on-chain confirmation.
+	// We create three full accounts. One that is closed again, one
+	// that remains open and one that is pending open, waiting for on-chain
+	// confirmation.
 	closed := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  2000000,
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue:  defaultAccountValue,
+		AccountExpiry: defaultExpiration,
 	})
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: closed.TraderKey,
@@ -324,12 +337,12 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		}},
 	})
 	open := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  2000000,
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue:  defaultAccountValue,
+		AccountExpiry: defaultExpiration,
 	})
 	pending, err := t.trader.InitAccount(ctxb, &clmrpc.InitAccountRequest{
-		AccountValue:  2000000,
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue:  defaultAccountValue,
+		AccountExpiry: defaultExpiration,
 	})
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)
@@ -338,7 +351,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
 	)
 	if err != nil {
-		t.t.Fatalf("open tx not published in time: %v", err)
+		t.Fatalf("open tx not published in time: %v", err)
 	}
 
 	// Also create an order for the open account so we can make sure it'll
@@ -371,6 +384,19 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	}
 	askNonce := list.Asks[0].Details.OrderNonce
 
+	// Now we also create two reservations. One we send funds to, the other
+	// we don't. The trader won't know of any of them but when recovering
+	// will still try to recover them. We need to use a dummy token for the
+	// first one, otherwise we couldn't register the second one.
+	resRecoveryFailed := addReservation(
+		getTokenContext(&lsat.TokenID{0x02}), t, t.lndHarness.Bob,
+		defaultAccountValue, defaultExpiration, false,
+	)
+	resRecoveryOk := addReservation(
+		idCtx, t, t.lndHarness.Bob,
+		defaultAccountValue, defaultExpiration, true,
+	)
+
 	// Now we simulate data loss by shutting down the trader and removing
 	// its data directory completely.
 	err = t.trader.stop()
@@ -395,16 +421,19 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 			len(accounts.Accounts), 0)
 	}
 
-	// Start the recovery process. We expect three accounts to be recovered.
+	// Start the recovery process. We expect four accounts to be recovered
+	// even though there were 5 accounts. One of them isn't counted because
+	// it should be in the database marked with the state of recovery
+	// failure.
 	recovery, err := t.trader.RecoverAccounts(
 		ctxb, &clmrpc.RecoverAccountsRequest{},
 	)
 	if err != nil {
 		t.Fatalf("could not recover accounts: %v", err)
 	}
-	if recovery.NumRecoveredAccounts != 3 {
+	if recovery.NumRecoveredAccounts != 4 {
 		t.Fatalf("unexpected number of recovered accounts. got %d "+
-			"wanted %d", recovery.NumRecoveredAccounts, 3)
+			"wanted %d", recovery.NumRecoveredAccounts, 4)
 	}
 
 	// Now make sure the accounts are all in the correct state.
@@ -414,10 +443,20 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("could not query accounts: %v", err)
 	}
-	if len(accounts.Accounts) != 3 {
+	if len(accounts.Accounts) != 5 {
 		t.Fatalf("unexpected number of accounts. got %d wanted %d",
-			len(accounts.Accounts), 3)
+			len(accounts.Accounts), 5)
 	}
+	assertTraderAccountState(
+		t.t, t.trader, resRecoveryFailed,
+		clmrpc.AccountState_RECOVERY_FAILED,
+	)
+	assertTraderAccountState(
+		t.t, t.trader, resRecoveryOk, clmrpc.AccountState_PENDING_OPEN,
+	)
+	assertTraderAccountState(
+		t.t, t.trader, closed.TraderKey, clmrpc.AccountState_CLOSED,
+	)
 	assertTraderAccountState(
 		t.t, t.trader, closed.TraderKey, clmrpc.AccountState_CLOSED,
 	)
@@ -429,14 +468,17 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		clmrpc.AccountState_PENDING_OPEN,
 	)
 
-	// Mine the rest of the blocks to make the pending account fully
-	// confirmed. Then check its state again.
+	// Mine the rest of the blocks to make the pending accounts fully
+	// confirmed. Then check their state again.
 	_ = mineBlocks(t, t.lndHarness, 5, 0)
 	assertTraderAccountState(
 		t.t, t.trader, pending.TraderKey, clmrpc.AccountState_OPEN,
 	)
+	assertTraderAccountState(
+		t.t, t.trader, resRecoveryOk, clmrpc.AccountState_OPEN,
+	)
 
-	// Finally, make sure we can close out both open accounts.
+	// Finally, make sure we can close out all open accounts.
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: open.TraderKey,
 		Outputs: []*clmrpc.Output{{
@@ -451,17 +493,16 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 			Address:  validTestAddr,
 		}},
 	})
+	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+		TraderKey: resRecoveryOk,
+		Outputs: []*clmrpc.Output{{
+			ValueSat: defaultAccountValue / 2,
+			Address:  validTestAddr,
+		}},
+	})
 
 	// Query the auctioneer directly about the status of the ask we
 	// submitted earlier.
-	tokenID, err := t.trader.server.GetIdentity()
-	if err != nil {
-		t.Fatalf("could not get the trader's identity: %v", err)
-	}
-	idStr := fmt.Sprintf("LSATID %x", tokenID)
-	idCtx := metadata.AppendToOutgoingContext(
-		ctxb, auth.HeaderAuthorization, idStr,
-	)
 	resp, err := t.auctioneer.OrderState(
 		idCtx, &clmrpc.ServerOrderStateRequest{OrderNonce: askNonce},
 	)
@@ -472,4 +513,100 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		t.Fatalf("unexpected order state, got %d wanted %d",
 			resp.State, clmrpc.OrderState_ORDER_CANCELED)
 	}
+}
+
+func addReservation(lsatCtx context.Context, t *harnessTest,
+	node *lntest.HarnessNode, value uint64, expiry uint32,
+	sendFunds bool) []byte {
+
+	ctxb := context.Background()
+
+	// Derive a new key for the reserved account so the trader will try to
+	// recover with it.
+	keyDesc, err := node.WalletKitClient.DeriveNextKey(
+		ctxb, &walletrpc.KeyReq{
+			KeyFamily: int32(clmscript.AccountKeyFamily),
+		},
+	)
+	if err != nil {
+		t.Fatalf("could not derive key for reservation: %v", err)
+	}
+
+	// Reserve the account with the auctioneer now and parse the returned
+	// keys so we can derive the account script later.
+	res, err := t.auctioneer.ReserveAccount(
+		lsatCtx, &clmrpc.ReserveAccountRequest{
+			AccountValue:  value,
+			TraderKey:     keyDesc.RawKeyBytes,
+			AccountExpiry: expiry,
+		},
+	)
+	if err != nil {
+		t.Fatalf("could not reserve account: %v", err)
+	}
+	traderKey, err := btcec.ParsePubKey(keyDesc.RawKeyBytes, btcec.S256())
+	if err != nil {
+		t.Fatalf("could not parse trader key: %v", err)
+	}
+	auctioneerKey, err := btcec.ParsePubKey(res.AuctioneerKey, btcec.S256())
+	if err != nil {
+		t.Fatalf("could not parse auctioneer key: %v", err)
+	}
+	batchKey, err := btcec.ParsePubKey(res.InitialBatchKey, btcec.S256())
+	if err != nil {
+		t.Fatalf("could not parse batch key: %v", err)
+	}
+
+	// To know the script we need to get the derived secret. Unfortunately
+	// the signer RPC of the lnd harness node isn't exposed so we have to
+	// open a new connection for that.
+	//
+	// TODO(guggero): Expose signer client in lnd test harness.
+	conn, err := node.ConnectRPC(true)
+	if err != nil {
+		t.Fatalf("could not connect to node RPC: %v", err)
+	}
+	signer := signrpc.NewSignerClient(conn)
+	keyRes, err := signer.DeriveSharedKey(ctxb, &signrpc.SharedKeyRequest{
+		EphemeralPubkey: res.AuctioneerKey,
+		KeyLoc:          keyDesc.KeyLoc,
+	})
+	if err != nil {
+		t.Fatalf("could not derive shared key: %v", err)
+	}
+
+	var sharedKey [32]byte
+	copy(sharedKey[:], keyRes.SharedKey)
+	script, err := clmscript.AccountScript(
+		expiry, traderKey, auctioneerKey, batchKey, sharedKey,
+	)
+	if err != nil {
+		t.Fatalf("could not derive account script: %v", err)
+	}
+
+	if !sendFunds {
+		return keyDesc.RawKeyBytes
+	}
+
+	_, err = t.lndHarness.Bob.WalletKitClient.SendOutputs(
+		ctxb, &walletrpc.SendOutputsRequest{
+			Outputs: []*signrpc.TxOut{{
+				Value:    int64(value),
+				PkScript: script,
+			}},
+			SatPerKw: 300,
+		},
+	)
+	if err != nil {
+		t.Fatalf("could not send to reserved account: %v", err)
+	}
+
+	return keyDesc.RawKeyBytes
+}
+
+func getTokenContext(token *lsat.TokenID) context.Context {
+	return metadata.AppendToOutgoingContext(
+		context.Background(), auth.HeaderAuthorization,
+		fmt.Sprintf("LSATID %x", token[:]),
+	)
 }

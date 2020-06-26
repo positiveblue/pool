@@ -197,11 +197,11 @@ func (m *Manager) Stop() {
 
 // ReserveAccount reserves a new account for a trader associated with the given
 // token ID.
-func (m *Manager) ReserveAccount(ctx context.Context, value btcutil.Amount,
-	tokenID lsat.TokenID) (*Reservation, error) {
+func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
+	tokenID lsat.TokenID, bestHeight uint32) (*Reservation, error) {
 
-	// First, make sure we have a valid account value.
-	if err := m.validateAccountValue(value); err != nil {
+	// First, make sure we have valid parameters to create the account.
+	if err := m.validateAccountParams(params, bestHeight); err != nil {
 		return nil, err
 	}
 
@@ -223,7 +223,8 @@ func (m *Manager) ReserveAccount(ctx context.Context, value btcutil.Amount,
 		return nil, err
 	}
 
-	log.Infof("Reserving new account for token %x", tokenID)
+	log.Infof("Reserving new account for token %x and key %x", tokenID,
+		params.TraderKey.SerializeCompressed())
 
 	// We'll retrieve the current per-batch key, which serves as the initial
 	// key we'll tweak the account's trader key with.
@@ -232,12 +233,25 @@ func (m *Manager) ReserveAccount(ctx context.Context, value btcutil.Amount,
 		return nil, err
 	}
 
+	// We'll account for the trader possibly being a few blocks ahead of us
+	// by padding our known best height.
+	heightHint := int64(bestHeight) + heightHintPadding
+	if heightHint < 0 {
+		heightHint = 0
+	}
+
+	var traderKeyRaw [33]byte
+	copy(traderKeyRaw[:], params.TraderKey.SerializeCompressed())
 	reservation = &Reservation{
+		Value: params.Value,
 		AuctioneerKey: &keychain.KeyDescriptor{
 			KeyLocator: LongTermKeyLocator,
 			PubKey:     m.longTermKey,
 		},
 		InitialBatchKey: batchKey,
+		Expiry:          params.Expiry,
+		TraderKeyRaw:    traderKeyRaw,
+		HeightHint:      uint32(heightHint),
 	}
 	err = m.cfg.Store.ReserveAccount(ctx, tokenID, reservation)
 	if err != nil {
@@ -249,8 +263,10 @@ func (m *Manager) ReserveAccount(ctx context.Context, value btcutil.Amount,
 
 // InitAccount handles a new account request from a trader identified by the
 // provided token ID.
-func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
+func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 	params *Parameters, bestHeight uint32) error {
+
+	tokenID := &currentID
 
 	// First, make sure we have valid parameters to create the account.
 	if err := m.validateAccountParams(params, bestHeight); err != nil {
@@ -270,12 +286,37 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	//   2. A trader is resubmitting a valid request to ensure we've
 	//      received it.
 	//      TODO(wilmer): Verify that we have the account on-disk?
-	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
+	reservation, err := m.cfg.Store.HasReservation(ctx, *tokenID)
 	if err == ErrNoReservation {
-		return nil
+		// In case the trader lost its state, including the LSAT, it
+		// might be possible that there still is a reservation with
+		// another token but the same key. We want to allow this so the
+		// trader can coop close the account after recovering it.
+		reservation, tokenID, err = m.cfg.Store.HasReservationForKey(
+			ctx, params.TraderKey,
+		)
+
+		// Still no reservation? Then we don't care.
+		if err == ErrNoReservation {
+			return nil
+		}
 	}
 	if err != nil {
 		return err
+	}
+
+	// Make sure the trader uses the same key, value and expiry as declared
+	// in the reservation.
+	var traderKeyRaw [33]byte
+	copy(traderKeyRaw[:], params.TraderKey.SerializeCompressed())
+	if reservation.TraderKeyRaw != traderKeyRaw {
+		return fmt.Errorf("trader key does not match reservation")
+	}
+	if reservation.Value != params.Value {
+		return fmt.Errorf("value does not match reservation")
+	}
+	if reservation.Expiry != params.Expiry {
+		return fmt.Errorf("expiry does not match reservation")
 	}
 
 	// With the reservation obtained, we'll need to derive the shared secret
@@ -303,13 +344,6 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 			derivedScript, params.Script)
 	}
 
-	// We'll account for the trader possibly being a few blocks ahead of us
-	// by padding our known best height.
-	heightHint := int64(bestHeight) + heightHintPadding
-	if heightHint < 0 {
-		heightHint = 0
-	}
-
 	// With all of the details gathered, we can persist the account to disk
 	// and wait for its confirmation on-chain.
 	//
@@ -318,14 +352,14 @@ func (m *Manager) InitAccount(ctx context.Context, tokenID lsat.TokenID,
 	// we have a transaction that funds the account. Once that's done, we'll
 	// complete the remaining field.
 	account := &Account{
-		TokenID:       tokenID,
+		TokenID:       *tokenID,
 		Value:         params.Value,
 		Expiry:        params.Expiry,
 		AuctioneerKey: reservation.AuctioneerKey,
 		BatchKey:      reservation.InitialBatchKey,
 		Secret:        secret,
 		State:         StatePendingOpen,
-		HeightHint:    uint32(heightHint),
+		HeightHint:    reservation.HeightHint,
 		OutPoint:      params.OutPoint,
 	}
 	copy(account.TraderKeyRaw[:], params.TraderKey.SerializeCompressed())

@@ -144,20 +144,21 @@ func (h *testHarness) initAccount() *Account {
 
 	ctx := context.Background()
 	tokenID := testTokenID
+
+	heightHint := uint32(1)
+	params := &Parameters{
+		Value:     testAccountValue,
+		Expiry:    uint32(maxAccountExpiry),
+		TraderKey: testTraderKey,
+	}
 	reservation, err := h.manager.ReserveAccount(
-		ctx, testAccountValue, tokenID,
+		ctx, params, tokenID, heightHint,
 	)
 	if err != nil {
 		h.t.Fatalf("unable to reserve account: %v", err)
 	}
 
-	heightHint := uint32(1)
-	params := &Parameters{
-		Value:     testAccountValue,
-		OutPoint:  zeroOutPoint,
-		TraderKey: testTraderKey,
-		Expiry:    uint32(maxAccountExpiry),
-	}
+	params.OutPoint = zeroOutPoint
 	script, err := clmscript.AccountScript(
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
@@ -291,6 +292,12 @@ func TestReserveAccount(t *testing.T) {
 	h.start()
 	defer h.stop()
 
+	params := &Parameters{
+		Value:     testAccountValue,
+		Expiry:    uint32(maxAccountExpiry),
+		TraderKey: testTraderKey,
+	}
+
 	// The trader with the associated token ID should not have an existing
 	// account reservation yet as it hasn't made one.
 	ctx := context.Background()
@@ -300,16 +307,17 @@ func TestReserveAccount(t *testing.T) {
 	}
 
 	// Try to create a reservation over an amount that is too big.
-	_, err = h.manager.ReserveAccount(ctx, testAccountValue*2, testTokenID)
+	params.Value = testAccountValue * 2
+	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
 	if err == nil {
 		t.Fatalf("expected error on reservation with invalid amount")
 	}
 
 	// Proceed to make a valid reservation now. We should be able to query
 	// for it.
-	if _, err := h.manager.ReserveAccount(
-		ctx, testAccountValue, testTokenID,
-	); err != nil {
+	params.Value = testAccountValue
+	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
+	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
 	h.assertNewReservation()
@@ -320,9 +328,8 @@ func TestReserveAccount(t *testing.T) {
 
 	// It's not possible to make a reservation for another account while
 	// one's already in flight.
-	if _, err := h.manager.ReserveAccount(
-		ctx, testAccountValue, testTokenID,
-	); err != nil {
+	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
+	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
 	h.assertExistingReservation()
@@ -343,9 +350,8 @@ func TestReserveAccount(t *testing.T) {
 	}
 
 	// A new reservation should be made.
-	if _, err := h.manager.ReserveAccount(
-		ctx, testAccountValue, testTokenID,
-	); err != nil {
+	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
+	if err != nil {
 		t.Fatalf("unable to reserve account: %v", err)
 	}
 	h.assertNewReservation()
@@ -372,6 +378,46 @@ func TestNewAccount(t *testing.T) {
 			TxOut:   []*wire.TxOut{accountOutput},
 		},
 	})
+}
+
+// TestAccountDifferentTraderKey makes sure that an account initialization is
+// rejected if the trader key doesn't match the reservation.
+func TestAccountDifferentTraderKey(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	params := &Parameters{
+		Value:     testAccountValue,
+		Expiry:    uint32(maxAccountExpiry),
+		TraderKey: testTraderKey,
+	}
+
+	ctx := context.Background()
+	tokenID := testTokenID
+	reservation, err := h.manager.ReserveAccount(ctx, params, tokenID, 1234)
+	if err != nil {
+		h.t.Fatalf("unable to reserve account: %v", err)
+	}
+
+	heightHint := uint32(1)
+	params.OutPoint = zeroOutPoint
+	script, err := clmscript.AccountScript(
+		params.Expiry, testAuctioneerKey,
+		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
+		sharedSecret,
+	)
+	if err != nil {
+		h.t.Fatalf("unable to construct new account script: %v", err)
+	}
+	params.Script = script
+
+	err = h.manager.InitAccount(ctx, tokenID, params, heightHint)
+	if err == nil {
+		h.t.Fatalf("expected account initialization to fail")
+	}
 }
 
 // TestAccountInvalidChainOutput ensures that we detect an account as invalid if
