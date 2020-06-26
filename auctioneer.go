@@ -1191,7 +1191,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			// we can fix the issue to re-submit.
 			if result.Err != nil {
 				log.Warnf("Encountered error during Batch(%x) "+
-					"execution: %T", a.pendingBatchID[:],
+					"execution: %v", a.pendingBatchID[:],
 					result.Err)
 
 				switch exeErr := result.Err.(type) {
