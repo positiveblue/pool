@@ -30,7 +30,7 @@ var (
 
 	testAccount = account.Account{
 		TraderKeyRaw:  toRawKey(testTraderKey),
-		Value:         1337,
+		Value:         200000,
 		Expiry:        100,
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateOpen,
@@ -101,7 +101,13 @@ func TestBookPrepareOrder(t *testing.T) {
 		expectedErr: "signature not valid for public key",
 		run: func() error {
 			signer.shouldVerify = false
-			o := &order.Ask{}
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt: 100000,
+					},
+				},
+			}
 			return book.PrepareOrder(ctxb, o)
 		},
 	}, {
@@ -110,6 +116,9 @@ func TestBookPrepareOrder(t *testing.T) {
 		run: func() error {
 			o := &order.Ask{
 				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt: 100000,
+					},
 					MaxDuration: 0,
 				},
 			}
@@ -121,6 +130,9 @@ func TestBookPrepareOrder(t *testing.T) {
 		run: func() error {
 			o := &order.Ask{
 				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt: 100000,
+					},
 					MaxDuration: 1235,
 				},
 			}
@@ -132,7 +144,25 @@ func TestBookPrepareOrder(t *testing.T) {
 		run: func() error {
 			o := &order.Bid{
 				Bid: orderT.Bid{
+					Kit: orderT.Kit{
+						Amt: 100000,
+					},
 					MinDuration: 0,
+				},
+			}
+			return book.PrepareOrder(ctxb, o)
+		},
+	}, {
+		name:        "zero amount",
+		expectedErr: "order amount must be multiple of",
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:     0,
+						AcctKey: toRawKey(testTraderKey),
+					},
+					MaxDuration: 1024,
 				},
 			}
 			return book.PrepareOrder(ctxb, o)
@@ -143,6 +173,9 @@ func TestBookPrepareOrder(t *testing.T) {
 		run: func() error {
 			o := &order.Bid{
 				Bid: orderT.Bid{
+					Kit: orderT.Kit{
+						Amt: 100000,
+					},
 					MinDuration: 1235,
 				},
 			}
@@ -155,7 +188,7 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     2000,
+						Amt:     500000,
 						AcctKey: toRawKey(testTraderKey),
 					},
 					MaxDuration: 1024,
@@ -170,7 +203,7 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     100,
+						Amt:     100000,
 						AcctKey: toRawKey(testTraderKey),
 					},
 					MaxDuration: 1024,
