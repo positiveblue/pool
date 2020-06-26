@@ -1091,6 +1091,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// matching making as long as the prior state wasn't just the
 		// MatchMakingState.
 		if event.Trigger() == BatchTickEvent && !a.batchRetry {
+			// Before starting a new batch, we'll restore any orders
+			// we removed due to errors in a previous run, as they
+			// may be eligible again now.
+			if err := a.restoreIneligibleOrders(); err != nil {
+				return 0, err
+			}
+
 			// As we're now attempting to perform match making,
 			// we'll pause the order book subscription so we only
 			// look at the set of orders created before now.
@@ -1242,13 +1249,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		if err != nil {
 			return 0, fmt.Errorf("unable to publish batch "+
 				"tx: %v", err)
-		}
-
-		// Now that the batch has been finalized, we'll restore any
-		// orders we removed due to errors, as they may be eligible
-		// again for the batch when the ticker ticks again.
-		if err := a.restoreIneligibleOrders(); err != nil {
-			return 0, err
 		}
 
 		// Now that the BET has been confirmed, we'll reload the set of
