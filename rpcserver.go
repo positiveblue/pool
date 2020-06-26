@@ -938,6 +938,19 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
+			// If we don't have a signature for this particular
+			// trader, we can't blindly de-multi-plex this
+			// particular message type to all accounts of the
+			// connected daemon, some of them might not be involved
+			// in the batch in question. Otherwise the auctioneer
+			// will try to extract the signature for an account that
+			// was not signed with.
+			key := hex.EncodeToString(subscribedTrader.AccountKey[:])
+			_, ok := sigs[key]
+			if !ok {
+				continue
+			}
+
 			traderMsg := &venue.TraderSignMsg{
 				BatchID: msg.Sign.BatchId,
 				Trader:  subscribedTrader,
