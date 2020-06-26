@@ -31,7 +31,8 @@ func testBatchExecution(t *harnessTest) {
 	}
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	lndArgs := []string{"--maxpendingchannels=2"}
+	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
 	if err != nil {
 		t.Fatalf("unable to set up charlie: %v", err)
 	}
@@ -44,7 +45,8 @@ func testBatchExecution(t *harnessTest) {
 	}
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
-	// for both traders.
+	// for both traders. To test the message multi-plexing between token IDs
+	// and accounts, we add a secondary account to the second trader.
 	account1 := openAccountAndAssert(
 		t, t.trader, &clmrpc.InitAccountRequest{
 			AccountValue:  defaultAccountValue,
@@ -52,6 +54,12 @@ func testBatchExecution(t *harnessTest) {
 		},
 	)
 	account2 := openAccountAndAssert(
+		t, secondTrader, &clmrpc.InitAccountRequest{
+			AccountValue:  defaultAccountValue,
+			AccountExpiry: uint32(currentHeight) + 1000,
+		},
+	)
+	account3 := openAccountAndAssert(
 		t, secondTrader, &clmrpc.InitAccountRequest{
 			AccountValue:  defaultAccountValue,
 			AccountExpiry: uint32(currentHeight) + 1000,
@@ -77,7 +85,20 @@ func testBatchExecution(t *harnessTest) {
 		uint32(order.CurrentVersion),
 	)
 	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
+		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	// From the secondary account of the second trader, we also create an
+	// order to buy some units. The order should also make it into the same
+	// batch and the second trader should sign a message for both orders at
+	// the same time.
+	bidAmt2 := btcutil.Amount(400_000)
+	_, err = submitBidOrder(
+		secondTrader, account3.TraderKey, 100, bidAmt2, dayInBlocks,
+		uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("could not submit bid order: %v", err)
 	}
 
 	// Let's kick the auctioneer now to try and create a batch.
@@ -115,6 +136,9 @@ func testBatchExecution(t *harnessTest) {
 	)
 	assertPendingChannel(
 		t, charlie, bidAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt2, false, t.trader.cfg.LndNode.PubKey,
 	)
 
 	// We'll now mine a block to confirm the channel. We should find the
@@ -157,11 +181,19 @@ func testBatchExecution(t *harnessTest) {
 	}
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
-		uint32(bestHeight)+dayInBlocks,
+		charlie.PubKey, uint32(bestHeight)+dayInBlocks,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt2), *batchTXID,
+		charlie.PubKey, uint32(bestHeight)+dayInBlocks,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *batchTXID,
-		uint32(bestHeight)+dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, uint32(bestHeight)+dayInBlocks,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt2), *batchTXID,
+		t.trader.cfg.LndNode.PubKey, uint32(bestHeight)+dayInBlocks,
 	)
 
 	// To make sure the channels works as expected, we'll send a payment
@@ -195,16 +227,16 @@ func testBatchExecution(t *harnessTest) {
 	assertNoOrders(t, secondTrader)
 
 	// The party with the sell orders open should still have a single open
-	// ask order with 700k unfilled (7 units).
-	assertAskOrderState(t, t.trader, 7, ask1Nonce)
+	// ask order with 300k unfilled (3 units).
+	assertAskOrderState(t, t.trader, 3, ask1Nonce)
 
 	// We'll now do an additional round to ensure that we're able to
 	// fulfill back to back batches. In this round, Charlie will submit
-	// another order for 7 units, which should be matched with Bob's
+	// another order for 3 units, which should be matched with Bob's
 	// remaining Ask order that should now have zero units remaining.
-	bidAmt2 := btcutil.Amount(700_000)
+	bidAmt3 := btcutil.Amount(300_000)
 	_, err = submitBidOrder(
-		secondTrader, account2.TraderKey, 100, bidAmt2, dayInBlocks,
+		secondTrader, account2.TraderKey, 100, bidAmt3, dayInBlocks,
 		uint32(order.CurrentVersion),
 	)
 	if err != nil {
@@ -236,10 +268,10 @@ func testBatchExecution(t *harnessTest) {
 	}
 	batchTXID = txids[0]
 	assertPendingChannel(
-		t, t.trader.cfg.LndNode, bidAmt2, true, charlie.PubKey,
+		t, t.trader.cfg.LndNode, bidAmt3, true, charlie.PubKey,
 	)
 	assertPendingChannel(
-		t, charlie, bidAmt2, false, t.trader.cfg.LndNode.PubKey,
+		t, charlie, bidAmt3, false, t.trader.cfg.LndNode.PubKey,
 	)
 	blocks = mineBlocks(t, t.lndHarness, 1, 1)
 	assertTxInBlock(t, blocks[0], batchTXID)
