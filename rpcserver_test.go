@@ -183,7 +183,6 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	var acctID matching.AccountID
 	copy(acctID[:], testAccount.TraderKeyRaw[:])
 	comms.toTrader <- &venue.PrepareMsg{
-		AcctKey:      acctID,
 		ExecutionFee: order.NewLinearFeeSchedule(1, 100),
 	}
 	select {

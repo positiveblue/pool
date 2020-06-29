@@ -75,6 +75,12 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	case ask.AcctKey == bid.AcctKey:
 		return NullQuote, false
 
+	// Ensure we don't match any orders of the same node. It doesn't make
+	// sense to open a channel to one self, and the protocol doesn't allow
+	// it anyway.
+	case ask.NodeKey == bid.NodeKey:
+		return NullQuote, false
+
 	// If the highest bid is below the lowest ask, then no match at all is
 	// possible.
 	case bid.FixedRate < ask.FixedRate:

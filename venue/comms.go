@@ -1,6 +1,7 @@
 package venue
 
 import (
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
@@ -18,6 +19,12 @@ type (
 // channels used to send messages back and forth.
 type ActiveTrader struct {
 	*matching.Trader
+
+	// TokenID is the unique identifier of the trader's daemon. One daemon
+	// can have multiple accounts and therefore map to multiple "traders"
+	// from the point of view of the venue. But one running daemon only has
+	// one LSAT per connection.
+	TokenID lsat.TokenID
 
 	// CommLine is the active communication line between the trader and the
 	// auctioneer.

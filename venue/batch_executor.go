@@ -29,16 +29,13 @@ import (
 // ExecutionMsg is an interface that describes a message sent outbound from the
 // executor to a trader.
 type ExecutionMsg interface {
-	// Dest is the target trader that should be sent this message.
-	Dest() matching.AccountID
+	// Batch returns the target batch ID this message refers to.
+	Batch() order.BatchID
 }
 
 // PrepareMsg is the first message the executor sends to all active traders.
 // All traders should then send an TraderAcceptMsg in return.
 type PrepareMsg struct {
-	// AcctKey is the account key of the target trader.
-	AcctKey matching.AccountID
-
 	// MatchedOrders is the set of orders that a trader was matched with in
 	// the batch for the trader. As we support partial matches, this maps
 	// an order nonce to all the other orders it was matched with in the
@@ -52,9 +49,9 @@ type PrepareMsg struct {
 	// batch.
 	ChargedAccounts []matching.AccountDiff
 
-	// AccountOutPoint is the new outpoint of user's account on the new
-	// batch execution transaction.
-	AccountOutPoint wire.OutPoint
+	// AccountOutPoints is the list of new outpoint of user's accounts on
+	// the new batch execution transaction.
+	AccountOutPoints []wire.OutPoint
 
 	// ExecutionFee describes the execution fee used to craft this batch.
 	ExecutionFee orderT.FeeSchedule
@@ -68,17 +65,17 @@ type PrepareMsg struct {
 
 	// BatchID is the serialized compressed pubkey that comprises the batch
 	// ID.
-	BatchID [33]byte
+	BatchID order.BatchID
 
 	// BatchVersion is the batch version of this batch.
 	BatchVersion uint32
 }
 
-// Dest is the target trader that should be sent this message.
+// Batch returns the target batch ID this message refers to.
 //
 // NOTE: This method is a part of the ExecutionMsg interface.
-func (m *PrepareMsg) Dest() matching.AccountID {
-	return m.AcctKey
+func (m *PrepareMsg) Batch() order.BatchID {
+	return m.BatchID
 }
 
 // A compile-time constraint to ensure PrepareMsg meets the ExecutionMsg
@@ -91,17 +88,14 @@ var _ ExecutionMsg = (*PrepareMsg)(nil)
 type SignBeginMsg struct {
 	// BatchID is the serialized compressed pubkey that comprises the batch
 	// ID.
-	BatchID [33]byte
-
-	// AcctKey is the target of this message.
-	AcctKey matching.AccountID
+	BatchID order.BatchID
 }
 
-// Dest is the target trader that should be sent this message.
+// Batch returns the target batch ID this message refers to.
 //
 // NOTE: This method is a part of the ExecutionMsg interface.
-func (s *SignBeginMsg) Dest() matching.AccountID {
-	return s.AcctKey
+func (m *SignBeginMsg) Batch() order.BatchID {
+	return m.BatchID
 }
 
 // A compile-time constraint to ensure SignBeginMsg meets the ExecutionMsg
@@ -111,21 +105,18 @@ var _ ExecutionMsg = (*SignBeginMsg)(nil)
 // FinalizeMsg is the final message sent in the execution flow. We send it once
 // the batch has valid signatures, and have been committed to disk.
 type FinalizeMsg struct {
-	// AcctKey is the target trader for this message.
-	AcctKey matching.AccountID
-
 	// BatchID is the batch ID to be finalized.
-	BatchID [33]byte
+	BatchID order.BatchID
 
 	// BatchTxID is the serialized batch txid.
 	BatchTxID chainhash.Hash
 }
 
-// Dest is the target trader that should be sent this message.
+// Batch returns the target batch ID this message refers to.
 //
 // NOTE: This method is a part of the ExecutionMsg interface.
-func (m *FinalizeMsg) Dest() matching.AccountID {
-	return m.AcctKey
+func (m *FinalizeMsg) Batch() order.BatchID {
+	return m.BatchID
 }
 
 // A compile-time constraint to ensure FinalizeMsg meets the ExecutionMsg
@@ -143,7 +134,7 @@ type TraderMsg interface {
 // batch.
 type TraderAcceptMsg struct {
 	// BatchID is the batch ID of the pending batch.
-	BatchID []byte
+	BatchID order.BatchID
 
 	// Trader is the trader that's accepting this batch.
 	Trader *ActiveTrader
@@ -166,7 +157,7 @@ func (m *TraderAcceptMsg) Src() matching.AccountID {
 // batch.
 type TraderRejectMsg struct {
 	// BatchID is the batch ID of the pending batch.
-	BatchID []byte
+	BatchID order.BatchID
 
 	// Trader is the trader that's rejecting this batch.
 	Trader *ActiveTrader

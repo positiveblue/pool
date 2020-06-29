@@ -652,8 +652,8 @@ func traderOutputScript(t *harnessTest, traderNode *lntest.HarnessNode) []byte {
 	return addrScript
 }
 
-func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode, chanAmt btcutil.Amount,
-	initiator bool, chanPeer [33]byte) {
+func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode,
+	chanAmt btcutil.Amount, initiator bool, chanPeer [33]byte) {
 
 	req := &lnrpc.PendingChannelsRequest{}
 	err := wait.NoError(func() error {
@@ -666,19 +666,28 @@ func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode, chanAmt btcu
 			return fmt.Errorf("no pending channels")
 		}
 
-		pendingChan := resp.PendingOpenChannels[0]
+		var pendingChan *lnrpc.PendingChannelsResponse_PendingOpenChannel
+		for _, c := range resp.PendingOpenChannels {
+			if c.Channel.Capacity != int64(chanAmt) {
+				continue
+			}
+
+			chanPeerStr := hex.EncodeToString(chanPeer[:])
+			if c.Channel.RemoteNodePub != chanPeerStr {
+				continue
+			}
+
+			pendingChan = c
+			break
+		}
+
+		if pendingChan == nil {
+			return fmt.Errorf("channel with capacity %v and peer "+
+				"%x not found in pending channels", chanAmt,
+				chanPeer)
+		}
+
 		channel := pendingChan.Channel
-		if channel.Capacity != int64(chanAmt) {
-			return fmt.Errorf("wrong capacity: expected %v, got %v",
-				int64(chanAmt), channel.Capacity)
-		}
-
-		chanPeerStr := hex.EncodeToString(chanPeer[:])
-		if channel.RemoteNodePub != chanPeerStr {
-			return fmt.Errorf("wrong peer: expected %v, got %v",
-				chanPeerStr, channel.RemoteNodePub)
-		}
-
 		switch {
 		case channel.Initiator == lnrpc.Initiator_INITIATOR_LOCAL &&
 			!initiator:
@@ -788,7 +797,8 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 }
 
 func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
-	chanAmt int64, fundingTXID chainhash.Hash, thawHeight uint32) { // nolint:unparam
+	chanAmt int64, fundingTXID chainhash.Hash, chanPeer [33]byte,
+	thawHeight uint32) { // nolint:unparam
 
 	req := &lnrpc.ListChannelsRequest{}
 	err := wait.NoError(func() error {
@@ -801,18 +811,34 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 			return fmt.Errorf("no pending channels")
 		}
 
-		channel := resp.Channels[0]
-		if !channel.Active {
-			return fmt.Errorf("channel not active")
-		}
-		if channel.Capacity != chanAmt {
-			return fmt.Errorf("wrong capacity: expected %v, "+
-				"got %v", channel.Capacity, chanAmt)
+		var pendingChan *lnrpc.Channel
+		for _, c := range resp.Channels {
+			if c.Capacity != chanAmt {
+				continue
+			}
+
+			chanPeerStr := hex.EncodeToString(chanPeer[:])
+			if c.RemotePubkey != chanPeerStr {
+				continue
+			}
+
+			pendingChan = c
+			break
 		}
 
-		if !strings.Contains(channel.ChannelPoint, fundingTXID.String()) {
+		if pendingChan == nil {
+			return fmt.Errorf("channel with capacity %v and peer "+
+				"%x not found in pending channels", chanAmt,
+				chanPeer)
+		}
+
+		if !pendingChan.Active {
+			return fmt.Errorf("channel not active")
+		}
+
+		if !strings.Contains(pendingChan.ChannelPoint, fundingTXID.String()) {
 			return fmt.Errorf("wrong output: %v, should have "+
-				"hash %v", channel.ChannelPoint, fundingTXID.String())
+				"hash %v", pendingChan.ChannelPoint, fundingTXID.String())
 		}
 
 		// TODO(roasbeef): restore after all nodes wait for lnd to be

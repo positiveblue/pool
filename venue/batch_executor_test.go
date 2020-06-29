@@ -3,6 +3,7 @@ package venue
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -116,6 +118,7 @@ func (e *executorTestHarness) RegisterTrader(acct *account.Account) {
 			Send: outgoingChan,
 			Recv: make(IncomingMsgLine, 1),
 		},
+		TokenID: randomTokenID(),
 	}
 
 	err := e.executor.RegisterTrader(activeTrader)
@@ -633,4 +636,10 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	testCtx.AssertStateTransitions(BatchComplete)
 
 	// TODO(roasbeef): assert every input of batch transaction valid?
+}
+
+func randomTokenID() lsat.TokenID {
+	var token lsat.TokenID
+	_, _ = rand.Read(token[:])
+	return token
 }

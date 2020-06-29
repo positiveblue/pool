@@ -163,6 +163,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	b.FixedRate = genCfg.rate(r)
 
 	copy(b.Bid.Kit.AcctKey[:], acct.TraderKeyRaw[:])
+	b.NodeKey = b.Bid.Kit.AcctKey
 
 	// If the trader's account doesn't have at least the total amount of
 	// the order, then we'll clamp the value.
@@ -201,6 +202,7 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	a.FixedRate = genCfg.rate(r)
 
 	copy(a.Ask.Kit.AcctKey[:], acct.TraderKeyRaw[:])
+	a.NodeKey = a.Ask.Kit.AcctKey
 
 	// If the trader's account doesn't have at least the total amount of
 	// the order, then we'll clamp the value.

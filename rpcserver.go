@@ -875,10 +875,11 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			Send: comms.toTrader,
 			Recv: comms.toServer,
 		}
-		trader := matching.NewTraderFromAccount(acct)
+		venueTrader := matching.NewTraderFromAccount(acct)
 		activeTrader := &venue.ActiveTrader{
 			CommLine: commLine,
-			Trader:   &trader,
+			Trader:   &venueTrader,
+			TokenID:  trader.Lsat,
 		}
 
 		comms.newSub <- activeTrader
@@ -897,8 +898,10 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
+			var batchID orderT.BatchID
+			copy(batchID[:], msg.Accept.BatchId)
 			traderMsg := &venue.TraderAcceptMsg{
-				BatchID: msg.Accept.BatchId,
+				BatchID: batchID,
 				Trader:  subscribedTrader,
 				Orders:  nonces,
 			}
@@ -909,8 +912,10 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 	case *clmrpc.ClientAuctionMessage_Reject:
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
+			var batchID orderT.BatchID
+			copy(batchID[:], msg.Reject.BatchId)
 			traderMsg := &venue.TraderRejectMsg{
-				BatchID: msg.Reject.BatchId,
+				BatchID: batchID,
 				Trader:  subscribedTrader,
 				Reason:  msg.Reject.Reason,
 			}
@@ -933,6 +938,19 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
+			// If we don't have a signature for this particular
+			// trader, we can't blindly de-multi-plex this
+			// particular message type to all accounts of the
+			// connected daemon, some of them might not be involved
+			// in the batch in question. Otherwise the auctioneer
+			// will try to extract the signature for an account that
+			// was not signed with.
+			key := hex.EncodeToString(subscribedTrader.AccountKey[:])
+			_, ok := sigs[key]
+			if !ok {
+				continue
+			}
+
 			traderMsg := &venue.TraderSignMsg{
 				BatchID: msg.Sign.BatchId,
 				Trader:  subscribedTrader,
@@ -1051,23 +1069,35 @@ func (s *rpcServer) sendToTrader(
 			log.Debugf("Order(%x) matched w/ %v orders",
 				traderOrderNonce[:], len(m.MatchedOrders))
 
+			nonceStr := hex.EncodeToString(
+				traderOrderNonce[:],
+			)
+			matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
+
 			// As we support partial patches, this trader nonce
 			// might be matched with a set of other orders, so
 			// we'll unroll this here now.
-			for _, order := range orderMatches {
-				isAsk := order.Asker.AccountKey == msg.Dest()
-				nonceStr := hex.EncodeToString(
-					traderOrderNonce[:],
-				)
-				unitsFilled := order.Details.Quote.UnitsMatched
+			for _, o := range orderMatches {
+				// Find out if the recipient of the message is
+				// the asker or bidder. Traders with the same
+				// token can't be matched so we know that if the
+				// asker's account is in the list of charged
+				// accounts, the trader is the asker.
+				isAsk := false
+				for _, acct := range m.ChargedAccounts {
+					acctKey := acct.StartingState.AccountKey
+					if o.Asker.AccountKey == acctKey {
+						isAsk = true
+						break
+					}
+				}
 
-				ask, bid := order.Details.Ask, order.Details.Bid
-
-				matchedOrders[nonceStr] = &clmrpc.MatchedOrder{}
+				unitsFilled := o.Details.Quote.UnitsMatched
 
 				// If the client had their bid matched, then
 				// we'll send over the ask information and the
 				// other way around if it's a bid.
+				ask, bid := o.Details.Ask, o.Details.Bid
 				if !isAsk {
 					matchedOrders[nonceStr].MatchedAsks = append(
 						matchedOrders[nonceStr].MatchedAsks,
@@ -1086,14 +1116,13 @@ func (s *rpcServer) sendToTrader(
 		// we'll generate a similar RPC account diff so they can verify
 		// their portion of the batch.
 		var accountDiffs []*clmrpc.AccountDiff
-		for _, acctDiff := range m.ChargedAccounts {
-			acctDiff, err := marshallAccountDiff(acctDiff, m.AccountOutPoint)
+		for idx, acctDiff := range m.ChargedAccounts {
+			acctDiff, err := marshallAccountDiff(
+				acctDiff, m.AccountOutPoints[idx],
+			)
 			if err != nil {
 				return err
 			}
-
-			// TODO(roasbeef): only assumes one acct per user rn,
-			// as the outpoint re-used above
 
 			accountDiffs = append(accountDiffs, acctDiff)
 		}

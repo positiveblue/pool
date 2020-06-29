@@ -11,11 +11,22 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
+
+// multiplexMessage is a helper struct that holds all data that is multi-plexed
+// from multiple venue traders to a single trader daemon/connection identified
+// by an LSAT.
+type multiplexMessage struct {
+	commLine         *DuplexLine
+	matchedOrders    map[orderT.Nonce][]*matching.MatchedOrder
+	chargedAccounts  []matching.AccountDiff
+	accountOutpoints []wire.OutPoint
+}
 
 // environment is the running state of the state machine. The state machine
 // defined a state step method which takes the current state, a trigger and the
@@ -147,16 +158,48 @@ func (e *environment) sendPrepareMsg() error {
 		return err
 	}
 
-	// For each trader, we'll send out a prepare message that includes all
-	// the matched orders it belongs to, along with the other required
-	// information.
+	// What the venue sees as a trader is only one account of a trader's
+	// daemon that might manage multiple accounts. The prepare message must
+	// only be sent once per daemon/connection, otherwise the daemon will
+	// only sign for the latest message. To identify which accounts (venue
+	// "traders") belong together, we can use the LSAT ID.
+	var (
+		msgs = make(map[lsat.TokenID]*multiplexMessage)
+		msg  *multiplexMessage
+		ok   bool
+	)
+
+	// For each venue trader, we'll collect all the matched orders it
+	// belongs to, along with the other required information.
 	for _, trader := range e.traders {
+		msg, ok = msgs[trader.TokenID]
+		if !ok {
+			// We haven't seen the daemon with this token yet.
+			// Create a new multi-plex message now. All venue
+			// traders for this token are hooked up to the same comm
+			// line so we only need to pick one, so we pick the
+			// first one we come across.
+			msg = &multiplexMessage{
+				commLine: trader.CommLine,
+				matchedOrders: make(
+					map[orderT.Nonce][]*matching.MatchedOrder,
+				),
+			}
+			msgs[trader.TokenID] = msg
+		}
+
 		traderKey := trader.AccountKey
+		msg.chargedAccounts = append(
+			msg.chargedAccounts, accountDiffs[traderKey],
+		)
+		acctOutpoint, _ := e.exeCtx.AcctOutputForTrader(traderKey)
+		msg.accountOutpoints = append(
+			msg.accountOutpoints, acctOutpoint,
+		)
 
 		// For a given trader, we'll filter out all the orders that it
 		// belongs to, and also update our map tracking the order for
 		// each trader.
-		matchedOrders := make(map[orderT.Nonce][]*matching.MatchedOrder)
 		e.traderToOrders = make(map[matching.AccountID][]orderT.Nonce)
 		for _, order := range e.batch.Orders {
 			order := order
@@ -176,8 +219,8 @@ func (e *environment) sendPrepareMsg() error {
 				continue
 			}
 
-			matchedOrders[orderNonce] = append(
-				matchedOrders[orderNonce], &order,
+			msg.matchedOrders[orderNonce] = append(
+				msg.matchedOrders[orderNonce], &order,
 			)
 
 			e.traderToOrders[traderKey] = append(
@@ -185,24 +228,21 @@ func (e *environment) sendPrepareMsg() error {
 				orderNonce,
 			)
 		}
+	}
 
-		// TODO(roasbeef): need to multi-plex and combine all the
-		// prepare messages for a group of traders
-		acctOutpoint, _ := e.exeCtx.AcctOutputForTrader(traderKey)
+	// Send out the batched messages now.
+	for _, msg := range msgs {
 		select {
-		case trader.CommLine.Send <- &PrepareMsg{
-			AcctKey:       trader.AccountKey,
-			MatchedOrders: matchedOrders,
-			ClearingPrice: e.batch.ClearingPrice,
-			ChargedAccounts: []matching.AccountDiff{
-				accountDiffs[trader.AccountKey],
-			},
-			AccountOutPoint: acctOutpoint,
-			ExecutionFee:    e.exeFee,
-			BatchTx:         batchTxBuf.Bytes(),
-			FeeRate:         e.feeRate,
-			BatchID:         e.batchID,
-			BatchVersion:    e.batchVersion,
+		case msg.commLine.Send <- &PrepareMsg{
+			MatchedOrders:    msg.matchedOrders,
+			ClearingPrice:    e.batch.ClearingPrice,
+			ChargedAccounts:  msg.chargedAccounts,
+			AccountOutPoints: msg.accountOutpoints,
+			ExecutionFee:     e.exeFee,
+			BatchTx:          batchTxBuf.Bytes(),
+			FeeRate:          e.feeRate,
+			BatchID:          e.batchID,
+			BatchVersion:     e.batchVersion,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
@@ -217,11 +257,20 @@ func (e *environment) sendSignBeginMsg() error {
 	log.Infof("Sending OrderSignBegin to %v traders for batch=%x",
 		len(e.traders), e.batchID[:])
 
+	// What the venue sees as a trader is only one account of a trader's
+	// daemon that might manage multiple accounts. The sign message must
+	// only be sent once per daemon/connection, otherwise the daemon will
+	// only sign for the latest message. To identify which accounts (venue
+	// "traders") belong together, we can use the LSAT ID.
+	msgs := make(map[lsat.TokenID]*DuplexLine)
 	for _, trader := range e.traders {
+		msgs[trader.TokenID] = trader.CommLine
+	}
+
+	for _, line := range msgs {
 		select {
-		case trader.CommLine.Send <- &SignBeginMsg{
+		case line.Send <- &SignBeginMsg{
 			BatchID: e.batchID,
-			AcctKey: trader.AccountKey,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
@@ -236,10 +285,19 @@ func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 	log.Infof("Sending Finalize to %v traders for batch=%x",
 		len(e.traders), e.batchID[:])
 
+	// What the venue sees as a trader is only one account of a trader's
+	// daemon that might manage multiple accounts. The finalize message must
+	// only be sent once per daemon/connection, otherwise the daemon will
+	// only sign for the latest message. To identify which accounts (venue
+	// "traders") belong together, we can use the LSAT ID.
+	msgs := make(map[lsat.TokenID]*DuplexLine)
 	for _, trader := range e.traders {
+		msgs[trader.TokenID] = trader.CommLine
+	}
+
+	for _, line := range msgs {
 		select {
-		case trader.CommLine.Send <- &FinalizeMsg{
-			AcctKey:   trader.AccountKey,
+		case line.Send <- &FinalizeMsg{
 			BatchID:   e.batchID,
 			BatchTxID: batchTxID,
 		}:

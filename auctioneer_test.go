@@ -1098,10 +1098,6 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// should now be a part of the call market.
 	testHarness.AssertOrdersPresent(newOrders...)
 
-	// Also all the orders that we removed earlier should now also be once
-	// again part of the call market.
-	testHarness.AssertOrdersPresent(missingNonces...)
-
 	// We'll now tick again, but this time with an "empty" call market to
 	// ensure we can process another tick right after processing a batch.
 	testHarness.QueueNoMarketClear()
@@ -1111,5 +1107,10 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// submit state as we can't make a market with things as is, then make
 	// no further state transitions.
 	testHarness.AssertStateTransitions(MatchMakingState, OrderSubmitState)
+
+	// Also all the orders that we removed earlier should now also be once
+	// again part of the call market.
+	testHarness.AssertOrdersPresent(missingNonces...)
+
 	testHarness.AssertNoStateTransitions()
 }
