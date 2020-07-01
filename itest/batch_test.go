@@ -11,6 +11,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 )
@@ -101,7 +102,68 @@ func testBatchExecution(t *harnessTest) {
 		t.Fatalf("could not submit bid order: %v", err)
 	}
 
+	// To ensure the venue is aware of account deposits/withdrawals, we'll
+	// process a deposit for the account behind the ask.
+	depositResp, err := t.trader.DepositAccount(ctx, &clmrpc.DepositAccountRequest{
+		TraderKey:   account1.TraderKey,
+		AmountSat:   100_000,
+		SatPerVbyte: 1,
+	})
+	if err != nil {
+		t.Fatalf("could not deposit into account: %v", err)
+	}
+
+	// We should expect to see the transaction causing the deposit.
+	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("deposit transaction not found in mempool: %v", err)
+	}
+	if !txids[0].IsEqual(depositTxid) {
+		t.Fatalf("found mempool transaction %v instead of %v",
+			txids[0], depositTxid)
+	}
+
+	// Let's go ahead and confirm it. The account should remain in
+	// PendingUpdate as it hasn't met all of the required confirmations.
+	block := mineBlocks(t, t.lndHarness, 1, 1)[0]
+	_ = assertTxInBlock(t, block, depositTxid)
+	assertAuctioneerAccountState(
+		t, depositResp.Account.TraderKey, account.StatePendingUpdate,
+	)
+
 	// Let's kick the auctioneer now to try and create a batch.
+	_, err = t.auctioneer.AuctionAdminClient.BatchTick(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not trigger batch tick: %v", err)
+	}
+
+	// Since the ask account is pending an update, a batch should not be
+	// cleared, so a batch transaction should not be broadcast.
+	//
+	// TODO: Determine whether a batch has been made without waiting for the
+	// mempool timeout? Waiting is not ideal here as it slows down the test.
+	isMempoolEmpty, err := isMempoolEmpty(
+		t.lndHarness.Miner.Node, minerMempoolTimeout/2,
+	)
+	if err != nil {
+		t.Fatalf("unable to determine if mempool is empty: %v", err)
+	}
+	if !isMempoolEmpty {
+		t.Fatalf("found unexpected non-empty mempool")
+	}
+
+	// Proceed to fully confirm the account deposit.
+	_ = mineBlocks(t, t.lndHarness, 5, 0)
+	assertAuctioneerAccountState(
+		t, depositResp.Account.TraderKey, account.StateOpen,
+	)
+
+	// Let's kick the auctioneer once again to try and create a batch.
 	_, err = t.auctioneer.AuctionAdminClient.BatchTick(
 		ctx, &adminrpc.EmptyRequest{},
 	)
@@ -112,7 +174,7 @@ func testBatchExecution(t *harnessTest) {
 	// At this point, the batch should now attempt to be cleared, and find
 	// that we're able to make a market. Eventually the batch execution
 	// transaction should be broadcast to the mempool.
-	txids, err := waitForNTxsInMempool(
+	txids, err = waitForNTxsInMempool(
 		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
 	)
 	if err != nil {
