@@ -13,6 +13,7 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/stretchr/testify/require"
 )
 
 var emptyAcct [33]byte
@@ -22,6 +23,7 @@ type orderGenCfg struct {
 	fixedRate uint32
 	duration  uint32
 	acctKey   [33]byte
+	acctState *account.State
 }
 
 type orderGenOption func(*orderGenCfg)
@@ -86,6 +88,12 @@ func staticAccountKeyGen(acctKey [33]byte) orderGenOption {
 	}
 }
 
+func staticAccountState(state account.State) orderGenOption {
+	return func(opt *orderGenCfg) {
+		opt.acctState = &state
+	}
+}
+
 func (o *orderGenCfg) supplyUnits(r *rand.Rand) orderT.SupplyUnit {
 	if o.numUnits != 0 {
 		return o.numUnits
@@ -121,6 +129,13 @@ func (o *orderGenCfg) traderKey(r *rand.Rand) [33]byte { // nolint:interfacer
 	return key
 }
 
+func (o *orderGenCfg) accountState(*rand.Rand) account.State {
+	if o.acctState != nil {
+		return *o.acctState
+	}
+	return account.StateOpen
+}
+
 func genRandAccount(r *rand.Rand, genOptions ...orderGenOption) *account.Account {
 	genCfg := orderGenCfg{}
 	for _, optionModifier := range genOptions {
@@ -131,6 +146,7 @@ func genRandAccount(r *rand.Rand, genOptions ...orderGenOption) *account.Account
 		TraderKeyRaw: genCfg.traderKey(r),
 		Value:        btcutil.Amount(r.Int63()),
 		Expiry:       uint32(r.Int31()),
+		State:        genCfg.accountState(r),
 	}
 }
 
@@ -1254,6 +1270,36 @@ func TestMatchingNoSelfOrderMatch(t *testing.T) {
 	if match {
 		t.Fatalf("orders by the same trader shouldn't match!")
 	}
+}
+
+// TestMatchingAccountNotReady ensures that accounts within a batch matching
+// attempt are ready to participate in the batch.
+func TestMatchingAccountNotReady(t *testing.T) {
+	t.Parallel()
+
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	acctDB := newAcctFetcher()
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+
+	ask := genRandAsk(r, acctDB)
+	asks := []*order.Ask{ask}
+
+	bid := genRandBid(
+		r,
+		acctDB,
+		staticUnitGen(ask.Units),
+		staticDurationGen(ask.MaxDuration()),
+		staticRateGen(ask.FixedRate),
+		staticAccountState(account.StatePendingOpen),
+	)
+	bids := []*order.Bid{bid}
+
+	matchSet, err := matchMaker.MatchBatch(bids, asks)
+	require.NoError(t, err)
+
+	require.Empty(t, matchSet.MatchedOrders)
+	require.Equal(t, matchSet.UnmatchedAsks, asks)
+	require.Equal(t, matchSet.UnmatchedBids, bids)
 }
 
 // TestMatchingLowestAskNoMatchMultiPass tests that if the lowest ask doesn't

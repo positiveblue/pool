@@ -17,7 +17,13 @@ type MultiUnitMatchMaker struct {
 	// each active order.
 	orderRemainders map[orderT.Nonce]orderT.SupplyUnit
 
+	// fetchAcct fetches the latest state of an account identified by its
+	// trader public key.
 	fetchAcct AccountFetcher
+
+	// accountCache maintains a cache of trader accounts which are retrieved
+	// throughout matchmaking.
+	accountCache map[[33]byte]*account.Account
 }
 
 // AccountFetcher denotes a function that's able to fetch the latest state of
@@ -32,7 +38,32 @@ func NewMultiUnitMatchMaker(acctFetcher AccountFetcher) *MultiUnitMatchMaker {
 	return &MultiUnitMatchMaker{
 		orderRemainders: make(map[orderT.Nonce]orderT.SupplyUnit),
 		fetchAcct:       acctFetcher,
+		accountCache:    make(map[[33]byte]*account.Account),
 	}
+}
+
+// getCachedAccount retrieves the account with the given key from the cache. If
+// if it hasn't been cached yet, then it's retrieved from disk and cached.
+func (m *MultiUnitMatchMaker) getCachedAccount(key [33]byte) (*account.Account,
+	error) {
+
+	if account, ok := m.accountCache[key]; ok {
+		return account, nil
+	}
+
+	account, err := m.fetchAcct(key)
+	if err != nil {
+		return nil, err
+	}
+	m.accountCache[key] = account
+
+	return account, nil
+}
+
+// isAccountReady determines whether an account is ready to participate in a
+// batch.
+func isAccountReady(acct *account.Account) bool {
+	return acct.State == account.StateOpen
 }
 
 // MatchPossible returns a price quote, and a bool indicating if a match is
@@ -49,6 +80,15 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 
 		unitsMatched, unitsUnmatched orderT.SupplyUnit
 	)
+
+	bidAcct, err := m.getCachedAccount(bid.AcctKey)
+	if err != nil {
+		return NullQuote, false
+	}
+	askAcct, err := m.getCachedAccount(ask.AcctKey)
+	if err != nil {
+		return NullQuote, false
+	}
 
 	// To start with, we'll obtain the total amount of units tendered for
 	// each ask/bid. If there's an entry in our partial match (remainders)
@@ -79,6 +119,10 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	// sense to open a channel to one self, and the protocol doesn't allow
 	// it anyway.
 	case ask.NodeKey == bid.NodeKey:
+		return NullQuote, false
+
+	// Ensure both accounts are ready to participate in a batch.
+	case !isAccountReady(bidAcct) || !isAccountReady(askAcct):
 		return NullQuote, false
 
 	// If the highest bid is below the lowest ask, then no match at all is
@@ -272,11 +316,11 @@ func (m *MultiUnitMatchMaker) MatchBatch(bids []*order.Bid,
 			matchedIndex[bid.Nonce()] = struct{}{}
 			matchedIndex[ask.Nonce()] = struct{}{}
 
-			bidAcct, err := m.fetchAcct(bid.AcctKey)
+			bidAcct, err := m.getCachedAccount(bid.AcctKey)
 			if err != nil {
 				return nil, err
 			}
-			askAcct, err := m.fetchAcct(ask.AcctKey)
+			askAcct, err := m.getCachedAccount(ask.AcctKey)
 			if err != nil {
 				return nil, err
 			}

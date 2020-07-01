@@ -15,6 +15,7 @@ require (
 	github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200615174244-103c59a4889f
 	github.com/lightningnetwork/lnd/cert v1.0.2
 	github.com/lightningnetwork/lnd/ticker v1.0.0
+	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
 	go.etcd.io/etcd v3.3.22+incompatible
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
