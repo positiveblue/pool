@@ -175,25 +175,21 @@ func testBatchExecution(t *harnessTest) {
 	// Now that the channels are confirmed, they should both be active, and
 	// we should be able to make a payment between this new channel
 	// established.
-	_, bestHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("unable to get best block: %v", err)
-	}
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
-		charlie.PubKey, uint32(bestHeight)+dayInBlocks,
+		charlie.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt2), *batchTXID,
-		charlie.PubKey, uint32(bestHeight)+dayInBlocks,
+		charlie.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *batchTXID,
-		t.trader.cfg.LndNode.PubKey, uint32(bestHeight)+dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt2), *batchTXID,
-		t.trader.cfg.LndNode.PubKey, uint32(bestHeight)+dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
 
 	// To make sure the channels works as expected, we'll send a payment
