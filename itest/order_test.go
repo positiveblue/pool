@@ -16,17 +16,13 @@ const (
 func testOrderSubmission(t *harnessTest) {
 	ctx := context.Background()
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// Start by creating an account over 2M sats that is valid for the next
 	// 1000 blocks.
 	acct := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  defaultAccountValue,
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
 	})
 
 	// Now that the account is confirmed, submit an order over part of the
@@ -42,7 +38,7 @@ func testOrderSubmission(t *harnessTest) {
 		MaxDurationBlocks: 365*144 + 1,
 		Version:           uint32(order.CurrentVersion),
 	}
-	_, err = t.trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
+	_, err := t.trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: rpcAsk,
 		},

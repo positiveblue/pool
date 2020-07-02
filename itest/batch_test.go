@@ -24,12 +24,6 @@ import (
 func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// We need a third lnd node, Charlie that is used for the second trader.
 	lndArgs := []string{"--maxpendingchannels=2"}
 	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
@@ -49,20 +43,26 @@ func testBatchExecution(t *harnessTest) {
 	// and accounts, we add a secondary account to the second trader.
 	account1 := openAccountAndAssert(
 		t, t.trader, &clmrpc.InitAccountRequest{
-			AccountValue:  defaultAccountValue,
-			AccountExpiry: uint32(currentHeight) + 1000,
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
 		},
 	)
 	account2 := openAccountAndAssert(
 		t, secondTrader, &clmrpc.InitAccountRequest{
-			AccountValue:  defaultAccountValue,
-			AccountExpiry: uint32(currentHeight) + 1000,
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
 		},
 	)
 	account3 := openAccountAndAssert(
 		t, secondTrader, &clmrpc.InitAccountRequest{
-			AccountValue:  defaultAccountValue,
-			AccountExpiry: uint32(currentHeight) + 1000,
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
 		},
 	)
 
