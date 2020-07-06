@@ -272,6 +272,32 @@ func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
 	return traderHarness
 }
 
+// isMempoolEmpty checks whether the mempool remains empty for the given
+// timeout.
+func isMempoolEmpty(miner *rpcclient.Client, timeout time.Duration) (bool, error) {
+	breakTimeout := time.After(timeout)
+	ticker := time.NewTicker(50 * time.Millisecond)
+	defer ticker.Stop()
+
+	var err error
+	var mempool []*chainhash.Hash
+	for {
+		select {
+		case <-breakTimeout:
+			return true, nil
+
+		case <-ticker.C:
+			mempool, err = miner.GetRawMempool()
+			if err != nil {
+				return false, err
+			}
+			if len(mempool) > 0 {
+				return false, nil
+			}
+		}
+	}
+}
+
 // waitForNTxsInMempool polls until finding the desired number of transactions
 // in the provided miner's mempool. An error is returned if this number is not
 // met after the given timeout.

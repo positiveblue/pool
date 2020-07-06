@@ -214,8 +214,13 @@ func NewServer(cfg *Config) (*Server, error) {
 						return nil, err
 					}
 
+					// We retrieve the pending diff of the
+					// account, if any, to ensure
+					// matchmaking can determine whether it
+					// is ready to participate in a batch.
 					return store.Account(
-						context.Background(), acctKey, false,
+						context.Background(), acctKey,
+						true,
 					)
 				},
 			),
