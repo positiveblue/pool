@@ -25,12 +25,6 @@ import (
 func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// We need a third lnd node, Charlie that is used for the second trader.
 	lndArgs := []string{"--maxpendingchannels=2"}
 	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
@@ -50,20 +44,26 @@ func testBatchExecution(t *harnessTest) {
 	// and accounts, we add a secondary account to the second trader.
 	account1 := openAccountAndAssert(
 		t, t.trader, &clmrpc.InitAccountRequest{
-			AccountValue:  defaultAccountValue,
-			AccountExpiry: uint32(currentHeight) + 1000,
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
 		},
 	)
 	account2 := openAccountAndAssert(
 		t, secondTrader, &clmrpc.InitAccountRequest{
-			AccountValue:  defaultAccountValue,
-			AccountExpiry: uint32(currentHeight) + 1000,
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
 		},
 	)
 	account3 := openAccountAndAssert(
 		t, secondTrader, &clmrpc.InitAccountRequest{
-			AccountValue:  defaultAccountValue,
-			AccountExpiry: uint32(currentHeight) + 1000,
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
 		},
 	)
 
@@ -237,25 +237,21 @@ func testBatchExecution(t *harnessTest) {
 	// Now that the channels are confirmed, they should both be active, and
 	// we should be able to make a payment between this new channel
 	// established.
-	_, bestHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("unable to get best block: %v", err)
-	}
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
-		charlie.PubKey, uint32(bestHeight)+dayInBlocks,
+		charlie.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt2), *batchTXID,
-		charlie.PubKey, uint32(bestHeight)+dayInBlocks,
+		charlie.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *batchTXID,
-		t.trader.cfg.LndNode.PubKey, uint32(bestHeight)+dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt2), *batchTXID,
-		t.trader.cfg.LndNode.PubKey, uint32(bestHeight)+dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
 
 	// To make sure the channels works as expected, we'll send a payment

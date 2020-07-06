@@ -34,17 +34,13 @@ const (
 func testAccountCreation(t *harnessTest) {
 	ctx := context.Background()
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
 	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  defaultAccountValue,
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
 	})
 
 	// Proceed to close it to a custom output where half of the account
@@ -94,8 +90,10 @@ func testAccountCreation(t *harnessTest) {
 	// Make sure the default account limit is enforced on the auctioneer
 	// side.
 	_, err = t.trader.InitAccount(ctx, &clmrpc.InitAccountRequest{
-		AccountValue:  uint64(btcutil.SatoshiPerBitcoin + 1),
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue: uint64(btcutil.SatoshiPerBitcoin + 1),
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
 	})
 	if err == nil {
 		t.Fatalf("expected error when exceeding account value limit")
@@ -111,17 +109,13 @@ func testAccountCreation(t *harnessTest) {
 func testAccountWithdrawal(t *harnessTest) {
 	ctx := context.Background()
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// Create an account for 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
 	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  defaultAccountValue,
-		AccountExpiry: uint32(currentHeight) + 1_000,
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
 	})
 
 	// With the account open, we'll now attempt to withdraw half of the
@@ -138,7 +132,7 @@ func testAccountWithdrawal(t *harnessTest) {
 		},
 		SatPerVbyte: 1,
 	}
-	_, err = t.trader.WithdrawAccount(ctx, withdrawReq)
+	_, err := t.trader.WithdrawAccount(ctx, withdrawReq)
 	isInvalidAddrErr := err != nil &&
 		strings.Contains(err.Error(), "invalid address")
 	if err == nil || !isInvalidAddrErr {
@@ -203,18 +197,14 @@ func testAccountWithdrawal(t *harnessTest) {
 func testAccountDeposit(t *harnessTest) {
 	ctx := context.Background()
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// Create an account for 500K sats that is valid for the next 1000
 	// blocks and validate its confirmation on-chain.
 	const initialAccountValue = 500_000
 	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  initialAccountValue,
-		AccountExpiry: uint32(currentHeight) + 1_000,
+		AccountValue: initialAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
 	})
 
 	// With the account open, we'll now attempt to deposit the same amount
@@ -278,17 +268,13 @@ func testAccountDeposit(t *harnessTest) {
 // opening one and that the reconnection mechanism works if the server is
 // stopped for maintenance.
 func testAccountSubscription(t *harnessTest) {
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
 	acct := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  2000000,
-		AccountExpiry: uint32(currentHeight) + 1000,
+		AccountValue: 2000000,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
 	})
 	tokenID, err := t.trader.server.GetIdentity()
 	if err != nil {
@@ -315,19 +301,16 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	}
 	idCtx := getTokenContext(tokenID)
 
-	// We need the current best block for the account expiry.
-	_, currentHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
-	if err != nil {
-		t.Fatalf("could not query current block height: %v", err)
-	}
-	defaultExpiration := uint32(currentHeight) + 1000
+	const defaultExpiration uint32 = 1_000
 
 	// We create three full accounts. One that is closed again, one
 	// that remains open and one that is pending open, waiting for on-chain
 	// confirmation.
 	closed := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  defaultAccountValue,
-		AccountExpiry: defaultExpiration,
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: defaultExpiration,
+		},
 	})
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: closed.TraderKey,
@@ -337,12 +320,16 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		}},
 	})
 	open := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
-		AccountValue:  defaultAccountValue,
-		AccountExpiry: defaultExpiration,
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: defaultExpiration,
+		},
 	})
 	pending, err := t.trader.InitAccount(ctxb, &clmrpc.InitAccountRequest{
-		AccountValue:  defaultAccountValue,
-		AccountExpiry: defaultExpiration,
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: defaultExpiration,
+		},
 	})
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)

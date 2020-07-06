@@ -824,7 +824,7 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 
 func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 	chanAmt int64, fundingTXID chainhash.Hash, chanPeer [33]byte,
-	thawHeight uint32) { // nolint:unparam
+	chanDuration uint32) { // nolint:unparam
 
 	req := &lnrpc.ListChannelsRequest{}
 	err := wait.NoError(func() error {
@@ -867,12 +867,10 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 				"hash %v", pendingChan.ChannelPoint, fundingTXID.String())
 		}
 
-		// TODO(roasbeef): restore after all nodes wait for lnd to be
-		// fully synced
-		/*if channel.ThawHeight != uint32(thawHeight) {
+		if pendingChan.ThawHeight != chanDuration {
 			return fmt.Errorf("wrong thaw height: expected %v, "+
-				"got %v", thawHeight, channel.ThawHeight)
-		}*/
+				"got %v", chanDuration, pendingChan.ThawHeight)
+		}
 
 		return nil
 	}, defaultWaitTimeout)

@@ -43,6 +43,8 @@ github.com/btcsuite/btcwallet v0.11.0 h1:XhwqdhEchy5a0q6R+y3F82roD2hYycPCHovgNyJ
 github.com/btcsuite/btcwallet v0.11.0/go.mod h1:qtPAohN1ioo0pvJt/j7bZM8ANBWlYWVCVFL0kkijs7s=
 github.com/btcsuite/btcwallet v0.11.1-0.20200604005347-6390f167e5f8 h1:wyooGuOeqcpJDK9+KgO5/yfb3nmEhakbdKHERhEylNE=
 github.com/btcsuite/btcwallet v0.11.1-0.20200604005347-6390f167e5f8/go.mod h1:9+AH3V5mcTtNXTKe+fe63fDLKGOwQbZqmvOVUef+JFE=
+github.com/btcsuite/btcwallet v0.11.1-0.20200612012534-48addcd5591a h1:AZ1Mf0gd9mgJqrTTIFUc17ep9EKUbQusVAIzJ6X+x3Q=
+github.com/btcsuite/btcwallet v0.11.1-0.20200612012534-48addcd5591a/go.mod h1:9+AH3V5mcTtNXTKe+fe63fDLKGOwQbZqmvOVUef+JFE=
 github.com/btcsuite/btcwallet/wallet/txauthor v1.0.0 h1:KGHMW5sd7yDdDMkCZ/JpP0KltolFsQcB973brBnfj4c=
 github.com/btcsuite/btcwallet/wallet/txauthor v1.0.0/go.mod h1:VufDts7bd/zs3GV13f/lXc/0lXrPnvxD/NvmpG/FEKU=
 github.com/btcsuite/btcwallet/wallet/txrules v1.0.0 h1:2VsfS0sBedcM5KmDzRMT3+b6xobqWveZGvjb+jFez5w=
@@ -57,6 +59,8 @@ github.com/btcsuite/btcwallet/walletdb v1.3.1 h1:lW1Ac3F1jJY4K11P+YQtRNcP5jFk27A
 github.com/btcsuite/btcwallet/walletdb v1.3.1/go.mod h1:9cwc1Yyg4uvd4ZdfdoMnALji+V9gfWSMfxEdLdR5Vwc=
 github.com/btcsuite/btcwallet/walletdb v1.3.2 h1:nFnMBVgkqoVOx08Z756oDwNc9sdVgYR52T1ONSXs90w=
 github.com/btcsuite/btcwallet/walletdb v1.3.2/go.mod h1:GZCMPNpUu5KE3ASoVd+k06p/1OW8OwNGCCaNWRto2cQ=
+github.com/btcsuite/btcwallet/walletdb v1.3.3 h1:u6e7vRIKBF++cJy+hOHaMGg+88ZTwvpaY27AFvtB668=
+github.com/btcsuite/btcwallet/walletdb v1.3.3/go.mod h1:oJDxAEUHVtnmIIBaa22wSBPTVcs6hUp5NKWmI8xDwwU=
 github.com/btcsuite/btcwallet/wtxmgr v1.0.0 h1:aIHgViEmZmZfe0tQQqF1xyd2qBqFWxX5vZXkkbjtbeA=
 github.com/btcsuite/btcwallet/wtxmgr v1.0.0/go.mod h1:vc4gBprll6BP0UJ+AIGDaySoc7MdAmZf8kelfNb8CFY=
 github.com/btcsuite/btcwallet/wtxmgr v1.1.1-0.20200604005347-6390f167e5f8 h1:tfeGHvGrm5nYE92eaO8PChBvMinpcq566dG1xPO08GI=
@@ -165,6 +169,8 @@ github.com/google/uuid v1.1.1/go.mod h1:TIyPZe4MgqvfeYDBFedMoGGpEw/LqOeaOT+nhxU+
 github.com/gorilla/websocket v0.0.0-20170926233335-4201258b820c/go.mod h1:E7qHFY5m1UJ88s3WnNqhKjPHQ0heANvMoAMk2YaljkQ=
 github.com/gorilla/websocket v1.4.1 h1:q7AeDBpnBk8AogcD4DSag/Ukw/KV+YhzLj2bP5HvKCM=
 github.com/gorilla/websocket v1.4.1/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
+github.com/gorilla/websocket v1.4.2 h1:+/TMaTYc4QFitKJxsQ7Yye35DkWvkdLcvGKqM+x0Ufc=
+github.com/gorilla/websocket v1.4.2/go.mod h1:YR8l580nyteQvAITg2hZ9XVh4b55+EU/adAjf1fMHhE=
 github.com/grpc-ecosystem/go-grpc-middleware v1.0.0 h1:Iju5GlWwrvL6UBg4zJJt3btmonfrMlCDdsejg4CZE7c=
 github.com/grpc-ecosystem/go-grpc-middleware v1.0.0/go.mod h1:FiyG127CGDf3tlThmgyCl78X/SZQqEOJBCDaAfeWzPs=
 github.com/grpc-ecosystem/go-grpc-middleware v1.0.1-0.20190118093823-f849b5445de4 h1:z53tR0945TRRQO/fLEVPI6SMv7ZflF0TEaTAoU7tOzg=
@@ -231,8 +237,8 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585 h1:NEC1mMh6KvNeUjiRHBuQf/Pptg19rq1CVO4jRUzhj1I=
 github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585/go.mod h1:6RzSfM47mAGvnNl8QWWc4NbuDxoEnPGy/KbyM0uWgvs=
-github.com/lightninglabs/llm v0.0.0-20200626193210-feebc8c32cec h1:dqNV89m/c2gPUfxJtKXR7XyXI6tkRCKWoDEWaOs5GDw=
-github.com/lightninglabs/llm v0.0.0-20200626193210-feebc8c32cec/go.mod h1:CgYITK6ogc5M1jprNPukpODLeISEjaN6nXFcX+zDRbI=
+github.com/lightninglabs/llm v0.0.0-20200706194325-a20d11a86b8b h1:HvP/b/SrFh9/aYemEQy4aBiEi00sAoNCdJw+bDGdJWY=
+github.com/lightninglabs/llm v0.0.0-20200706194325-a20d11a86b8b/go.mod h1:StK5aQJz2UbmZu/4mLiOD3rYQqkwzgO9RiY9Cxz8RuE=
 github.com/lightninglabs/loop v0.3.0-alpha.0.20200103135410-5e00ce62677a/go.mod h1:VEp7TFUL7Ehq9mjQVUuNVTjpMIeTx8kOHvQ7PdJpLuA=
 github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63 h1:R/+aHkygbuxfZsZOByiFUA6f73TNZ3EJQYhWS+hvdoc=
 github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63/go.mod h1:5TEpefapLXHYrUpbhVYXP4DenS2H3S6hSYu1koFjfZA=
@@ -248,6 +254,8 @@ github.com/lightningnetwork/lightning-onion v1.0.2-0.20200501022730-3c8c8d0b89ea
 github.com/lightningnetwork/lnd v0.8.0-beta-rc3.0.20200103000305-22e1f006b194/go.mod h1:WHK90FD3m2n6OyWzondS7ho0Uhtgfp30Nxvj24lQYX4=
 github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200615174244-103c59a4889f h1:/IS0Gy94ZZ0pJdwMmyb1B8RKszTY1aFm2+r/PItpbvs=
 github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200615174244-103c59a4889f/go.mod h1:a2ejAHgjuwQ9YQJBzlMD8ZJHUcyWxXb8HRGe5QlJh9Y=
+github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200702223723-2d4facf94061 h1:eFMbSjf3mejdaWt/8A6xdot526gtBSs1a+Lfhpchm80=
+github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200702223723-2d4facf94061/go.mod h1:LjlzNpFdToJpkc1CodpKGcSgDOGAe0IvnLbvGDg/RT8=
 github.com/lightningnetwork/lnd/cert v1.0.0 h1:J0gtf2UNQX2U+/j5cXnX2wIMSTuJuwrXv7m9qJr2wtw=
 github.com/lightningnetwork/lnd/cert v1.0.0/go.mod h1:fmtemlSMf5t4hsQmcprSoOykypAPp+9c+0d0iqTScMo=
 github.com/lightningnetwork/lnd/cert v1.0.2 h1:g2rEu+sM2Uyz0bpfuvwri/ks6R/26H5iY1NcGbpDJ+c=
