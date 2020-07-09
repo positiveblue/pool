@@ -415,7 +415,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
-	err := s.orderBook.PrepareOrder(ctx, o)
+	err := s.orderBook.PrepareOrder(ctx, o, s.bestHeight())
 	return mapOrderResp(o.Nonce(), err)
 }
 

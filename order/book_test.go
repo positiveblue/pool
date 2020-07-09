@@ -76,6 +76,7 @@ func (s *mockSigner) DeriveSharedKey(context.Context, *btcec.PublicKey,
 }
 
 func TestBookPrepareOrder(t *testing.T) {
+	const bestHeight = 100
 	store := subastadb.NewStoreMock(t)
 	ctxb := context.Background()
 	signer := &mockSigner{}
@@ -108,7 +109,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					},
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
 		},
 	}, {
 		name:        "ask max duration 0",
@@ -122,7 +123,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 0,
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
 		},
 	}, {
 		name:        "ask max duration too large",
@@ -136,7 +137,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1235,
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
 		},
 	}, {
 		name:        "bid min duration 0",
@@ -150,7 +151,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MinDuration: 0,
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
 		},
 	}, {
 		name:        "zero amount",
@@ -165,7 +166,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
 		},
 	}, {
 		name:        "bid min duration too large",
@@ -179,7 +180,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MinDuration: 1235,
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
 		},
 	}, {
 		name:        "account balance insufficient",
@@ -194,7 +195,34 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			return book.PrepareOrder(ctxb, o)
+			return book.PrepareOrder(ctxb, o, bestHeight)
+		},
+	}, {
+		name:        "banned account",
+		expectedErr: account.NewErrBannedAccount(bestHeight + 144).Error(),
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:     100000,
+						AcctKey: toRawKey(testTraderKey),
+					},
+					MaxDuration: 1024,
+				},
+			}
+			err := store.BanAccount(ctxb, testTraderKey, bestHeight)
+			if err != nil {
+				return fmt.Errorf("unable to ban account: %v",
+					err)
+			}
+
+			err = book.PrepareOrder(ctxb, o, bestHeight)
+
+			// Before returning the error, unban the account to not
+			// affect any following tests.
+			delete(store.BannedAccs, toRawKey(testTraderKey))
+
+			return err
 		},
 	}, {
 		name:        "successful order submission",
@@ -209,7 +237,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			err := book.PrepareOrder(ctxb, o)
+			err := book.PrepareOrder(ctxb, o, bestHeight)
 			if err != nil {
 				return err
 			}
