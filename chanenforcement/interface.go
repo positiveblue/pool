@@ -46,10 +46,11 @@ type LifetimePackage struct {
 	// be found at.
 	HeightHint uint32
 
-	// MaturityHeight is the height after which we'll stop enforcing channel
+	// MaturityDelta is the height delta applied to the channel's
+	// confirmation height after which we'll stop enforcing channel
 	// lifetime. If a party closes the channel before this, then they'll be
 	// punished accordingly.
-	MaturityHeight uint32
+	MaturityDelta uint32
 
 	// Version is the version of the channel. This uniquely identifies the
 	// type of channel we're working with, allowing us to derive the
@@ -86,7 +87,7 @@ type LifetimePackage struct {
 // package. Verification involves ensuring that both traders (asker and bidder)
 // submit their channel info honestly.
 func NewLifetimePackage(channelPoint wire.OutPoint,
-	channelScript []byte, heightHint, maturityHeight uint32,
+	channelScript []byte, heightHint, maturityDelta uint32,
 	askAccountKey, bidAccountKey *btcec.PublicKey,
 	askChannelInfo, bidChannelInfo *chaninfo.ChannelInfo) (
 	*LifetimePackage, error) {
@@ -100,7 +101,7 @@ func NewLifetimePackage(channelPoint wire.OutPoint,
 		ChannelPoint:        channelPoint,
 		ChannelScript:       channelScript,
 		HeightHint:          heightHint,
-		MaturityHeight:      maturityHeight,
+		MaturityDelta:       maturityDelta,
 		Version:             askChannelInfo.Version,
 		AskAccountKey:       askAccountKey,
 		BidAccountKey:       bidAccountKey,

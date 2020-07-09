@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
@@ -91,6 +92,7 @@ type mockChainNotifier struct {
 	lndclient.ChainNotifierClient
 
 	mu         sync.Mutex
+	confChans  map[chainhash.Hash]chan *chainntnfs.TxConfirmation
 	spendChans map[wire.OutPoint]chan *chainntnfs.SpendDetail
 
 	blockChan chan int32
@@ -99,9 +101,41 @@ type mockChainNotifier struct {
 
 func newMockChainNotifier() *mockChainNotifier {
 	return &mockChainNotifier{
+		confChans:  make(map[chainhash.Hash]chan *chainntnfs.TxConfirmation),
 		spendChans: make(map[wire.OutPoint]chan *chainntnfs.SpendDetail),
 		blockChan:  make(chan int32),
 		errChan:    make(chan error),
+	}
+}
+
+func (n *mockChainNotifier) RegisterConfirmationsNtfn(ctx context.Context,
+	txid *chainhash.Hash, pkScript []byte, numConfs,
+	heightHint int32) (chan *chainntnfs.TxConfirmation, chan error, error) {
+
+	confChan := make(chan *chainntnfs.TxConfirmation)
+
+	n.mu.Lock()
+	n.confChans[*txid] = confChan
+	n.mu.Unlock()
+
+	return confChan, n.errChan, nil
+}
+
+func (n *mockChainNotifier) notifyConf(txid chainhash.Hash,
+	conf *chainntnfs.TxConfirmation) error {
+
+	n.mu.Lock()
+	confChan, ok := n.confChans[txid]
+	n.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no active conf notification for %v", txid)
+	}
+
+	select {
+	case <-time.After(timeout):
+		return fmt.Errorf("unable to notify %v conf within timeout", txid)
+	case confChan <- conf:
+		return nil
 	}
 }
 
@@ -121,11 +155,30 @@ func (n *mockChainNotifier) RegisterSpendNtfn(ctx context.Context,
 func (n *mockChainNotifier) notifySpend(op wire.OutPoint,
 	spend *chainntnfs.SpendDetail) error {
 
-	n.mu.Lock()
-	spendChan, ok := n.spendChans[op]
-	n.mu.Unlock()
-	if !ok {
-		return fmt.Errorf("no active spend notification for %v", op)
+	// Since the spend notification is registered after confirmation, things
+	// can be a bit racy, so we'll wait for the spend notification to be
+	// registered first.
+	timeoutChan := time.After(timeout)
+	var spendChan chan *chainntnfs.SpendDetail
+loop:
+	for {
+		select {
+		case <-time.After(timeout / 10):
+			var ok bool
+			n.mu.Lock()
+			spendChan, ok = n.spendChans[op]
+			n.mu.Unlock()
+			if !ok {
+				continue
+			}
+
+			// Found active spend notification, proceed below.
+			break loop
+
+		case <-timeoutChan:
+			return fmt.Errorf("no active spend notification for %v",
+				op)
+		}
 	}
 
 	select {
