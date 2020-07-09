@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
 	"github.com/lightninglabs/llm/clmscript"
+	"github.com/lightninglabs/llm/order"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -27,9 +28,9 @@ type OrderOutput struct {
 	// TxOut is the raw output from the batch execution transaction.
 	TxOut *wire.TxOut
 
-	// OrderNonce is the order nonce that identifies the order that
-	// produced this output.
-	OrderNonce orderT.Nonce
+	// Order is one of the orders (either the bid or ask) that produced this
+	// output.
+	Order order.Order
 }
 
 // AcctInput stores information about the input spending a given trader's
@@ -145,7 +146,7 @@ type ExecutionContext struct {
 // number of auxiliary indexes built up during batch transaction construction.
 // This method also returns the input index of the auctioneer's account.
 func (e *ExecutionContext) indexBatchTx(
-	scriptToOrderNonce map[string][2]orderT.Nonce,
+	scriptToOrders map[string][2]order.Order,
 	traderAccounts map[matching.AccountID]*wire.TxOut,
 	ordersForTrader map[matching.AccountID][]orderT.Nonce,
 	inputToAcct map[wire.OutPoint]matching.AccountID) (int, error) {
@@ -154,33 +155,34 @@ func (e *ExecutionContext) indexBatchTx(
 
 	// First, we'll map each order to the proper account output using an
 	// auxiliary index that maps the script to the nonce.
-	for stringScript, orderNonces := range scriptToOrderNonce {
+	for stringScript, orders := range scriptToOrders {
 		fundingScript := []byte(stringScript)
 
 		found, outputIndex := input.FindScriptOutputIndex(
 			e.ExeTx, fundingScript,
 		)
 		if !found {
-			return 0, fmt.Errorf("unable to find funding "+
-				"script for order %v", orderNonces)
+			return 0, fmt.Errorf("unable to find funding script "+
+				"for order pair %v/%v", orders[0].Nonce(),
+				orders[1].Nonce())
 		}
 
 		// TODO(roasbeef): de-dup? pointers
-		e.orderIndex[orderNonces[0]] = &OrderOutput{
+		e.orderIndex[orders[0].Nonce()] = &OrderOutput{
 			OutPoint: wire.OutPoint{
 				Hash:  txHash,
 				Index: outputIndex,
 			},
-			TxOut:      e.ExeTx.TxOut[outputIndex],
-			OrderNonce: orderNonces[0],
+			TxOut: e.ExeTx.TxOut[outputIndex],
+			Order: orders[0],
 		}
-		e.orderIndex[orderNonces[1]] = &OrderOutput{
+		e.orderIndex[orders[1].Nonce()] = &OrderOutput{
 			OutPoint: wire.OutPoint{
 				Hash:  txHash,
 				Index: outputIndex,
 			},
-			TxOut:      e.ExeTx.TxOut[outputIndex],
-			OrderNonce: orderNonces[1],
+			TxOut: e.ExeTx.TxOut[outputIndex],
+			Order: orders[1],
 		}
 
 	}
@@ -348,13 +350,13 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// Now that we have the account state present within the ExeTx, we'll
 	// add the necessary outputs to create all channels purchased in this
 	// batch.
-	scriptToOrderNonce := make(map[string][2]orderT.Nonce)
 	ordersForTrader := make(map[matching.AccountID][]orderT.Nonce)
-	for _, order := range orderBatch.Orders {
+	scriptToOrders := make(map[string][2]order.Order)
+	for _, matchedOrder := range orderBatch.Orders {
 		// First using the relevant channel details of the order, we'll
 		// construct the funding output that will create the channel
 		// for both sides.
-		orderDetails := order.Details
+		orderDetails := matchedOrder.Details
 		bid := orderDetails.Bid
 		ask := orderDetails.Ask
 		_, fundingOutput, err := input.GenFundingPkScript(
@@ -375,17 +377,17 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		bidNonce := bid.Nonce()
 		askNonce := ask.Nonce()
 
-		scriptToOrderNonce[string(chanScript)] = [2]orderT.Nonce{
-			bidNonce, askNonce,
+		scriptToOrders[string(chanScript)] = [2]order.Order{
+			bid, ask,
 		}
 
 		// TODO(roasbeef): need to make a map instead?
-		ordersForTrader[order.Asker.AccountKey] = append(
-			ordersForTrader[order.Asker.AccountKey],
+		ordersForTrader[matchedOrder.Asker.AccountKey] = append(
+			ordersForTrader[matchedOrder.Asker.AccountKey],
 			askNonce,
 		)
-		ordersForTrader[order.Bidder.AccountKey] = append(
-			ordersForTrader[order.Bidder.AccountKey],
+		ordersForTrader[matchedOrder.Bidder.AccountKey] = append(
+			ordersForTrader[matchedOrder.Bidder.AccountKey],
 			bidNonce,
 		)
 	}
@@ -444,8 +446,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// version of the transaction, so we can easily perform the signing
 	// execution in the next phase.
 	masterAcctInputIndex, err := e.indexBatchTx(
-		scriptToOrderNonce, traderAccounts,
-		ordersForTrader, inputToAcct,
+		scriptToOrders, traderAccounts, ordersForTrader, inputToAcct,
 	)
 	if err != nil {
 		return err

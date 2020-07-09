@@ -254,9 +254,9 @@ func TestBatchTransactionAssembly(t *testing.T) {
 				len(orderNonces), len(traderOutputs))
 		}
 		for _, chanOutput := range traderOutputs {
-			if _, ok := orderNonces[chanOutput.OrderNonce]; !ok {
+			if _, ok := orderNonces[chanOutput.Order.Nonce()]; !ok {
 				t.Fatalf("unexpected order output found: %x",
-					chanOutput.OrderNonce)
+					chanOutput.Order.Nonce())
 			}
 		}
 	}
