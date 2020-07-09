@@ -650,6 +650,61 @@ func TestAccountSpendRecreatesOutput(t *testing.T) {
 	})
 }
 
+// TestModifyAccountBanned ensures that a signature is not provided to a trader
+// when performing a modification to a banned account.
+func TestModifyAccountBanned(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	const bestHeight = 100
+
+	// Create the account and confirm it.
+	account := h.initAccount()
+	accountOutput, err := account.Output()
+	if err != nil {
+		t.Fatalf("unable to generate account output: %v", err)
+	}
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// Ban it with an absolute expiration double the current height.
+	traderKey, err := account.TraderKey()
+	if err != nil {
+		t.Fatalf("unable to retrieve trader key: %v", err)
+	}
+	const expiration = bestHeight * 2
+	h.store.banAccount(traderKey, expiration)
+
+	// Attempt to obtain a signature while the account is still banned. We
+	// should see the expected error.
+	outputs := []*wire.TxOut{{
+		Value:    int64(account.Value) / 2,
+		PkScript: []byte{0x01, 0x02, 0x03},
+	}}
+	_, err = h.manager.ModifyAccount(
+		ctx, traderKey, nil, outputs, nil, bestHeight,
+	)
+	if _, ok := err.(ErrBannedAccount); !ok {
+		t.Fatalf("expected ErrBannedAccount, got %v", err)
+	}
+
+	// Once the account is no longer banned, we should expect a signature.
+	_, err = h.manager.ModifyAccount(
+		ctx, traderKey, nil, outputs, nil, expiration,
+	)
+	if err != nil {
+		t.Fatalf("expected valid sig for unbanned account: %v", err)
+	}
+}
+
 // TestModifyAccountValueBounds ensures that we will not process a trader
 // modification if the new account's value is outside of the allowed bounds.
 func TestModifyAccountValueBounds(t *testing.T) {

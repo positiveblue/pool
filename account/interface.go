@@ -389,6 +389,11 @@ type Store interface {
 	// BatchKey returns the current per-batch key that must be used to tweak
 	// account trader keys with.
 	BatchKey(context.Context) (*btcec.PublicKey, error)
+
+	// IsAccountBanned determines whether the given account is banned at the
+	// current height. The ban's expiration height is returned.
+	IsAccountBanned(context.Context, *btcec.PublicKey, uint32) (bool,
+		uint32, error)
 }
 
 // EndingState determines the new on-chain state for an account with the given
