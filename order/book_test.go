@@ -39,6 +39,18 @@ var (
 		HeightHint:    100,
 		OutPoint:      wire.OutPoint{Index: 1},
 	}
+
+	testAccount2 = account.Account{
+		TraderKeyRaw:  toRawKey(testAuctioneerKey),
+		Value:         200000,
+		Expiry:        100,
+		AuctioneerKey: testAuctioneerKeyDesc,
+		State:         account.StateExpired,
+		BatchKey:      testTraderKey,
+		Secret:        [32]byte{0x73, 0x65, 0x63, 0x72, 0x65, 0x73},
+		HeightHint:    100,
+		OutPoint:      wire.OutPoint{Index: 12},
+	}
 )
 
 type mockSigner struct {
@@ -79,13 +91,16 @@ func TestBookPrepareOrder(t *testing.T) {
 	store := subastadb.NewStoreMock(t)
 	ctxb := context.Background()
 	signer := &mockSigner{}
+
+	store.Accs[testAccount.TraderKeyRaw] = &testAccount
+	store.Accs[testAccount2.TraderKeyRaw] = &testAccount2
+
 	book := order.NewBook(&order.BookConfig{
 		MaxDuration: 1234,
 		SubmitFee:   123,
 		Store:       store,
 		Signer:      signer,
 	})
-	store.Accs[testAccount.TraderKeyRaw] = &testAccount
 	err := book.Start()
 	if err != nil {
 		t.Fatalf("Could not start order book: %v", err)
@@ -224,7 +239,24 @@ func TestBookPrepareOrder(t *testing.T) {
 
 			return nil
 		},
-	}}
+	},
+		{
+			name:        "good order but account is expired",
+			expectedErr: "account must be open or pending open to submit orders, instead state=StateExpired",
+			run: func() error {
+				o := &order.Ask{
+					Ask: orderT.Ask{
+						Kit: orderT.Kit{
+							Amt:     100000,
+							AcctKey: toRawKey(testAuctioneerKey),
+						},
+						MaxDuration: 1024,
+					},
+				}
+				return book.PrepareOrder(ctxb, o)
+			},
+		},
+	}
 
 	for _, tc := range testCases {
 		tc := tc
