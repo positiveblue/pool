@@ -281,7 +281,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						MaxDuration: 1024,
 					},
 				}
-				return book.PrepareOrder(ctxb, o)
+				return book.PrepareOrder(ctxb, o, bestHeight)
 			},
 		},
 	}
