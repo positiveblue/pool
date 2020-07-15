@@ -2,6 +2,7 @@ package chanenforcement
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"sync/atomic"
@@ -21,7 +22,7 @@ import (
 const (
 	timeout = time.Second
 
-	testMaturityHeight = 1337
+	testMaturityDelta = 1337
 )
 
 var (
@@ -92,14 +93,18 @@ func (h *testHarness) newLifetimePackage(
 	version chanbackup.SingleBackupVersion) *LifetimePackage {
 
 	index := atomic.AddUint32(&nextIndex, 1)
+
+	var hash chainhash.Hash
+	binary.BigEndian.PutUint32(hash[:], index)
+
 	pkg := &LifetimePackage{
 		ChannelPoint: wire.OutPoint{
-			Hash:  chainhash.Hash{},
+			Hash:  hash,
 			Index: index,
 		},
 		ChannelScript:       nil,
 		HeightHint:          100,
-		MaturityHeight:      testMaturityHeight,
+		MaturityDelta:       testMaturityDelta,
 		Version:             version,
 		AskAccountKey:       testAskAccountKey,
 		BidAccountKey:       testBidAccountKey,
@@ -180,8 +185,16 @@ func (h *testHarness) createSpendTx(pkg *LifetimePackage, channelInitiator,
 	return tx
 }
 
+func (h *testHarness) notifyConf(txid chainhash.Hash, conf *chainntnfs.TxConfirmation) {
+	h.t.Helper()
+
+	if err := h.notifier.notifyConf(txid, conf); err != nil {
+		h.t.Fatal(err)
+	}
+}
+
 func (h *testHarness) notifyPrematureSpend(pkg *LifetimePackage,
-	channelInitiator, cooperative, missingToRemote bool) {
+	confHeight uint32, channelInitiator, cooperative, missingToRemote bool) {
 
 	h.t.Helper()
 
@@ -190,7 +203,7 @@ func (h *testHarness) notifyPrematureSpend(pkg *LifetimePackage,
 
 	err := h.notifier.notifySpend(pkg.ChannelPoint, &chainntnfs.SpendDetail{
 		SpentOutPoint:  &pkg.ChannelPoint,
-		SpendingHeight: testMaturityHeight - 1,
+		SpendingHeight: int32(confHeight + testMaturityDelta - 1),
 		SpendingTx:     tx,
 		SpenderTxHash:  &txHash,
 	})
@@ -199,7 +212,7 @@ func (h *testHarness) notifyPrematureSpend(pkg *LifetimePackage,
 	}
 }
 
-func (h *testHarness) notifyMatureSpend(pkg *LifetimePackage) {
+func (h *testHarness) notifyMatureSpend(pkg *LifetimePackage, confHeight uint32) {
 	h.t.Helper()
 
 	tx := wire.NewMsgTx(2)
@@ -207,7 +220,7 @@ func (h *testHarness) notifyMatureSpend(pkg *LifetimePackage) {
 
 	err := h.notifier.notifySpend(pkg.ChannelPoint, &chainntnfs.SpendDetail{
 		SpentOutPoint:  &pkg.ChannelPoint,
-		SpendingHeight: testMaturityHeight,
+		SpendingHeight: int32(confHeight + testMaturityDelta),
 		SpendingTx:     tx,
 		SpenderTxHash:  &txHash,
 	})

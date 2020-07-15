@@ -51,13 +51,14 @@ type Config struct {
 
 // ChannelEnforcer is responsible for enforcing channel service lifetime
 // packages that result from an auction's matched order pair. These channels
-// each specify a maturity height. Violations to the channel's service lifetime
-// occur upon a confirmed commitment broadcast before said height, assuming that
-// the bidder (buyer of the channel) rejects any cooperative close attempts from
-// the asker (seller of the channel). To determine the offender of said
-// violations, the ChannelEnforcer derives the expected to_remote outputs
-// scripts of each trader's commitment transaction and compares it with the
-// to_remote output script found in the confirmed commitment.
+// each specify a relative maturity height from the channel's confirmation
+// height. Violations to the channel's service lifetime occur upon a confirmed
+// commitment broadcast before said height, assuming that the bidder (buyer of
+// the channel) rejects any cooperative close attempts from the asker (seller of
+// the channel). To determine the offender of said violations, the
+// ChannelEnforcer derives the expected to_remote outputs scripts of each
+// trader's commitment transaction and compares it with the to_remote output
+// script found in the confirmed commitment.
 type ChannelEnforcer struct {
 	// bestHeight tracks the current height in the chain.
 	//
@@ -265,8 +266,8 @@ func (e *ChannelEnforcer) getBestHeight() uint32 {
 // notification.
 func (e *ChannelEnforcer) registerLifetimePackage(pkg *LifetimePackage) error {
 	ctx, cancel := context.WithCancel(context.Background())
-	spendChan, errChan, err := e.cfg.ChainNotifier.RegisterSpendNtfn(
-		ctx, &pkg.ChannelPoint, pkg.ChannelScript,
+	confChan, errChan, err := e.cfg.ChainNotifier.RegisterConfirmationsNtfn(
+		ctx, &pkg.ChannelPoint.Hash, pkg.ChannelScript, 1,
 		int32(pkg.HeightHint),
 	)
 	if err != nil {
@@ -275,9 +276,49 @@ func (e *ChannelEnforcer) registerLifetimePackage(pkg *LifetimePackage) error {
 	}
 
 	e.wg.Add(1)
-	go e.enforceOnPrematureSpend(pkg, spendChan, errChan, cancel)
+	go e.waitForChannelConf(pkg, confChan, errChan, cancel)
 
 	return nil
+}
+
+// waitForChannelConf waits for the channel's confirmation on-chain to begin
+// enforcing its service lifetime. This is necessary as the maturity period is
+// based on a delta applied to the channel's confirmation.
+func (e *ChannelEnforcer) waitForChannelConf(pkg *LifetimePackage,
+	confChan chan *chainntnfs.TxConfirmation, errChan chan error,
+	cancelConf func()) {
+
+	defer e.wg.Done()
+	defer cancelConf()
+
+	select {
+	case conf := <-confChan:
+		ctx, cancel := context.WithCancel(context.Background())
+		spendChan, errChan, err := e.cfg.ChainNotifier.RegisterSpendNtfn(
+			ctx, &pkg.ChannelPoint, pkg.ChannelScript,
+			int32(pkg.HeightHint),
+		)
+		if err != nil {
+			cancel()
+			log.Errorf("Unable to register spend notification for "+
+				"channel %v: %v", pkg.ChannelPoint, err)
+			return
+		}
+
+		e.wg.Add(1)
+		go e.enforceOnPrematureSpend(
+			pkg, conf.BlockHeight, spendChan, errChan, cancel,
+		)
+		return
+
+	case err := <-errChan:
+		log.Errorf("Unable to receive confirmation notification for "+
+			"channel %v: %v", pkg.ChannelPoint, err)
+		return
+
+	case <-e.quit:
+		return
+	}
 }
 
 // enforceOnPrematureSpend waits for a notification of a channel being spent and
@@ -287,8 +328,8 @@ func (e *ChannelEnforcer) registerLifetimePackage(pkg *LifetimePackage) error {
 // always be due to a commitment broadcast, since the bidder _should_ reject any
 // cooperative closes.
 func (e *ChannelEnforcer) enforceOnPrematureSpend(pkg *LifetimePackage,
-	spendChan chan *chainntnfs.SpendDetail, errChan chan error,
-	cancelSpend func()) {
+	confHeight uint32, spendChan chan *chainntnfs.SpendDetail,
+	errChan chan error, cancelSpend func()) {
 
 	defer e.wg.Done()
 	defer cancelSpend()
@@ -300,9 +341,10 @@ func (e *ChannelEnforcer) enforceOnPrematureSpend(pkg *LifetimePackage,
 	// TODO(wilmer): With anchors, nodes can broadcast their commitment and
 	// not bump its fees until the maturity height is reached. How should we
 	// handle this?
+	absoluteMaturityHeight := confHeight + pkg.MaturityDelta
 	select {
 	case spend := <-spendChan:
-		if uint32(spend.SpendingHeight) >= pkg.MaturityHeight {
+		if uint32(spend.SpendingHeight) >= absoluteMaturityHeight {
 			if err := e.pruneMatureLifetimePackage(pkg); err != nil {
 				log.Errorf("Unable to prune mature lifetime "+
 					"enforcement package for channel %v: "+
