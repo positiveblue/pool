@@ -100,8 +100,10 @@ func (b *Book) Stop() {
 }
 
 // PrepareOrder validates an incoming order and stores it to the database.
-func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder) error {
-	err := b.validateOrder(ctx, o)
+func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
+	bestHeight uint32) error {
+
+	err := b.validateOrder(ctx, o, bestHeight)
 	if err != nil {
 		return err
 	}
@@ -153,7 +155,9 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 // validateOrder makes sure the order is formally correct, has a correct
 // signature and that the account has enough balance to actually execute the
 // order.
-func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
+func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
+	bestHeight uint32) error {
+
 	kit := srvOrder.ServerDetails()
 	kit.ChanType = ChanTypeDefault
 	srvOrder.Details().State = order.StateSubmitted
@@ -236,6 +240,17 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 
 	if acct.Value < balanceNeeded {
 		return ErrInvalidAmt
+	}
+
+	// Is the account banned? Don't accept the order.
+	isBanned, expiration, err := b.cfg.Store.IsAccountBanned(
+		ctx, acctKey, bestHeight,
+	)
+	if err != nil {
+		return err
+	}
+	if isBanned {
+		return account.NewErrBannedAccount(expiration)
 	}
 
 	return nil

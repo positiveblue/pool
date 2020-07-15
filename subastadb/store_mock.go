@@ -18,6 +18,7 @@ import (
 type StoreMock struct {
 	Res         map[lsat.TokenID]*account.Reservation
 	Accs        map[[33]byte]*account.Account
+	BannedAccs  map[[33]byte][2]uint32 // 0: ban start height, 1: delta
 	Orders      map[orderT.Nonce]order.ServerOrder
 	BatchPubkey *btcec.PublicKey
 	MasterAcct  *account.Auctioneer
@@ -31,6 +32,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 	return &StoreMock{
 		Res:         make(map[lsat.TokenID]*account.Reservation),
 		Accs:        make(map[[33]byte]*account.Account),
+		BannedAccs:  make(map[[33]byte][2]uint32),
 		Orders:      make(map[orderT.Nonce]order.ServerOrder),
 		BatchPubkey: initialBatchKey,
 		Snapshots:   make(map[orderT.BatchID]*matching.OrderBatch),
@@ -341,6 +343,43 @@ func (s *StoreMock) GetBatchSnapshot(_ context.Context, id orderT.BatchID) (
 		return nil, nil, errBatchSnapshotNotFound
 	}
 	return snapshot, s.BatchTx, nil
+}
+
+// BanAccount attempts to ban the account associated with a trader starting from
+// the current height of the chain. The duration of the ban will depend on how
+// many times the node has been banned before and grows exponentially, otherwise
+// it is 144 blocks.
+func (s *StoreMock) BanAccount(ctx context.Context, traderKey *btcec.PublicKey,
+	currentHeight uint32) error {
+
+	var accountKey [33]byte
+	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	banTuple := [2]uint32{currentHeight, initialBanDuration}
+
+	if existingBan, isBanned := s.BannedAccs[accountKey]; isBanned {
+		banTuple[1] = existingBan[1] * 2
+	}
+
+	s.BannedAccs[accountKey] = banTuple
+	return nil
+}
+
+// IsAccountBanned determines whether the given account is banned at the current
+// height. The ban's expiration height is returned.
+func (s *StoreMock) IsAccountBanned(_ context.Context,
+	traderKey *btcec.PublicKey, bestHeight uint32) (bool, uint32, error) {
+
+	var accountKey [33]byte
+	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	banTuple, isBanned := s.BannedAccs[accountKey]
+	if !isBanned {
+		return false, 0, nil
+	}
+
+	expiration := banTuple[0] + banTuple[1]
+	return bestHeight < expiration, expiration, nil
 }
 
 // A compile-time check to make sure StoreMock implements the Store interface.

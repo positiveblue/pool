@@ -43,6 +43,7 @@ type mockStore struct {
 	newReservations chan *Reservation
 	accounts        map[[33]byte]Account
 	accountDiffs    map[[33]byte]Account
+	bannedAccounts  map[[33]byte]uint32
 }
 
 func newMockStore() *mockStore {
@@ -51,6 +52,7 @@ func newMockStore() *mockStore {
 		newReservations: make(chan *Reservation, 1),
 		accounts:        make(map[[33]byte]Account),
 		accountDiffs:    make(map[[33]byte]Account),
+		bannedAccounts:  make(map[[33]byte]uint32),
 	}
 }
 
@@ -195,6 +197,32 @@ func (s *mockStore) Accounts(context.Context) ([]*Account, error) {
 
 func (s *mockStore) BatchKey(context.Context) (*btcec.PublicKey, error) {
 	return testTraderKey, nil
+}
+
+func (s *mockStore) banAccount(traderKey *btcec.PublicKey, expiration uint32) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	s.bannedAccounts[accountKey] = expiration
+}
+
+func (s *mockStore) IsAccountBanned(_ context.Context,
+	traderKey *btcec.PublicKey, bestHeight uint32) (bool, uint32, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], traderKey.SerializeCompressed())
+
+	expiration, isBanned := s.bannedAccounts[accountKey]
+	if !isBanned {
+		return false, 0, nil
+	}
+	return bestHeight < expiration, expiration, nil
 }
 
 type mockWallet struct {

@@ -629,9 +629,21 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	modifyLock.Lock()
 	defer modifyLock.Unlock()
 
+	// Retrieve the details of the asked account.
 	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return nil, err
+	}
+
+	// Is the account banned? Don't allow modifications.
+	isBanned, expiration, err := m.cfg.Store.IsAccountBanned(
+		ctx, traderKey, bestHeight,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if isBanned {
+		return nil, NewErrBannedAccount(expiration)
 	}
 
 	// TODO(wilmer): Reject if account has pending orders.
