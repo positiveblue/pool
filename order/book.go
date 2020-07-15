@@ -222,6 +222,18 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		return fmt.Errorf("unable to locate account with key %x: %v",
 			acctKey.SerializeCompressed(), err)
 	}
+
+	// Only allow orders to be submitted if the account is open, or open
+	// and pending an update (so they can submit orders while the update is
+	// confirming).
+	switch acct.State {
+	case account.StatePendingUpdate, account.StateOpen:
+		break
+	default:
+		return fmt.Errorf("account must be open or pending open to "+
+			"submit orders, instead state=%v", acct.State)
+	}
+
 	if acct.Value < balanceNeeded {
 		return ErrInvalidAmt
 	}
