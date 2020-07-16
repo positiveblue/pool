@@ -209,9 +209,6 @@ func testBatchExecution(t *harnessTest) {
 	// We'll now mine a block to confirm the channel. We should find the
 	// channel in the listchannels output for both nodes, and the
 	// thaw_height should be set accordingly.
-	//
-	// TODO(roasbeef): thaw_height rn is relative, doesn't take into
-	// account conf
 	blocks := mineBlocks(t, t.lndHarness, 1, 1)
 
 	// The block above should contain the batch transaction found in the
@@ -402,6 +399,7 @@ func testBatchExecution(t *harnessTest) {
 
 		assertChannelClosed(
 			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
+			false,
 		)
 	}
 
@@ -454,4 +452,168 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	copy(serverbatchID[:], batchSnapshot.BatchId)
 
 	return serverbatchID
+}
+
+// testServiceLevelEnforcement ensures that the auctioneer correctly enforces
+// a channel's lifetime by punishing the offending trader (the maker).
+func testServiceLevelEnforcement(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader.
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	if err != nil {
+		t.Fatalf("unable to set up charlie: %v", err)
+	}
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	if err != nil {
+		t.Fatalf("unable to send coins to carol: %v", err)
+	}
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders.
+	account1 := openAccountAndAssert(
+		t, t.trader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// default trader, selling 15 units (1.5M sats) of liquidity.
+	askAmt := btcutil.Amount(1_500_000)
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, 100, askAmt, 2*dayInBlocks,
+		uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("could not submit ask order: %v", err)
+	}
+
+	// Our second trader, connected to Charlie, wants to buy 8 units of
+	// liquidity. So let's submit an order for that.
+	bidAmt := btcutil.Amount(800_000)
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt, dayInBlocks,
+		uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	// Let's kick the auctioneer now to try and create a batch.
+	_, err = t.auctioneer.AuctionAdminClient.BatchTick(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not trigger batch tick: %v", err)
+	}
+
+	// At this point, the batch should now attempt to be cleared, and find
+	// that we're able to make a market. Eventually the batch execution
+	// transaction should be broadcast to the mempool.
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("txid not found in mempool: %v", err)
+	}
+
+	if len(txids) != 1 {
+		t.Fatalf("expected a single transaction, instead have: %v",
+			spew.Sdump(txids))
+	}
+	batchTXID := txids[0]
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidAmt, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// We'll now mine a block to confirm the channel. We should find the
+	// channel in the listchannels output for both nodes, and the
+	// thaw_height should be set accordingly.
+	blocks := mineBlocks(t, t.lndHarness, 1, 1)
+
+	// The block above should contain the batch transaction found in the
+	// mempool above.
+	assertTxInBlock(t, blocks[0], batchTXID)
+
+	// We'll now mine another 3 blocks to ensure the channel itself is
+	// fully confirmed.
+	_ = mineBlocks(t, t.lndHarness, 3, 0)
+
+	// Now that the channels are confirmed, they should both be active, and
+	// we should be able to make a payment between this new channel
+	// established.
+	chanPoint := assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
+		charlie.PubKey, dayInBlocks,
+	)
+	_ = assertActiveChannel(
+		t, charlie, int64(bidAmt), *batchTXID,
+		t.trader.cfg.LndNode.PubKey, dayInBlocks,
+	)
+
+	// Proceed to force close the channel from the initiator. They should be
+	// banned accordingly.
+	ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+	closeUpdates, _, err := t.lndHarness.CloseChannel(
+		ctxt, t.trader.cfg.LndNode, chanPoint, true,
+	)
+	if err != nil {
+		t.Fatalf("unable to force close channel: %v", err)
+	}
+	assertChannelClosed(
+		ctx, t, t.lndHarness, t.trader.cfg.LndNode, chanPoint,
+		closeUpdates, true,
+	)
+
+	// The trader responsible should no longer be able to modify their
+	// account or submit orders.
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, 100, 100_000, 2*dayInBlocks,
+		uint32(order.CurrentVersion),
+	)
+	if err == nil || !strings.Contains(err.Error(), "banned") {
+		t.Fatalf("expected order submission to fail due to account ban")
+	}
+	_, err = t.trader.DepositAccount(ctx, &clmrpc.DepositAccountRequest{
+		TraderKey:   account1.TraderKey,
+		AmountSat:   1000,
+		SatPerVbyte: 1,
+	})
+	if err == nil || !strings.Contains(err.Error(), "banned") {
+		t.Fatalf("expected account deposit to fail due to account ban")
+	}
+
+	// The offended trader should still be able to however.
+	_, err = submitAskOrder(
+		secondTrader, account2.TraderKey, 100, 100_000, 2*dayInBlocks,
+		uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("expected order submission to succeed: %v", err)
+	}
 }

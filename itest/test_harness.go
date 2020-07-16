@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -824,8 +825,9 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 
 func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 	chanAmt int64, fundingTXID chainhash.Hash, chanPeer [33]byte,
-	chanDuration uint32) { // nolint:unparam
+	chanDuration uint32) *lnrpc.ChannelPoint { // nolint:unparam
 
+	var chanPointStr string
 	req := &lnrpc.ListChannelsRequest{}
 	err := wait.NoError(func() error {
 		resp, err := node.ListChannels(context.Background(), req)
@@ -872,17 +874,33 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 				"got %v", chanDuration, pendingChan.ThawHeight)
 		}
 
+		chanPointStr = pendingChan.ChannelPoint
 		return nil
 	}, defaultWaitTimeout)
 	if err != nil {
 		t.Fatalf("active channel assertion failed: %v", err)
 	}
 
+	chanPointParts := strings.Split(chanPointStr, ":")
+	txid, err := chainhash.NewHashFromStr(chanPointParts[0])
+	if err != nil {
+		t.Fatalf("unable txid to convert to hash: %v", err)
+	}
+	index, err := strconv.Atoi(chanPointParts[1])
+	if err != nil {
+		t.Fatalf("unable to convert string to int: %v", err)
+	}
+	return &lnrpc.ChannelPoint{
+		FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
+			FundingTxidBytes: txid[:],
+		},
+		OutputIndex: uint32(index),
+	}
 }
 
 func submitBidOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration uint32,
-	version uint32) (orderT.Nonce, error) {
+	rate uint32, amt btcutil.Amount, duration uint32, // nolint:unparam
+	version uint32) (orderT.Nonce, error) { // nolint:unparam
 
 	var nonce orderT.Nonce
 
@@ -916,8 +934,8 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 }
 
 func submitAskOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration uint32,
-	version uint32) (orderT.Nonce, error) {
+	rate uint32, amt btcutil.Amount, duration uint32, // nolint:unparam
+	version uint32) (orderT.Nonce, error) { // nolint:unparam
 
 	var nonce orderT.Nonce
 
@@ -1025,7 +1043,8 @@ func assertAskOrderState(t *harnessTest, trader *traderHarness,
 func assertChannelClosed(ctx context.Context, t *harnessTest,
 	net *lntest.NetworkHarness, node *lntest.HarnessNode,
 	fundingChanPoint *lnrpc.ChannelPoint,
-	closeUpdates lnrpc.Lightning_CloseChannelClient) *chainhash.Hash {
+	closeUpdates lnrpc.Lightning_CloseChannelClient,
+	force bool) *chainhash.Hash {
 
 	txid, err := lnd.GetChanPointFundingTxid(fundingChanPoint)
 	if err != nil {
@@ -1073,6 +1092,7 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	// Finally, the transaction should no longer be in the waiting close
 	// state as we've just mined a block that should include the closing
 	// transaction.
+	var csvDelay uint32
 	err = wait.Predicate(func() bool {
 		pendingChansRequest := &lnrpc.PendingChannelsRequest{}
 		pendingChanResp, err := node.PendingChannels(
@@ -1082,9 +1102,29 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 			return false
 		}
 
-		for _, pendingClose := range pendingChanResp.WaitingCloseChannels {
-			if pendingClose.Channel.ChannelPoint == chanPointStr {
+		if force {
+			// If the channel was force closed, we'll need to mine
+			// some additional blocks to trigger the delayed
+			// commitment sweep.
+			for _, pendingClose := range pendingChanResp.PendingForceClosingChannels {
+				if pendingClose.Channel.ChannelPoint == chanPointStr {
+					csvDelay = uint32(pendingClose.BlocksTilMaturity)
+					break
+				}
+			}
+
+			// Wait for the proper CSV delay to be reported.
+			if csvDelay == 0 {
 				return false
+			}
+		} else {
+			// Otherwise, the channel was closed cooperatively, so
+			// we'll wait until the backing lnd node picks up its
+			// confirmation.
+			for _, pendingClose := range pendingChanResp.WaitingCloseChannels {
+				if pendingClose.Channel.ChannelPoint == chanPointStr {
+					return false
+				}
 			}
 		}
 
@@ -1093,6 +1133,15 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	if err != nil {
 		t.Fatalf("closing transaction not marked as fully closed")
 	}
+
+	if !force {
+		return closingTxid
+	}
+
+	// If the channel was force closed, we'll need to mine some additional
+	// blocks to trigger the delayed commitment sweep.
+	_ = mineBlocks(t, net, csvDelay, 0)
+	_ = mineBlocks(t, net, 1, 1)
 
 	return closingTxid
 }

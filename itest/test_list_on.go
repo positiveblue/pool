@@ -33,6 +33,10 @@ var testCases = []*testCase{
 		test: testBatchExecution,
 	},
 	{
+		name: "service level enforcement",
+		test: testServiceLevelEnforcement,
+	},
+	{
 		name: "server-assisted recover accounts",
 		test: testServerAssistedAccountRecovery,
 	},
