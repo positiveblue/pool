@@ -220,6 +220,10 @@ type Auctioneer struct {
 	// execute.
 	pendingBatchID matching.BatchID
 
+	// pendingBatchIDMtx is a mutex that guards the pending batch ID from
+	// concurrent access.
+	pendingBatchIDMtx sync.Mutex
+
 	// finalizedBatch points to the final batch of this epoch. Once this is
 	// non-nil, then we'll advance to the BatchCommitState where we'll
 	// conclude this batch run, and wait for another tick.
@@ -856,6 +860,20 @@ func (a *Auctioneer) accountConfNotifier(expectedOutput *wire.TxOut,
 	}
 }
 
+// getPendingBatchID synchronously returns the current pending batch ID.
+func (a *Auctioneer) getPendingBatchID() matching.BatchID {
+	a.pendingBatchIDMtx.Lock()
+	defer a.pendingBatchIDMtx.Unlock()
+	return a.pendingBatchID
+}
+
+// updatePendingBatchID synchronously updates the current pending batch ID.
+func (a *Auctioneer) updatePendingBatchID(newBatchID matching.BatchID) {
+	a.pendingBatchIDMtx.Lock()
+	defer a.pendingBatchIDMtx.Unlock()
+	a.pendingBatchID = newBatchID
+}
+
 // removeIneligibleOrders attempts to remove a set of orders that are no longer
 // eligible for this batch from the
 func (a *Auctioneer) removeIneligibleOrders(orders []orderT.Nonce) {
@@ -865,16 +883,16 @@ func (a *Auctioneer) removeIneligibleOrders(orders []orderT.Nonce) {
 
 		a.removedOrders[order] = struct{}{}
 
-		log.Debugf("Removing Order(%x) from Batch(%x)", order[:],
-			a.pendingBatchID[:])
+		log.Debugf("Removing Order(%x) from Batch(%v)", order[:],
+			a.getPendingBatchID())
 	}
 }
 
 // restoreIneligibleOrders will re-add any orders we removed during our
 // execution loop to the main call market.
 func (a *Auctioneer) restoreIneligibleOrders() error {
-	log.Infof("Restoring %v removed orders during Batch(%x) execution",
-		len(a.removedOrders), a.pendingBatchID[:])
+	log.Infof("Restoring %v removed orders during Batch(%v) execution",
+		len(a.removedOrders), a.getPendingBatchID())
 
 	for removedOrderNonce := range a.removedOrders {
 		diskOrder, err := a.cfg.DB.GetOrder(
@@ -1162,7 +1180,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// TODO(roasbeef): allow to send own triggers instead, or we
 		// add this to the running state instead
 		a.eligibleBatch = orderBatch
-		a.pendingBatchID = batchID
+		a.updatePendingBatchID(batchID)
 
 		log.Infof("Market has been made for Batch(%x)", batchID[:])
 
@@ -1174,7 +1192,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 	// In this phase, we'll attempt to execute the order by entering into a
 	// multi-party signing protocol with all the relevant traders.
 	case BatchExecutionState:
-		log.Infof("Attempting to execute Batch(%x)", a.pendingBatchID[:])
+		log.Infof("Attempting to execute Batch(%v)",
+			a.getPendingBatchID())
 
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
@@ -1195,8 +1214,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			// was an issue with the batch, so we'll try to see if
 			// we can fix the issue to re-submit.
 			if result.Err != nil {
-				log.Warnf("Encountered error during Batch(%x) "+
-					"execution: %v", a.pendingBatchID[:],
+				log.Warnf("Encountered error during Batch(%v) "+
+					"execution: %v", a.getPendingBatchID(),
 					result.Err)
 
 				switch exeErr := result.Err.(type) {
@@ -1231,8 +1250,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				return MatchMakingState, nil
 			}
 
-			log.Infof("Batch(%x) successfully executed!!!",
-				a.pendingBatchID[:])
+			log.Infof("Batch(%v) successfully executed!!!",
+				a.getPendingBatchID())
 
 			a.finalizedBatch = result
 			return BatchCommitState, nil
@@ -1249,7 +1268,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// transaction as it exists now.
 		err := a.publishBatchTx(
 			ctxb, a.finalizedBatch.BatchTx,
-			orderT.BatchID(a.pendingBatchID),
+			orderT.BatchID(a.getPendingBatchID()),
 		)
 		if err != nil {
 			return 0, fmt.Errorf("unable to publish batch "+

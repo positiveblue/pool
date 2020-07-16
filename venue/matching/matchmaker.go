@@ -2,6 +2,7 @@ package matching
 
 import (
 	"container/list"
+	"encoding/hex"
 
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/order"
@@ -11,6 +12,11 @@ import (
 // will be used later for account key derivation when constructing the batch
 // execution transaction.
 type BatchID [33]byte
+
+// String returns the hex encoded batch ID.
+func (b BatchID) String() string {
+	return hex.EncodeToString(b[:])
+}
 
 // UniformPriceCallMarket is a discrete-batch auction that clears all orders in
 // a batch according to a selected uniform clearing price. This struct will be
