@@ -34,25 +34,25 @@ const (
 	initialBanDuration uint32 = 144
 )
 
-// banInfo serves as a helper struct to store all ban-related information for a
+// BanInfo serves as a helper struct to store all ban-related information for a
 // trader ban.
-type banInfo struct {
-	// height is the height at which the ban begins to apply.
-	height uint32
+type BanInfo struct {
+	// Height is the height at which the ban begins to apply.
+	Height uint32
 
-	// duration is the number of blocks the ban will last for once applied.
-	duration uint32
+	// Duration is the number of blocks the ban will last for once applied.
+	Duration uint32
 }
 
-// expiration returns the height at which the ban expires.
-func (i *banInfo) expiration() uint32 {
-	return i.height + i.duration
+// Expiration returns the height at which the ban expires.
+func (i *BanInfo) Expiration() uint32 {
+	return i.Height + i.Duration
 }
 
-// exceedsBanExpiration determines whether the given height exceeds the ban
+// ExceedsBanExpiration determines whether the given height exceeds the ban
 // expiration height.
-func (i *banInfo) exceedsBanExpiration(currentHeight uint32) bool {
-	return currentHeight >= i.expiration()
+func (i *BanInfo) ExceedsBanExpiration(currentHeight uint32) bool {
+	return currentHeight >= i.Expiration()
 }
 
 // banAccountKeyPath returns the full path under which we store a trader's
@@ -102,9 +102,9 @@ func (s *EtcdStore) banTrader(stm conc.STM, accountKey,
 
 	// We'll start by determining how long we should ban the trader's
 	// account and node key for.
-	accountBanInfo := &banInfo{
-		height:   currentHeight,
-		duration: initialBanDuration,
+	accountBanInfo := &BanInfo{
+		Height:   currentHeight,
+		Duration: initialBanDuration,
 	}
 
 	// If the account has been banned before, apply a new ban duration
@@ -115,12 +115,12 @@ func (s *EtcdStore) banTrader(stm conc.STM, accountKey,
 		if err != nil {
 			return err
 		}
-		accountBanInfo.duration = curBanInfo.duration * 2
+		accountBanInfo.Duration = curBanInfo.Duration * 2
 	}
 
-	nodeBanInfo := &banInfo{
-		height:   currentHeight,
-		duration: initialBanDuration,
+	nodeBanInfo := &BanInfo{
+		Height:   currentHeight,
+		Duration: initialBanDuration,
 	}
 
 	// Similarly, if the node key has been banned before, apply a new ban
@@ -131,7 +131,7 @@ func (s *EtcdStore) banTrader(stm conc.STM, accountKey,
 		if err != nil {
 			return err
 		}
-		nodeBanInfo.duration = banInfo.duration * 2
+		nodeBanInfo.Duration = banInfo.Duration * 2
 	}
 
 	// Update the ban details for both the account and node key respectively.
@@ -212,7 +212,7 @@ func (s *EtcdStore) isAccountBanned(stm conc.STM, accountKey *btcec.PublicKey,
 	if err != nil {
 		return false, 0, err
 	}
-	return !ban.exceedsBanExpiration(currentHeight), ban.expiration(), nil
+	return !ban.ExceedsBanExpiration(currentHeight), ban.Expiration(), nil
 }
 
 // IsNodeBanned determines whether the given node public key is banned at the
@@ -250,16 +250,16 @@ func (s *EtcdStore) isNodeBanned(stm conc.STM, nodeKey *btcec.PublicKey,
 	if err != nil {
 		return false, 0, err
 	}
-	return !ban.exceedsBanExpiration(currentHeight), ban.expiration(), nil
+	return !ban.ExceedsBanExpiration(currentHeight), ban.Expiration(), nil
 }
 
-func serializeBanInfo(w io.Writer, info *banInfo) error {
-	return WriteElements(w, info.height, info.duration)
+func serializeBanInfo(w io.Writer, info *BanInfo) error {
+	return WriteElements(w, info.Height, info.Duration)
 }
 
-func deserializeBanInfo(r io.Reader) (*banInfo, error) {
-	var info banInfo
-	if err := ReadElements(r, &info.height, &info.duration); err != nil {
+func deserializeBanInfo(r io.Reader) (*BanInfo, error) {
+	var info BanInfo
+	if err := ReadElements(r, &info.Height, &info.Duration); err != nil {
 		return nil, err
 	}
 	return &info, nil
