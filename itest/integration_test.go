@@ -171,7 +171,6 @@ func TestAuctioneerServer(t *testing.T) {
 	}
 
 	t.Logf("Running %v integration tests", len(testCases))
-	masterAccountConfirmed := false
 	for _, testCase := range testCases {
 		logLine := fmt.Sprintf("STARTING ============ %v ============\n",
 			testCase.name)
@@ -209,12 +208,8 @@ func TestAuctioneerServer(t *testing.T) {
 			// the auctioneer to be ready before starting the test.
 			// Tests that want to explicitly test the master account
 			// creation can set this flag to true.
-			if !testCase.skipMasterAcctInit && !masterAccountConfirmed {
+			if !testCase.skipMasterAcctInit {
 				_ = mineBlocks(ht, lndHarness, 1, 1)
-				masterAccountConfirmed = true
-			}
-			if testCase.skipMasterAcctInit {
-				masterAccountConfirmed = true
 			}
 
 			// Now we have everything to run the test case.

@@ -3,6 +3,7 @@ package itest
 import (
 	"bytes"
 	"context"
+	"errors"
 	"time"
 
 	"github.com/btcsuite/btcd/wire"
@@ -57,6 +58,10 @@ func testMasterAcctInit(t *harnessTest) {
 		)
 		if err != nil { // nolint:gosimple
 			return err
+		}
+
+		if masterAcct.Pending {
+			return errors.New("master account is still pending")
 		}
 
 		return nil

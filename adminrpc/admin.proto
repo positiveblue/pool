@@ -48,6 +48,9 @@ message MasterAccountResponse {
     incremented by one each batch.
     */
     bytes batch_key = 4;
+
+    // Whether the master account is pending its confirmation.
+    bool pending = 5;
 }
 
 message ConnectedTradersResponse {

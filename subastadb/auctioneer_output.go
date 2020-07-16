@@ -111,6 +111,7 @@ func (s *EtcdStore) updateAuctioneerAccountSTM(stm conc.STM,
 func serializeAuctioneerAccount(w io.Writer, acct *account.Auctioneer) error {
 	return WriteElements(
 		w, acct.OutPoint, acct.Balance, acct.AuctioneerKey,
+		acct.IsPending,
 	)
 }
 
@@ -119,6 +120,7 @@ func deserializeAuctioneerAccount(r io.Reader) (*account.Auctioneer, error) {
 
 	err := ReadElements(
 		r, &acct.OutPoint, &acct.Balance, &acct.AuctioneerKey,
+		&acct.IsPending,
 	)
 
 	return &acct, err
