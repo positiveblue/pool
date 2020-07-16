@@ -29,7 +29,7 @@ var (
 	testReservation = account.Reservation{
 		Value:           1337,
 		AuctioneerKey:   testAuctioneerKeyDesc,
-		InitialBatchKey: initialBatchKey,
+		InitialBatchKey: InitialBatchKey,
 		TraderKeyRaw:    toRawKey(testTraderKey),
 		Expiry:          100,
 		HeightHint:      12345,
@@ -43,7 +43,7 @@ var (
 		Expiry:        100,
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateOpen,
-		BatchKey:      initialBatchKey,
+		BatchKey:      InitialBatchKey,
 		Secret:        [32]byte{0x73, 0x65, 0x63, 0x72, 0x65, 0x74},
 		HeightHint:    100,
 		OutPoint:      wire.OutPoint{Index: 1},

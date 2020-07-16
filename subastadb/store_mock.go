@@ -34,7 +34,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		Accs:        make(map[[33]byte]*account.Account),
 		BannedAccs:  make(map[[33]byte][2]uint32),
 		Orders:      make(map[orderT.Nonce]order.ServerOrder),
-		BatchPubkey: initialBatchKey,
+		BatchPubkey: InitialBatchKey,
 		Snapshots:   make(map[orderT.BatchID]*matching.OrderBatch),
 		t:           t,
 	}

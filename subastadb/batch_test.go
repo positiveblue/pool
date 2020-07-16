@@ -43,9 +43,9 @@ func TestBatchKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve initial batch key: %v", err)
 	}
-	if !batchKey.IsEqual(initialBatchKey) {
+	if !batchKey.IsEqual(InitialBatchKey) {
 		t.Fatalf("expected initial batch key %x, got %x",
-			initialBatchKey.SerializeCompressed(),
+			InitialBatchKey.SerializeCompressed(),
 			batchKey.SerializeCompressed())
 	}
 
@@ -65,7 +65,7 @@ func TestBatchKey(t *testing.T) {
 			storedBatchKey.SerializeCompressed())
 	}
 
-	expectedNextBatchKey := clmscript.IncrementKey(initialBatchKey)
+	expectedNextBatchKey := clmscript.IncrementKey(InitialBatchKey)
 	if !nextBatchKey.IsEqual(expectedNextBatchKey) {
 		t.Fatalf("expected updated batch key %x, got %x",
 			expectedNextBatchKey.SerializeCompressed(),
@@ -134,7 +134,7 @@ func TestPersistBatchResult(t *testing.T) {
 		Balance:       1_000_000,
 		AuctioneerKey: testAuctioneerKeyDesc,
 	}
-	copy(ma1.BatchKey[:], initialBatchKey.SerializeCompressed())
+	copy(ma1.BatchKey[:], InitialBatchKey.SerializeCompressed())
 	err = store.UpdateAuctioneerAccount(ctx, ma1)
 	if err != nil {
 		t.Fatalf("unable to update auctioneer account: %v", err)
@@ -260,7 +260,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 		Balance:       1_000_000,
 		AuctioneerKey: testAuctioneerKeyDesc,
 	}
-	copy(ma1.BatchKey[:], initialBatchKey.SerializeCompressed())
+	copy(ma1.BatchKey[:], InitialBatchKey.SerializeCompressed())
 	err = store.UpdateAuctioneerAccount(ctx, ma1)
 	if err != nil {
 		t.Fatalf("unable to update auctioneer account: %v", err)
@@ -307,9 +307,9 @@ func TestPersistBatchResultRollback(t *testing.T) {
 		t.Fatalf("unexpected master account balance, got %d wanted %d",
 			ma2.Balance, 1_000_000)
 	}
-	if !bytes.Equal(ma2.BatchKey[:], initialBatchKey.SerializeCompressed()) {
+	if !bytes.Equal(ma2.BatchKey[:], InitialBatchKey.SerializeCompressed()) {
 		t.Fatalf("unexpected batch key, got %x wanted %x", ma2.BatchKey,
-			initialBatchKey.SerializeCompressed())
+			InitialBatchKey.SerializeCompressed())
 	}
 }
 

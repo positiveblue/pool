@@ -170,7 +170,7 @@ func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 		// TODO(roasbeef): insert place holder auctioneer acct?
 
 		// Store the starting batch key.
-		return s.putPerBatchKeySTM(stm, initialBatchKey)
+		return s.putPerBatchKeySTM(stm, InitialBatchKey)
 	})
 	return err
 }
