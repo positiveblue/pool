@@ -1657,3 +1657,106 @@ func newAcctResNotCompletedError(
 	)
 	return result
 }
+
+// BatchSnapshot returns details about a past executed batch. If the target
+// batch ID is nil, then the last executed batch will be returned.
+func (s *rpcServer) BatchSnapshot(ctx context.Context,
+	req *clmrpc.BatchSnapshotRequest) (*clmrpc.BatchSnapshotResponse, error) {
+
+	log.Tracef("[BatchSnapshot] batch_id=%x", req.BatchId)
+
+	// If the passed batch ID wasn't specified, or is nil, then we'll fetch
+	// the key for the current batch key (which isn't ass coated with a
+	// cleared batch, then walk that back one to get to the most recent
+	// batch.
+	var (
+		err error
+
+		zeroID orderT.BatchID
+
+		batchID  orderT.BatchID
+		batchKey *btcec.PublicKey
+	)
+
+	if len(req.BatchId) == 0 || bytes.Equal(zeroID[:], req.BatchId) {
+		currentBatchKey, err := s.store.BatchKey(context.Background())
+		if err != nil {
+			return nil, fmt.Errorf("unable to fetch latest "+
+				"batch key: %v", err)
+		}
+
+		batchKey = DecrementBatchKey(currentBatchKey)
+		batchID = orderT.NewBatchID(batchKey)
+	} else {
+		copy(batchID[:], req.BatchId)
+
+		batchKey, err = btcec.ParsePubKey(req.BatchId, btcec.S256())
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse "+
+				"batch ID (%x): %v", req.BatchId, err)
+		}
+	}
+
+	// Now that we have the batch key, we'll also derive the _prior_ batch
+	// key so the client can use this as a sort of linked list to navigate
+	// the batch chain.
+	//
+	// TODO(roasbeef): check for roll back beyond batch key zero?
+	prevBatchKey := DecrementBatchKey(batchKey)
+
+	// Next, we'll fetch the targeted batch snapshot.
+	batchSnapshot, batchTx, err := s.store.GetBatchSnapshot(
+		context.Background(), batchID,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &clmrpc.BatchSnapshotResponse{
+		Version:           uint32(orderT.CurrentVersion),
+		BatchId:           batchID[:],
+		PrevBatchId:       prevBatchKey.SerializeCompressed(),
+		ClearingPriceRate: uint32(batchSnapshot.ClearingPrice),
+	}
+
+	// The response for this call is a bit simpler than the
+	// RelevantBatchSnapshot call, in that we only need to return the set
+	// of orders, and not also the accounts diffs.
+	resp.MatchedOrders = make(
+		[]*clmrpc.MatchedOrderSnapshot, len(batchSnapshot.Orders),
+	)
+	for i, order := range batchSnapshot.Orders {
+		ask := order.Details.Ask
+		bid := order.Details.Bid
+		quote := order.Details.Quote
+
+		resp.MatchedOrders[i] = &clmrpc.MatchedOrderSnapshot{
+			Ask: &clmrpc.AskSnapshot{
+				Version:           uint32(ask.Version),
+				MaxDurationBlocks: ask.MaxDuration(),
+				RateFixed:         ask.Details().FixedRate,
+				ChanType:          uint32(ask.ServerDetails().ChanType),
+			},
+			Bid: &clmrpc.BidSnapshot{
+				Version:           uint32(bid.Version),
+				MinDurationBlocks: bid.MinDuration(),
+				RateFixed:         bid.Details().FixedRate,
+				ChanType:          uint32(bid.ServerDetails().ChanType),
+			},
+			MatchingRate:     uint32(quote.MatchingRate),
+			TotalSatsCleared: uint64(quote.TotalSatsCleared),
+			UnitsMatched:     uint32(quote.UnitsMatched),
+		}
+	}
+
+	// Finally, we'll serialize the batch transaction, which completes our
+	// response.
+	var txBuf bytes.Buffer
+	if err := batchTx.Serialize(&txBuf); err != nil {
+		return nil, err
+	}
+
+	resp.BatchTx = txBuf.Bytes()
+
+	return resp, nil
+}
