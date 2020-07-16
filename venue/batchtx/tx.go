@@ -124,7 +124,7 @@ type ExecutionContext struct {
 
 	// orderIndex maps an order nonce to the output within the batch
 	// execution transaction that executes the order.
-	orderIndex map[orderT.Nonce]*OrderOutput
+	orderIndex map[orderT.Nonce][]*OrderOutput
 
 	// traderIndex maps a trader's account ID to set of outputs that create
 	// channels that involve the trader.
@@ -148,7 +148,7 @@ type ExecutionContext struct {
 func (e *ExecutionContext) indexBatchTx(
 	scriptToOrders map[string][2]order.Order,
 	traderAccounts map[matching.AccountID]*wire.TxOut,
-	ordersForTrader map[matching.AccountID][]orderT.Nonce,
+	ordersForTrader map[matching.AccountID]map[orderT.Nonce]struct{},
 	inputToAcct map[wire.OutPoint]matching.AccountID) (int, error) {
 
 	txHash := e.ExeTx.TxHash()
@@ -168,29 +168,30 @@ func (e *ExecutionContext) indexBatchTx(
 		}
 
 		// TODO(roasbeef): de-dup? pointers
-		e.orderIndex[orders[0].Nonce()] = &OrderOutput{
+		nonce1, nonce2 := orders[0].Nonce(), orders[1].Nonce()
+		e.orderIndex[nonce1] = append(e.orderIndex[nonce1], &OrderOutput{
 			OutPoint: wire.OutPoint{
 				Hash:  txHash,
 				Index: outputIndex,
 			},
 			TxOut: e.ExeTx.TxOut[outputIndex],
 			Order: orders[0],
-		}
-		e.orderIndex[orders[1].Nonce()] = &OrderOutput{
+		})
+		e.orderIndex[nonce2] = append(e.orderIndex[nonce2], &OrderOutput{
 			OutPoint: wire.OutPoint{
 				Hash:  txHash,
 				Index: outputIndex,
 			},
 			TxOut: e.ExeTx.TxOut[outputIndex],
 			Order: orders[1],
-		}
+		})
 
 	}
 
 	// Finally, we'll populate the trader index (trader to funding
 	// outputs), and the account index (trader to new account output).
 	for acctID, orderNonces := range ordersForTrader {
-		for _, orderNonce := range orderNonces {
+		for orderNonce := range orderNonces {
 			orderOutput, ok := e.orderIndex[orderNonce]
 			if !ok {
 				return 0, fmt.Errorf("unable to find order "+
@@ -198,8 +199,7 @@ func (e *ExecutionContext) indexBatchTx(
 			}
 
 			e.traderIndex[acctID] = append(
-				e.traderIndex[acctID],
-				orderOutput,
+				e.traderIndex[acctID], orderOutput...,
 			)
 		}
 	}
@@ -350,8 +350,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// Now that we have the account state present within the ExeTx, we'll
 	// add the necessary outputs to create all channels purchased in this
 	// batch.
-	ordersForTrader := make(map[matching.AccountID][]orderT.Nonce)
 	scriptToOrders := make(map[string][2]order.Order)
+	ordersForTrader := make(map[matching.AccountID]map[orderT.Nonce]struct{})
 	for _, matchedOrder := range orderBatch.Orders {
 		// First using the relevant channel details of the order, we'll
 		// construct the funding output that will create the channel
@@ -381,15 +381,19 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			bid, ask,
 		}
 
-		// TODO(roasbeef): need to make a map instead?
-		ordersForTrader[matchedOrder.Asker.AccountKey] = append(
-			ordersForTrader[matchedOrder.Asker.AccountKey],
-			askNonce,
-		)
-		ordersForTrader[matchedOrder.Bidder.AccountKey] = append(
-			ordersForTrader[matchedOrder.Bidder.AccountKey],
-			bidNonce,
-		)
+		askerOrders, ok := ordersForTrader[matchedOrder.Asker.AccountKey]
+		if !ok {
+			askerOrders = make(map[orderT.Nonce]struct{})
+			ordersForTrader[matchedOrder.Asker.AccountKey] = askerOrders
+		}
+		askerOrders[askNonce] = struct{}{}
+
+		bidderOrders, ok := ordersForTrader[matchedOrder.Bidder.AccountKey]
+		if !ok {
+			bidderOrders = make(map[orderT.Nonce]struct{})
+			ordersForTrader[matchedOrder.Bidder.AccountKey] = bidderOrders
+		}
+		bidderOrders[bidNonce] = struct{}{}
 	}
 
 	// Next, we'll update each of the account outputs in the ExeTx to
@@ -487,7 +491,7 @@ func New(batch *matching.OrderBatch, mad *MasterAccountState,
 
 	exeCtx := ExecutionContext{
 		batchFees:      make(map[matching.AccountID]btcutil.Amount),
-		orderIndex:     make(map[orderT.Nonce]*OrderOutput),
+		orderIndex:     make(map[orderT.Nonce][]*OrderOutput),
 		traderIndex:    make(map[matching.AccountID][]*OrderOutput),
 		accountIndex:   make(map[matching.AccountID]wire.OutPoint),
 		acctInputIndex: make(map[matching.AccountID]*AcctInput),
@@ -504,7 +508,7 @@ func New(batch *matching.OrderBatch, mad *MasterAccountState,
 
 // OutputForOrder returns the corresponding output within the execution
 // transaction for the passed order nonce.
-func (e *ExecutionContext) OutputForOrder(nonce orderT.Nonce) (*OrderOutput, bool) {
+func (e *ExecutionContext) OutputsForOrder(nonce orderT.Nonce) ([]*OrderOutput, bool) {
 	output, ok := e.orderIndex[nonce]
 	return output, ok
 }
