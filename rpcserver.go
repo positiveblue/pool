@@ -1674,8 +1674,9 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 
 		zeroID orderT.BatchID
 
-		batchID  orderT.BatchID
-		batchKey *btcec.PublicKey
+		batchID     orderT.BatchID
+		batchKey    *btcec.PublicKey
+		prevBatchID []byte
 	)
 
 	if len(req.BatchId) == 0 || bytes.Equal(zeroID[:], req.BatchId) {
@@ -1699,15 +1700,14 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 
 	// Now that we have the batch key, we'll also derive the _prior_ batch
 	// key so the client can use this as a sort of linked list to navigate
-	// the batch chain.
-	//
-	// TODO(roasbeef): check for roll back beyond batch key zero?
-	prevBatchKey := DecrementBatchKey(batchKey)
+	// the batch chain. Unless of course we reached the initial batch key.
+	if !batchKey.IsEqual(subastadb.InitialBatchKey) {
+		prevBatchKey := DecrementBatchKey(batchKey)
+		prevBatchID = prevBatchKey.SerializeCompressed()
+	}
 
 	// Next, we'll fetch the targeted batch snapshot.
-	batchSnapshot, batchTx, err := s.store.GetBatchSnapshot(
-		context.Background(), batchID,
-	)
+	batchSnapshot, batchTx, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
@@ -1715,7 +1715,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	resp := &clmrpc.BatchSnapshotResponse{
 		Version:           uint32(orderT.CurrentVersion),
 		BatchId:           batchID[:],
-		PrevBatchId:       prevBatchKey.SerializeCompressed(),
+		PrevBatchId:       prevBatchID,
 		ClearingPriceRate: uint32(batchSnapshot.ClearingPrice),
 	}
 
