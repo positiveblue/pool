@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"strings"
 
@@ -32,6 +33,12 @@ const (
 	//
 	// TODO(wilmer): Tune? Employ different strategy?
 	initialBanDuration uint32 = 144
+
+	// numBanKeyParts is the number of parts that a full ban key can be
+	// split into when using the / character as delimiter. A full path looks
+	// like this:
+	// bitcoin/clm/subasta/<network>/ban/{ban_type}/{ban_key}.
+	numBanKeyParts = 7
 )
 
 // BanInfo serves as a helper struct to store all ban-related information for a
@@ -55,26 +62,35 @@ func (i *BanInfo) ExceedsBanExpiration(currentHeight uint32) bool {
 	return currentHeight >= i.Expiration()
 }
 
+// banKeyPath returns the prefix path under which we store a trader's ban info.
+//
+// The key path is represented as follows:
+//	bitcoin/clm/subasta/<network>/ban/{ban_type}
+func (s *EtcdStore) banKeyPath(banType string) string {
+	parts := []string{banDir, banType}
+	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
+}
+
 // banAccountKeyPath returns the full path under which we store a trader's
 // account ban info.
 //
 // The key path is represented as follows:
-//	bitcoin/clm/subasta/ban/account/{account_key}
+//	bitcoin/clm/subasta/<network>/ban/account/{account_key}
 func (s *EtcdStore) banAccountKeyPath(accountKey *btcec.PublicKey) string {
 	accountKeyStr := hex.EncodeToString(accountKey.SerializeCompressed())
-	parts := []string{banDir, banAccountDir, accountKeyStr}
-	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
+	parts := []string{s.banKeyPath(banAccountDir), accountKeyStr}
+	return strings.Join(parts, keyDelimiter)
 }
 
 // banNodeKeyPath returns the full path under which we store a trader's node
 // ban info.
 //
 // The key path is represented as follows:
-//	bitcoin/clm/subasta/ban/node/{node_key}
+//	bitcoin/clm/subasta/<network>/ban/node/{node_key}
 func (s *EtcdStore) banNodeKeyPath(nodeKey *btcec.PublicKey) string {
 	nodeKeyStr := hex.EncodeToString(nodeKey.SerializeCompressed())
-	parts := []string{banDir, banNodeDir, nodeKeyStr}
-	return s.getKeyPrefix(strings.Join(parts, keyDelimiter))
+	parts := []string{s.banKeyPath(banNodeDir), nodeKeyStr}
+	return strings.Join(parts, keyDelimiter)
 }
 
 // BanTrader attempts to ban the account and node public key associated with a
@@ -251,6 +267,118 @@ func (s *EtcdStore) isNodeBanned(stm conc.STM, nodeKey *btcec.PublicKey,
 		return false, 0, err
 	}
 	return !ban.ExceedsBanExpiration(currentHeight), ban.Expiration(), nil
+}
+
+// ListBannedAccounts returns a map of all accounts that are currently banned.
+// The map key is the account's trader key and the value is the ban info.
+func (s *EtcdStore) ListBannedAccounts(
+	ctx context.Context) (map[[33]byte]*BanInfo, error) {
+
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	key := s.banKeyPath(banAccountDir)
+	resultMap, err := s.getAllValuesByPrefix(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	bannedAccounts := make(map[[33]byte]*BanInfo, len(resultMap))
+	for key, value := range resultMap {
+		acctKey, err := rawKeyFromBanKey(key)
+		if err != nil {
+			return nil, err
+		}
+		ban, err := deserializeBanInfo(bytes.NewReader(value))
+		if err != nil {
+			return nil, err
+		}
+		bannedAccounts[acctKey] = ban
+	}
+
+	return bannedAccounts, nil
+}
+
+// ListBannedNodes returns a map of all nodes that are currently banned.
+// The map key is the node's identity pubkey and the value is the ban info.
+func (s *EtcdStore) ListBannedNodes(
+	ctx context.Context) (map[[33]byte]*BanInfo, error) {
+
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	key := s.banKeyPath(banNodeDir)
+	resultMap, err := s.getAllValuesByPrefix(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+	bannedNodes := make(map[[33]byte]*BanInfo, len(resultMap))
+	for key, value := range resultMap {
+		acctKey, err := rawKeyFromBanKey(key)
+		if err != nil {
+			return nil, err
+		}
+		ban, err := deserializeBanInfo(bytes.NewReader(value))
+		if err != nil {
+			return nil, err
+		}
+		bannedNodes[acctKey] = ban
+	}
+
+	return bannedNodes, nil
+}
+
+// RemoveAccountBan removes the ban information for a given trader's account
+// key. Returns an error if no ban exists.
+func (s *EtcdStore) RemoveAccountBan(ctx context.Context,
+	acctKey *btcec.PublicKey) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	key := s.banAccountKeyPath(acctKey)
+	_, err := s.client.Delete(ctx, key)
+	return err
+}
+
+// RemoveNodeBan removes the ban information for a given trader's node identity
+// key. Returns an error if no ban exists.
+func (s *EtcdStore) RemoveNodeBan(ctx context.Context,
+	nodeKey *btcec.PublicKey) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	key := s.banNodeKeyPath(nodeKey)
+	_, err := s.client.Delete(ctx, key)
+	return err
+}
+
+// rawKeyFromBanKey parses a whole ban key and tries to extract the pubkey from
+// the last part of it. This function also checks that the key has the expected
+// length and number of key parts.
+func rawKeyFromBanKey(key string) ([33]byte, error) {
+	var rawKey [33]byte
+	if len(key) == 0 {
+		return rawKey, fmt.Errorf("key cannot be empty")
+	}
+	keyParts := strings.Split(key, keyDelimiter)
+	if len(keyParts) != numBanKeyParts {
+		return rawKey, fmt.Errorf("invalid ban key: %s", key)
+	}
+	keyBytes, err := hex.DecodeString(keyParts[len(keyParts)-1])
+	if err != nil {
+		return rawKey, fmt.Errorf("cannot hex decode key: %v", err)
+	}
+	pubKey, err := btcec.ParsePubKey(keyBytes, btcec.S256())
+	if err != nil {
+		return rawKey, fmt.Errorf("cannot parse public key: %v", err)
+	}
+	copy(rawKey[:], pubKey.SerializeCompressed())
+	return rawKey, nil
 }
 
 func serializeBanInfo(w io.Writer, info *BanInfo) error {

@@ -196,6 +196,25 @@ func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
 	return resp, nil
 }
 
+// getAllValuesByPrefix reads multiple keys from the etcd database and returns
+// their content as a map of byte slices, keyed by the storage key.
+func (s *EtcdStore) getAllValuesByPrefix(mainCtx context.Context,
+	prefix string) (map[string][]byte, error) {
+
+	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
+	defer cancel()
+
+	resp, err := s.client.Get(ctx, prefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]byte, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		result[string(kv.Key)] = kv.Value
+	}
+	return result, nil
+}
+
 // defaultSTM returns an STM transaction wrapper for the store's etcd client
 // with the default isolation level that is suitable for manipulating accounts
 // and orders during the order submit phase.
