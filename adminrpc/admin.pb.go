@@ -7,7 +7,7 @@ import (
 	context "context"
 	fmt "fmt"
 	proto "github.com/golang/protobuf/proto"
-	_ "github.com/lightninglabs/llm/clmrpc"
+	clmrpc "github.com/lightninglabs/llm/clmrpc"
 	grpc "google.golang.org/grpc"
 	codes "google.golang.org/grpc/codes"
 	status "google.golang.org/grpc/status"
@@ -88,18 +88,18 @@ func (m *EmptyResponse) XXX_DiscardUnknown() {
 var xxx_messageInfo_EmptyResponse proto.InternalMessageInfo
 
 type MasterAccountResponse struct {
-	//*
+	//
 	//OutPoint is the outpoint of the master account. If this is a zero outpoint,
 	//then no account exists yet.
 	Outpoint *OutPoint `protobuf:"bytes,1,opt,name=outpoint,proto3" json:"outpoint,omitempty"`
-	//*
+	//
 	//Balance is the current balance of the master account.
 	Balance int64 `protobuf:"varint,2,opt,name=balance,proto3" json:"balance,omitempty"`
-	//*
+	//
 	//AuctioneerKey is the base key for the auctioneer, this is a static parameter
 	//that's created when the system is initialized.
 	KeyDescriptor *KeyDescriptor `protobuf:"bytes,3,opt,name=key_descriptor,json=keyDescriptor,proto3" json:"key_descriptor,omitempty"`
-	//*
+	//
 	//BatchKey is the current batch key for the auctioneer's account, this will be
 	//incremented by one each batch.
 	BatchKey             []byte   `protobuf:"bytes,4,opt,name=batch_key,json=batchKey,proto3" json:"batch_key,omitempty"`
@@ -162,7 +162,7 @@ func (m *MasterAccountResponse) GetBatchKey() []byte {
 }
 
 type ConnectedTradersResponse struct {
-	//*
+	//
 	//A map of all connected trader streams. The key is the hex-encoded LSAT ID
 	//of a connected stream and the content is a list of all account keys that
 	//trader connection has sent subscriptions for.
@@ -205,7 +205,7 @@ func (m *ConnectedTradersResponse) GetStreams() map[string]*PubKeyList {
 }
 
 type PubKeyList struct {
-	//*
+	//
 	//The raw bytes of the key being identified.
 	RawKeyBytes          [][]byte `protobuf:"bytes,1,rep,name=raw_key_bytes,json=rawKeyBytes,proto3" json:"raw_key_bytes,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -246,10 +246,10 @@ func (m *PubKeyList) GetRawKeyBytes() [][]byte {
 }
 
 type OutPoint struct {
-	//*
+	//
 	//Raw bytes representing the transaction id.
 	Txid []byte `protobuf:"bytes,1,opt,name=txid,proto3" json:"txid,omitempty"`
-	//*
+	//
 	//The index of the output on the transaction.
 	OutputIndex          uint32   `protobuf:"varint,2,opt,name=output_index,proto3" json:"output_index,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -297,9 +297,9 @@ func (m *OutPoint) GetOutputIndex() uint32 {
 }
 
 type KeyLocator struct {
-	/// The family of key being identified.
+	// The family of key being identified.
 	KeyFamily int32 `protobuf:"varint,1,opt,name=key_family,json=keyFamily,proto3" json:"key_family,omitempty"`
-	/// The precise index of the key being identified.
+	// The precise index of the key being identified.
 	KeyIndex             int32    `protobuf:"varint,2,opt,name=key_index,json=keyIndex,proto3" json:"key_index,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -346,10 +346,10 @@ func (m *KeyLocator) GetKeyIndex() int32 {
 }
 
 type KeyDescriptor struct {
-	//*
+	//
 	//The raw bytes of the key being identified.
 	RawKeyBytes []byte `protobuf:"bytes,1,opt,name=raw_key_bytes,json=rawKeyBytes,proto3" json:"raw_key_bytes,omitempty"`
-	//*
+	//
 	//The key locator that identifies which key to use for signing.
 	KeyLoc               *KeyLocator `protobuf:"bytes,2,opt,name=key_loc,json=keyLoc,proto3" json:"key_loc,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
@@ -396,6 +396,769 @@ func (m *KeyDescriptor) GetKeyLoc() *KeyLocator {
 	return nil
 }
 
+type ListOrdersRequest struct {
+	// Indicate whether all archived or all open orders should be returned.
+	Archived             bool     `protobuf:"varint,1,opt,name=archived,proto3" json:"archived,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ListOrdersRequest) Reset()         { *m = ListOrdersRequest{} }
+func (m *ListOrdersRequest) String() string { return proto.CompactTextString(m) }
+func (*ListOrdersRequest) ProtoMessage()    {}
+func (*ListOrdersRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{8}
+}
+
+func (m *ListOrdersRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListOrdersRequest.Unmarshal(m, b)
+}
+func (m *ListOrdersRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListOrdersRequest.Marshal(b, m, deterministic)
+}
+func (m *ListOrdersRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListOrdersRequest.Merge(m, src)
+}
+func (m *ListOrdersRequest) XXX_Size() int {
+	return xxx_messageInfo_ListOrdersRequest.Size(m)
+}
+func (m *ListOrdersRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListOrdersRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListOrdersRequest proto.InternalMessageInfo
+
+func (m *ListOrdersRequest) GetArchived() bool {
+	if m != nil {
+		return m.Archived
+	}
+	return false
+}
+
+type ListOrdersResponse struct {
+	Asks                 []*clmrpc.ServerAsk `protobuf:"bytes,1,rep,name=asks,proto3" json:"asks,omitempty"`
+	Bids                 []*clmrpc.ServerBid `protobuf:"bytes,2,rep,name=bids,proto3" json:"bids,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
+	XXX_unrecognized     []byte              `json:"-"`
+	XXX_sizecache        int32               `json:"-"`
+}
+
+func (m *ListOrdersResponse) Reset()         { *m = ListOrdersResponse{} }
+func (m *ListOrdersResponse) String() string { return proto.CompactTextString(m) }
+func (*ListOrdersResponse) ProtoMessage()    {}
+func (*ListOrdersResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{9}
+}
+
+func (m *ListOrdersResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListOrdersResponse.Unmarshal(m, b)
+}
+func (m *ListOrdersResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListOrdersResponse.Marshal(b, m, deterministic)
+}
+func (m *ListOrdersResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListOrdersResponse.Merge(m, src)
+}
+func (m *ListOrdersResponse) XXX_Size() int {
+	return xxx_messageInfo_ListOrdersResponse.Size(m)
+}
+func (m *ListOrdersResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListOrdersResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListOrdersResponse proto.InternalMessageInfo
+
+func (m *ListOrdersResponse) GetAsks() []*clmrpc.ServerAsk {
+	if m != nil {
+		return m.Asks
+	}
+	return nil
+}
+
+func (m *ListOrdersResponse) GetBids() []*clmrpc.ServerBid {
+	if m != nil {
+		return m.Bids
+	}
+	return nil
+}
+
+type ListAccountsResponse struct {
+	Accounts             []*clmrpc.AuctionAccount `protobuf:"bytes,1,rep,name=accounts,proto3" json:"accounts,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}                 `json:"-"`
+	XXX_unrecognized     []byte                   `json:"-"`
+	XXX_sizecache        int32                    `json:"-"`
+}
+
+func (m *ListAccountsResponse) Reset()         { *m = ListAccountsResponse{} }
+func (m *ListAccountsResponse) String() string { return proto.CompactTextString(m) }
+func (*ListAccountsResponse) ProtoMessage()    {}
+func (*ListAccountsResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{10}
+}
+
+func (m *ListAccountsResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListAccountsResponse.Unmarshal(m, b)
+}
+func (m *ListAccountsResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListAccountsResponse.Marshal(b, m, deterministic)
+}
+func (m *ListAccountsResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListAccountsResponse.Merge(m, src)
+}
+func (m *ListAccountsResponse) XXX_Size() int {
+	return xxx_messageInfo_ListAccountsResponse.Size(m)
+}
+func (m *ListAccountsResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListAccountsResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListAccountsResponse proto.InternalMessageInfo
+
+func (m *ListAccountsResponse) GetAccounts() []*clmrpc.AuctionAccount {
+	if m != nil {
+		return m.Accounts
+	}
+	return nil
+}
+
+type AuctionStatusResponse struct {
+	// The ID of the current pending batch.
+	PendingBatchId []byte `protobuf:"bytes,1,opt,name=pending_batch_id,json=pendingBatchId,proto3" json:"pending_batch_id,omitempty"`
+	// The ID of the current, not yet published batch.
+	CurrentBatchId []byte `protobuf:"bytes,2,opt,name=current_batch_id,json=currentBatchId,proto3" json:"current_batch_id,omitempty"`
+	// The ID of the last published batch.
+	LastBatchId []byte `protobuf:"bytes,3,opt,name=last_batch_id,json=lastBatchId,proto3" json:"last_batch_id,omitempty"`
+	//
+	//Indicates whether timed ticks are currently being used to start new batches.
+	//If this is false, it means batch execution has been paused.
+	BatchTickerActive bool `protobuf:"varint,4,opt,name=batch_ticker_active,json=batchTickerActive,proto3" json:"batch_ticker_active,omitempty"`
+	//
+	//The unix timestamp of the last timed tick. This doesn't necessarily mean
+	//that the tick also resulted in a batch being executed, for example if the
+	//batch ticker was paused at the time of the timed tick.
+	LastTimedTick uint64 `protobuf:"varint,5,opt,name=last_timed_tick,json=lastTimedTick,proto3" json:"last_timed_tick,omitempty"`
+	//
+	//The number of seconds it will approximately take until the next timed tick
+	//is fired. The tick will be fired in any case but it might not result in a
+	//batch being executed if batch execution is currently paused.
+	SecondsToNextTick    uint64   `protobuf:"varint,6,opt,name=seconds_to_next_tick,json=secondsToNextTick,proto3" json:"seconds_to_next_tick,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *AuctionStatusResponse) Reset()         { *m = AuctionStatusResponse{} }
+func (m *AuctionStatusResponse) String() string { return proto.CompactTextString(m) }
+func (*AuctionStatusResponse) ProtoMessage()    {}
+func (*AuctionStatusResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{11}
+}
+
+func (m *AuctionStatusResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_AuctionStatusResponse.Unmarshal(m, b)
+}
+func (m *AuctionStatusResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_AuctionStatusResponse.Marshal(b, m, deterministic)
+}
+func (m *AuctionStatusResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AuctionStatusResponse.Merge(m, src)
+}
+func (m *AuctionStatusResponse) XXX_Size() int {
+	return xxx_messageInfo_AuctionStatusResponse.Size(m)
+}
+func (m *AuctionStatusResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_AuctionStatusResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AuctionStatusResponse proto.InternalMessageInfo
+
+func (m *AuctionStatusResponse) GetPendingBatchId() []byte {
+	if m != nil {
+		return m.PendingBatchId
+	}
+	return nil
+}
+
+func (m *AuctionStatusResponse) GetCurrentBatchId() []byte {
+	if m != nil {
+		return m.CurrentBatchId
+	}
+	return nil
+}
+
+func (m *AuctionStatusResponse) GetLastBatchId() []byte {
+	if m != nil {
+		return m.LastBatchId
+	}
+	return nil
+}
+
+func (m *AuctionStatusResponse) GetBatchTickerActive() bool {
+	if m != nil {
+		return m.BatchTickerActive
+	}
+	return false
+}
+
+func (m *AuctionStatusResponse) GetLastTimedTick() uint64 {
+	if m != nil {
+		return m.LastTimedTick
+	}
+	return 0
+}
+
+func (m *AuctionStatusResponse) GetSecondsToNextTick() uint64 {
+	if m != nil {
+		return m.SecondsToNextTick
+	}
+	return 0
+}
+
+type ListBatchesResponse struct {
+	//
+	//A list of all batch IDs known to exist, listed in ascending order (oldest
+	//batch first) with the last item being the current, not yet published batch.
+	Batches              [][]byte `protobuf:"bytes,1,rep,name=batches,proto3" json:"batches,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *ListBatchesResponse) Reset()         { *m = ListBatchesResponse{} }
+func (m *ListBatchesResponse) String() string { return proto.CompactTextString(m) }
+func (*ListBatchesResponse) ProtoMessage()    {}
+func (*ListBatchesResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{12}
+}
+
+func (m *ListBatchesResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListBatchesResponse.Unmarshal(m, b)
+}
+func (m *ListBatchesResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListBatchesResponse.Marshal(b, m, deterministic)
+}
+func (m *ListBatchesResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListBatchesResponse.Merge(m, src)
+}
+func (m *ListBatchesResponse) XXX_Size() int {
+	return xxx_messageInfo_ListBatchesResponse.Size(m)
+}
+func (m *ListBatchesResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListBatchesResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListBatchesResponse proto.InternalMessageInfo
+
+func (m *ListBatchesResponse) GetBatches() [][]byte {
+	if m != nil {
+		return m.Batches
+	}
+	return nil
+}
+
+type FeeReport struct {
+	// The diffs of all accounts involved in the batch.
+	AccountDiffs map[string]*AccountDiff `protobuf:"bytes,1,rep,name=account_diffs,json=accountDiffs,proto3" json:"account_diffs,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	// The total number of satoshis we earned as the auctioneer.
+	AuctioneerFeesAccrued uint64   `protobuf:"varint,2,opt,name=auctioneer_fees_accrued,json=auctioneerFeesAccrued,proto3" json:"auctioneer_fees_accrued,omitempty"`
+	XXX_NoUnkeyedLiteral  struct{} `json:"-"`
+	XXX_unrecognized      []byte   `json:"-"`
+	XXX_sizecache         int32    `json:"-"`
+}
+
+func (m *FeeReport) Reset()         { *m = FeeReport{} }
+func (m *FeeReport) String() string { return proto.CompactTextString(m) }
+func (*FeeReport) ProtoMessage()    {}
+func (*FeeReport) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{13}
+}
+
+func (m *FeeReport) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_FeeReport.Unmarshal(m, b)
+}
+func (m *FeeReport) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_FeeReport.Marshal(b, m, deterministic)
+}
+func (m *FeeReport) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_FeeReport.Merge(m, src)
+}
+func (m *FeeReport) XXX_Size() int {
+	return xxx_messageInfo_FeeReport.Size(m)
+}
+func (m *FeeReport) XXX_DiscardUnknown() {
+	xxx_messageInfo_FeeReport.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_FeeReport proto.InternalMessageInfo
+
+func (m *FeeReport) GetAccountDiffs() map[string]*AccountDiff {
+	if m != nil {
+		return m.AccountDiffs
+	}
+	return nil
+}
+
+func (m *FeeReport) GetAuctioneerFeesAccrued() uint64 {
+	if m != nil {
+		return m.AuctioneerFeesAccrued
+	}
+	return 0
+}
+
+type AccountDiff struct {
+	// The account key this diff refers to.
+	AccountKey []byte `protobuf:"bytes,1,opt,name=account_key,json=accountKey,proto3" json:"account_key,omitempty"`
+	// The balance the trader account started with.
+	StartingBalance uint64 `protobuf:"varint,2,opt,name=starting_balance,json=startingBalance,proto3" json:"starting_balance,omitempty"`
+	// The ending balance of the trader's account.
+	EndingBalance uint64 `protobuf:"varint,3,opt,name=ending_balance,json=endingBalance,proto3" json:"ending_balance,omitempty"`
+	// The total amount of fees a trader paid to the venue.
+	TotalExecFeesPaid uint64 `protobuf:"varint,4,opt,name=total_exec_fees_paid,json=totalExecFeesPaid,proto3" json:"total_exec_fees_paid,omitempty"`
+	//
+	//The total amount of fees the trader paid to purchase any channels in this
+	//batch.
+	TotalTakerFeesPaid uint64 `protobuf:"varint,5,opt,name=total_taker_fees_paid,json=totalTakerFeesPaid,proto3" json:"total_taker_fees_paid,omitempty"`
+	//
+	//The total amount of fees the trader gained by selling channels in this
+	//batch.
+	TotalMakerFeesPaid uint64 `protobuf:"varint,6,opt,name=total_maker_fees_paid,json=totalMakerFeesPaid,proto3" json:"total_maker_fees_paid,omitempty"`
+	//
+	//The number of new channels that were created for one account in a batch.
+	//This is needed to calculate the chain fees that need to be paid from that
+	//account.
+	NumChansCreated      uint32   `protobuf:"varint,7,opt,name=num_chans_created,json=numChansCreated,proto3" json:"num_chans_created,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *AccountDiff) Reset()         { *m = AccountDiff{} }
+func (m *AccountDiff) String() string { return proto.CompactTextString(m) }
+func (*AccountDiff) ProtoMessage()    {}
+func (*AccountDiff) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{14}
+}
+
+func (m *AccountDiff) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_AccountDiff.Unmarshal(m, b)
+}
+func (m *AccountDiff) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_AccountDiff.Marshal(b, m, deterministic)
+}
+func (m *AccountDiff) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AccountDiff.Merge(m, src)
+}
+func (m *AccountDiff) XXX_Size() int {
+	return xxx_messageInfo_AccountDiff.Size(m)
+}
+func (m *AccountDiff) XXX_DiscardUnknown() {
+	xxx_messageInfo_AccountDiff.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AccountDiff proto.InternalMessageInfo
+
+func (m *AccountDiff) GetAccountKey() []byte {
+	if m != nil {
+		return m.AccountKey
+	}
+	return nil
+}
+
+func (m *AccountDiff) GetStartingBalance() uint64 {
+	if m != nil {
+		return m.StartingBalance
+	}
+	return 0
+}
+
+func (m *AccountDiff) GetEndingBalance() uint64 {
+	if m != nil {
+		return m.EndingBalance
+	}
+	return 0
+}
+
+func (m *AccountDiff) GetTotalExecFeesPaid() uint64 {
+	if m != nil {
+		return m.TotalExecFeesPaid
+	}
+	return 0
+}
+
+func (m *AccountDiff) GetTotalTakerFeesPaid() uint64 {
+	if m != nil {
+		return m.TotalTakerFeesPaid
+	}
+	return 0
+}
+
+func (m *AccountDiff) GetTotalMakerFeesPaid() uint64 {
+	if m != nil {
+		return m.TotalMakerFeesPaid
+	}
+	return 0
+}
+
+func (m *AccountDiff) GetNumChansCreated() uint32 {
+	if m != nil {
+		return m.NumChansCreated
+	}
+	return 0
+}
+
+type ListBansResponse struct {
+	//
+	//A map of all banned accounts, keyed by the trader's account key (hex
+	//encoded).
+	BannedAccounts map[string]*BanInfo `protobuf:"bytes,1,rep,name=banned_accounts,json=bannedAccounts,proto3" json:"banned_accounts,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	//
+	//A map of all banned nodes, keyed by the node's identity pubkey (hex
+	//encoded).
+	BannedNodes          map[string]*BanInfo `protobuf:"bytes,2,rep,name=banned_nodes,json=bannedNodes,proto3" json:"banned_nodes,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	XXX_NoUnkeyedLiteral struct{}            `json:"-"`
+	XXX_unrecognized     []byte              `json:"-"`
+	XXX_sizecache        int32               `json:"-"`
+}
+
+func (m *ListBansResponse) Reset()         { *m = ListBansResponse{} }
+func (m *ListBansResponse) String() string { return proto.CompactTextString(m) }
+func (*ListBansResponse) ProtoMessage()    {}
+func (*ListBansResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{15}
+}
+
+func (m *ListBansResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_ListBansResponse.Unmarshal(m, b)
+}
+func (m *ListBansResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_ListBansResponse.Marshal(b, m, deterministic)
+}
+func (m *ListBansResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_ListBansResponse.Merge(m, src)
+}
+func (m *ListBansResponse) XXX_Size() int {
+	return xxx_messageInfo_ListBansResponse.Size(m)
+}
+func (m *ListBansResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_ListBansResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_ListBansResponse proto.InternalMessageInfo
+
+func (m *ListBansResponse) GetBannedAccounts() map[string]*BanInfo {
+	if m != nil {
+		return m.BannedAccounts
+	}
+	return nil
+}
+
+func (m *ListBansResponse) GetBannedNodes() map[string]*BanInfo {
+	if m != nil {
+		return m.BannedNodes
+	}
+	return nil
+}
+
+type BanInfo struct {
+	// The height at which the ban begins to apply.
+	Height uint32 `protobuf:"varint,1,opt,name=height,proto3" json:"height,omitempty"`
+	// The number of blocks the ban will last for once applied.
+	Duration             uint32   `protobuf:"varint,2,opt,name=duration,proto3" json:"duration,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *BanInfo) Reset()         { *m = BanInfo{} }
+func (m *BanInfo) String() string { return proto.CompactTextString(m) }
+func (*BanInfo) ProtoMessage()    {}
+func (*BanInfo) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{16}
+}
+
+func (m *BanInfo) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_BanInfo.Unmarshal(m, b)
+}
+func (m *BanInfo) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_BanInfo.Marshal(b, m, deterministic)
+}
+func (m *BanInfo) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_BanInfo.Merge(m, src)
+}
+func (m *BanInfo) XXX_Size() int {
+	return xxx_messageInfo_BanInfo.Size(m)
+}
+func (m *BanInfo) XXX_DiscardUnknown() {
+	xxx_messageInfo_BanInfo.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_BanInfo proto.InternalMessageInfo
+
+func (m *BanInfo) GetHeight() uint32 {
+	if m != nil {
+		return m.Height
+	}
+	return 0
+}
+
+func (m *BanInfo) GetDuration() uint32 {
+	if m != nil {
+		return m.Duration
+	}
+	return 0
+}
+
+type RemoveBanRequest struct {
+	// Types that are valid to be assigned to Ban:
+	//	*RemoveBanRequest_Account
+	//	*RemoveBanRequest_Node
+	Ban                  isRemoveBanRequest_Ban `protobuf_oneof:"ban"`
+	XXX_NoUnkeyedLiteral struct{}               `json:"-"`
+	XXX_unrecognized     []byte                 `json:"-"`
+	XXX_sizecache        int32                  `json:"-"`
+}
+
+func (m *RemoveBanRequest) Reset()         { *m = RemoveBanRequest{} }
+func (m *RemoveBanRequest) String() string { return proto.CompactTextString(m) }
+func (*RemoveBanRequest) ProtoMessage()    {}
+func (*RemoveBanRequest) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{17}
+}
+
+func (m *RemoveBanRequest) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_RemoveBanRequest.Unmarshal(m, b)
+}
+func (m *RemoveBanRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_RemoveBanRequest.Marshal(b, m, deterministic)
+}
+func (m *RemoveBanRequest) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_RemoveBanRequest.Merge(m, src)
+}
+func (m *RemoveBanRequest) XXX_Size() int {
+	return xxx_messageInfo_RemoveBanRequest.Size(m)
+}
+func (m *RemoveBanRequest) XXX_DiscardUnknown() {
+	xxx_messageInfo_RemoveBanRequest.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_RemoveBanRequest proto.InternalMessageInfo
+
+type isRemoveBanRequest_Ban interface {
+	isRemoveBanRequest_Ban()
+}
+
+type RemoveBanRequest_Account struct {
+	Account []byte `protobuf:"bytes,1,opt,name=account,proto3,oneof"`
+}
+
+type RemoveBanRequest_Node struct {
+	Node []byte `protobuf:"bytes,2,opt,name=node,proto3,oneof"`
+}
+
+func (*RemoveBanRequest_Account) isRemoveBanRequest_Ban() {}
+
+func (*RemoveBanRequest_Node) isRemoveBanRequest_Ban() {}
+
+func (m *RemoveBanRequest) GetBan() isRemoveBanRequest_Ban {
+	if m != nil {
+		return m.Ban
+	}
+	return nil
+}
+
+func (m *RemoveBanRequest) GetAccount() []byte {
+	if x, ok := m.GetBan().(*RemoveBanRequest_Account); ok {
+		return x.Account
+	}
+	return nil
+}
+
+func (m *RemoveBanRequest) GetNode() []byte {
+	if x, ok := m.GetBan().(*RemoveBanRequest_Node); ok {
+		return x.Node
+	}
+	return nil
+}
+
+// XXX_OneofWrappers is for the internal use of the proto package.
+func (*RemoveBanRequest) XXX_OneofWrappers() []interface{} {
+	return []interface{}{
+		(*RemoveBanRequest_Account)(nil),
+		(*RemoveBanRequest_Node)(nil),
+	}
+}
+
+type AdminMatchedOrderSnapshot struct {
+	// The full ask order that was matched.
+	Ask *clmrpc.ServerAsk `protobuf:"bytes,1,opt,name=ask,proto3" json:"ask,omitempty"`
+	// The full bid order that was matched.
+	Bid *clmrpc.ServerBid `protobuf:"bytes,2,opt,name=bid,proto3" json:"bid,omitempty"`
+	// The fixed rate premium that was matched, expressed in parts-ber-billion.
+	MatchingRate uint32 `protobuf:"varint,3,opt,name=matching_rate,json=matchingRate,proto3" json:"matching_rate,omitempty"`
+	// The total number of satoshis that were bought.
+	TotalSatsCleared uint64 `protobuf:"varint,4,opt,name=total_sats_cleared,json=totalSatsCleared,proto3" json:"total_sats_cleared,omitempty"`
+	// The total number of units that were matched.
+	UnitsMatched         uint32   `protobuf:"varint,5,opt,name=units_matched,json=unitsMatched,proto3" json:"units_matched,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *AdminMatchedOrderSnapshot) Reset()         { *m = AdminMatchedOrderSnapshot{} }
+func (m *AdminMatchedOrderSnapshot) String() string { return proto.CompactTextString(m) }
+func (*AdminMatchedOrderSnapshot) ProtoMessage()    {}
+func (*AdminMatchedOrderSnapshot) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{18}
+}
+
+func (m *AdminMatchedOrderSnapshot) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_AdminMatchedOrderSnapshot.Unmarshal(m, b)
+}
+func (m *AdminMatchedOrderSnapshot) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_AdminMatchedOrderSnapshot.Marshal(b, m, deterministic)
+}
+func (m *AdminMatchedOrderSnapshot) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AdminMatchedOrderSnapshot.Merge(m, src)
+}
+func (m *AdminMatchedOrderSnapshot) XXX_Size() int {
+	return xxx_messageInfo_AdminMatchedOrderSnapshot.Size(m)
+}
+func (m *AdminMatchedOrderSnapshot) XXX_DiscardUnknown() {
+	xxx_messageInfo_AdminMatchedOrderSnapshot.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AdminMatchedOrderSnapshot proto.InternalMessageInfo
+
+func (m *AdminMatchedOrderSnapshot) GetAsk() *clmrpc.ServerAsk {
+	if m != nil {
+		return m.Ask
+	}
+	return nil
+}
+
+func (m *AdminMatchedOrderSnapshot) GetBid() *clmrpc.ServerBid {
+	if m != nil {
+		return m.Bid
+	}
+	return nil
+}
+
+func (m *AdminMatchedOrderSnapshot) GetMatchingRate() uint32 {
+	if m != nil {
+		return m.MatchingRate
+	}
+	return 0
+}
+
+func (m *AdminMatchedOrderSnapshot) GetTotalSatsCleared() uint64 {
+	if m != nil {
+		return m.TotalSatsCleared
+	}
+	return 0
+}
+
+func (m *AdminMatchedOrderSnapshot) GetUnitsMatched() uint32 {
+	if m != nil {
+		return m.UnitsMatched
+	}
+	return 0
+}
+
+type AdminBatchSnapshotResponse struct {
+	// The version of the batch.
+	Version uint32 `protobuf:"varint,1,opt,name=version,proto3" json:"version,omitempty"`
+	// The unique identifier of the batch.
+	BatchId []byte `protobuf:"bytes,2,opt,name=batch_id,json=batchId,proto3" json:"batch_id,omitempty"`
+	// The unique identifier of the prior batch.
+	PrevBatchId []byte `protobuf:"bytes,3,opt,name=prev_batch_id,json=prevBatchId,proto3" json:"prev_batch_id,omitempty"`
+	// The uniform clearing price rate in parts per billion of the batch.
+	ClearingPriceRate uint32 `protobuf:"varint,4,opt,name=clearing_price_rate,json=clearingPriceRate,proto3" json:"clearing_price_rate,omitempty"`
+	// The set of all orders matched in the batch.
+	MatchedOrders []*AdminMatchedOrderSnapshot `protobuf:"bytes,5,rep,name=matched_orders,json=matchedOrders,proto3" json:"matched_orders,omitempty"`
+	// The txid of the batch transaction.
+	BatchTxId string `protobuf:"bytes,7,opt,name=batch_tx_id,json=batchTxId,proto3" json:"batch_tx_id,omitempty"`
+	// The batch transaction including all witness data.
+	BatchTx              []byte   `protobuf:"bytes,6,opt,name=batch_tx,json=batchTx,proto3" json:"batch_tx,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
+}
+
+func (m *AdminBatchSnapshotResponse) Reset()         { *m = AdminBatchSnapshotResponse{} }
+func (m *AdminBatchSnapshotResponse) String() string { return proto.CompactTextString(m) }
+func (*AdminBatchSnapshotResponse) ProtoMessage()    {}
+func (*AdminBatchSnapshotResponse) Descriptor() ([]byte, []int) {
+	return fileDescriptor_73a7fc70dcc2027c, []int{19}
+}
+
+func (m *AdminBatchSnapshotResponse) XXX_Unmarshal(b []byte) error {
+	return xxx_messageInfo_AdminBatchSnapshotResponse.Unmarshal(m, b)
+}
+func (m *AdminBatchSnapshotResponse) XXX_Marshal(b []byte, deterministic bool) ([]byte, error) {
+	return xxx_messageInfo_AdminBatchSnapshotResponse.Marshal(b, m, deterministic)
+}
+func (m *AdminBatchSnapshotResponse) XXX_Merge(src proto.Message) {
+	xxx_messageInfo_AdminBatchSnapshotResponse.Merge(m, src)
+}
+func (m *AdminBatchSnapshotResponse) XXX_Size() int {
+	return xxx_messageInfo_AdminBatchSnapshotResponse.Size(m)
+}
+func (m *AdminBatchSnapshotResponse) XXX_DiscardUnknown() {
+	xxx_messageInfo_AdminBatchSnapshotResponse.DiscardUnknown(m)
+}
+
+var xxx_messageInfo_AdminBatchSnapshotResponse proto.InternalMessageInfo
+
+func (m *AdminBatchSnapshotResponse) GetVersion() uint32 {
+	if m != nil {
+		return m.Version
+	}
+	return 0
+}
+
+func (m *AdminBatchSnapshotResponse) GetBatchId() []byte {
+	if m != nil {
+		return m.BatchId
+	}
+	return nil
+}
+
+func (m *AdminBatchSnapshotResponse) GetPrevBatchId() []byte {
+	if m != nil {
+		return m.PrevBatchId
+	}
+	return nil
+}
+
+func (m *AdminBatchSnapshotResponse) GetClearingPriceRate() uint32 {
+	if m != nil {
+		return m.ClearingPriceRate
+	}
+	return 0
+}
+
+func (m *AdminBatchSnapshotResponse) GetMatchedOrders() []*AdminMatchedOrderSnapshot {
+	if m != nil {
+		return m.MatchedOrders
+	}
+	return nil
+}
+
+func (m *AdminBatchSnapshotResponse) GetBatchTxId() string {
+	if m != nil {
+		return m.BatchTxId
+	}
+	return ""
+}
+
+func (m *AdminBatchSnapshotResponse) GetBatchTx() []byte {
+	if m != nil {
+		return m.BatchTx
+	}
+	return nil
+}
+
 func init() {
 	proto.RegisterType((*EmptyRequest)(nil), "adminrpc.EmptyRequest")
 	proto.RegisterType((*EmptyResponse)(nil), "adminrpc.EmptyResponse")
@@ -406,44 +1169,119 @@ func init() {
 	proto.RegisterType((*OutPoint)(nil), "adminrpc.OutPoint")
 	proto.RegisterType((*KeyLocator)(nil), "adminrpc.KeyLocator")
 	proto.RegisterType((*KeyDescriptor)(nil), "adminrpc.KeyDescriptor")
+	proto.RegisterType((*ListOrdersRequest)(nil), "adminrpc.ListOrdersRequest")
+	proto.RegisterType((*ListOrdersResponse)(nil), "adminrpc.ListOrdersResponse")
+	proto.RegisterType((*ListAccountsResponse)(nil), "adminrpc.ListAccountsResponse")
+	proto.RegisterType((*AuctionStatusResponse)(nil), "adminrpc.AuctionStatusResponse")
+	proto.RegisterType((*ListBatchesResponse)(nil), "adminrpc.ListBatchesResponse")
+	proto.RegisterType((*FeeReport)(nil), "adminrpc.FeeReport")
+	proto.RegisterMapType((map[string]*AccountDiff)(nil), "adminrpc.FeeReport.AccountDiffsEntry")
+	proto.RegisterType((*AccountDiff)(nil), "adminrpc.AccountDiff")
+	proto.RegisterType((*ListBansResponse)(nil), "adminrpc.ListBansResponse")
+	proto.RegisterMapType((map[string]*BanInfo)(nil), "adminrpc.ListBansResponse.BannedAccountsEntry")
+	proto.RegisterMapType((map[string]*BanInfo)(nil), "adminrpc.ListBansResponse.BannedNodesEntry")
+	proto.RegisterType((*BanInfo)(nil), "adminrpc.BanInfo")
+	proto.RegisterType((*RemoveBanRequest)(nil), "adminrpc.RemoveBanRequest")
+	proto.RegisterType((*AdminMatchedOrderSnapshot)(nil), "adminrpc.AdminMatchedOrderSnapshot")
+	proto.RegisterType((*AdminBatchSnapshotResponse)(nil), "adminrpc.AdminBatchSnapshotResponse")
 }
 
 func init() { proto.RegisterFile("admin.proto", fileDescriptor_73a7fc70dcc2027c) }
 
 var fileDescriptor_73a7fc70dcc2027c = []byte{
-	// 508 bytes of a gzipped FileDescriptorProto
-	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0x84, 0x53, 0x4d, 0x6f, 0xd3, 0x40,
-	0x10, 0x95, 0x9b, 0xa6, 0x49, 0x26, 0x76, 0xa9, 0x56, 0x40, 0xac, 0x20, 0x44, 0xe4, 0x53, 0x84,
-	0x44, 0x8a, 0xc2, 0x05, 0x21, 0x84, 0x94, 0x40, 0x51, 0xab, 0xf0, 0x11, 0x2d, 0xbd, 0x47, 0xeb,
-	0xf5, 0x20, 0x2c, 0x27, 0xbb, 0x66, 0xbd, 0xa6, 0xdd, 0x5f, 0xc6, 0x8d, 0x9f, 0xc3, 0xef, 0x40,
-	0xbb, 0x26, 0x71, 0xd2, 0x36, 0xea, 0x6d, 0x67, 0xde, 0xcc, 0x9b, 0x79, 0xe3, 0x67, 0xe8, 0xb2,
-	0x64, 0x95, 0x8a, 0x51, 0xae, 0xa4, 0x96, 0xa4, 0xed, 0x02, 0x95, 0xf3, 0x7e, 0x8f, 0x2f, 0x57,
-	0x2a, 0xe7, 0xa7, 0xac, 0xe4, 0x3a, 0x95, 0x02, 0x51, 0x55, 0x25, 0xd1, 0x31, 0xf8, 0x67, 0xab,
-	0x5c, 0x1b, 0x8a, 0x3f, 0x4b, 0x2c, 0x74, 0xf4, 0x00, 0x82, 0xff, 0x71, 0x91, 0x4b, 0x51, 0x60,
-	0xf4, 0xc7, 0x83, 0x47, 0x9f, 0x59, 0xa1, 0x51, 0x4d, 0x38, 0x97, 0xa5, 0xd0, 0x6b, 0x84, 0x8c,
-	0xa0, 0x2d, 0x4b, 0x9d, 0xcb, 0x54, 0xe8, 0xd0, 0x1b, 0x78, 0xc3, 0xee, 0x98, 0x8c, 0xd6, 0x03,
-	0x47, 0x5f, 0x4b, 0x3d, 0xb7, 0x08, 0xdd, 0xd4, 0x90, 0x10, 0x5a, 0x31, 0x5b, 0x32, 0xc1, 0x31,
-	0x3c, 0x18, 0x78, 0xc3, 0x06, 0x5d, 0x87, 0xe4, 0x1d, 0x1c, 0x67, 0x68, 0x16, 0x09, 0x16, 0x5c,
-	0xa5, 0xb9, 0x96, 0x2a, 0x6c, 0x38, 0xbe, 0x5e, 0xcd, 0x37, 0x43, 0xf3, 0x61, 0x03, 0xd3, 0x20,
-	0xdb, 0x0e, 0xc9, 0x13, 0xe8, 0xc4, 0x4c, 0xf3, 0x1f, 0x8b, 0x0c, 0x4d, 0x78, 0x38, 0xf0, 0x86,
-	0x3e, 0x6d, 0xbb, 0xc4, 0x0c, 0x4d, 0xf4, 0xdb, 0x83, 0xf0, 0xbd, 0x14, 0x02, 0xb9, 0xc6, 0xe4,
-	0x52, 0xb1, 0x04, 0x55, 0xb1, 0xd1, 0x70, 0x01, 0xad, 0x42, 0x2b, 0x64, 0xab, 0x22, 0xf4, 0x06,
-	0x8d, 0x61, 0x77, 0x7c, 0x5a, 0x8f, 0xdc, 0xd7, 0x34, 0xfa, 0x56, 0x75, 0x9c, 0x09, 0xad, 0x0c,
-	0x5d, 0xf7, 0xf7, 0xe7, 0xe0, 0x6f, 0x03, 0xe4, 0x04, 0x1a, 0x76, 0x1d, 0x7b, 0x99, 0x0e, 0xb5,
-	0x4f, 0xf2, 0x1c, 0x9a, 0xbf, 0xd8, 0xb2, 0xac, 0xe4, 0x77, 0xc7, 0x0f, 0xeb, 0x51, 0xf3, 0x32,
-	0x9e, 0xa1, 0xf9, 0x94, 0x16, 0x9a, 0x56, 0x25, 0x6f, 0x0e, 0x5e, 0x7b, 0xd1, 0x4b, 0x80, 0x1a,
-	0x20, 0x11, 0x04, 0x8a, 0x5d, 0x59, 0x89, 0x8b, 0xd8, 0x68, 0xac, 0x16, 0xf6, 0x69, 0x57, 0xb1,
-	0xab, 0x19, 0x9a, 0xa9, 0x4d, 0x45, 0x53, 0x68, 0xaf, 0x0f, 0x4f, 0x08, 0x1c, 0xea, 0xeb, 0x34,
-	0x71, 0x0b, 0xf8, 0xd4, 0xbd, 0x49, 0x04, 0xbe, 0xfd, 0x1c, 0xa5, 0x5e, 0xa4, 0x22, 0xc1, 0x6b,
-	0xb7, 0x48, 0x40, 0x77, 0x72, 0xd1, 0x39, 0x80, 0x1d, 0x29, 0x39, 0xb3, 0xa7, 0x7d, 0x0a, 0x60,
-	0x27, 0x7e, 0x67, 0xab, 0x74, 0x59, 0x89, 0x69, 0xd2, 0x4e, 0x86, 0xe6, 0xa3, 0x4b, 0xd8, 0xcb,
-	0x5b, 0xb8, 0x66, 0x6b, 0xd2, 0x76, 0x86, 0xe6, 0xc2, 0x31, 0xc5, 0x10, 0xec, 0x7c, 0xb6, 0xbb,
-	0x24, 0x78, 0x37, 0x24, 0x90, 0x17, 0xd0, 0xb2, 0xf8, 0x52, 0xf2, 0xdb, 0x67, 0xaa, 0xf7, 0xa2,
-	0x47, 0x99, 0x7b, 0x8f, 0xff, 0x7a, 0xe0, 0x4f, 0x2a, 0x53, 0x4f, 0x6c, 0x19, 0x39, 0x87, 0x60,
-	0xc7, 0xae, 0xe4, 0x71, 0xdd, 0xbf, 0xed, 0xf4, 0xfe, 0xb3, 0x3a, 0x7f, 0xb7, 0xbf, 0xbf, 0xc0,
-	0xc9, 0x4d, 0x0b, 0xec, 0x25, 0x8b, 0xee, 0xb7, 0x0d, 0x79, 0x0b, 0x9d, 0xa9, 0x35, 0xe5, 0x65,
-	0xca, 0xb3, 0xbd, 0x44, 0xbd, 0x5b, 0xf9, 0xaa, 0x3b, 0x3e, 0x72, 0xff, 0xeb, 0xab, 0x7f, 0x01,
-	0x00, 0x00, 0xff, 0xff, 0xa7, 0xe8, 0xff, 0xde, 0xe1, 0x03, 0x00, 0x00,
+	// 1470 bytes of a gzipped FileDescriptorProto
+	0x1f, 0x8b, 0x08, 0x00, 0x00, 0x00, 0x00, 0x00, 0x02, 0xff, 0xa4, 0x17, 0xdd, 0x6e, 0x1b, 0x45,
+	0xb7, 0xfe, 0x49, 0xe2, 0x1c, 0xdb, 0x89, 0x3d, 0x4d, 0x1a, 0xd7, 0xfd, 0x8b, 0xb6, 0x5f, 0x3f,
+	0x42, 0x0b, 0x0e, 0x04, 0x09, 0x21, 0x04, 0x15, 0x71, 0xd2, 0x90, 0x34, 0x34, 0x0d, 0x13, 0x0b,
+	0x2e, 0x57, 0xe3, 0xdd, 0x93, 0x66, 0x65, 0x7b, 0xd7, 0xcc, 0xcc, 0xa6, 0xf6, 0x9b, 0xf0, 0x10,
+	0xdc, 0x73, 0xc7, 0x0d, 0xcf, 0xc1, 0x1d, 0x12, 0xe2, 0x2d, 0xd0, 0xcc, 0xec, 0x78, 0xd7, 0x8e,
+	0xad, 0x82, 0x7a, 0xb7, 0x73, 0xfe, 0xff, 0xcf, 0x59, 0x28, 0x33, 0x7f, 0x10, 0x84, 0xad, 0x21,
+	0x8f, 0x64, 0x44, 0x4a, 0xfa, 0xc1, 0x87, 0x5e, 0x73, 0xcb, 0xeb, 0x0f, 0xf8, 0xd0, 0xdb, 0x65,
+	0xb1, 0x27, 0x83, 0x28, 0x44, 0xe4, 0x86, 0xc4, 0x59, 0x83, 0xca, 0x8b, 0xc1, 0x50, 0x8e, 0x29,
+	0xfe, 0x14, 0xa3, 0x90, 0xce, 0x3a, 0x54, 0x93, 0xb7, 0x18, 0x46, 0xa1, 0x40, 0xe7, 0xb7, 0x1c,
+	0x6c, 0xbe, 0x62, 0x42, 0x22, 0xdf, 0xf7, 0xbc, 0x28, 0x0e, 0xa5, 0xc5, 0x90, 0x16, 0x94, 0xa2,
+	0x58, 0x0e, 0xa3, 0x20, 0x94, 0x8d, 0xdc, 0x76, 0x6e, 0xa7, 0xbc, 0x47, 0x5a, 0x56, 0x61, 0xeb,
+	0x75, 0x2c, 0xcf, 0x15, 0x86, 0x4e, 0x68, 0x48, 0x03, 0x56, 0xba, 0xac, 0xcf, 0x42, 0x0f, 0x1b,
+	0xf9, 0xed, 0xdc, 0x4e, 0x81, 0xda, 0x27, 0x79, 0x0e, 0x6b, 0x3d, 0x1c, 0xbb, 0x3e, 0x0a, 0x8f,
+	0x07, 0x43, 0x19, 0xf1, 0x46, 0x41, 0xcb, 0xdb, 0x4a, 0xe5, 0x9d, 0xe2, 0xf8, 0x70, 0x82, 0xa6,
+	0xd5, 0x5e, 0xf6, 0x49, 0xee, 0xc1, 0x6a, 0x97, 0x49, 0xef, 0xca, 0xed, 0xe1, 0xb8, 0x51, 0xdc,
+	0xce, 0xed, 0x54, 0x68, 0x49, 0x03, 0x4e, 0x71, 0xec, 0xfc, 0x9a, 0x83, 0xc6, 0x41, 0x14, 0x86,
+	0xe8, 0x49, 0xf4, 0x3b, 0x9c, 0xf9, 0xc8, 0xc5, 0xc4, 0x87, 0x13, 0x58, 0x11, 0x92, 0x23, 0x1b,
+	0x88, 0x46, 0x6e, 0xbb, 0xb0, 0x53, 0xde, 0xdb, 0x4d, 0x55, 0x2e, 0x62, 0x6a, 0x5d, 0x18, 0x8e,
+	0x17, 0xa1, 0xe4, 0x63, 0x6a, 0xf9, 0x9b, 0xe7, 0x50, 0xc9, 0x22, 0x48, 0x0d, 0x0a, 0xca, 0x1c,
+	0x15, 0x99, 0x55, 0xaa, 0x3e, 0xc9, 0x53, 0x58, 0xba, 0x66, 0xfd, 0xd8, 0xb8, 0x5f, 0xde, 0xdb,
+	0x48, 0x55, 0x9d, 0xc7, 0xdd, 0x53, 0x1c, 0x7f, 0x17, 0x08, 0x49, 0x0d, 0xc9, 0x97, 0xf9, 0x2f,
+	0x72, 0xce, 0x27, 0x00, 0x29, 0x82, 0x38, 0x50, 0xe5, 0xec, 0xad, 0x72, 0xd1, 0xed, 0x8e, 0x25,
+	0x1a, 0x83, 0x2b, 0xb4, 0xcc, 0xd9, 0xdb, 0x53, 0x1c, 0xb7, 0x15, 0xc8, 0x69, 0x43, 0xc9, 0x06,
+	0x9e, 0x10, 0x28, 0xca, 0x51, 0xe0, 0x6b, 0x03, 0x2a, 0x54, 0x7f, 0x13, 0x07, 0x2a, 0x2a, 0x1d,
+	0xb1, 0x74, 0x83, 0xd0, 0xc7, 0x91, 0x36, 0xa4, 0x4a, 0xa7, 0x60, 0xce, 0x31, 0x80, 0x52, 0x19,
+	0x79, 0x4c, 0x85, 0xf6, 0x01, 0x80, 0xd2, 0x78, 0xc9, 0x06, 0x41, 0xdf, 0x38, 0xb3, 0x44, 0x57,
+	0x7b, 0x38, 0x3e, 0xd2, 0x00, 0x15, 0x79, 0x85, 0x4e, 0xa5, 0x2d, 0xd1, 0x52, 0x0f, 0xc7, 0x27,
+	0x5a, 0x52, 0x17, 0xaa, 0x53, 0x69, 0x9b, 0xe7, 0x42, 0x6e, 0xc6, 0x05, 0xf2, 0x31, 0xac, 0x28,
+	0x7c, 0x3f, 0xf2, 0x6e, 0x86, 0x29, 0xb5, 0x8b, 0x2e, 0xf7, 0xf4, 0xb7, 0xb3, 0x0b, 0x75, 0x15,
+	0x9d, 0xd7, 0xdc, 0x64, 0x48, 0x17, 0x31, 0x69, 0x42, 0x89, 0x71, 0xef, 0x2a, 0xb8, 0x46, 0xe3,
+	0x7e, 0x89, 0x4e, 0xde, 0x4e, 0x17, 0x48, 0x96, 0x21, 0xa9, 0x83, 0x27, 0x50, 0x64, 0xa2, 0x67,
+	0x8b, 0xa0, 0xde, 0x32, 0xed, 0xd2, 0xba, 0x40, 0x7e, 0x8d, 0x7c, 0x5f, 0xf4, 0xa8, 0x46, 0x2b,
+	0xb2, 0x6e, 0xe0, 0x8b, 0x46, 0x7e, 0x1e, 0x59, 0x3b, 0xf0, 0xa9, 0x46, 0x3b, 0x2f, 0x61, 0x43,
+	0xe9, 0x48, 0x1a, 0x26, 0xd5, 0xb2, 0x07, 0x25, 0x96, 0xc0, 0x12, 0x4d, 0x77, 0xac, 0x88, 0x7d,
+	0xd3, 0x98, 0xb6, 0xc7, 0x26, 0x74, 0xce, 0xcf, 0x79, 0xd8, 0x4c, 0x90, 0x17, 0x92, 0xc9, 0x38,
+	0x95, 0xb6, 0x03, 0xb5, 0x21, 0x86, 0x7e, 0x10, 0xbe, 0x71, 0x4d, 0xf5, 0x4f, 0x92, 0xbd, 0x96,
+	0xc0, 0xdb, 0x0a, 0x7c, 0xe2, 0x2b, 0x4a, 0x2f, 0xe6, 0x1c, 0x43, 0x99, 0x52, 0xe6, 0x0d, 0x65,
+	0x02, 0xb7, 0x94, 0x0e, 0x54, 0xfb, 0x4c, 0x64, 0xc8, 0x0a, 0x26, 0x43, 0x0a, 0x68, 0x69, 0x5a,
+	0x70, 0xdb, 0xa0, 0x65, 0xe0, 0xf5, 0x90, 0xbb, 0xcc, 0x93, 0xc1, 0x35, 0xea, 0xbe, 0x2b, 0xd1,
+	0xba, 0x46, 0x75, 0x34, 0x66, 0x5f, 0x23, 0xc8, 0xff, 0x61, 0x5d, 0xcb, 0x94, 0xc1, 0x00, 0x7d,
+	0xcd, 0xd4, 0x58, 0xda, 0xce, 0xed, 0x14, 0xa9, 0x56, 0xd5, 0x51, 0x50, 0x45, 0x4f, 0x76, 0x61,
+	0x43, 0xa0, 0x17, 0x85, 0xbe, 0x70, 0x65, 0xe4, 0x86, 0x38, 0x92, 0x86, 0x78, 0x59, 0x13, 0xd7,
+	0x13, 0x5c, 0x27, 0x3a, 0xc3, 0x91, 0x54, 0x0c, 0xce, 0x2e, 0xdc, 0x56, 0x61, 0xd6, 0x76, 0x61,
+	0x1a, 0x17, 0x3d, 0x67, 0x34, 0x28, 0x69, 0x11, 0xfb, 0x74, 0xfe, 0xca, 0xc1, 0xea, 0x11, 0x22,
+	0xc5, 0x61, 0xc4, 0x25, 0x79, 0x09, 0xd5, 0x24, 0xca, 0xae, 0x1f, 0x5c, 0x5e, 0xda, 0x94, 0x3c,
+	0x49, 0xeb, 0x6d, 0x42, 0xdb, 0x4a, 0xf2, 0x72, 0xa8, 0xe8, 0x4c, 0xdf, 0x57, 0x58, 0x06, 0x44,
+	0x3e, 0x87, 0xad, 0x74, 0xb4, 0xba, 0x97, 0x88, 0xc2, 0x65, 0x9e, 0xc7, 0x63, 0x34, 0x81, 0x2e,
+	0xd2, 0xcd, 0x14, 0x7d, 0x84, 0x28, 0xf6, 0x0d, 0xb2, 0xf9, 0x03, 0xd4, 0x6f, 0x88, 0x9e, 0x33,
+	0x39, 0x9e, 0x4d, 0x4f, 0x8e, 0xcd, 0xd4, 0xc4, 0x0c, 0x77, 0x76, 0x74, 0xfc, 0x9e, 0x87, 0x72,
+	0x06, 0x45, 0x1e, 0x41, 0xd9, 0xfa, 0x6a, 0x45, 0x57, 0x28, 0x24, 0xa0, 0x53, 0x1c, 0x93, 0x0f,
+	0xa1, 0x26, 0x24, 0xe3, 0xd2, 0x54, 0x53, 0x3a, 0xa5, 0x8b, 0x74, 0xdd, 0xc2, 0xdb, 0xc9, 0xb4,
+	0x7e, 0x02, 0x6b, 0x93, 0xb2, 0x33, 0x84, 0x05, 0x93, 0x4e, 0x5b, 0x74, 0x86, 0x6c, 0x17, 0x36,
+	0x64, 0x24, 0x59, 0xdf, 0xc5, 0x11, 0x7a, 0x26, 0x24, 0x43, 0x16, 0xf8, 0xba, 0x4e, 0x8a, 0xb4,
+	0xae, 0x71, 0x2f, 0x46, 0xe8, 0xa9, 0x70, 0x9c, 0xb3, 0xc0, 0x27, 0x9f, 0xc2, 0xa6, 0x61, 0x90,
+	0xac, 0x67, 0x83, 0xa8, 0x39, 0x4c, 0xb5, 0x10, 0x8d, 0xec, 0x28, 0xdc, 0x4d, 0x96, 0xc1, 0x0c,
+	0xcb, 0x72, 0x86, 0xe5, 0xd5, 0x14, 0xcb, 0x53, 0xa8, 0x87, 0xf1, 0xc0, 0xf5, 0xae, 0x58, 0x28,
+	0x5c, 0x8f, 0x23, 0x93, 0xe8, 0x37, 0x56, 0xf4, 0x1c, 0x5c, 0x0f, 0xe3, 0xc1, 0x81, 0x82, 0x1f,
+	0x18, 0xb0, 0xf3, 0x67, 0x1e, 0x6a, 0xa6, 0xc2, 0xc2, 0xb4, 0xbc, 0x7e, 0x84, 0xf5, 0x2e, 0x0b,
+	0x43, 0xf4, 0xdd, 0x99, 0x5e, 0x6e, 0xa5, 0x59, 0x99, 0x65, 0x6a, 0xb5, 0x35, 0x87, 0x1d, 0x08,
+	0xa6, 0x82, 0xd6, 0xba, 0x53, 0x40, 0x72, 0x06, 0x95, 0x44, 0x70, 0x18, 0xf9, 0x68, 0x87, 0xcc,
+	0xb3, 0x77, 0x4a, 0x3d, 0x53, 0xd4, 0x46, 0x64, 0xb9, 0x9b, 0x42, 0x9a, 0x1d, 0xb8, 0x3d, 0x47,
+	0xed, 0x9c, 0xea, 0xfa, 0x60, 0xba, 0xba, 0xea, 0xa9, 0xc6, 0x36, 0x0b, 0x4f, 0xc2, 0xcb, 0x28,
+	0x53, 0x59, 0xcd, 0xef, 0xa1, 0x36, 0xab, 0xf6, 0x3d, 0x45, 0x3a, 0x5f, 0xc3, 0x4a, 0x02, 0x25,
+	0x77, 0x60, 0xf9, 0x0a, 0x83, 0x37, 0x57, 0xe6, 0xa2, 0xa8, 0xd2, 0xe4, 0xa5, 0x26, 0xba, 0x1f,
+	0x73, 0xa6, 0x3a, 0x28, 0x59, 0x5a, 0x93, 0xb7, 0x73, 0x0a, 0x35, 0x8a, 0x83, 0xe8, 0x1a, 0xdb,
+	0x2c, 0x4c, 0x37, 0xc0, 0x4a, 0x92, 0x1d, 0x53, 0xeb, 0xc7, 0xb7, 0xa8, 0x05, 0x90, 0x0d, 0x28,
+	0xaa, 0x00, 0x9b, 0x09, 0x78, 0x7c, 0x8b, 0xea, 0x57, 0x7b, 0x09, 0x0a, 0x5d, 0x16, 0x3a, 0x7f,
+	0xe4, 0xe0, 0xee, 0xbe, 0xb2, 0xf5, 0x95, 0x9e, 0x19, 0xbe, 0xde, 0x13, 0x17, 0x21, 0x1b, 0x8a,
+	0xab, 0x48, 0x92, 0xc7, 0x50, 0x60, 0xa2, 0x97, 0x5c, 0x3b, 0x73, 0xb6, 0x84, 0xc2, 0x2a, 0xa2,
+	0x6e, 0x32, 0x60, 0xe7, 0xee, 0x08, 0x85, 0x25, 0x8f, 0xa1, 0x3a, 0x50, 0x1a, 0x54, 0x1b, 0x71,
+	0x26, 0x4d, 0x0f, 0x55, 0x69, 0xc5, 0x02, 0x29, 0x93, 0x48, 0x3e, 0x02, 0x53, 0xc1, 0xae, 0x60,
+	0x52, 0xb8, 0x5e, 0x1f, 0x19, 0x47, 0xdb, 0x40, 0x35, 0x8d, 0xb9, 0x60, 0x52, 0x1c, 0x18, 0xb8,
+	0x12, 0x19, 0x87, 0x81, 0x14, 0xee, 0xc0, 0x98, 0xae, 0xfb, 0xa6, 0x4a, 0x2b, 0x1a, 0x98, 0xb8,
+	0xe3, 0xfc, 0x92, 0x87, 0xa6, 0xf6, 0x4f, 0x4f, 0x4d, 0xeb, 0x58, 0x76, 0x76, 0x5e, 0x23, 0x17,
+	0x2a, 0xcc, 0x26, 0x01, 0xf6, 0x49, 0xee, 0x42, 0x69, 0x66, 0x77, 0x98, 0xb1, 0x6a, 0x96, 0xc6,
+	0x90, 0xe3, 0xf5, 0x8d, 0xa5, 0xa1, 0x80, 0x99, 0xa5, 0xa1, 0xed, 0x57, 0xfe, 0x0e, 0x79, 0xe0,
+	0xa1, 0xf1, 0xba, 0xa8, 0x95, 0xd4, 0x2d, 0xea, 0x5c, 0x61, 0xb4, 0xeb, 0x2f, 0x61, 0x2d, 0x71,
+	0xc3, 0x8d, 0xf4, 0xaa, 0x6e, 0x2c, 0xe9, 0x76, 0x78, 0x9c, 0x19, 0x7d, 0x8b, 0xd2, 0x44, 0xab,
+	0x83, 0x0c, 0x54, 0x90, 0x87, 0x50, 0x4e, 0x16, 0xd6, 0x48, 0x59, 0xb7, 0xa2, 0xcb, 0xd4, 0x5c,
+	0x8c, 0x9d, 0xd1, 0x89, 0x9f, 0xba, 0x26, 0x47, 0x7a, 0x70, 0x58, 0xd7, 0x3a, 0xa3, 0xbd, 0xbf,
+	0x97, 0xa1, 0x62, 0x57, 0xb3, 0x52, 0x47, 0x8e, 0xa1, 0x3a, 0x75, 0x0d, 0x93, 0x3b, 0xa9, 0x41,
+	0xd9, 0x43, 0xba, 0xf9, 0x28, 0x85, 0xcf, 0x3f, 0x9f, 0xcf, 0xa0, 0x36, 0x7b, 0x61, 0x2e, 0x14,
+	0xe6, 0xbc, 0xfb, 0x2a, 0x25, 0x5f, 0xc1, 0x6a, 0xdb, 0xee, 0xde, 0x85, 0x82, 0xb6, 0x6e, 0xc0,
+	0x13, 0xee, 0x03, 0xa8, 0x9d, 0xb3, 0x58, 0x60, 0x3b, 0x5d, 0xdf, 0xff, 0x5d, 0xc8, 0x21, 0xd4,
+	0x29, 0x8a, 0x78, 0xf0, 0x7e, 0x52, 0xbe, 0x05, 0x48, 0x2f, 0x34, 0x72, 0x6f, 0x7a, 0xfe, 0x4d,
+	0x1d, 0x7a, 0xcd, 0xfb, 0xf3, 0x91, 0x89, 0xa0, 0x23, 0xa8, 0x64, 0xcf, 0xb0, 0x85, 0x96, 0x3c,
+	0x9c, 0x96, 0x72, 0xe3, 0x6c, 0x3b, 0x86, 0xea, 0xd4, 0x05, 0xf6, 0x6f, 0x72, 0x3e, 0xff, 0x64,
+	0x3b, 0x84, 0x72, 0xe6, 0x62, 0x59, 0x28, 0xe7, 0xc1, 0xec, 0xcc, 0x9f, 0x3e, 0x70, 0x2e, 0xa0,
+	0x3a, 0xd5, 0xbd, 0xe4, 0xbe, 0x1d, 0x32, 0x33, 0x4d, 0x6d, 0xa4, 0xfd, 0x6f, 0xa6, 0x65, 0xe6,
+	0x77, 0xfe, 0x73, 0x28, 0xd9, 0xfd, 0xb2, 0xd0, 0xae, 0xe6, 0xe2, 0x5d, 0x44, 0xbe, 0x81, 0xd5,
+	0xc9, 0x14, 0x26, 0x19, 0xc2, 0xd9, 0xd1, 0xbc, 0x30, 0xef, 0xdd, 0x65, 0xfd, 0x47, 0xfa, 0xd9,
+	0x3f, 0x01, 0x00, 0x00, 0xff, 0xff, 0xf6, 0xa2, 0x03, 0x8e, 0xc3, 0x0e, 0x00, 0x00,
 }
 
 // Reference imports to suppress errors if they are not otherwise used.
@@ -461,6 +1299,15 @@ type AuctionAdminClient interface {
 	MasterAccount(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*MasterAccountResponse, error)
 	ConnectedTraders(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ConnectedTradersResponse, error)
 	BatchTick(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	PauseBatchTicker(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	ResumeBatchTicker(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error)
+	ListAccounts(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListAccountsResponse, error)
+	AuctionStatus(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*AuctionStatusResponse, error)
+	ListBatches(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListBatchesResponse, error)
+	BatchSnapshot(ctx context.Context, in *clmrpc.BatchSnapshotRequest, opts ...grpc.CallOption) (*AdminBatchSnapshotResponse, error)
+	ListBans(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListBansResponse, error)
+	RemoveBan(ctx context.Context, in *RemoveBanRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 }
 
 type auctionAdminClient struct {
@@ -498,11 +1345,101 @@ func (c *auctionAdminClient) BatchTick(ctx context.Context, in *EmptyRequest, op
 	return out, nil
 }
 
+func (c *auctionAdminClient) PauseBatchTicker(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
+	out := new(EmptyResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/PauseBatchTicker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) ResumeBatchTicker(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
+	out := new(EmptyResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/ResumeBatchTicker", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) ListOrders(ctx context.Context, in *ListOrdersRequest, opts ...grpc.CallOption) (*ListOrdersResponse, error) {
+	out := new(ListOrdersResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/ListOrders", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) ListAccounts(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListAccountsResponse, error) {
+	out := new(ListAccountsResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/ListAccounts", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) AuctionStatus(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*AuctionStatusResponse, error) {
+	out := new(AuctionStatusResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/AuctionStatus", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) ListBatches(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListBatchesResponse, error) {
+	out := new(ListBatchesResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/ListBatches", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) BatchSnapshot(ctx context.Context, in *clmrpc.BatchSnapshotRequest, opts ...grpc.CallOption) (*AdminBatchSnapshotResponse, error) {
+	out := new(AdminBatchSnapshotResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/BatchSnapshot", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) ListBans(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*ListBansResponse, error) {
+	out := new(ListBansResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/ListBans", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *auctionAdminClient) RemoveBan(ctx context.Context, in *RemoveBanRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
+	out := new(EmptyResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/RemoveBan", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuctionAdminServer is the server API for AuctionAdmin service.
 type AuctionAdminServer interface {
 	MasterAccount(context.Context, *EmptyRequest) (*MasterAccountResponse, error)
 	ConnectedTraders(context.Context, *EmptyRequest) (*ConnectedTradersResponse, error)
 	BatchTick(context.Context, *EmptyRequest) (*EmptyResponse, error)
+	PauseBatchTicker(context.Context, *EmptyRequest) (*EmptyResponse, error)
+	ResumeBatchTicker(context.Context, *EmptyRequest) (*EmptyResponse, error)
+	ListOrders(context.Context, *ListOrdersRequest) (*ListOrdersResponse, error)
+	ListAccounts(context.Context, *EmptyRequest) (*ListAccountsResponse, error)
+	AuctionStatus(context.Context, *EmptyRequest) (*AuctionStatusResponse, error)
+	ListBatches(context.Context, *EmptyRequest) (*ListBatchesResponse, error)
+	BatchSnapshot(context.Context, *clmrpc.BatchSnapshotRequest) (*AdminBatchSnapshotResponse, error)
+	ListBans(context.Context, *EmptyRequest) (*ListBansResponse, error)
+	RemoveBan(context.Context, *RemoveBanRequest) (*EmptyResponse, error)
 }
 
 // UnimplementedAuctionAdminServer can be embedded to have forward compatible implementations.
@@ -517,6 +1454,33 @@ func (*UnimplementedAuctionAdminServer) ConnectedTraders(ctx context.Context, re
 }
 func (*UnimplementedAuctionAdminServer) BatchTick(ctx context.Context, req *EmptyRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method BatchTick not implemented")
+}
+func (*UnimplementedAuctionAdminServer) PauseBatchTicker(ctx context.Context, req *EmptyRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method PauseBatchTicker not implemented")
+}
+func (*UnimplementedAuctionAdminServer) ResumeBatchTicker(ctx context.Context, req *EmptyRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ResumeBatchTicker not implemented")
+}
+func (*UnimplementedAuctionAdminServer) ListOrders(ctx context.Context, req *ListOrdersRequest) (*ListOrdersResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListOrders not implemented")
+}
+func (*UnimplementedAuctionAdminServer) ListAccounts(ctx context.Context, req *EmptyRequest) (*ListAccountsResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListAccounts not implemented")
+}
+func (*UnimplementedAuctionAdminServer) AuctionStatus(ctx context.Context, req *EmptyRequest) (*AuctionStatusResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method AuctionStatus not implemented")
+}
+func (*UnimplementedAuctionAdminServer) ListBatches(ctx context.Context, req *EmptyRequest) (*ListBatchesResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBatches not implemented")
+}
+func (*UnimplementedAuctionAdminServer) BatchSnapshot(ctx context.Context, req *clmrpc.BatchSnapshotRequest) (*AdminBatchSnapshotResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method BatchSnapshot not implemented")
+}
+func (*UnimplementedAuctionAdminServer) ListBans(ctx context.Context, req *EmptyRequest) (*ListBansResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method ListBans not implemented")
+}
+func (*UnimplementedAuctionAdminServer) RemoveBan(ctx context.Context, req *RemoveBanRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method RemoveBan not implemented")
 }
 
 func RegisterAuctionAdminServer(s *grpc.Server, srv AuctionAdminServer) {
@@ -577,6 +1541,168 @@ func _AuctionAdmin_BatchTick_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuctionAdmin_PauseBatchTicker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).PauseBatchTicker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/PauseBatchTicker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).PauseBatchTicker(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_ResumeBatchTicker_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).ResumeBatchTicker(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/ResumeBatchTicker",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).ResumeBatchTicker(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_ListOrders_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListOrdersRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).ListOrders(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/ListOrders",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).ListOrders(ctx, req.(*ListOrdersRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_ListAccounts_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).ListAccounts(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/ListAccounts",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).ListAccounts(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_AuctionStatus_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).AuctionStatus(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/AuctionStatus",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).AuctionStatus(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_ListBatches_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).ListBatches(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/ListBatches",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).ListBatches(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_BatchSnapshot_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(clmrpc.BatchSnapshotRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).BatchSnapshot(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/BatchSnapshot",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).BatchSnapshot(ctx, req.(*clmrpc.BatchSnapshotRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_ListBans_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).ListBans(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/ListBans",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).ListBans(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AuctionAdmin_RemoveBan_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RemoveBanRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).RemoveBan(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/RemoveBan",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).RemoveBan(ctx, req.(*RemoveBanRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _AuctionAdmin_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "adminrpc.AuctionAdmin",
 	HandlerType: (*AuctionAdminServer)(nil),
@@ -592,6 +1718,42 @@ var _AuctionAdmin_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "BatchTick",
 			Handler:    _AuctionAdmin_BatchTick_Handler,
+		},
+		{
+			MethodName: "PauseBatchTicker",
+			Handler:    _AuctionAdmin_PauseBatchTicker_Handler,
+		},
+		{
+			MethodName: "ResumeBatchTicker",
+			Handler:    _AuctionAdmin_ResumeBatchTicker_Handler,
+		},
+		{
+			MethodName: "ListOrders",
+			Handler:    _AuctionAdmin_ListOrders_Handler,
+		},
+		{
+			MethodName: "ListAccounts",
+			Handler:    _AuctionAdmin_ListAccounts_Handler,
+		},
+		{
+			MethodName: "AuctionStatus",
+			Handler:    _AuctionAdmin_AuctionStatus_Handler,
+		},
+		{
+			MethodName: "ListBatches",
+			Handler:    _AuctionAdmin_ListBatches_Handler,
+		},
+		{
+			MethodName: "BatchSnapshot",
+			Handler:    _AuctionAdmin_BatchSnapshot_Handler,
+		},
+		{
+			MethodName: "ListBans",
+			Handler:    _AuctionAdmin_ListBans_Handler,
+		},
+		{
+			MethodName: "RemoveBan",
+			Handler:    _AuctionAdmin_RemoveBan_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

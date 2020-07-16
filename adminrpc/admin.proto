@@ -8,6 +8,15 @@ service AuctionAdmin {
     rpc MasterAccount (EmptyRequest) returns (MasterAccountResponse);
     rpc ConnectedTraders (EmptyRequest) returns (ConnectedTradersResponse);
     rpc BatchTick (EmptyRequest) returns (EmptyResponse);
+    rpc PauseBatchTicker (EmptyRequest) returns (EmptyResponse);
+    rpc ResumeBatchTicker (EmptyRequest) returns (EmptyResponse);
+    rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
+    rpc ListAccounts (EmptyRequest) returns (ListAccountsResponse);
+    rpc AuctionStatus (EmptyRequest) returns (AuctionStatusResponse);
+    rpc ListBatches (EmptyRequest) returns (ListBatchesResponse);
+    rpc BatchSnapshot (clmrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
+    rpc ListBans (EmptyRequest) returns (ListBansResponse);
+    rpc RemoveBan (RemoveBanRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -17,24 +26,24 @@ message EmptyResponse {
 }
 
 message MasterAccountResponse {
-    /**
+    /*
     OutPoint is the outpoint of the master account. If this is a zero outpoint,
     then no account exists yet.
     */
     OutPoint outpoint = 1;
 
-    /**
+    /*
     Balance is the current balance of the master account.
     */
     int64 balance = 2;
 
-    /**
+    /*
     AuctioneerKey is the base key for the auctioneer, this is a static parameter
     that's created when the system is initialized.
     */
     KeyDescriptor key_descriptor = 3;
 
-    /**
+    /*
     BatchKey is the current batch key for the auctioneer's account, this will be
     incremented by one each batch.
     */
@@ -42,7 +51,7 @@ message MasterAccountResponse {
 }
 
 message ConnectedTradersResponse {
-    /**
+    /*
     A map of all connected trader streams. The key is the hex-encoded LSAT ID
     of a connected stream and the content is a list of all account keys that
     trader connection has sent subscriptions for.
@@ -51,40 +60,206 @@ message ConnectedTradersResponse {
 }
 
 message PubKeyList {
-    /**
+    /*
     The raw bytes of the key being identified.
     */
     repeated bytes raw_key_bytes = 1;
 }
 
 message OutPoint {
-    /**
+    /*
     Raw bytes representing the transaction id.
     */
     bytes txid = 1 [json_name = "txid"];
 
-    /**
+    /*
     The index of the output on the transaction.
     */
     uint32 output_index = 2 [json_name = "output_index"];
 }
 
 message KeyLocator {
-    /// The family of key being identified.
+    // The family of key being identified.
     int32 key_family = 1;
 
-    /// The precise index of the key being identified.
+    // The precise index of the key being identified.
     int32 key_index = 2;
 }
 
 message KeyDescriptor {
-    /**
+    /*
     The raw bytes of the key being identified.
     */
     bytes raw_key_bytes = 1;
 
-    /**
+    /*
     The key locator that identifies which key to use for signing.
     */
     KeyLocator key_loc = 2;
+}
+
+message ListOrdersRequest {
+    // Indicate whether all archived or all open orders should be returned.
+    bool archived = 1;
+}
+
+message ListOrdersResponse {
+    repeated clmrpc.ServerAsk asks = 1;
+    repeated clmrpc.ServerBid bids = 2;
+}
+
+message ListAccountsResponse {
+    repeated clmrpc.AuctionAccount accounts = 1;
+}
+
+message AuctionStatusResponse {
+    // The ID of the current pending batch.
+    bytes pending_batch_id = 1;
+
+    // The ID of the current, not yet published batch.
+    bytes current_batch_id = 2;
+
+    // The ID of the last published batch.
+    bytes last_batch_id = 3;
+
+    /*
+    Indicates whether timed ticks are currently being used to start new batches.
+    If this is false, it means batch execution has been paused.
+    */
+    bool batch_ticker_active = 4;
+
+    /*
+    The unix timestamp of the last timed tick. This doesn't necessarily mean
+    that the tick also resulted in a batch being executed, for example if the
+    batch ticker was paused at the time of the timed tick.
+    */
+    uint64 last_timed_tick = 5;
+
+    /*
+    The number of seconds it will approximately take until the next timed tick
+    is fired. The tick will be fired in any case but it might not result in a
+    batch being executed if batch execution is currently paused.
+    */
+    uint64 seconds_to_next_tick = 6;
+}
+
+message ListBatchesResponse {
+    /*
+    A list of all batch IDs known to exist, listed in ascending order (oldest
+    batch first) with the last item being the current, not yet published batch.
+    */
+    repeated bytes batches = 1;
+}
+
+message FeeReport {
+    // The diffs of all accounts involved in the batch.
+    map<string, AccountDiff> account_diffs = 1;
+
+    // The total number of satoshis we earned as the auctioneer.
+    uint64 auctioneer_fees_accrued = 2;
+}
+
+message AccountDiff {
+    // The account key this diff refers to.
+    bytes account_key = 1;
+
+    // The balance the trader account started with.
+    uint64 starting_balance = 2;
+
+    // The ending balance of the trader's account.
+    uint64 ending_balance = 3;
+
+    // The total amount of fees a trader paid to the venue.
+    uint64 total_exec_fees_paid = 4;
+
+    /*
+    The total amount of fees the trader paid to purchase any channels in this
+    batch.
+    */
+    uint64 total_taker_fees_paid = 5;
+
+    /*
+    The total amount of fees the trader gained by selling channels in this
+    batch.
+    */
+    uint64 total_maker_fees_paid = 6;
+
+    /*
+    The number of new channels that were created for one account in a batch.
+    This is needed to calculate the chain fees that need to be paid from that
+    account.
+    */
+    uint32 num_chans_created = 7;
+}
+
+message ListBansResponse {
+    /*
+    A map of all banned accounts, keyed by the trader's account key (hex
+    encoded).
+    */
+    map<string, BanInfo> banned_accounts = 1;
+
+    /*
+    A map of all banned nodes, keyed by the node's identity pubkey (hex
+    encoded).
+    */
+    map<string, BanInfo> banned_nodes = 2;
+}
+
+message BanInfo {
+    // The height at which the ban begins to apply.
+    uint32 height = 1;
+
+    // The number of blocks the ban will last for once applied.
+    uint32 duration = 2;
+}
+
+message RemoveBanRequest {
+    oneof ban {
+        // Remove the ban of an account, identified by the trader's account key.
+        bytes account = 1;
+
+        // Remove the ban of a node, identified by the node's identity pubkey.
+        bytes node = 2;
+    }
+}
+
+message AdminMatchedOrderSnapshot {
+    // The full ask order that was matched.
+    clmrpc.ServerAsk ask = 1;
+
+    // The full bid order that was matched.
+    clmrpc.ServerBid bid = 2;
+
+    // The fixed rate premium that was matched, expressed in parts-ber-billion.
+    uint32 matching_rate = 3;
+
+    // The total number of satoshis that were bought.
+    uint64 total_sats_cleared = 4;
+
+    // The total number of units that were matched.
+    uint32 units_matched = 5;
+}
+
+message AdminBatchSnapshotResponse {
+    // The version of the batch.
+    uint32 version = 1;
+
+    // The unique identifier of the batch.
+    bytes batch_id = 2;
+
+    // The unique identifier of the prior batch.
+    bytes prev_batch_id = 3;
+
+    // The uniform clearing price rate in parts per billion of the batch.
+    uint32 clearing_price_rate = 4;
+
+    // The set of all orders matched in the batch.
+    repeated AdminMatchedOrderSnapshot matched_orders = 5;
+
+    // The txid of the batch transaction.
+    string batch_tx_id = 7;
+
+    // The batch transaction including all witness data.
+    bytes batch_tx = 6;
 }
