@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-import "google/api/annotations.proto";
+import "clmrpc/auctioneer.proto";
 
 package adminrpc;
 
