@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 
+	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/urfave/cli"
 )
@@ -24,23 +25,9 @@ var showMasterAccountCommand = cli.Command{
 	ShortName:   "s",
 	Usage:       "show current status of the master account",
 	Description: `Show the current status of the auction master account.`,
-	Action:      showMasterAccount,
-}
+	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
-func showMasterAccount(ctx *cli.Context) error {
-	client, cleanup, err := getClient(ctx)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-
-	resp, err := client.MasterAccount(
-		context.Background(), &adminrpc.EmptyRequest{},
-	)
-	if err != nil {
-		return err
-	}
-
-	printRespJSON(resp)
-	return nil
+		return client.MasterAccount(ctx, &adminrpc.EmptyRequest{})
+	}),
 }
