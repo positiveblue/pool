@@ -24,7 +24,6 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
-	"github.com/lightningnetwork/lnd/ticker"
 )
 
 var (
@@ -150,7 +149,7 @@ type AuctioneerConfig struct {
 	// BatchTicker is a ticker that ticks each time we should attempt to
 	// make a batch clearing attempt. We use a force ticker here as it lets
 	// us execute ticks at will, both in tests and by the system admin.
-	BatchTicker *ticker.Force
+	BatchTicker *IntervalAwareForceTicker
 
 	// CallMarket is the underlying market that we'll be operating. We'll
 	// use this to actually perform making when the time comes.

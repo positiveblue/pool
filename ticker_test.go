@@ -1,26 +1,26 @@
 package subasta_test
 
 import (
+	"math"
 	"testing"
 	"time"
 
-	"github.com/lightningnetwork/lnd/ticker"
+	"github.com/lightninglabs/subasta"
 )
 
-const interval = 50 * time.Millisecond
-const numActiveTicks = 3
+const (
+	interval           = 50 * time.Millisecond
+	numActiveTicks     = 3
+	timestampTolerance = 5 * time.Millisecond
+)
 
 var tickers = []struct {
 	name   string
-	ticker ticker.Ticker
+	ticker *subasta.IntervalAwareForceTicker
 }{
 	{
-		"default ticker",
-		ticker.New(interval),
-	},
-	{
-		"mock ticker",
-		ticker.NewForce(interval),
+		"interval aware ticker",
+		subasta.NewIntervalAwareForceTicker(interval),
 	},
 }
 
@@ -29,6 +29,7 @@ var tickers = []struct {
 // methods.
 func TestInterfaceTickers(t *testing.T) {
 	for _, test := range tickers {
+		test := test
 		t.Run(test.name, func(t *testing.T) {
 			testTicker(t, test.ticker)
 		})
@@ -36,7 +37,7 @@ func TestInterfaceTickers(t *testing.T) {
 }
 
 // testTicker asserts the behavior of a freshly initialized ticker.Ticker.
-func testTicker(t *testing.T, ticker ticker.Ticker) {
+func testTicker(t *testing.T, ticker *subasta.IntervalAwareForceTicker) {
 	// Newly initialized ticker should start off inactive.
 	select {
 	case <-ticker.Ticks():
@@ -50,12 +51,24 @@ func testTicker(t *testing.T, ticker ticker.Ticker) {
 	for i := 0; i < numActiveTicks; i++ {
 		select {
 		case <-ticker.Ticks():
+			assertTickTimeUpdated(t, ticker)
 		case <-time.After(2 * interval):
-			t.Fatalf(
-				"ticker should have ticked after calling Resume",
-			)
+			t.Fatalf("ticker should have ticked after calling " +
+				"Resume")
 		}
 	}
+
+	// Make sure the time to next tick is calculated properly.
+	time.Sleep(interval - timestampTolerance)
+	nextTickIn := ticker.NextTickIn()
+	if nextTickIn > timestampTolerance {
+		t.Fatalf("expected next tick to be in %v but was %v",
+			timestampTolerance, nextTickIn)
+	}
+
+	// Wait for next tick to get synced up with the underlying clock for the
+	// next check.
+	<-ticker.Ticks()
 
 	// Pause, check that ticker is inactive and sends no ticks.
 	ticker.Pause()
@@ -64,6 +77,8 @@ func testTicker(t *testing.T, ticker ticker.Ticker) {
 	case <-ticker.Ticks():
 		t.Fatalf("ticker should not have ticked after calling Pause")
 	case <-time.After(2 * interval):
+		// The underlying ticker still should've just ticked.
+		assertTickTimeUpdated(t, ticker)
 	}
 
 	// Pause again, expect same behavior as after first invocation.
@@ -71,8 +86,20 @@ func testTicker(t *testing.T, ticker ticker.Ticker) {
 
 	select {
 	case <-ticker.Ticks():
-		t.Fatalf("ticker should not have ticked after calling Pause again")
+		t.Fatalf("ticker should not have ticked after calling Pause " +
+			"again")
 	case <-time.After(2 * interval):
+	}
+
+	// A forced tick should still go through.
+	go func() {
+		ticker.Force <- time.Now()
+	}()
+
+	select {
+	case <-ticker.Ticks():
+	case <-time.After(2 * interval):
+		t.Fatalf("ticker should have fired on forced tick")
 	}
 
 	// Resume again, should result in normal active behavior.
@@ -82,9 +109,8 @@ func testTicker(t *testing.T, ticker ticker.Ticker) {
 		select {
 		case <-ticker.Ticks():
 		case <-time.After(2 * interval):
-			t.Fatalf(
-				"ticker should have ticked after calling Resume",
-			)
+			t.Fatalf("ticker should have ticked after calling " +
+				"Resume")
 		}
 	}
 
@@ -95,5 +121,23 @@ func testTicker(t *testing.T, ticker ticker.Ticker) {
 	case <-ticker.Ticks():
 		t.Fatalf("ticker should not have ticked after calling Stop")
 	case <-time.After(2 * interval):
+	}
+}
+
+func assertTickTimeUpdated(t *testing.T, ticker *subasta.IntervalAwareForceTicker) {
+
+	t.Helper()
+
+	lastTick := ticker.LastTimedTick()
+	diffToTarget := time.Until(lastTick)
+	if math.Abs(float64(diffToTarget)) > float64(timestampTolerance) {
+		t.Fatalf("Expected last tick %v to be within %v of tolerance "+
+			"of %v but was %v", lastTick, timestampTolerance,
+			time.Now(), diffToTarget)
+	}
+
+	nextTickDiff := ticker.NextTickIn() - interval
+	if math.Abs(float64(nextTickDiff)) > float64(timestampTolerance) {
+		t.Fatalf("Expected next tick to be similar to interval")
 	}
 }

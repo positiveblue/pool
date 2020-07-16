@@ -138,7 +138,7 @@ func (s *adminRPCServer) ConnectedTraders(_ context.Context,
 func (s *adminRPCServer) BatchTick(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
-	// Force a new bat ticker event in the main auctioneer state machine.
+	// Force a new batch ticker event in the main auctioneer state machine.
 	s.auctioneer.cfg.BatchTicker.Force <- time.Now()
 
 	return &adminrpc.EmptyResponse{}, nil
