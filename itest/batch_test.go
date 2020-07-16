@@ -6,10 +6,12 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -69,10 +71,11 @@ func testBatchExecution(t *harnessTest) {
 
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
+	const orderFixedRate = 100
 	askAmt := btcutil.Amount(1_500_000)
 	ask1Nonce, err := submitAskOrder(
-		t.trader, account1.TraderKey, 100, askAmt, 2*dayInBlocks,
-		uint32(order.CurrentVersion),
+		t.trader, account1.TraderKey, orderFixedRate, askAmt,
+		2*dayInBlocks, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
@@ -82,8 +85,8 @@ func testBatchExecution(t *harnessTest) {
 	// liquidity. So let's submit an order for that.
 	bidAmt := btcutil.Amount(800_000)
 	_, err = submitBidOrder(
-		secondTrader, account2.TraderKey, 100, bidAmt, dayInBlocks,
-		uint32(order.CurrentVersion),
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
+		dayInBlocks, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -95,8 +98,8 @@ func testBatchExecution(t *harnessTest) {
 	// the same time.
 	bidAmt2 := btcutil.Amount(400_000)
 	_, err = submitBidOrder(
-		secondTrader, account3.TraderKey, 100, bidAmt2, dayInBlocks,
-		uint32(order.CurrentVersion),
+		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
+		dayInBlocks, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -288,6 +291,14 @@ func testBatchExecution(t *harnessTest) {
 	// ask order with 300k unfilled (3 units).
 	assertAskOrderState(t, t.trader, 3, ask1Nonce)
 
+	// We should now be able to find this snapshot. As this is the only
+	// batch created atm, we pass a nil batch ID so it'll look up the prior
+	// batch.
+	firstBatchID := assertBatchSnapshot(
+		t, nil, secondTrader,
+		[]uint64{uint64(bidAmt), uint64(bidAmt2)}, orderFixedRate,
+	)
+
 	// We'll now do an additional round to ensure that we're able to
 	// fulfill back to back batches. In this round, Charlie will submit
 	// another order for 3 units, which should be matched with Bob's
@@ -343,6 +354,20 @@ func testBatchExecution(t *harnessTest) {
 	assertNoOrders(t, secondTrader)
 	assertNoOrders(t, t.trader)
 
+	// We should also be able to find this batch as well, with only 2
+	// orders being included in the batch. This time, we'll query with the
+	// exact batch ID we expect.
+	firstBatchKey, err := btcec.ParsePubKey(firstBatchID[:], btcec.S256())
+	if err != nil {
+		t.Fatalf("unable to decode first batch key: %v", err)
+	}
+	secondBatchKey := clmscript.IncrementKey(firstBatchKey)
+	secondBatchID := secondBatchKey.SerializeCompressed()
+	assertBatchSnapshot(
+		t, secondBatchID, secondTrader, []uint64{uint64(bidAmt3)},
+		orderFixedRate,
+	)
+
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
 	chanReq := &lnrpc.ListChannelsRequest{}
@@ -379,4 +404,54 @@ func testBatchExecution(t *harnessTest) {
 			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
 		)
 	}
+
+}
+
+// assertBatchSnapshot asserts that a batch identified by the passed batchID is
+// found and includes the specified orders, cleared at the target clearing
+// rate. This method also returns ID of the queried batch.
+//
+// TODO(roasbeef): update to assert order nonce and other info once the admin
+// RPC stuff is in
+func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
+	expectedOrderAmts []uint64,
+	clearingPrice order.FixedRatePremium) order.BatchID {
+
+	ctxb := context.Background()
+	batchSnapshot, err := trader.BatchSnapshot(
+		ctxb,
+		&clmrpc.BatchSnapshotRequest{
+			BatchId: batchID,
+		},
+	)
+	if err != nil {
+		t.Fatalf("unable to obtain batch snapshot: %v", err)
+	}
+
+	// The final clearing price should match the expected fixed rate passed
+	// in.
+	if batchSnapshot.ClearingPriceRate != uint32(clearingPrice) {
+		t.Fatalf("wrong clearing price: expected %v, got %v",
+			clearingPrice, batchSnapshot.ClearingPriceRate)
+	}
+
+	// Next we'll compile a map of the included ask and bid orders so we
+	// can assert the existence of the orders we created above.
+	matchedOrderAmts := make(map[uint64]struct{})
+	for _, order := range batchSnapshot.MatchedOrders {
+		matchedOrderAmts[order.TotalSatsCleared] = struct{}{}
+	}
+
+	// Next we'll assert that all the expected orders have been found in
+	// this batch.
+	for _, orderAmt := range expectedOrderAmts {
+		if _, ok := matchedOrderAmts[orderAmt]; !ok {
+			t.Fatalf("order amt %v not found in batch", orderAmt)
+		}
+	}
+
+	var serverbatchID order.BatchID
+	copy(serverbatchID[:], batchSnapshot.BatchId)
+
+	return serverbatchID
 }

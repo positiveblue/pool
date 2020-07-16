@@ -453,6 +453,25 @@ func (a *Auctioneer) publishBatchTx(ctx context.Context, batchTx *wire.MsgTx,
 	return nil
 }
 
+// DecrementBatchKey is the opposite of IncrementBatchKey, is "subtracts one"
+// for the current batch key to arrive at the key used in the prior batch.
+func DecrementBatchKey(batchKey *btcec.PublicKey) *btcec.PublicKey {
+	//  priorKey = batchKey - G
+	//  priorKey = (batchKey.x, batchKey.y) + (G.x, -G.y)
+	curveParams := btcec.S256().Params()
+	negY := new(big.Int).Neg(curveParams.Gy)
+	negY = negY.Mod(negY, curveParams.P)
+	x, y := batchKey.Curve.Add(
+		batchKey.X, batchKey.Y, curveParams.Gx, negY,
+	)
+
+	return &btcec.PublicKey{
+		X:     x,
+		Y:     y,
+		Curve: btcec.S256(),
+	}
+}
+
 // rebroadcastPendingBatches attempts to rebroadcast any pending batches to
 // ensure they're confirmed. Once the batch confirms, it'll be marked as
 // finalized on disk.
@@ -469,20 +488,7 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 
 	// Now that we have the current batch key, we'll walk "backwards" by
 	// decrementing the batch key by -G each time.
-	//
-	//  priorKey = batchKey - G
-	//  priorKey = (batchKey.x, batchKey.y) + (G.x, -G.y)
-	curveParams := btcec.S256().Params()
-	negY := new(big.Int).Neg(curveParams.Gy)
-	negY = negY.Mod(negY, curveParams.P)
-	x, y := currentBatchKey.Curve.Add(
-		currentBatchKey.X, currentBatchKey.Y, curveParams.Gx, negY,
-	)
-	priorBatchKey := &btcec.PublicKey{
-		X:     x,
-		Y:     y,
-		Curve: btcec.S256(),
-	}
+	priorBatchKey := DecrementBatchKey(currentBatchKey)
 
 	// Now for this batch key, we'll check to see if the batch has been
 	// marked as finalized on disk or not.
