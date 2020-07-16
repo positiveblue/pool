@@ -295,7 +295,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	server.adminServer = newAdminRPCServer(
 		auctioneerServer, adminListener, []grpc.ServerOption{},
-		server.auctioneer,
+		server.auctioneer, store,
 	)
 	adminrpc.RegisterAuctionAdminServer(
 		server.adminServer.grpcServer, server.adminServer,

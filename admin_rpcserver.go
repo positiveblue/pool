@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/subastadb"
 	"google.golang.org/grpc"
 )
 
@@ -28,11 +29,13 @@ type adminRPCServer struct {
 
 	mainRPCServer *rpcServer
 	auctioneer    *Auctioneer
+	store         *subastadb.EtcdStore
 }
 
 // newAdminRPCServer creates a new adminRPCServer.
 func newAdminRPCServer(mainRPCServer *rpcServer, listener net.Listener,
-	serverOpts []grpc.ServerOption, auctioneer *Auctioneer) *adminRPCServer {
+	serverOpts []grpc.ServerOption, auctioneer *Auctioneer,
+	store *subastadb.EtcdStore) *adminRPCServer {
 
 	return &adminRPCServer{
 		grpcServer:    grpc.NewServer(serverOpts...),
@@ -40,6 +43,7 @@ func newAdminRPCServer(mainRPCServer *rpcServer, listener net.Listener,
 		quit:          make(chan struct{}),
 		mainRPCServer: mainRPCServer,
 		auctioneer:    auctioneer,
+		store:         store,
 	}
 }
 
@@ -89,7 +93,7 @@ func (s *adminRPCServer) Stop() {
 func (s *adminRPCServer) MasterAccount(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.MasterAccountResponse, error) {
 
-	masterAcct, err := s.mainRPCServer.store.FetchAuctioneerAccount(ctx)
+	masterAcct, err := s.store.FetchAuctioneerAccount(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("unable to fetch master account: %v",
 			err)
