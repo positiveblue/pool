@@ -37,6 +37,16 @@ var (
 	_, pubKey = btcec.PrivKeyFromBytes(btcec.S256(), key[:])
 )
 
+func randomPubKey(t *testing.T) *btcec.PublicKey {
+	var testPriv [32]byte
+	if _, err := rand.Read(testPriv[:]); err != nil {
+		t.Fatalf("could not create private key: %v", err)
+	}
+
+	_, pub := btcec.PrivKeyFromBytes(btcec.S256(), testPriv[:])
+	return pub
+}
+
 type mockAuctioneerState struct {
 	sync.RWMutex
 
@@ -55,6 +65,8 @@ type mockAuctioneerState struct {
 	batchStates map[orderT.BatchID]bool
 
 	snapshots map[orderT.BatchID]*wire.MsgTx
+
+	bannedAccounts map[matching.AccountID]struct{}
 }
 
 func newMockAuctioneerState(batchKey *btcec.PublicKey) *mockAuctioneerState {
@@ -64,6 +76,7 @@ func newMockAuctioneerState(batchKey *btcec.PublicKey) *mockAuctioneerState {
 		orders:           make(map[orderT.Nonce]order.ServerOrder),
 		batchStates:      make(map[orderT.BatchID]bool),
 		snapshots:        make(map[orderT.BatchID]*wire.MsgTx),
+		bannedAccounts:   make(map[matching.AccountID]struct{}),
 	}
 }
 
@@ -178,6 +191,27 @@ func (m *mockAuctioneerState) GetOrders(context.Context) ([]order.ServerOrder, e
 	}
 
 	return orders, nil
+}
+
+func (m *mockAuctioneerState) BanAccount(_ context.Context,
+	accountKey *btcec.PublicKey, _ uint32) error {
+
+	m.Lock()
+	defer m.Unlock()
+
+	var k matching.AccountID
+	copy(k[:], accountKey.SerializeCompressed())
+	m.bannedAccounts[k] = struct{}{}
+
+	return nil
+}
+
+func (m *mockAuctioneerState) isBannedTrader(trader matching.AccountID) bool {
+	m.Lock()
+	defer m.Unlock()
+
+	_, ok := m.bannedAccounts[trader]
+	return ok
 }
 
 var _ AuctioneerDatabase = (*mockAuctioneerState)(nil)
@@ -708,6 +742,14 @@ func (a *auctioneerTestHarness) ReportExecutionSuccess() {
 	}
 }
 
+func (a *auctioneerTestHarness) AssertBannedTrader(trader matching.AccountID) {
+	a.t.Helper()
+
+	if !a.db.isBannedTrader(trader) {
+		a.t.Fatalf("trader %x not banned", trader)
+	}
+}
+
 func (a *auctioneerTestHarness) AssertOrdersRemoved(nonces []orderT.Nonce) {
 	a.t.Helper()
 
@@ -1023,7 +1065,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// In this scenario, we'll return an error that a sub-set of the
 	// traders are missing.
-	const numOrders = 6
+	const numOrders = 10
 	missingNonces := make([]orderT.Nonce, numOrders)
 	for i := 0; i < numOrders; i++ {
 		missingNonces[i] = testHarness.AddDiskOrder(i%2 == 0, 10, 10)
@@ -1063,6 +1105,31 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	})
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 	testHarness.AssertOrdersRemoved(missingNonces[4:6])
+
+	// We'll now simulate one of the traders failing to include required
+	// channel information.
+	testHarness.ReportExecutionFailure(&venue.ErrMissingChannelInfo{
+		Trader:       matching.AccountID{1},
+		ChannelPoint: wire.OutPoint{Index: 1},
+		OrderNonces:  missingNonces[6:8],
+	})
+	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertOrdersRemoved(missingNonces[6:8])
+
+	// We'll now simulate one of the traders providing non-matching channel
+	// information. Both traders should be banned and their orders removed.
+	bannedTrader1 := matching.AccountID(toRawKey(randomPubKey(t)))
+	bannedTrader2 := matching.AccountID(toRawKey(randomPubKey(t)))
+	testHarness.ReportExecutionFailure(&venue.ErrNonMatchingChannelInfo{
+		ChannelPoint: wire.OutPoint{Index: 1},
+		Trader1:      bannedTrader1,
+		Trader2:      bannedTrader2,
+		OrderNonces:  missingNonces[8:10],
+	})
+	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertBannedTrader(bannedTrader1)
+	testHarness.AssertBannedTrader(bannedTrader2)
+	testHarness.AssertOrdersRemoved(missingNonces[8:10])
 
 	// At long last, we're now ready to trigger a successful batch
 	// execution.

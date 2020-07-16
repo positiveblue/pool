@@ -83,6 +83,12 @@ type AuctioneerDatabase interface {
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context,
 		orderT.BatchID) (*matching.OrderBatch, *wire.MsgTx, error)
+
+	// BanAccount attempts to ban the account associated with a trader
+	// starting from the current height of the chain. The duration of the
+	// ban will depend on how many times the node has been banned before and
+	// grows exponentially, otherwise it is 144 blocks.
+	BanAccount(context.Context, *btcec.PublicKey, uint32) error
 }
 
 // Wallet is an interface that contains all the methods necessary for the
@@ -875,6 +881,24 @@ func (a *Auctioneer) updatePendingBatchID(newBatchID matching.BatchID) {
 	a.pendingBatchID = newBatchID
 }
 
+// banTrader bans the account associated with a trader starting from the current
+// height of the chain. The duration of the ban will depend on how many times
+// the node has been banned before and grows exponentially, otherwise it is 144
+// blocks.
+func (a *Auctioneer) banTrader(trader matching.AccountID) {
+	accountKey, err := btcec.ParsePubKey(trader[:], btcec.S256())
+	if err != nil {
+		log.Errorf("Unable to ban account %x: %v", trader[:], err)
+		return
+	}
+	err = a.cfg.DB.BanAccount(
+		context.Background(), accountKey, a.BestHeight(),
+	)
+	if err != nil {
+		log.Errorf("Unable to ban account %x: %v", trader[:], err)
+	}
+}
+
 // removeIneligibleOrders attempts to remove a set of orders that are no longer
 // eligible for this batch from the
 func (a *Auctioneer) removeIneligibleOrders(orders []orderT.Nonce) {
@@ -1241,6 +1265,14 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 					a.removeIneligibleOrders(nonces)
 
 				case *venue.ErrInvalidWitness:
+					a.removeIneligibleOrders(exeErr.OrderNonces)
+
+				case *venue.ErrMissingChannelInfo:
+					a.removeIneligibleOrders(exeErr.OrderNonces)
+
+				case *venue.ErrNonMatchingChannelInfo:
+					a.banTrader(exeErr.Trader1)
+					a.banTrader(exeErr.Trader2)
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
 				case *venue.ErrMsgTimeout:
