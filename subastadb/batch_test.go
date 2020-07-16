@@ -14,8 +14,10 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -86,14 +88,14 @@ func TestPersistBatchResult(t *testing.T) {
 	// First test the basic sanity tests that are performed.
 	err := store.PersistBatchResult(
 		ctx, []orderT.Nonce{{}}, nil, nil, nil, nil, batchID, nil, nil,
-		nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "order modifier") {
 		t.Fatalf("expected order modifier length mismatch, got %v", err)
 	}
 	err = store.PersistBatchResult(
 		ctx, nil, nil, []*btcec.PublicKey{{}}, nil, nil, batchID, nil,
-		nil, nil,
+		nil, nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "account modifier") {
 		t.Fatalf("expected account modifier length mismatch, got %v",
@@ -158,12 +160,28 @@ func TestPersistBatchResult(t *testing.T) {
 	}}
 	ma1.Balance = 500_000
 
+	// A channel lifetime package should exist for each matched order.
+	lifetimePkg := &chanenforcement.LifetimePackage{
+		ChannelPoint:        wire.OutPoint{Index: 1},
+		ChannelScript:       []byte{0x1, 0x2, 0x3},
+		HeightHint:          1,
+		MaturityDelta:       100,
+		Version:             0,
+		AskAccountKey:       randomPubKey(t),
+		BidAccountKey:       randomPubKey(t),
+		AskNodeKey:          randomPubKey(t),
+		BidNodeKey:          randomPubKey(t),
+		AskPaymentBasePoint: randomPubKey(t),
+		BidPaymentBasePoint: randomPubKey(t),
+	}
+	lifetimePkgs := []*chanenforcement.LifetimePackage{lifetimePkg}
+
 	// Then call the actual persist method on the store.
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{traderKey}, accountModifiers,
 		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
-		batchTx,
+		batchTx, lifetimePkgs,
 	)
 	if err != nil {
 		t.Fatalf("error persisting batch result: %v", err)
@@ -189,6 +207,13 @@ func TestPersistBatchResult(t *testing.T) {
 		t.Fatalf("unexpected order state, got %d wanted %d",
 			o2.Details().State, orderT.StatePartiallyFilled)
 	}
+
+	// Check the lifetime package.
+	lifetimePkgs2, err := store.LifetimePackages(ctx)
+	if err != nil {
+		t.Fatalf("unable to retrieve lifetime packages: %v", err)
+	}
+	require.Equal(t, lifetimePkgs, lifetimePkgs2)
 
 	// And finally the auctioneer/master account and the batch key.
 	ma2, err := store.FetchAuctioneerAccount(ctx)
@@ -283,6 +308,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{traderKey}, accountModifiers,
 		ma1, batchID, &matching.OrderBatch{}, testTraderKey, batchTx,
+		nil,
 	)
 	if err == nil {
 		t.Fatal("expected error persisting batch result, got nil")

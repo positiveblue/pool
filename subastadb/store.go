@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"go.etcd.io/etcd/clientv3"
@@ -68,7 +69,7 @@ type Store interface {
 	PersistBatchResult(context.Context, []orderT.Nonce, [][]order.Modifier,
 		[]*btcec.PublicKey, [][]account.Modifier, *account.Auctioneer,
 		orderT.BatchID, *matching.OrderBatch, *btcec.PublicKey,
-		*wire.MsgTx) error
+		*wire.MsgTx, []*chanenforcement.LifetimePackage) error
 
 	// PersistBatchSnapshot persists a self-contained snapshot of a batch
 	// including all involved orders and accounts.

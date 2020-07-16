@@ -19,6 +19,7 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -226,6 +227,10 @@ type ExecutionResult struct {
 	// StartingFeeRate is the fee rate that the batch transaction above
 	// pays.
 	StartingFeeRate chainfee.SatPerKWeight
+
+	// LifetimePackages contains the service level enforcement package for
+	// each channel created as a result of the batch.
+	LifetimePackages []*chanenforcement.LifetimePackage
 
 	// TODO(roasbeef): other stats?
 	//  * coin blocks created (lol, like BDD)
@@ -846,8 +851,10 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			MasterAccountDiff: exeCtx.MasterAccountDiff,
 			BatchTx:           batchTx,
 			StartingFeeRate:   chainfee.FeePerKwFloor,
+			LifetimePackages:  env.lifetimePkgs,
 		}
 		if err := b.batchStorer.Store(ctxb, env.result); err != nil {
+			log.Errorf("Failed to store batch: %v", err)
 			return 0, env, err
 		}
 

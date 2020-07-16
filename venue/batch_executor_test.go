@@ -23,6 +23,7 @@ import (
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -42,13 +43,6 @@ const (
 	missingChanInfo
 	invalidChanInfo
 )
-
-type mockBatchStorer struct {
-}
-
-func (m *mockBatchStorer) Store(_ context.Context, _ *ExecutionResult) error {
-	return nil
-}
 
 type mockExecutorStore struct {
 	*subastadb.StoreMock
@@ -108,7 +102,7 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		store:         store,
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
 		executor: NewBatchExecutor(
-			store, signer, msgTimeout, &mockBatchStorer{},
+			store, signer, msgTimeout, NewExeBatchStorer(store),
 		),
 	}
 }
@@ -554,7 +548,6 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	msgTimeout := time.Millisecond * 200
 	testCtx := newExecutorTestHarness(t, msgTimeout)
 	testCtx.Start()
-
 	defer testCtx.Stop()
 
 	// Before we start, we'll also insert some initial master account state
@@ -825,7 +818,15 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// to terminate at the BatchComplete state and a successful execution
 	// result to be received.
 	testCtx.AssertStateTransitions(BatchComplete)
-	_ = testCtx.ExpectExecutionSuccess(respChan)
+	exeRes := testCtx.ExpectExecutionSuccess(respChan)
+
+	// We'll assert that a lifetime package was created for each matched
+	// order.
+	if len(exeRes.LifetimePackages) != len(batch.Orders) {
+		t.Fatalf("expected %v lifetime pacakges, found %v",
+			len(batch.Orders), len(exeRes.LifetimePackages))
+	}
+	require.Equal(t, exeRes.LifetimePackages, testCtx.store.LifetimePackages)
 
 	// TODO(roasbeef): assert every input of batch transaction valid?
 }

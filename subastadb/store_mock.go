@@ -10,21 +10,23 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // StoreMock is a type to hold mocked orders.
 type StoreMock struct {
-	Res         map[lsat.TokenID]*account.Reservation
-	Accs        map[[33]byte]*account.Account
-	BannedAccs  map[[33]byte][2]uint32 // 0: ban start height, 1: delta
-	Orders      map[orderT.Nonce]order.ServerOrder
-	BatchPubkey *btcec.PublicKey
-	MasterAcct  *account.Auctioneer
-	Snapshots   map[orderT.BatchID]*matching.OrderBatch
-	BatchTx     *wire.MsgTx
-	t           *testing.T
+	Res              map[lsat.TokenID]*account.Reservation
+	Accs             map[[33]byte]*account.Account
+	BannedAccs       map[[33]byte][2]uint32 // 0: ban start height, 1: delta
+	Orders           map[orderT.Nonce]order.ServerOrder
+	BatchPubkey      *btcec.PublicKey
+	MasterAcct       *account.Auctioneer
+	Snapshots        map[orderT.BatchID]*matching.OrderBatch
+	LifetimePackages []*chanenforcement.LifetimePackage
+	BatchTx          *wire.MsgTx
+	t                *testing.T
 }
 
 // NewStoreMock creates a new mocked store.
@@ -290,7 +292,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAcct *account.Auctioneer, batchID orderT.BatchID,
 	batch *matching.OrderBatch, nextBatchKey *btcec.PublicKey,
-	tx *wire.MsgTx) error {
+	tx *wire.MsgTx, lifetimePkgs []*chanenforcement.LifetimePackage) error {
 
 	err := s.UpdateOrders(ctx, orders, orderModifiers)
 	if err != nil {
@@ -311,6 +313,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	s.MasterAcct = masterAcct
 	s.BatchTx = tx
 	s.Snapshots[batchID] = batch
+	s.LifetimePackages = lifetimePkgs
 
 	var batchKey [33]byte
 	copy(batchKey[:], nextBatchKey.SerializeCompressed())
