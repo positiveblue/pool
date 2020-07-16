@@ -3,6 +3,7 @@ package venue
 import (
 	"fmt"
 
+	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
@@ -65,4 +66,55 @@ func (e *ErrInvalidWitness) Error() string {
 // Unwrap returns the base error.
 func (e *ErrInvalidWitness) Unwrap() error {
 	return e.VerifyErr
+}
+
+// ErrMissingChannelInfo is returned if a trader sends an OrderMatchSign message
+// without including the accompanying channel info.
+type ErrMissingChannelInfo struct {
+	// Trader is the trader that did not provide the required channel info.
+	Trader matching.AccountID
+
+	// ChannelPoint is the identifying outpoint of the channel.
+	ChannelPoint wire.OutPoint
+
+	// OrderNonces is the set of orders that the trader was involved in.
+	OrderNonces []orderT.Nonce
+}
+
+// Error implements the error interface.
+func (e *ErrMissingChannelInfo) Error() string {
+	return fmt.Sprintf("trader %x did not provide information for channel "+
+		"%v", e.Trader[:], e.ChannelPoint)
+}
+
+// ErrNonMatchingChannelInfo is an error returned by the venue during batch
+// execution when two matched traders submit non-matching information regarding
+// their to be created channel.
+type ErrNonMatchingChannelInfo struct {
+	// Err is the underlying cause of the error.
+	Err error
+
+	// ChannelPoint is the identifying outpoint of the channel.
+	ChannelPoint wire.OutPoint
+
+	// Trader1 is one of the matched traders that will be punished.
+	Trader1 matching.AccountID
+
+	// Trader2 is the other matched trader that will be punished.
+	Trader2 matching.AccountID
+
+	// OrderNonces contains the order nonces for both traders above which
+	// will be removed from the next batch attempt due to the error.
+	OrderNonces []orderT.Nonce
+}
+
+// Error implements the error interface.
+func (e *ErrNonMatchingChannelInfo) Error() string {
+	return fmt.Sprintf("non-matching info between %x and %x for channel "+
+		"%v: %v", e.Trader1[:], e.Trader2[:], e.ChannelPoint, e.Err)
+}
+
+// Unwrap returns the base error.
+func (e *ErrNonMatchingChannelInfo) Unwrap() error {
+	return e.Err
 }

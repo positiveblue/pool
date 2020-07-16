@@ -9,10 +9,13 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -26,6 +29,14 @@ type multiplexMessage struct {
 	matchedOrders    map[orderT.Nonce][]*matching.MatchedOrder
 	chargedAccounts  []matching.AccountDiff
 	accountOutpoints []wire.OutPoint
+}
+
+// traderChannelInfo is a helper struct regarding a specific trader's channel
+// information used for the creation of channel service lifetime packages.
+type traderChannelInfo struct {
+	matching.AccountID
+	*batchtx.OrderOutput
+	*chaninfo.ChannelInfo
 }
 
 // environment is the running state of the state machine. The state machine
@@ -99,6 +110,20 @@ type environment struct {
 	// NOTE: This will only be set after the BatchSigning state.
 	acctWitnesses map[int]wire.TxWitness
 
+	// matchingChanTrader tracks the first trader's information submitted
+	// for each to be created channel as part of the batch. This is used
+	// once the second trader submits their information in order to ensure
+	// both parties have provided them accurately.
+	//
+	// NOTE: This will only be set after the BatchSigning state.
+	matchingChanTrader map[wire.OutPoint]traderChannelInfo
+
+	// lifetimePkgs contains the service level enforcement package for each
+	// channel created as a result of the batch.
+	//
+	// NOTE: This will only be set after the BatchSigning state.
+	lifetimePkgs []*chanenforcement.LifetimePackage
+
 	// msgTimers is the set of messages timers we'll expose to the main
 	// state machine to ensure traders send messages in time.
 	*msgTimers
@@ -112,15 +137,16 @@ func newEnvironment(newBatch *executionReq, batchKey *btcec.PublicKey,
 	stallTimers *msgTimers) environment {
 
 	env := environment{
-		batchReq:       newBatch,
-		exeFee:         newBatch.feeSchedule,
-		feeRate:        newBatch.batchFeeRate,
-		batch:          newBatch.OrderBatch,
-		traders:        make(map[matching.AccountID]*ActiveTrader),
-		traderToOrders: make(map[matching.AccountID][]orderT.Nonce),
-		acctWitnesses:  make(map[int]wire.TxWitness),
-		msgTimers:      stallTimers,
-		quit:           make(chan struct{}),
+		batchReq:           newBatch,
+		exeFee:             newBatch.feeSchedule,
+		feeRate:            newBatch.batchFeeRate,
+		batch:              newBatch.OrderBatch,
+		traders:            make(map[matching.AccountID]*ActiveTrader),
+		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
+		acctWitnesses:      make(map[int]wire.TxWitness),
+		matchingChanTrader: make(map[wire.OutPoint]traderChannelInfo),
+		msgTimers:          stallTimers,
+		quit:               make(chan struct{}),
 	}
 
 	copy(env.batchID[:], batchKey.SerializeCompressed())
@@ -342,6 +368,67 @@ func (e *environment) validateAccountWitness(witnessScript []byte,
 	}
 
 	e.acctWitnesses[inputIndex] = accountWitness
+
+	return nil
+}
+
+// validateChanInfo ensures that the two traders behind the creation of a
+// channel submit its information accurately. If any aspect does not match, an
+// error is returned.
+func (e *environment) validateChanInfo(trader matching.AccountID,
+	chanOutput *batchtx.OrderOutput, chanInfo *chaninfo.ChannelInfo) error {
+
+	// If we haven't seen a trader for this channel yet, cache it, and
+	// perform validation once the second trader's information is received.
+	matchingChanTrader, ok := e.matchingChanTrader[chanOutput.OutPoint]
+	if !ok {
+		e.matchingChanTrader[chanOutput.OutPoint] = traderChannelInfo{
+			AccountID:   trader,
+			OrderOutput: chanOutput,
+			ChannelInfo: chanInfo,
+		}
+		return nil
+	}
+
+	// We'll need to determine a few parameters required for the lifetime
+	// package which depend on which trader was responsible for the bid/ask.
+	var (
+		maturityHeight           uint32
+		bidTrader, askTrader     matching.AccountID
+		bidChanInfo, askChanInfo *chaninfo.ChannelInfo
+	)
+	if chanOutput.Order.Type() == orderT.TypeAsk {
+		bidTrader, askTrader = matchingChanTrader.AccountID, trader
+		bidChanInfo, askChanInfo = matchingChanTrader.ChannelInfo, chanInfo
+		bid := matchingChanTrader.OrderOutput.Order.(*order.Bid)
+		maturityHeight = bid.MinDuration()
+	} else {
+		bidTrader, askTrader = trader, matchingChanTrader.AccountID
+		bidChanInfo, askChanInfo = chanInfo, matchingChanTrader.ChannelInfo
+		maturityHeight = chanOutput.Order.(*order.Bid).MinDuration()
+	}
+
+	bidAccountKey, err := btcec.ParsePubKey(bidTrader[:], btcec.S256())
+	if err != nil {
+		return err
+	}
+	askAccountKey, err := btcec.ParsePubKey(askTrader[:], btcec.S256())
+	if err != nil {
+		return err
+	}
+
+	// Create the channel's lifetime package and cache it.
+	//
+	// TODO: set proper height hint.
+	lifetimePkg, err := chanenforcement.NewLifetimePackage(
+		chanOutput.OutPoint, chanOutput.TxOut.PkScript, 1,
+		maturityHeight, askAccountKey, bidAccountKey, askChanInfo,
+		bidChanInfo,
+	)
+	if err != nil {
+		return err
+	}
+	e.lifetimePkgs = append(e.lifetimePkgs, lifetimePkg)
 
 	return nil
 }

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -21,6 +23,7 @@ import (
 	"github.com/lightninglabs/kirin/auth"
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/auctioneer"
+	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
@@ -31,6 +34,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"google.golang.org/grpc"
@@ -939,6 +943,12 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			sigs[acctString] = sig
 		}
 
+		chanInfos, err := parseRPCChannelInfo(msg.Sign.ChannelInfos)
+		if err != nil {
+			comms.err <- err
+			return
+		}
+
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
 			// If we don't have a signature for this particular
@@ -955,9 +965,10 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			}
 
 			traderMsg := &venue.TraderSignMsg{
-				BatchID: msg.Sign.BatchId,
-				Trader:  subscribedTrader,
-				Sigs:    sigs,
+				BatchID:      msg.Sign.BatchId,
+				Trader:       subscribedTrader,
+				Sigs:         sigs,
+				ChannelInfos: chanInfos,
 			}
 			comms.toServer <- traderMsg
 		}
@@ -1637,6 +1648,84 @@ func parseRPCServerOrder(version uint32,
 	copy(multiSigKey[:], multiSigPubkey.SerializeCompressed())
 
 	return kit, nodeKey, nodeAddrs, multiSigKey, nil
+}
+
+// parseRPCChannelInfo returns a map of ChannelInfo indexed by their channel
+// outpoint from its RPC representation.
+func parseRPCChannelInfo(rpcChanInfos map[string]*clmrpc.ChannelInfo) (
+	map[wire.OutPoint]*chaninfo.ChannelInfo, error) {
+
+	chanInfos := make(map[wire.OutPoint]*chaninfo.ChannelInfo)
+	for chanPointStr, rpcChanInfo := range rpcChanInfos {
+		// The channel outpoint is formatted as a string, parse it.
+		parts := strings.Split(chanPointStr, ":")
+		if len(parts) != 2 {
+			return nil, errors.New("expected channel outpoint of " +
+				"form txid:idx")
+		}
+		hash, err := chainhash.NewHashFromStr(parts[0])
+		if err != nil {
+			return nil, err
+		}
+		idx, err := strconv.ParseUint(parts[1], 10, 32)
+		if err != nil {
+			return nil, fmt.Errorf("invalid output index: %v", err)
+		}
+		chanPoint := wire.OutPoint{Hash: *hash, Index: uint32(idx)}
+
+		// Determine the appropriate channel type.
+		var version chanbackup.SingleBackupVersion
+		switch rpcChanInfo.Type {
+		case clmrpc.ChannelType_TWEAKLESS:
+			version = chanbackup.TweaklessCommitVersion
+		case clmrpc.ChannelType_ANCHORS:
+			version = chanbackup.AnchorsCommitVersion
+		default:
+			return nil, fmt.Errorf("unhandled channel type %v",
+				rpcChanInfo.Type)
+		}
+
+		// Parse all of the included keys.
+		localNodeKey, err := btcec.ParsePubKey(
+			rpcChanInfo.LocalNodeKey, btcec.S256(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid local node key: %v",
+				err)
+		}
+		remoteNodeKey, err := btcec.ParsePubKey(
+			rpcChanInfo.RemoteNodeKey, btcec.S256(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid remote node key: %v",
+				err)
+		}
+
+		localPaymentBasePoint, err := btcec.ParsePubKey(
+			rpcChanInfo.LocalPaymentBasePoint, btcec.S256(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid local payment base "+
+				"point: %v", err)
+		}
+		remotePaymentBasePoint, err := btcec.ParsePubKey(
+			rpcChanInfo.RemotePaymentBasePoint, btcec.S256(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("invalid remote payment base "+
+				"point: %v", err)
+		}
+
+		chanInfos[chanPoint] = &chaninfo.ChannelInfo{
+			Version:                version,
+			LocalNodeKey:           localNodeKey,
+			RemoteNodeKey:          remoteNodeKey,
+			LocalPaymentBasePoint:  localPaymentBasePoint,
+			RemotePaymentBasePoint: remotePaymentBasePoint,
+		}
+	}
+
+	return chanInfos, nil
 }
 
 // newAcctResNotCompletedError creates a new AcctResNotCompletedError error from
