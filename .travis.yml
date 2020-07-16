@@ -15,6 +15,7 @@ git:
 before_install:
   - git config --global url."git@github.com:lightninglabs".insteadOf "https://github.com/lightninglabs"
   - git config --global url."git@github.com:guggero".insteadOf "https://github.com/guggero"
+  - git config --global url."git@github.com:roasbeef".insteadOf "https://github.com/roasbeef"
 
 env:
   global:
