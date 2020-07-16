@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -24,6 +25,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -364,6 +366,27 @@ func (m *mockBatchExecutor) Submit(*matching.OrderBatch, orderT.FeeSchedule,
 
 var _ BatchExecutor = (*mockBatchExecutor)(nil)
 
+type mockChannelEnforcer struct {
+	sync.Mutex
+	lifetimePkgs []*chanenforcement.LifetimePackage
+}
+
+func newMockChannelEnforcer() *mockChannelEnforcer {
+	return &mockChannelEnforcer{}
+}
+
+func (m *mockChannelEnforcer) EnforceChannelLifetimes(
+	pkgs ...*chanenforcement.LifetimePackage) error {
+
+	m.Lock()
+	defer m.Unlock()
+
+	m.lifetimePkgs = append(m.lifetimePkgs, pkgs...)
+	return nil
+}
+
+var _ ChannelEnforcer = (*mockChannelEnforcer)(nil)
+
 type auctioneerTestHarness struct {
 	t *testing.T
 
@@ -380,6 +403,8 @@ type auctioneerTestHarness struct {
 	callMarket *mockCallMarket
 
 	executor *mockBatchExecutor
+
+	channelEnforcer *mockChannelEnforcer
 }
 
 func newAuctioneerTestHarness(t *testing.T) *auctioneerTestHarness {
@@ -394,6 +419,7 @@ func newAuctioneerTestHarness(t *testing.T) *auctioneerTestHarness {
 
 	callMarket := newMockCallMarket()
 	executor := newMockBatchExecutor()
+	channelEnforcer := newMockChannelEnforcer()
 
 	// We always use a batch ticker w/ a very long interval so it'll only
 	// tick when we force one.
@@ -406,17 +432,19 @@ func newAuctioneerTestHarness(t *testing.T) *auctioneerTestHarness {
 		BatchTicker:       NewIntervalAwareForceTicker(time.Hour * 24),
 		CallMarket:        callMarket,
 		BatchExecutor:     executor,
+		ChannelEnforcer:   channelEnforcer,
 	})
 
 	return &auctioneerTestHarness{
-		db:         mockDB,
-		notifier:   notifier,
-		auctioneer: auctioneer,
-		wallet:     wallet,
-		orderFeed:  orderFeeder,
-		callMarket: callMarket,
-		executor:   executor,
-		t:          t,
+		db:              mockDB,
+		notifier:        notifier,
+		auctioneer:      auctioneer,
+		wallet:          wallet,
+		orderFeed:       orderFeeder,
+		callMarket:      callMarket,
+		executor:        executor,
+		channelEnforcer: channelEnforcer,
+		t:               t,
 	}
 }
 
@@ -679,6 +707,14 @@ func (a *auctioneerTestHarness) AddDiskOrder(isAsk bool, fixedRate uint32,
 	return nonce
 }
 
+func (a *auctioneerTestHarness) AssertLifetimesEnforced() {
+	a.t.Helper()
+
+	a.channelEnforcer.Lock()
+	defer a.channelEnforcer.Unlock()
+	require.NotEmpty(a.t, a.channelEnforcer.lifetimePkgs)
+}
+
 func (a *auctioneerTestHarness) MarkBatchUnconfirmed(batchKey *btcec.PublicKey,
 	tx *wire.MsgTx) {
 
@@ -738,6 +774,9 @@ func (a *auctioneerTestHarness) ReportExecutionSuccess() {
 					PkScript: key[:],
 				},
 			},
+		},
+		LifetimePackages: []*chanenforcement.LifetimePackage{
+			{ChannelPoint: wire.OutPoint{Index: 1}},
 		},
 	}
 }
@@ -1140,8 +1179,9 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.AssertStateTransitions(BatchCommitState)
 
 	// In this state, we expect that the batch transaction was properly
-	// broadcast.
+	// broadcast and the channel lifetimes are being enforced.
 	broadcastTx := testHarness.AssertTxBroadcast()
+	testHarness.AssertLifetimesEnforced()
 
 	// Now we trigger a confirmation, the batch should be marked as being
 	// confirmed on disk.

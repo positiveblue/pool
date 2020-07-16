@@ -17,6 +17,7 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -133,6 +134,20 @@ type BatchExecutor interface {
 		chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error)
 }
 
+// ChannelEnforcer is responsible for enforcing channel service lifetime
+// packages that result from an auction's matched order pair. These channels
+// each specify a relative maturity height from the channel's confirmation
+// height. Violations to the channel's service lifetime occur upon a confirmed
+// commitment broadcast before said height, assuming that the bidder (buyer of
+// the channel) rejects any cooperative close attempts from the asker (seller of
+// the channel).
+type ChannelEnforcer interface {
+	// EnforceChannelLifetimes enforces the service lifetime for a series of
+	// channels. If a premature spend happens for any of these, then the
+	// responsible trader is punished accordingly.
+	EnforceChannelLifetimes(pkgs ...*chanenforcement.LifetimePackage) error
+}
+
 // AuctioneerConfig contains all the interfaces the auctioneer needs to carry
 // out its duties.
 type AuctioneerConfig struct {
@@ -172,6 +187,10 @@ type AuctioneerConfig struct {
 	// FeeSchedule describes how we charge the traders in an executed
 	// batch.
 	FeeSchedule orderT.FeeSchedule
+
+	// ChannelEnforcer enforces the service lifetime of channels created as
+	// part of a finalized batch.
+	ChannelEnforcer ChannelEnforcer
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1303,8 +1322,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		}
 
 	// In the batch commit state, we'll broadcast the current finalized
-	// batch as is, then wait for it to be fully confirmed before we go
-	// back to the OrderSubmitState.
+	// batch as is and begin enforcing service lifetime for the channels
+	// created as part of the batch.
 	case BatchCommitState:
 		// First, we'll broadcast the current batch execution
 		// transaction as it exists now.
@@ -1317,9 +1336,18 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				"tx: %v", err)
 		}
 
-		// Now that the BET has been confirmed, we'll reload the set of
-		// orders from disk so we have a consistent view, and then
-		// re-start the orderFeeder goroutine.
+		// Then, we'll begin enforcing the service lifetime of the
+		// relevant channels.
+		err = a.cfg.ChannelEnforcer.EnforceChannelLifetimes(
+			a.finalizedBatch.LifetimePackages...,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("unable to enforce channel "+
+				"lifetimes: %v", err)
+		}
+
+		// We'll reload the set of orders from disk so we have a
+		// consistent view, and then re-start the orderFeeder goroutine.
 		a.resumeOrderFeeder()
 		a.resumeBatchTicker()
 
