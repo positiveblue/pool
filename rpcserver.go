@@ -1666,7 +1666,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	log.Tracef("[BatchSnapshot] batch_id=%x", req.BatchId)
 
 	// If the passed batch ID wasn't specified, or is nil, then we'll fetch
-	// the key for the current batch key (which isn't ass coated with a
+	// the key for the current batch key (which isn't associated with a
 	// cleared batch, then walk that back one to get to the most recent
 	// batch.
 	var (
@@ -1757,6 +1757,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	}
 
 	resp.BatchTx = txBuf.Bytes()
+	resp.BatchTxId = batchTx.TxHash().String()
 
 	return resp, nil
 }
