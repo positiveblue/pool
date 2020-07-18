@@ -24,7 +24,6 @@ import (
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
-	"github.com/lightningnetwork/lnd/ticker"
 )
 
 var (
@@ -370,7 +369,7 @@ func newAuctioneerTestHarness(t *testing.T) *auctioneerTestHarness {
 		ChainNotifier:     notifier,
 		OrderFeed:         orderFeeder,
 		StartingAcctValue: 1_000_000,
-		BatchTicker:       ticker.NewForce(time.Hour * 24),
+		BatchTicker:       NewIntervalAwareForceTicker(time.Hour * 24),
 		CallMarket:        callMarket,
 		BatchExecutor:     executor,
 	})
@@ -473,7 +472,7 @@ func (a *auctioneerTestHarness) RestartAuctioneer() {
 		ChainNotifier:     a.notifier,
 		OrderFeed:         a.orderFeed,
 		StartingAcctValue: 1_000_000,
-		BatchTicker:       ticker.NewForce(time.Hour * 24),
+		BatchTicker:       NewIntervalAwareForceTicker(time.Hour * 24),
 	})
 
 	a.StartAuctioneer()

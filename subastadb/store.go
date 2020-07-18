@@ -170,7 +170,7 @@ func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 		// TODO(roasbeef): insert place holder auctioneer acct?
 
 		// Store the starting batch key.
-		return s.putPerBatchKeySTM(stm, initialBatchKey)
+		return s.putPerBatchKeySTM(stm, InitialBatchKey)
 	})
 	return err
 }
@@ -194,6 +194,25 @@ func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
 	}
 
 	return resp, nil
+}
+
+// getAllValuesByPrefix reads multiple keys from the etcd database and returns
+// their content as a map of byte slices, keyed by the storage key.
+func (s *EtcdStore) getAllValuesByPrefix(mainCtx context.Context,
+	prefix string) (map[string][]byte, error) {
+
+	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
+	defer cancel()
+
+	resp, err := s.client.Get(ctx, prefix, clientv3.WithPrefix())
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string][]byte, len(resp.Kvs))
+	for _, kv := range resp.Kvs {
+		result[string(kv.Key)] = kv.Value
+	}
+	return result, nil
 }
 
 // defaultSTM returns an STM transaction wrapper for the store's etcd client

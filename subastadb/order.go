@@ -13,7 +13,6 @@ import (
 	"github.com/lightninglabs/llm/clientdb"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/order"
-	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
@@ -206,7 +205,7 @@ func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) 
 	}
 
 	key := s.getKeyOrderArchivePrefix(false)
-	resultMap, err := s.readOrderKeys(ctx, key)
+	resultMap, err := s.getAllValuesByPrefix(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -238,7 +237,7 @@ func (s *EtcdStore) GetArchivedOrders(ctx context.Context) ([]order.ServerOrder,
 	}
 
 	key := s.getKeyOrderArchivePrefix(true)
-	resultMap, err := s.readOrderKeys(ctx, key)
+	resultMap, err := s.getAllValuesByPrefix(ctx, key)
 	if err != nil {
 		return nil, err
 	}
@@ -283,25 +282,6 @@ func (s *EtcdStore) getKeyOrderArchivePrefix(archive bool) string {
 	return strings.Join([]string{
 		s.getKeyPrefix(orderPrefix), strconv.FormatBool(archive),
 	}, keyDelimiter)
-}
-
-// readOrderKeys reads multiple orders from the etcd database and returns its
-// content as a map of byte slices, keyed by the storage key.
-func (s *EtcdStore) readOrderKeys(mainCtx context.Context,
-	key string) (map[string][]byte, error) {
-
-	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
-	defer cancel()
-
-	resp, err := s.client.Get(ctx, key, clientv3.WithPrefix())
-	if err != nil {
-		return nil, err
-	}
-	result := make(map[string][]byte)
-	for _, kv := range resp.Kvs {
-		result[string(kv.Key)] = kv.Value
-	}
-	return result, nil
 }
 
 // nonceFromKey parses a whole order key and tries to extract the nonce from

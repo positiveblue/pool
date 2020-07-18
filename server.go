@@ -23,7 +23,6 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
-	"github.com/lightningnetwork/lnd/ticker"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/metadata"
 )
@@ -205,7 +204,9 @@ func NewServer(cfg *Config) (*Server, error) {
 				LightningClient: lnd.Client,
 			},
 			StartingAcctValue: 1_000_000,
-			BatchTicker:       ticker.NewForce(defaultBatchTickInterval),
+			BatchTicker: NewIntervalAwareForceTicker(
+				defaultBatchTickInterval,
+			),
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{}, feeSchedule,
 				func(acctID matching.AccountID) (*account.Account, error) {
@@ -294,7 +295,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	server.adminServer = newAdminRPCServer(
 		auctioneerServer, adminListener, []grpc.ServerOption{},
-		server.auctioneer,
+		server.auctioneer, store,
 	)
 	adminrpc.RegisterAuctionAdminServer(
 		server.adminServer.grpcServer, server.adminServer,

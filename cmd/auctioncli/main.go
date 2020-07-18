@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
@@ -11,6 +12,29 @@ import (
 	"github.com/urfave/cli"
 	"google.golang.org/grpc"
 )
+
+type simpleCmd func(ctx context.Context, cliCtx *cli.Context,
+	client adminrpc.AuctionAdminClient) (proto.Message, error)
+
+func wrapSimpleCmd(exec simpleCmd) func(ctx *cli.Context) error {
+	return func(ctx *cli.Context) error {
+		client, cleanup, err := getClient(ctx)
+		if err != nil {
+			return err
+		}
+		defer cleanup()
+
+		resp, err := exec(context.Background(), ctx, client)
+		if err != nil {
+			return err
+		}
+
+		if _, ok := resp.(*adminrpc.EmptyResponse); !ok {
+			printRespJSON(resp)
+		}
+		return nil
+	}
+}
 
 func printRespJSON(resp proto.Message) { // nolint
 	jsonMarshaler := &jsonpb.Marshaler{

@@ -20,13 +20,13 @@ import (
 )
 
 var (
-	// initialBatchKey serves as our initial global batch key. This key will
+	// InitialBatchKey serves as our initial global batch key. This key will
 	// be incremented by the curve's base point every time a new batch is
 	// cleared.
 	initialBatchKeyBytes, _ = hex.DecodeString(
 		"02824d0cbac65e01712124c50ff2cc74ce22851d7b444c1bf2ae66afefb8eaf27f",
 	)
-	initialBatchKey, _ = btcec.ParsePubKey(initialBatchKeyBytes, btcec.S256())
+	InitialBatchKey, _ = btcec.ParsePubKey(initialBatchKeyBytes, btcec.S256())
 
 	// batchDir is the directory name under which we'll store all
 	// transaction batch related information. This needs be prefixed with

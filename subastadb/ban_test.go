@@ -64,9 +64,22 @@ func TestBanTrader(t *testing.T) {
 	}
 
 	assertTraderBanStatus(currentHeight + (initialBanDuration * 2))
+
+	// Remove the ban for both the account and node, then check they're not
+	// banned anymore.
+	err = store.RemoveAccountBan(ctx, accountKey)
+	if err != nil {
+		t.Fatalf("unable to remove account ban: %v", err)
+	}
+	err = store.RemoveNodeBan(ctx, nodeKey)
+	if err != nil {
+		t.Fatalf("unable to remove node ban: %v", err)
+	}
+	assertAccountBanStatus(t, store, accountKey, 0, false, 0)
+	assertNodeBanStatus(t, store, nodeKey, 0, false, 0)
 }
 
-func assertAccountBanStatus(t *testing.T, store *EtcdStore,
+func assertAccountBanStatus(t *testing.T, store *EtcdStore, // nolint
 	key *btcec.PublicKey, height uint32, expBanned bool,
 	expExpiration uint32) {
 
@@ -78,9 +91,19 @@ func assertAccountBanStatus(t *testing.T, store *EtcdStore,
 		t.Fatalf("unable to determine account ban: %v", err)
 	}
 	assertBanStatus(t, expBanned, banned, expExpiration, expiration)
+
+	// Only check that there is a ban entry if we actually expect the
+	// account to be banned.
+	if !expBanned {
+		return
+	}
+	assertBanInList(
+		t, key, height, expBanned, expExpiration,
+		store.ListBannedAccounts,
+	)
 }
 
-func assertNodeBanStatus(t *testing.T, store *EtcdStore, key *btcec.PublicKey,
+func assertNodeBanStatus(t *testing.T, store *EtcdStore, key *btcec.PublicKey, // nolint
 	height uint32, expBanned bool, expExpiration uint32) {
 
 	t.Helper()
@@ -90,6 +113,40 @@ func assertNodeBanStatus(t *testing.T, store *EtcdStore, key *btcec.PublicKey,
 	if err != nil {
 		t.Fatalf("unable to determine account ban: %v", err)
 	}
+	assertBanStatus(t, expBanned, banned, expExpiration, expiration)
+
+	// Only check that there is a ban entry if we actually expect the node
+	// to be banned.
+	if !expBanned {
+		return
+	}
+	assertBanInList(
+		t, key, height, expBanned, expExpiration,
+		store.ListBannedNodes,
+	)
+}
+
+func assertBanInList(t *testing.T, key *btcec.PublicKey, height uint32,
+	expBanned bool, expExpiration uint32,
+	listFn func(context.Context) (map[[33]byte]*BanInfo, error)) {
+
+	t.Helper()
+
+	var (
+		acctKeyRaw [33]byte
+		ctx        = context.Background()
+	)
+	copy(acctKeyRaw[:], key.SerializeCompressed())
+	bannedItems, err := listFn(ctx)
+	if err != nil {
+		t.Fatalf("unable to list banned items: %v", err)
+	}
+	banInfo, ok := bannedItems[acctKeyRaw]
+	if !ok {
+		t.Fatalf("did not find entry for banned item %x", acctKeyRaw)
+	}
+	banned := !banInfo.ExceedsBanExpiration(height)
+	expiration := banInfo.Expiration()
 	assertBanStatus(t, expBanned, banned, expExpiration, expiration)
 }
 

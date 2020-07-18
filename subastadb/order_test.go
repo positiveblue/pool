@@ -113,7 +113,7 @@ func TestUpdateOrders(t *testing.T) {
 
 	// Make sure they are both stored to the non-archived branch of orders.
 	keyOrderPrefix := keyPrefix + "order/"
-	orderMap, err := store.readOrderKeys(ctxb, keyOrderPrefix)
+	orderMap, err := store.getAllValuesByPrefix(ctxb, keyOrderPrefix)
 	if err != nil {
 		t.Fatalf("unable to read order keys: %v", err)
 	}
@@ -182,7 +182,7 @@ func TestUpdateOrders(t *testing.T) {
 	}
 
 	// Make sure the keys reflect the change as well.
-	orderMap, err = store.readOrderKeys(ctxb, keyOrderPrefix)
+	orderMap, err = store.getAllValuesByPrefix(ctxb, keyOrderPrefix)
 	if err != nil {
 		t.Fatalf("unable to read order keys: %v", err)
 	}
