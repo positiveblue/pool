@@ -1,4 +1,4 @@
-FROM golang:1.13-alpine as builder
+FROM golang:1.14.5-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightninglabs/subasta
@@ -16,7 +16,7 @@ RUN apk add --no-cache --update alpine-sdk \
     git \
     make \
 &&  cd /go/src/github.com/lightninglabs/subasta/cmd \
-&&  go install -v ./...
+&&  go install -mod=vendor -v ./...
 
 # Start a new, final image to reduce size.
 FROM alpine as final
