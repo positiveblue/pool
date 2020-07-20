@@ -7,6 +7,7 @@ require (
 	github.com/davecgh/go-spew v1.1.1
 	github.com/go-errors/errors v1.0.1
 	github.com/golang/protobuf v1.3.3
+	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585
 	github.com/lightninglabs/llm v0.1.0-alpha
@@ -15,6 +16,7 @@ require (
 	github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200702223723-2d4facf94061
 	github.com/lightningnetwork/lnd/cert v1.0.2
 	github.com/lightningnetwork/lnd/ticker v1.0.0
+	github.com/prometheus/client_golang v1.5.1
 	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
 	go.etcd.io/etcd v3.3.22+incompatible

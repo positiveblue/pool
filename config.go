@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/subasta/chain"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -148,8 +150,10 @@ type Config struct {
 	Profile    string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65535"`
 	FakeAuth   bool   `long:"fakeauth" description:"Use fake LSAT authentication, allow traders to set fake LSAT ID. For testing only, cannot be set on mainnet."`
 
-	Lnd  *LndConfig  `group:"lnd" namespace:"lnd"`
-	Etcd *EtcdConfig `group:"etcd" namespace:"etcd"`
+	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
+	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
+	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
+	Bitcoin    *chain.BitcoinConfig         `group:"bitcoin" namespace:"bitcoin"`
 
 	// RPCListener is a network listener that the default auctionserver
 	// should listen on.
@@ -177,6 +181,12 @@ var DefaultConfig = &Config{
 	},
 	Etcd: &EtcdConfig{
 		Host: "localhost:2379",
+	},
+	Prometheus: &monitoring.PrometheusConfig{
+		ListenAddr: "localhost:8989",
+	},
+	Bitcoin: &chain.BitcoinConfig{
+		Host: "localhost:8332",
 	},
 	TLSCertPath:    defaultTLSCertPath,
 	TLSKeyPath:     defaultTLSKeyPath,

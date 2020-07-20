@@ -15,6 +15,8 @@ import (
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/chain"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/lntest"
 	"go.etcd.io/etcd/embed"
@@ -95,6 +97,8 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				User:     "",
 				Password: "",
 			},
+			Prometheus:       &monitoring.PrometheusConfig{},
+			Bitcoin:          &chain.BitcoinConfig{},
 			MaxLogFiles:      99,
 			MaxLogFileSize:   999,
 			DebugLevel:       "debug",
