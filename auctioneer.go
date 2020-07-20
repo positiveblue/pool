@@ -101,9 +101,8 @@ type Wallet interface {
 	// wallet.
 	ListTransactions(context.Context) ([]*wire.MsgTx, error)
 
-	// DeriveKey derives the key specified by the target KeyLocator.
-	DeriveKey(context.Context, *keychain.KeyLocator) (
-		*keychain.KeyDescriptor, error)
+	// DeriveNextKey derives the next key specified of the given family.
+	DeriveNextKey(context.Context, int32) (*keychain.KeyDescriptor, error)
 
 	// PublishTransaction attempts to publish the target transaction.
 	PublishTransaction(ctx context.Context, tx *wire.MsgTx) error
@@ -950,7 +949,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// NoMasterAcctState, meaning we need to obtain one somehow. In
 		// this state (the first time the system starts up), we'll rely
 		// on the block notification moving us to the next state.
-		case err == subastadb.ErrNoAuctioneerAccount:
+		case err == account.ErrNoAuctioneerAccount:
 			log.Infof("No Master Account found, starting genesis " +
 				"transaction creation")
 
@@ -1054,9 +1053,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// At this point, we know that we've broadcast the master
 		// account, so we'll find the transaction in the wallet's
 		// store, so we can watch for its confirmation on-chain.
-		startingAcct, err := a.baseAuctioneerAcct(
-			ctxb, a.cfg.StartingAcctValue,
-		)
+		startingAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
 		if err != nil {
 			return 0, err
 		}
@@ -1311,10 +1308,8 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	auctioneerKey, err := a.cfg.Wallet.DeriveKey(
-		ctx, &keychain.KeyLocator{
-			Family: account.AuctioneerKeyFamily,
-		},
+	auctioneerKey, err := a.cfg.Wallet.DeriveNextKey(
+		ctx, int32(account.AuctioneerKeyFamily),
 	)
 	if err != nil {
 		return nil, err

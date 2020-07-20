@@ -3,7 +3,6 @@ package subastadb
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"io"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -15,12 +14,6 @@ const (
 	// auctioneerOutputDir is the directory where we'll store the
 	// information about the current auctioneer's master account output.
 	auctioneerOutputDir = "auctioneerAcct"
-)
-
-var (
-	// ErrNoAuctioneerAccount is returned when a caller attempts to fetch
-	// the auctioneer account, but it hasn't been initialized yet.
-	ErrNoAuctioneerAccount = fmt.Errorf("no auctioneer acct")
 )
 
 // auctioneerKey returns the key where we store the information about the
@@ -39,7 +32,7 @@ func (s *EtcdStore) FetchAuctioneerAccount(ctx context.Context) (
 	}
 
 	acctBytes, err := s.getSingleValue(
-		ctx, s.auctioneerKey(), ErrNoAuctioneerAccount,
+		ctx, s.auctioneerKey(), account.ErrNoAuctioneerAccount,
 	)
 	if err != nil {
 		return nil, err

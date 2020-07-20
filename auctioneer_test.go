@@ -85,7 +85,7 @@ func (m *mockAuctioneerState) FetchAuctioneerAccount(ctx context.Context,
 	defer m.RUnlock()
 
 	if m.acct == nil {
-		return nil, subastadb.ErrNoAuctioneerAccount
+		return nil, account.ErrNoAuctioneerAccount
 	}
 
 	return m.acct, nil
@@ -231,7 +231,7 @@ func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) err
 	return nil
 }
 
-func (m *mockWallet) DeriveKey(context.Context, *keychain.KeyLocator) (
+func (m *mockWallet) DeriveNextKey(context.Context, int32) (
 	*keychain.KeyDescriptor, error) {
 
 	return &keychain.KeyDescriptor{

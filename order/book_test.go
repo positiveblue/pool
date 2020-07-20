@@ -21,8 +21,10 @@ var (
 	testRawAuctioneerKey, _ = hex.DecodeString("02187d1a0e30f4e5016fc1137363ee9e7ed5dde1e6c50f367422336df7a108b716")
 	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
 	testAuctioneerKeyDesc   = &keychain.KeyDescriptor{
-		KeyLocator: account.LongTermKeyLocator,
-		PubKey:     testAuctioneerKey,
+		KeyLocator: keychain.KeyLocator{
+			Family: account.AuctioneerKeyFamily,
+		},
+		PubKey: testAuctioneerKey,
 	}
 
 	testRawTraderKey, _ = hex.DecodeString("036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c9395446ba09")

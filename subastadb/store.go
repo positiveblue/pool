@@ -56,10 +56,6 @@ type Store interface {
 
 	order.Store
 
-	// FetchAuctioneerAccount retrieves the current information pertaining
-	// to the current auctioneer output state.
-	FetchAuctioneerAccount(context.Context) (*account.Auctioneer, error)
-
 	// UpdateAuctioneerAccount updates the current auctioneer output
 	// in-place and also updates the per batch key according to the state in
 	// the auctioneer's account.

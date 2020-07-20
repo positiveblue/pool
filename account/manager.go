@@ -42,16 +42,6 @@ const (
 )
 
 var (
-	// LongTermKeyLocator is the key locator of our long term key that we'll
-	// use as the base auctioneer key of new accounts in its 2-of-2
-	// multi-sig construction. Note the that actual auctioneer key given to
-	// the user/trader is tweaked with their key in order to achieve
-	// deterministic account creation.
-	LongTermKeyLocator = keychain.KeyLocator{
-		Family: AuctioneerKeyFamily,
-		Index:  0,
-	}
-
 	// errAccountAmountMismatch is an error returned if the account amount
 	// the client provided us does not match what's reflected on-chain.
 	errAccountAmountMismatch = errors.New("account amount does not match " +
@@ -98,11 +88,13 @@ type Manager struct {
 	// confirmation, spends, and expiration.
 	watcher *watcher.Watcher
 
-	// longTermKey that we'll use as the base auctioneer key of new accounts
-	// in its 2-of-2 multi-sig construction. Note the that actual auctioneer
-	// key given to the user/trader is tweaked with their key in order to
+	// auctioneerKey is the base auctioneer key of new accounts in its
+	// 2-of-2 multi-sig construction. Note the that actual auctioneer key
+	// given to the user/trader is tweaked with their key in order to
 	// achieve deterministic account creation.
-	longTermKey *btcec.PublicKey
+	//
+	// This may be nil if the auctioneer hasn't created its account yet.
+	auctioneerKey *keychain.KeyDescriptor
 
 	// watchMtx guards access to watchingExpiry.
 	watchMtx sync.Mutex
@@ -142,14 +134,6 @@ func NewManager(cfg *ManagerConfig) (*Manager, error) {
 		HandleAccountSpend:  m.handleAccountSpend,
 		HandleAccountExpiry: m.handleAccountExpiry,
 	})
-
-	// Derive our long term key from its locator.
-	ctx := context.Background()
-	keyDesc, err := m.cfg.Wallet.DeriveKey(ctx, &LongTermKeyLocator)
-	if err != nil {
-		return nil, err
-	}
-	m.longTermKey = keyDesc.PubKey
 
 	return m, nil
 }
@@ -226,6 +210,16 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 	log.Infof("Reserving new account for token %x and key %x", tokenID,
 		params.TraderKey.SerializeCompressed())
 
+	// If the base auctioneer key hasn't been cached yet, attempt to
+	// do so now.
+	if m.auctioneerKey == nil {
+		auctioneer, err := m.cfg.Store.FetchAuctioneerAccount(ctx)
+		if err != nil {
+			return nil, err
+		}
+		m.auctioneerKey = auctioneer.AuctioneerKey
+	}
+
 	// We'll retrieve the current per-batch key, which serves as the initial
 	// key we'll tweak the account's trader key with.
 	batchKey, err := m.cfg.Store.BatchKey(ctx)
@@ -243,11 +237,8 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 	var traderKeyRaw [33]byte
 	copy(traderKeyRaw[:], params.TraderKey.SerializeCompressed())
 	reservation = &Reservation{
-		Value: params.Value,
-		AuctioneerKey: &keychain.KeyDescriptor{
-			KeyLocator: LongTermKeyLocator,
-			PubKey:     m.longTermKey,
-		},
+		Value:           params.Value,
+		AuctioneerKey:   m.auctioneerKey,
 		InitialBatchKey: batchKey,
 		Expiry:          params.Expiry,
 		TraderKeyRaw:    traderKeyRaw,
