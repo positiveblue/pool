@@ -3,6 +3,8 @@
 package subasta
 
 import (
+	"context"
+
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
@@ -15,6 +17,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
+	"google.golang.org/grpc"
 )
 
 const Subsystem = "SRVR"
@@ -59,5 +62,42 @@ func setSubLogger(subsystem string, logger btclog.Logger,
 	logWriter.RegisterSubLogger(subsystem, logger)
 	if useLogger != nil {
 		useLogger(logger)
+	}
+}
+
+// errorLogUnaryServerInterceptor is a simple UnaryServerInterceptor that will
+// automatically log any errors that occur when serving a client's unary
+// request.
+func errorLogUnaryServerInterceptor(
+	logger btclog.Logger) grpc.UnaryServerInterceptor { // nolint:interfacer
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler) (interface{}, error) {
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			// TODO(roasbeef): also log request details?
+			logger.Errorf("[%v]: %v", info.FullMethod, err)
+		}
+
+		return resp, err
+	}
+}
+
+// errorLogStreamServerInterceptor is a simple StreamServerInterceptor that
+// will log any errors that occur while processing a client or server streaming
+// RPC.
+func errorLogStreamServerInterceptor(
+	logger btclog.Logger) grpc.StreamServerInterceptor { // nolint:interfacer
+
+	return func(srv interface{}, ss grpc.ServerStream,
+		info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+
+		err := handler(srv, ss)
+		if err != nil {
+			logger.Errorf("[%v]: %v", info.FullMethod, err)
+		}
+
+		return err
 	}
 }

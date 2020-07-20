@@ -259,8 +259,14 @@ func NewServer(cfg *Config) (*Server, error) {
 		interceptor = &regtestInterceptor{}
 	}
 	serverOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
-		grpc.StreamInterceptor(interceptor.StreamInterceptor),
+		grpc.ChainUnaryInterceptor(
+			interceptor.UnaryInterceptor,
+			errorLogUnaryServerInterceptor(rpcLog),
+		),
+		grpc.ChainStreamInterceptor(
+			interceptor.StreamInterceptor,
+			errorLogStreamServerInterceptor(rpcLog),
+		),
 	}
 
 	// Prometheus itself needs a gRPC interceptor to measure performance
@@ -272,10 +278,12 @@ func NewServer(cfg *Config) (*Server, error) {
 		serverOpts = []grpc.ServerOption{
 			grpc.ChainUnaryInterceptor(
 				interceptor.UnaryInterceptor,
+				errorLogUnaryServerInterceptor(rpcLog),
 				grpc_prometheus.UnaryServerInterceptor,
 			),
 			grpc.ChainStreamInterceptor(
 				interceptor.StreamInterceptor,
+				errorLogStreamServerInterceptor(rpcLog),
 				grpc_prometheus.StreamServerInterceptor,
 			),
 		}
