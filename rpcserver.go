@@ -172,20 +172,20 @@ func (s *rpcServer) Start() error {
 		return nil
 	}
 
-	log.Infof("Starting auction server")
+	rpcLog.Infof("Starting auction server")
 
 	s.serveWg.Add(1)
 	go func() {
 		defer s.serveWg.Done()
 
-		log.Infof("RPC server listening on %s", s.listener.Addr())
+		rpcLog.Infof("RPC server listening on %s", s.listener.Addr())
 		err := s.grpcServer.Serve(s.listener)
 		if err != nil && err != grpc.ErrServerStopped {
-			log.Errorf("RPC server stopped with error: %v", err)
+			rpcLog.Errorf("RPC server stopped with error: %v", err)
 		}
 	}()
 
-	log.Infof("Auction server is now active")
+	rpcLog.Infof("Auction server is now active")
 
 	return nil
 }
@@ -196,17 +196,17 @@ func (s *rpcServer) Stop() {
 		return
 	}
 
-	log.Info("Stopping auction server")
+	rpcLog.Info("Stopping auction server")
 
 	close(s.quit)
 	s.wg.Wait()
 
-	log.Info("Stopping lnd client, gRPC server and listener")
+	rpcLog.Info("Stopping lnd client, gRPC server and listener")
 	s.grpcServer.Stop()
 
 	s.serveWg.Wait()
 
-	log.Info("Auction server stopped")
+	rpcLog.Info("Auction server stopped")
 }
 
 func (s *rpcServer) ReserveAccount(ctx context.Context,
@@ -470,7 +470,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 		return fmt.Errorf("client already connected, only one stream " +
 			"per trader is allowed")
 	}
-	log.Debugf("New trader client_id=%x connected to stream", traderID)
+	rpcLog.Debugf("New trader client_id=%x connected to stream", traderID)
 
 	// Prepare the structure that we are going to use to track the trader
 	// over the duration of this stream.
@@ -531,7 +531,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 
 		// New incoming subscription.
 		case newSub := <-trader.comms.newSub:
-			log.Debugf("New subscription, client_id=%x, acct=%x",
+			rpcLog.Debugf("New subscription, client_id=%x, acct=%x",
 				traderID, newSub.AccountKey)
 			err := s.addStreamSubscription(traderID, newSub)
 			if err != nil {
@@ -576,7 +576,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 
 		// The trader is signaling abort or is closing the connection.
 		case <-trader.comms.quitConn:
-			log.Debugf("Trader client_id=%x is disconnecting",
+			rpcLog.Debugf("Trader client_id=%x is disconnecting",
 				trader.Lsat)
 			return s.disconnectTrader(traderID)
 
@@ -649,13 +649,13 @@ func (s *rpcServer) SubscribeBatchAuction(
 				continue
 			}
 
-			log.Errorf("Error in trader stream: %v", err)
+			rpcLog.Errorf("Error in trader stream: %v", err)
 
 			trader.comms.abort()
 
 			err2 := s.disconnectTrader(traderID)
 			if err2 != nil {
-				log.Errorf("Unable to disconnect trader: %v",
+				rpcLog.Errorf("Unable to disconnect trader: %v",
 					err2)
 			}
 			return fmt.Errorf("error reading client stream: %v",
@@ -673,7 +673,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 				},
 			})
 			if err != nil {
-				log.Errorf("Unable to send shutdown msg: %v",
+				rpcLog.Errorf("Unable to send shutdown msg: %v",
 					err)
 			}
 
@@ -1080,7 +1080,7 @@ func (s *rpcServer) sendToTrader(
 		// need to send to the client.
 		matchedOrders := make(map[string]*clmrpc.MatchedOrder)
 		for traderOrderNonce, orderMatches := range m.MatchedOrders {
-			log.Debugf("Order(%x) matched w/ %v orders",
+			rpcLog.Debugf("Order(%x) matched w/ %v orders",
 				traderOrderNonce[:], len(m.MatchedOrders))
 
 			nonceStr := hex.EncodeToString(
@@ -1755,7 +1755,7 @@ func newAcctResNotCompletedError(
 func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	req *clmrpc.BatchSnapshotRequest) (*clmrpc.BatchSnapshotResponse, error) {
 
-	log.Tracef("[BatchSnapshot] batch_id=%x", req.BatchId)
+	rpcLog.Tracef("[BatchSnapshot] batch_id=%x", req.BatchId)
 
 	// If the passed batch ID wasn't specified, or is nil, then we'll fetch
 	// the key for the current batch key (which isn't associated with a
