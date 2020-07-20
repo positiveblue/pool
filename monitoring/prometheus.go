@@ -4,11 +4,18 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+)
+
+const (
+	// dbTimeout is the default database timeout.
+	dbTimeout = 10 * time.Second
 )
 
 // MetricGroupCreator is a factory method that given the primary prometheus
@@ -130,4 +137,39 @@ func (p *PrometheusExporter) registerMetrics() error {
 	}
 
 	return nil
+}
+
+// gauges is a map type that maps a gauge to its unique name.
+type gauges map[string]*prometheus.GaugeVec
+
+// addGauge adds a new gauge vector to the map.
+func (g gauges) addGauge(name, help string, labels []string) {
+	g[name] = prometheus.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: name,
+			Help: help,
+		},
+		labels,
+	)
+}
+
+// describe describes all gauges contained in the map to the given channel.
+func (g gauges) describe(ch chan<- *prometheus.Desc) {
+	for _, gauge := range g {
+		gauge.Describe(ch)
+	}
+}
+
+// collect collects all metrics of the map's gauges to the given channel.
+func (g gauges) collect(ch chan<- prometheus.Metric) {
+	for _, gauge := range g {
+		gauge.Collect(ch)
+	}
+}
+
+// reset resets all gauges in the map.
+func (g gauges) reset() {
+	for _, gauge := range g {
+		gauge.Reset()
+	}
 }
