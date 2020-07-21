@@ -3,6 +3,7 @@ package itest
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -403,6 +404,216 @@ func testBatchExecution(t *harnessTest) {
 		)
 	}
 
+}
+
+// testUnconfirmedBatchChain tests that the server supports publishing batches
+// even though previous batches remain unconfirmed.
+func testUnconfirmedBatchChain(t *harnessTest) {
+	ctx := context.Background()
+
+	const unconfirmedBatches = 6
+
+	// We need a third lnd node, Charlie that is used for the second
+	// trader. We'll make sure to support all the pending channels that
+	// will be opened towards him.
+	lndArgs := []string{
+		fmt.Sprintf("--maxpendingchannels=%d", unconfirmedBatches),
+	}
+	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	if err != nil {
+		t.Fatalf("unable to set up charlie: %v", err)
+	}
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+
+	// We fund both traders so they have enough funds to open multiple
+	// accounts.
+	walletAmt := btcutil.Amount(
+		(unconfirmedBatches + 1) * defaultAccountValue,
+	)
+	err = t.lndHarness.SendCoins(ctx, walletAmt, charlie)
+	if err != nil {
+		t.Fatalf("unable to send coins to carol: %v", err)
+	}
+	err = t.lndHarness.SendCoins(ctx, walletAmt, t.trader.cfg.LndNode)
+	if err != nil {
+		t.Fatalf("unable to send coins to carol: %v", err)
+	}
+
+	type accountPair struct {
+		account1 *clmrpc.Account
+		account2 *clmrpc.Account
+	}
+
+	var accounts []accountPair
+	var batchTXIDs []*chainhash.Hash
+
+	// We start by opening a number of account pairs, that will each
+	// be involved in one match in each batch.
+	for i := 0; i < unconfirmedBatches; i++ {
+		account1 := openAccountAndAssert(
+			t, t.trader, &clmrpc.InitAccountRequest{
+				AccountValue: defaultAccountValue,
+				AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+					RelativeHeight: 1_000,
+				},
+			},
+		)
+		account2 := openAccountAndAssert(
+			t, secondTrader, &clmrpc.InitAccountRequest{
+				AccountValue: defaultAccountValue,
+				AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+					RelativeHeight: 1_000,
+				},
+			},
+		)
+
+		accounts = append(accounts, accountPair{account1, account2})
+	}
+
+	const orderFixedRate = 100
+	const baseOrderAmt = btcutil.Amount(300_000)
+
+	// We execute a list of batches, each lingering unconfirmed in the
+	// mempool.
+	for i := 0; i < unconfirmedBatches; i++ {
+		account1 := accounts[i].account1
+		account2 := accounts[i].account2
+
+		// We'll make sure to have each batch open a channel of a
+		// different size, to easily distinguish them after opening.
+		chanAmt := btcutil.Amount(i+1) * baseOrderAmt
+
+		_, err := submitAskOrder(
+			t.trader, account1.TraderKey, orderFixedRate, chanAmt,
+			2*dayInBlocks, uint32(order.CurrentVersion),
+		)
+		if err != nil {
+			t.Fatalf("could not submit ask order: %v", err)
+		}
+
+		_, err = submitBidOrder(
+			secondTrader, account2.TraderKey, orderFixedRate, chanAmt,
+			dayInBlocks, uint32(order.CurrentVersion),
+		)
+		if err != nil {
+			t.Fatalf("could not submit bid order: %v", err)
+		}
+
+		// Let's kick the auctioneer to try and create a batch.
+		_, err = t.auctioneer.AuctionAdminClient.BatchTick(
+			ctx, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			t.Fatalf("could not trigger batch tick: %v", err)
+		}
+
+		// At this point, all batches created up to this point should
+		// be found in the mempool.
+		txids, err := waitForNTxsInMempool(
+			t.lndHarness.Miner.Node, i+1, minerMempoolTimeout,
+		)
+		if err != nil {
+			t.Fatalf("txid not found in mempool: %v", err)
+		}
+
+		if len(txids) != i+1 {
+			t.Fatalf("expected %d transactions, instead have: %v",
+				i+1, spew.Sdump(txids))
+		}
+
+		// At this point, the lnd nodes backed by each trader should
+		// have a channel included in the just executed batch.
+		assertPendingChannel(
+			t, t.trader.cfg.LndNode, chanAmt, true, charlie.PubKey,
+		)
+		assertPendingChannel(
+			t, charlie, chanAmt, false, t.trader.cfg.LndNode.PubKey,
+		)
+
+		// Get the latest batch ID for later.
+		ctxb := context.Background()
+		masterAcct, err := t.auctioneer.AuctionAdminClient.MasterAccount(
+			ctxb, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			t.Fatalf("unable to read master acct: %v", err)
+		}
+		txid, _ := chainhash.NewHash(masterAcct.Outpoint.Txid)
+		batchTXIDs = append(batchTXIDs, txid)
+	}
+
+	// We'll now mine a block to confirm all the unconfirmed batches.
+	blocks := mineBlocks(t, t.lndHarness, 1, unconfirmedBatches)
+
+	// The block above should contain all the retrieved batch IDs.
+	for _, batchTXID := range batchTXIDs {
+		assertTxInBlock(t, blocks[0], batchTXID)
+	}
+
+	// We'll now mine another 3 blocks to ensure the channels are fully
+	// operational.
+	_ = mineBlocks(t, t.lndHarness, 3, 0)
+
+	// Now that the channels are confirmed, they should both be active.
+	for i, batchTXID := range batchTXIDs {
+		chanAmt := btcutil.Amount(i+1) * baseOrderAmt
+		assertActiveChannel(
+			t, t.trader.cfg.LndNode, int64(chanAmt), *batchTXID,
+			charlie.PubKey, dayInBlocks,
+		)
+
+		assertActiveChannel(
+			t, charlie, int64(chanAmt), *batchTXID,
+			t.trader.cfg.LndNode.PubKey, dayInBlocks,
+		)
+	}
+
+	// Now that the batches have been fully executed, we'll ensure that all
+	// the expected state has been updated from the client's PoV.
+	//
+	// Charlie, the trader that just bought a channel should have no
+	// present orders.
+	assertNoOrders(t, secondTrader)
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	chanReq := &lnrpc.ListChannelsRequest{}
+	openChans, err := charlie.ListChannels(context.Background(), chanReq)
+	if err != nil {
+		t.Fatalf("unable to list charlie's channels: %v", err)
+	}
+	for _, openChan := range openChans.Channels {
+		chanPointStr := openChan.ChannelPoint
+		chanPointParts := strings.Split(chanPointStr, ":")
+		txid, err := chainhash.NewHashFromStr(chanPointParts[0])
+		if err != nil {
+			t.Fatalf("unable txid to convert to hash: %v", err)
+		}
+		index, err := strconv.Atoi(chanPointParts[1])
+		if err != nil {
+			t.Fatalf("unable to convert string to int: %v", err)
+		}
+
+		chanPoint := &lnrpc.ChannelPoint{
+			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
+				FundingTxidBytes: txid[:],
+			},
+			OutputIndex: uint32(index),
+		}
+		closeUpdates, _, err := t.lndHarness.CloseChannel(
+			ctx, charlie, chanPoint, false,
+		)
+		if err != nil {
+			t.Fatalf("unable to close channel: %v", err)
+		}
+
+		assertChannelClosed(
+			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
+			false,
+		)
+	}
 }
 
 // assertBatchSnapshot asserts that a batch identified by the passed batchID is
