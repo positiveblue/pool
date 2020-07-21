@@ -18,13 +18,12 @@ import (
 	"github.com/lightninglabs/llm/order"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
@@ -477,7 +476,7 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 
 	// With all the information obtained, we'll now generate our half of
 	// the multi-sig.
-	signDesc := &input.SignDescriptor{
+	signDesc := &lndclient.SignDescriptor{
 		// The Signer API expects key locators _only_ when deriving keys
 		// that are not within the wallet's default scopes.
 		KeyDesc: keychain.KeyDescriptor{
@@ -488,10 +487,10 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 		Output:        &traderAcctInput.PrevOutput,
 		HashType:      txscript.SigHashAll,
 		InputIndex:    int(traderAcctInput.InputIndex),
-		SigHashes:     txscript.NewTxSigHashes(batchTx),
 	}
 	auctioneerSigs, err := b.cfg.Signer.SignOutputRaw(
-		context.Background(), batchTx, []*input.SignDescriptor{signDesc},
+		context.Background(), batchTx,
+		[]*lndclient.SignDescriptor{signDesc},
 	)
 	if err != nil {
 		return nil, nil, err

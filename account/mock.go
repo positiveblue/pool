@@ -8,11 +8,12 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -265,7 +266,7 @@ func (w *mockWallet) DeriveSharedKey(context.Context, *btcec.PublicKey,
 }
 
 func (w *mockWallet) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescs []*input.SignDescriptor) ([][]byte, error) {
+	signDescs []*lndclient.SignDescriptor) ([][]byte, error) {
 
 	return w.signer.SignOutputRaw(ctx, tx, signDescs)
 }
@@ -317,7 +318,7 @@ type MockSigner struct {
 }
 
 func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
 
 	s := input.MockSigner{
 		Privkeys: []*btcec.PrivateKey{
@@ -329,7 +330,18 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	// descriptor, so we'll do so now.
 	signDescriptors[0].KeyDesc.PubKey = m.PrivKey.PubKey()
 
-	sig, err := s.SignOutputRaw(tx, signDescriptors[0])
+	lndSignDescriptor := &input.SignDescriptor{
+		KeyDesc:       signDescriptors[0].KeyDesc,
+		SingleTweak:   signDescriptors[0].SingleTweak,
+		DoubleTweak:   signDescriptors[0].DoubleTweak,
+		WitnessScript: signDescriptors[0].WitnessScript,
+		Output:        signDescriptors[0].Output,
+		HashType:      signDescriptors[0].HashType,
+		SigHashes:     txscript.NewTxSigHashes(tx),
+		InputIndex:    signDescriptors[0].InputIndex,
+	}
+
+	sig, err := s.SignOutputRaw(tx, lndSignDescriptor)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +350,7 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 }
 
 func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*input.SignDescriptor) ([]*input.Script, error) {
+	signDescriptors []*lndclient.SignDescriptor) ([]*input.Script, error) {
 	return nil, nil
 }
 func (m *MockSigner) SignMessage(ctx context.Context, msg []byte,

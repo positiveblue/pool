@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -419,7 +420,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 		e.t.Fatalf("unable to gen pk script: %v", err)
 	}
 
-	signDesc := &input.SignDescriptor{
+	signDesc := &lndclient.SignDescriptor{
 		KeyDesc: keychain.KeyDescriptor{
 			PubKey: traderKey,
 		},
@@ -431,7 +432,6 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 		},
 		HashType:   txscript.SigHashAll,
 		InputIndex: inputIndex,
-		SigHashes:  txscript.NewTxSigHashes(batchTx),
 	}
 
 	traderSigner := &account.MockSigner{
@@ -439,7 +439,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 	}
 	sigs, err := traderSigner.SignOutputRaw(
 		context.Background(), batchTx,
-		[]*input.SignDescriptor{signDesc},
+		[]*lndclient.SignDescriptor{signDesc},
 	)
 	if err != nil {
 		e.t.Fatalf("unable to generate sig: %v", err)

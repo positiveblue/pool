@@ -9,7 +9,7 @@ import (
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/input"

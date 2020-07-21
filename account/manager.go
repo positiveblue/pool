@@ -17,9 +17,8 @@ import (
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/account/watcher"
 	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -856,7 +855,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		return nil, nil, errors.New("account input not found")
 	}
 
-	signDesc := &input.SignDescriptor{
+	signDesc := &lndclient.SignDescriptor{
 		// The Signer API expects key locators _only_ when deriving keys
 		// that are not within the wallet's default scopes.
 		KeyDesc: keychain.KeyDescriptor{
@@ -867,7 +866,6 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		Output:        accountOutput,
 		HashType:      txscript.SigHashAll,
 		InputIndex:    accountInputIdx,
-		SigHashes:     txscript.NewTxSigHashes(tx),
 	}
 
 	if len(modifiers) == 0 {
@@ -887,7 +885,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	}
 
 	sigs, err := m.cfg.Signer.SignOutputRaw(
-		ctx, tx, []*input.SignDescriptor{signDesc},
+		ctx, tx, []*lndclient.SignDescriptor{signDesc},
 	)
 	if err != nil {
 		return nil, nil, err

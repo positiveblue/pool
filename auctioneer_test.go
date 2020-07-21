@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
@@ -262,11 +263,17 @@ func (m *mockWallet) ConfirmedWalletBalance(context.Context) (btcutil.Amount, er
 	return m.balance, nil
 }
 
-func (m *mockWallet) ListTransactions(context.Context) ([]*wire.MsgTx, error) {
+func (m *mockWallet) ListTransactions(context.Context, int32, int32) (
+	[]lndclient.Transaction, error) {
+
 	m.RLock()
 	defer m.RUnlock()
 
-	return m.lastTxs, nil
+	transactions := make([]lndclient.Transaction, len(m.lastTxs))
+	for idx, tx := range m.lastTxs {
+		transactions[idx] = lndclient.Transaction{Tx: tx}
+	}
+	return transactions, nil
 }
 
 func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {

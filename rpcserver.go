@@ -28,7 +28,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -1531,13 +1531,6 @@ func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error
 	case account.StateClosed:
 		rpcAcct.State = clmrpc.AuctionAccountState_STATE_CLOSED
 
-		var buf bytes.Buffer
-		err := acct.CloseTx.Serialize(&buf)
-		if err != nil {
-			return nil, err
-		}
-		rpcAcct.CloseTx = buf.Bytes()
-
 	case account.StatePendingUpdate:
 		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_UPDATE
 
@@ -1546,6 +1539,25 @@ func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error
 
 	default:
 		return nil, fmt.Errorf("unknown account state")
+	}
+	
+	// Workaround until #167 fixes this correctly.
+	// TODO(wpaulino): Remove this in #167!
+	if acct.State != account.StatePendingOpen {
+		tx := acct.CloseTx
+		if tx == nil {
+			tx = &wire.MsgTx{
+				Version: 2,
+				TxIn: []*wire.TxIn{{}},
+			}
+		}
+		
+		var buf bytes.Buffer
+		err := tx.Serialize(&buf)
+		if err != nil {
+			return nil, err
+		}
+		rpcAcct.LatestTx = buf.Bytes()
 	}
 
 	return rpcAcct, nil

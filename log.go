@@ -7,7 +7,7 @@ import (
 
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/aperture/auth"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/monitoring"
