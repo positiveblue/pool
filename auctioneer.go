@@ -505,42 +505,67 @@ func DecrementBatchKey(batchKey *btcec.PublicKey) *btcec.PublicKey {
 func (a *Auctioneer) rebroadcastPendingBatches() error {
 	// First, we'll fetch the current batch key, as we'll use this to walk
 	// backwards to find all the batches that are still pending.
-	//
-	// TODO(roasbeef): instead block until batch confirmed?
 	ctxb := context.Background()
 	currentBatchKey, err := a.cfg.DB.BatchKey(ctxb)
 	if err != nil {
 		return err
 	}
 
-	// Now that we have the current batch key, we'll walk "backwards" by
-	// decrementing the batch key by -G each time.
-	priorBatchKey := DecrementBatchKey(currentBatchKey)
+	// We keep a list of the batches to re-publish. To ensure propagation,
+	// we publish them in the order they were created.
+	type batch struct {
+		tx *wire.MsgTx
+		id orderT.BatchID
+	}
+	var batches []batch
 
-	// Now for this batch key, we'll check to see if the batch has been
-	// marked as finalized on disk or not.
-	var batchID orderT.BatchID
-	copy(batchID[:], priorBatchKey.SerializeCompressed())
-	batchConfirmed, err := a.cfg.DB.BatchConfirmed(ctxb, batchID)
-	if err != nil && err != subastadb.ErrNoBatchExists {
-		return err
+	for {
+		// Now that we have the current batch key, we'll walk
+		// "backwards" by decrementing the batch key by -G each time.
+		currentBatchKey = DecrementBatchKey(currentBatchKey)
+
+		// Now for this batch key, we'll check to see if the batch has
+		// been marked as finalized on disk or not.
+		var batchID orderT.BatchID
+		copy(batchID[:], currentBatchKey.SerializeCompressed())
+		batchConfirmed, err := a.cfg.DB.BatchConfirmed(ctxb, batchID)
+		if err != nil && err != subastadb.ErrNoBatchExists {
+			return err
+		}
+
+		// If this batch is confirmed (or a batch has never existed),
+		// then we can exit early.
+		if batchConfirmed || err == subastadb.ErrNoBatchExists {
+			break
+		}
+
+		// Now that we know this batch isn't finalized, we'll fetch the
+		// batch transaction from disk so we can rebroadcast it.
+		var priorBatchID orderT.BatchID
+		copy(priorBatchID[:], currentBatchKey.SerializeCompressed())
+		_, batchTx, err := a.cfg.DB.GetBatchSnapshot(ctxb, priorBatchID)
+		if err != nil {
+			return err
+		}
+
+		batches = append(batches, batch{
+			tx: batchTx,
+			id: batchID,
+		})
 	}
 
-	// If this batch is confirmed (or a batch has never existed), then we
-	// can exit early.
-	if batchConfirmed || err == subastadb.ErrNoBatchExists {
-		return nil
+	log.Infof("Rebroadcasting %d unconfirmed batch transactions",
+		len(batches))
+
+	// Publish them in the order they were originally created.
+	for i := len(batches) - 1; i >= 0; i-- {
+		b := batches[i]
+		if err = a.publishBatchTx(ctxb, b.tx, b.id); err != nil {
+			return err
+		}
 	}
 
-	// Now that we know this batch isn't finalized, we'll fetch the batch
-	// transaction from disk so we can rebroadcast it.
-	var priorBatchID orderT.BatchID
-	copy(priorBatchID[:], priorBatchKey.SerializeCompressed())
-	_, batchTx, err := a.cfg.DB.GetBatchSnapshot(ctxb, priorBatchID)
-	if err != nil {
-		return err
-	}
-	return a.publishBatchTx(ctxb, batchTx, batchID)
+	return nil
 }
 
 // blockFeeder is a dedicated goroutine that listens for updates to the chain

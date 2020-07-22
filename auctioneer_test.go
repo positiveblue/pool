@@ -520,6 +520,29 @@ func (a *auctioneerTestHarness) AssertTxBroadcast() *wire.MsgTx {
 	return a.wallet.lastTxs[0]
 }
 
+func (a *auctioneerTestHarness) AssertNTxsBroadcast(n int) []*wire.MsgTx {
+	var txs []*wire.MsgTx
+	checkBroadcast := func() error {
+		a.wallet.RLock()
+		defer a.wallet.RUnlock()
+
+		if len(a.wallet.lastTxs) != n {
+			return fmt.Errorf("%d txs broadcast",
+				len(a.wallet.lastTxs))
+		}
+
+		txs = a.wallet.lastTxs
+		return nil
+	}
+
+	err := wait.NoError(checkBroadcast, time.Second*5)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+
+	return txs
+}
+
 func (a *auctioneerTestHarness) RestartAuctioneer() {
 	a.StopAuctioneer()
 
@@ -538,9 +561,11 @@ func (a *auctioneerTestHarness) RestartAuctioneer() {
 	a.StartAuctioneer()
 }
 
-func (a *auctioneerTestHarness) SendConf(tx *wire.MsgTx) {
-	a.notifier.ConfChan <- &chainntnfs.TxConfirmation{
-		Tx: tx,
+func (a *auctioneerTestHarness) SendConf(txs ...*wire.MsgTx) {
+	for _, tx := range txs {
+		a.notifier.ConfChan <- &chainntnfs.TxConfirmation{
+			Tx: tx,
+		}
 	}
 }
 
@@ -971,45 +996,76 @@ func TestAuctioneerLoadDiskOrders(t *testing.T) {
 }
 
 // TestAuctioneerPendingBatchRebroadcast tests that if we come online, and
-// there's a pending batch on disk, then we'll broadcast the pending batch.
+// there are pending batches on disk, then we'll re-broadcast them.
 func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 	t.Parallel()
+
+	const numPending = 3
 
 	// First, we'll start up the auctioneer as normal.
 	testHarness := newAuctioneerTestHarness(t)
 
-	// We'll grab the current batch key, then increment it by one. The new
-	// batch key will be the current batch key from the PoV of the
-	// auctioneer.
-	startingBatchKey := testHarness.db.batchKey
-	nextBatchKey := clmscript.IncrementKey(startingBatchKey)
-	testHarness.db.batchKey = nextBatchKey
+	// We'll grab the current batch key, then increment it by every time we
+	// create a new batch below.
+	currentBatchKey := testHarness.db.batchKey
 
-	batchTx := &wire.MsgTx{
-		TxOut: []*wire.TxOut{
-			{
-				PkScript: key[:],
+	var batchKeys []*btcec.PublicKey
+	for i := 0; i < numPending; i++ {
+		// Create a batch tx, using the script to encode what batch
+		// this corresponds to.
+		var s [32]byte
+		copy(s[:], key[:])
+		s[0] = byte(i)
+		batchTx := &wire.MsgTx{
+			TxOut: []*wire.TxOut{
+				{
+					PkScript: s[:],
+				},
 			},
-		},
-	}
+		}
 
-	// We'll now insert a pending batch snapshot and transaction, marking
-	// it as unconfirmed.
-	testHarness.MarkBatchUnconfirmed(startingBatchKey, batchTx)
+		// We'll now insert a pending batch snapshot and transaction,
+		// marking it as unconfirmed.
+		testHarness.MarkBatchUnconfirmed(currentBatchKey, batchTx)
+		batchKeys = append(batchKeys, currentBatchKey)
+
+		// Now that the new batch has been marked unconfirmed, we
+		// increment the current batch key by one. The new batch key
+		// will be the current batch key from the PoV of the
+		// auctioneer.
+		currentBatchKey = clmscript.IncrementKey(currentBatchKey)
+		testHarness.db.batchKey = currentBatchKey
+	}
 
 	// Now that the batch is marked unconfirmed, we'll start up the
 	// auctioneer. It should recognize this batch is still unconfirmed, and
-	// publish the transaction again.
+	// publish the unconfirmed batch transactions again.
 	testHarness.StartAuctioneer()
-	broadcastTx := testHarness.AssertTxBroadcast()
+	broadcastTxs := testHarness.AssertNTxsBroadcast(numPending)
 
-	// The auctioneer should now be waiting for this transaction to
+	if len(broadcastTxs) != numPending {
+		t.Fatalf("expected %d transactions, found %d",
+			numPending, len(broadcastTxs))
+	}
+
+	// The order of the broadcasted transactions should be the same as the
+	// original ordering.
+	for i, tx := range broadcastTxs {
+		b := tx.TxOut[0].PkScript[0]
+		if b != byte(i) {
+			t.Fatalf("tx %d had script byte %d", i, b)
+		}
+	}
+
+	// The auctioneer should now be waiting for these transactions to
 	// confirm, so we'll dispatch a confirmation.
-	testHarness.SendConf(broadcastTx)
+	testHarness.SendConf(broadcastTxs...)
 
 	// At this point, the batch that was marked unconfirmed, should now
 	// show up as being confirmed.
-	testHarness.AssertBatchConfirmed(startingBatchKey)
+	for _, batchKey := range batchKeys {
+		testHarness.AssertBatchConfirmed(batchKey)
+	}
 }
 
 // TestAuctioneerBatchTickNoop tests that if a master account is present, and
