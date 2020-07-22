@@ -223,7 +223,7 @@ type mockWallet struct {
 
 	balance btcutil.Amount
 
-	lastTx *wire.MsgTx
+	lastTxs []*wire.MsgTx
 }
 
 func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
@@ -232,13 +232,15 @@ func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
 	m.Lock()
 	defer m.Unlock()
 
-	m.lastTx = wire.NewMsgTx(2)
-	m.lastTx.TxIn = []*wire.TxIn{
+	lastTx := wire.NewMsgTx(2)
+	lastTx.TxIn = []*wire.TxIn{
 		{},
 	}
-	m.lastTx.TxOut = outputs
+	lastTx.TxOut = outputs
 
-	return m.lastTx, nil
+	m.lastTxs = append(m.lastTxs, lastTx)
+
+	return lastTx, nil
 }
 
 func (m *mockWallet) ConfirmedWalletBalance(context.Context) (btcutil.Amount, error) {
@@ -252,18 +254,14 @@ func (m *mockWallet) ListTransactions(context.Context) ([]*wire.MsgTx, error) {
 	m.RLock()
 	defer m.RUnlock()
 
-	if m.lastTx == nil {
-		return nil, nil
-	}
-
-	return []*wire.MsgTx{m.lastTx}, nil
+	return m.lastTxs, nil
 }
 
 func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {
 	m.Lock()
 	defer m.Unlock()
 
-	m.lastTx = tx
+	m.lastTxs = append(m.lastTxs, tx)
 	return nil
 }
 
@@ -505,7 +503,7 @@ func (a *auctioneerTestHarness) AssertTxBroadcast() *wire.MsgTx {
 		a.wallet.RLock()
 		defer a.wallet.RUnlock()
 
-		if a.wallet.lastTx == nil {
+		if len(a.wallet.lastTxs) != 1 {
 			return fmt.Errorf("no tx broadcast")
 		}
 
@@ -519,7 +517,7 @@ func (a *auctioneerTestHarness) AssertTxBroadcast() *wire.MsgTx {
 
 	a.wallet.RLock()
 	defer a.wallet.RUnlock()
-	return a.wallet.lastTx
+	return a.wallet.lastTxs[0]
 }
 
 func (a *auctioneerTestHarness) RestartAuctioneer() {
