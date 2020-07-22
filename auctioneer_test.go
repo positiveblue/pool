@@ -85,7 +85,7 @@ func (m *mockAuctioneerState) FetchAuctioneerAccount(ctx context.Context,
 	defer m.RUnlock()
 
 	if m.acct == nil {
-		return nil, subastadb.ErrNoAuctioneerAccount
+		return nil, account.ErrNoAuctioneerAccount
 	}
 
 	return m.acct, nil
@@ -231,7 +231,7 @@ func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) err
 	return nil
 }
 
-func (m *mockWallet) DeriveKey(context.Context, *keychain.KeyLocator) (
+func (m *mockWallet) DeriveNextKey(context.Context, int32) (
 	*keychain.KeyDescriptor, error) {
 
 	return &keychain.KeyDescriptor{
@@ -792,9 +792,7 @@ func TestAuctioneerStateMachineMasterAcctInit(t *testing.T) {
 
 	// At this point, it should transition all the way to MasterAcctPending
 	// as we broadcasted the transaction before we went down.
-	testHarness.AssertStateTransitions(
-		NoMasterAcctState, MasterAcctPending,
-	)
+	testHarness.AssertStateTransitions(MasterAcctPending)
 
 	// Now we'll dispatch a confirmation to simulate the transaction being
 	// confirmed.

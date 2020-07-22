@@ -33,6 +33,10 @@ type Auctioneer struct {
 	// BatchKey is the current batch key for the auctioneer's account, this
 	// will be incremented by one each batch.
 	BatchKey [33]byte
+
+	// IsPending determines whether the account is pending its confirmation
+	// in the chain.
+	IsPending bool
 }
 
 // AccountWitnessScript computes the raw witness script of the target account.

@@ -101,9 +101,8 @@ type Wallet interface {
 	// wallet.
 	ListTransactions(context.Context) ([]*wire.MsgTx, error)
 
-	// DeriveKey derives the key specified by the target KeyLocator.
-	DeriveKey(context.Context, *keychain.KeyLocator) (
-		*keychain.KeyDescriptor, error)
+	// DeriveNextKey derives the next key specified of the given family.
+	DeriveNextKey(context.Context, int32) (*keychain.KeyDescriptor, error)
 
 	// PublishTransaction attempts to publish the target transaction.
 	PublishTransaction(ctx context.Context, tx *wire.MsgTx) error
@@ -842,6 +841,8 @@ func (a *Auctioneer) accountConfNotifier(expectedOutput *wire.TxOut,
 			confEvent.BlockHeight, spew.Sdump(confEvent.Tx))
 
 		startingAcct.OutPoint = acctOutPoint
+		startingAcct.IsPending = false
+
 		select {
 		case a.auctionEvents <- &masterAcctReady{
 			acct: startingAcct,
@@ -940,7 +941,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		//
 		// First, we'll check if we have a master account in the
 		// database or not.
-		_, err := a.cfg.DB.FetchAuctioneerAccount(
+		acct, err := a.cfg.DB.FetchAuctioneerAccount(
 			context.Background(),
 		)
 		switch {
@@ -948,7 +949,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// NoMasterAcctState, meaning we need to obtain one somehow. In
 		// this state (the first time the system starts up), we'll rely
 		// on the block notification moving us to the next state.
-		case err == subastadb.ErrNoAuctioneerAccount:
+		case err == account.ErrNoAuctioneerAccount:
 			log.Infof("No Master Account found, starting genesis " +
 				"transaction creation")
 
@@ -956,7 +957,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		case err != nil:
 			return 0, err
+		}
 
+		// The account is still pending its confirmation, so we'll go
+		// straight to MasterAcctPending.
+		if acct.IsPending {
+			log.Info("Waiting for confirmation of Master Account")
+			return MasterAcctPending, nil
 		}
 
 		// Otherwise, we don't need to do anything special, and can
@@ -980,28 +987,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return 0, err
 		}
 
-		// It's possible that when we were last online, we actually
-		// already sent the transaction to init the system, so we'll
-		// check now, and if so, skip straight to the MasterAcctPending
-		// state.
-		genTx, err := a.locateTxByOutput(ctxb, acctOutput)
-		switch {
-		// If we can't find the transaction, then we'll proceed with
-		// broadcasting the genesis transaction as normal.
-		case err == errTxNotFound:
-			break
-
-		case err != nil:
-			return 0, err
-
-		default:
-			log.Infof("Genesis txn (txid=%v) for Master Account "+
-				"already broadcast, waiting for "+
-				"confirmation...", genTx.TxHash())
-
-			return MasterAcctPending, nil
-		}
-
 		// At this point, we know we don't have a master account yet,
 		// so we'll need to create one. However, we can't if we don't
 		// have any coins in the wallet, so we'll postpone things if we
@@ -1020,6 +1005,14 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				a.cfg.StartingAcctValue, walletBalance)
 
 			return NoMasterAcctState, nil
+		}
+
+		// Store a pending version of the account before we broadcast
+		// the genesis transaction. We'll still recover properly within
+		// MasterAcctPending if we shut down before broadcast.
+		err = a.cfg.DB.UpdateAuctioneerAccount(ctxb, startingAcct)
+		if err != nil {
+			return 0, fmt.Errorf("unable to update auctioneer account: %v", err)
 		}
 
 		// Now that we know we have enough coins, we'll instruct the
@@ -1060,9 +1053,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// At this point, we know that we've broadcast the master
 		// account, so we'll find the transaction in the wallet's
 		// store, so we can watch for its confirmation on-chain.
-		startingAcct, err := a.baseAuctioneerAcct(
-			ctxb, a.cfg.StartingAcctValue,
-		)
+		startingAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
 		if err != nil {
 			return 0, err
 		}
@@ -1070,8 +1061,27 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		if err != nil {
 			return 0, err
 		}
+
+		// It's possible that when we were last online, we actually
+		// already sent the transaction to init the system, so we'll
+		// check now, and if so, skip straight to the MasterAcctPending
+		// state.
 		genesisTx, err := a.locateTxByOutput(ctxb, output)
-		if err != nil {
+		switch {
+		// If we can't find the transaction, then we'll proceed with
+		// creating one now. This can happen if we shut down after
+		// storing our pending state and before broadcasting our
+		// transaction.
+		case err == errTxNotFound:
+			genesisTx, err = a.cfg.Wallet.SendOutputs(
+				ctxb, []*wire.TxOut{output}, chainfee.FeePerKwFloor,
+			)
+			if err != nil {
+				return 0, fmt.Errorf("unable to send funds to master "+
+					"acct output: %w", err)
+			}
+
+		case err != nil:
 			return 0, err
 		}
 
@@ -1298,10 +1308,8 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	auctioneerKey, err := a.cfg.Wallet.DeriveKey(
-		ctx, &keychain.KeyLocator{
-			Family: account.AuctioneerKeyFamily,
-		},
+	auctioneerKey, err := a.cfg.Wallet.DeriveNextKey(
+		ctx, int32(account.AuctioneerKeyFamily),
 	)
 	if err != nil {
 		return nil, err
@@ -1310,6 +1318,7 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 	startingAcct := account.Auctioneer{
 		AuctioneerKey: auctioneerKey,
 		Balance:       startingBalance,
+		IsPending:     true,
 	}
 	copy(
 		startingAcct.BatchKey[:], batchKey.SerializeCompressed(),

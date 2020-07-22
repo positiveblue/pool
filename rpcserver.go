@@ -231,6 +231,9 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 	reservation, err := s.accountManager.ReserveAccount(
 		ctx, params, tokenID, s.bestHeight(),
 	)
+	if err == account.ErrNoAuctioneerAccount {
+		return nil, errors.New("auction not ready for account creation yet")
+	}
 	if err != nil {
 		return nil, err
 	}

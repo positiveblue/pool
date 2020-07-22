@@ -37,8 +37,10 @@ var (
 		testRawAuctioneerKey, btcec.S256(),
 	)
 	testAuctioneerKeyDesc = &keychain.KeyDescriptor{
-		KeyLocator: account.LongTermKeyLocator,
-		PubKey:     testAuctioneerKey,
+		KeyLocator: keychain.KeyLocator{
+			Family: account.AuctioneerKeyFamily,
+		},
+		PubKey: testAuctioneerKey,
 	}
 
 	testTraderKeyStr = "036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0a" +

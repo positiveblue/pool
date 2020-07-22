@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/lsat"
@@ -54,6 +55,15 @@ func newMockStore() *mockStore {
 		accountDiffs:    make(map[[33]byte]Account),
 		bannedAccounts:  make(map[[33]byte]uint32),
 	}
+}
+
+func (s *mockStore) FetchAuctioneerAccount(_ context.Context) (*Auctioneer, error) {
+	return &Auctioneer{
+		OutPoint:      wire.OutPoint{Index: 10},
+		Balance:       btcutil.SatoshiPerBitcoin,
+		AuctioneerKey: testAuctioneerKeyDesc,
+		BatchKey:      [33]byte{10, 20, 30},
+	}, nil
 }
 
 func (s *mockStore) HasReservation(_ context.Context,

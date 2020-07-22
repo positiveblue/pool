@@ -22,6 +22,10 @@ var (
 	// ErrNoDiff is an error returned when we attempt to retrieve a staged
 	// diff for an account but it is not found.
 	ErrNoDiff = errors.New("no account diff found")
+
+	// ErrNoAuctioneerAccount is returned when a caller attempts to fetch
+	// the auctioneer account, but it hasn't been initialized yet.
+	ErrNoAuctioneerAccount = errors.New("no auctioneer account")
 )
 
 // Reservation contains information about the different keys required for to
@@ -341,6 +345,10 @@ func CloseTxModifier(tx *wire.MsgTx) Modifier {
 
 // Store is responsible for storing and retrieving account information reliably.
 type Store interface {
+	// FetchAuctioneerAccount retrieves the current information pertaining
+	// to the current auctioneer output state.
+	FetchAuctioneerAccount(context.Context) (*Auctioneer, error)
+
 	// HasReservation determines whether we have an existing reservation
 	// associated with a token. ErrNoReservation is returned if a
 	// reservation does not exist.
