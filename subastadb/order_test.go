@@ -21,6 +21,8 @@ import (
 
 // TestSubmitOrder tests that orders can be stored and retrieved correctly.
 func TestSubmitOrder(t *testing.T) {
+	t.Parallel()
+
 	ctxb := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
@@ -83,6 +85,8 @@ func TestSubmitOrder(t *testing.T) {
 
 // TestUpdateOrders tests that orders can be updated correctly.
 func TestUpdateOrders(t *testing.T) {
+	t.Parallel()
+
 	ctxb := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()

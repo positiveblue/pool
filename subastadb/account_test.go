@@ -89,6 +89,8 @@ func assertEqualReservation(t *testing.T, exp, got *account.Reservation) {
 // TestAccountReservation ensures that the account manager properly honors
 // account reservations.
 func TestAccountReservation(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
@@ -148,6 +150,8 @@ func TestAccountReservation(t *testing.T) {
 // TestAccounts ensures we can properly add, update, and retrieve accounts from
 // the store.
 func TestAccounts(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
@@ -243,6 +247,8 @@ func TestAccounts(t *testing.T) {
 // TestAccountDiffs ensures that we can properly stage and commit account diffs
 // within the store.
 func TestAccountDiffs(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()

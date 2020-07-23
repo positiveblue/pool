@@ -13,6 +13,8 @@ import (
 // TestLifetimePackages ensures that we are able to perform the different
 // operations available for channel lifetime packages.
 func TestLifetimePackages(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()

@@ -13,6 +13,8 @@ import (
 // TestFetchUpdateAuctioneerAccount tests that we're able to retrieve and
 // update the auctioneer's account state on disk.
 func TestFetchUpdateAuctioneerAccount(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
