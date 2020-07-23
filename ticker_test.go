@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	interval           = 50 * time.Millisecond
+	interval           = 100 * time.Millisecond
 	numActiveTicks     = 3
-	timestampTolerance = 5 * time.Millisecond
+	timestampTolerance = 10 * time.Millisecond
 )
 
 var tickers = []struct {
