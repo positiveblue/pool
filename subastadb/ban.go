@@ -116,8 +116,34 @@ func (s *EtcdStore) BanTrader(ctx context.Context, accountKey,
 func (s *EtcdStore) banTrader(stm conc.STM, accountKey,
 	nodeKey *btcec.PublicKey, currentHeight uint32) error {
 
+	if err := s.banAccount(stm, accountKey, currentHeight); err != nil {
+		return err
+	}
+	return s.banNodeKey(stm, nodeKey, currentHeight)
+}
+
+// BanAccount attempts to ban the account associated with a trader starting from
+// the current height of the chain. The duration of the ban will depend on how
+// many times the node has been banned before and grows exponentially, otherwise
+// it is 144 blocks.
+func (s *EtcdStore) BanAccount(ctx context.Context, accountKey *btcec.PublicKey,
+	currentHeight uint32) error {
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		return s.banAccount(stm, accountKey, currentHeight)
+	})
+	return err
+}
+
+// banAccount attempts to ban the account associated with a trader starting from
+// the current height of the chain. The duration of the ban will depend on how
+// many times the node has been banned before and grows exponentially, otherwise
+// it is 144 blocks.
+func (s *EtcdStore) banAccount(stm conc.STM, accountKey *btcec.PublicKey,
+	currentHeight uint32) error {
+
 	// We'll start by determining how long we should ban the trader's
-	// account and node key for.
+	// account for.
 	accountBanInfo := &BanInfo{
 		Height:   currentHeight,
 		Duration: initialBanDuration,
@@ -134,13 +160,30 @@ func (s *EtcdStore) banTrader(stm conc.STM, accountKey,
 		accountBanInfo.Duration = curBanInfo.Duration * 2
 	}
 
+	var buf bytes.Buffer
+	if err := serializeBanInfo(&buf, accountBanInfo); err != nil {
+		return err
+	}
+	stm.Put(banAccountKeyPath, buf.String())
+
+	return nil
+}
+
+// banNodeKey attempts to ban the account associated with a trader starting from
+// the current height of the chain. The duration of the ban will depend on how
+// many times the node has been banned before and grows exponentially, otherwise
+// it is 144 blocks.
+func (s *EtcdStore) banNodeKey(stm conc.STM, nodeKey *btcec.PublicKey,
+	currentHeight uint32) error {
+
+	// We'll start by determining how long we should ban the node key for.
 	nodeBanInfo := &BanInfo{
 		Height:   currentHeight,
 		Duration: initialBanDuration,
 	}
 
-	// Similarly, if the node key has been banned before, apply a new ban
-	// duration double the previous.
+	// If the node key has been banned before, apply a new ban duration
+	// double the previous.
 	banNodeKeyPath := s.banNodeKeyPath(nodeKey)
 	if v := stm.Get(banNodeKeyPath); len(v) > 0 {
 		banInfo, err := deserializeBanInfo(strings.NewReader(v))
@@ -150,14 +193,7 @@ func (s *EtcdStore) banTrader(stm conc.STM, accountKey,
 		nodeBanInfo.Duration = banInfo.Duration * 2
 	}
 
-	// Update the ban details for both the account and node key respectively.
 	var buf bytes.Buffer
-	if err := serializeBanInfo(&buf, accountBanInfo); err != nil {
-		return err
-	}
-	stm.Put(banAccountKeyPath, buf.String())
-
-	buf.Reset()
 	if err := serializeBanInfo(&buf, nodeBanInfo); err != nil {
 		return err
 	}

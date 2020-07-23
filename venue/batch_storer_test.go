@@ -26,6 +26,7 @@ var (
 	newMasterOutHash            = chainhash.Hash{0x02}
 
 	batchID     = orderT.NewBatchID(startBatchKey)
+	nextBatchID = orderT.NewBatchID(clmscript.IncrementKey(startBatchKey))
 	acctIDBig   = matching.NewAccountID(acctKeyBig)
 	acctIDSmall = matching.NewAccountID(acctKeySmall)
 

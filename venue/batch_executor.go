@@ -13,11 +13,13 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -180,13 +182,18 @@ type TraderSignMsg struct {
 	// BatchID is the batch ID of the pending batch.
 	BatchID []byte
 
-	// Trader is the trader that's rejecting this batch.
+	// Trader is the trader that's signing this batch.
 	Trader *ActiveTrader
 
 	// Sigs is the set of account input signatures for each account the
 	// trader has in this batch. This maps the trader's account ID to the
 	// set of valid witnesses.
 	Sigs map[string]*btcec.Signature
+
+	// ChannelInfos tracks each channel's information relevant to the trader
+	// that must be submitted to the auctioneer in order to enforce the
+	// channel's service lifetime.
+	ChannelInfos map[wire.OutPoint]*chaninfo.ChannelInfo
 }
 
 // Src returns the trader that sent us this message.
@@ -220,6 +227,10 @@ type ExecutionResult struct {
 	// StartingFeeRate is the fee rate that the batch transaction above
 	// pays.
 	StartingFeeRate chainfee.SatPerKWeight
+
+	// LifetimePackages contains the service level enforcement package for
+	// each channel created as a result of the batch.
+	LifetimePackages []*chanenforcement.LifetimePackage
 
 	// TODO(roasbeef): other stats?
 	//  * coin blocks created (lol, like BDD)
@@ -707,8 +718,9 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				trader.AccountKey,
 			)
 			if !ok {
-				return 0, env, fmt.Errorf("unable to find input for "+
-					"trader: %v", trader)
+				return 0, env, fmt.Errorf("unable to find "+
+					"input for trader %x",
+					trader.AccountKey[:])
 			}
 			auctioneerSig, witnessScript, err := b.signAcctInput(
 				env.masterAcct, trader, env.exeCtx.ExeTx,
@@ -738,6 +750,59 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 					OrderNonces: orderNonces,
 				}
 				return BatchTempError, env, nil
+			}
+
+			// With the witness validated, we'll also validate the
+			// channel info submitted with the matched trader to
+			// ensure we have the correct base point keys to enforce
+			// the channel's service level agreement.
+			chanOutputs, _ := env.exeCtx.ChanOutputsForTrader(src)
+			for _, chanOutput := range chanOutputs {
+				chanPoint := chanOutput.OutPoint
+				chanInfo, ok := signMsg.ChannelInfos[chanPoint]
+				if !ok {
+					// The trader didn't provide information
+					// for one of their channels, so we'll
+					// ignore their orders and retry the
+					// batch.
+					orderNonces := env.traderToOrders[src]
+					env.tempErr = &ErrMissingChannelInfo{
+						Trader:       src,
+						ChannelPoint: chanPoint,
+						OrderNonces:  orderNonces,
+					}
+					log.Warn(env.tempErr)
+					return BatchTempError, env, nil
+				}
+
+				err := env.validateChanInfo(
+					src, chanOutput, chanInfo,
+				)
+				if err != nil {
+					// If the information submitted between
+					// both parties of the to be created
+					// channel don't match, then one must be
+					// lying. The bidder doesn't have any
+					// incentive to lie, but we cannot be
+					// sure, so we'll punish both anyway.
+					matchingTrader := env.
+						matchingChanTrader[chanPoint].
+						AccountID
+					orders := env.traderToOrders[src]
+					orders = append(
+						orders,
+						env.traderToOrders[matchingTrader]...,
+					)
+					env.tempErr = &ErrNonMatchingChannelInfo{
+						Err:          err,
+						Trader1:      src,
+						Trader2:      matchingTrader,
+						ChannelPoint: chanPoint,
+						OrderNonces:  orders,
+					}
+					log.Warn(env.tempErr)
+					return BatchTempError, env, nil
+				}
 			}
 
 			// If we have all the witnesses we need, then we'll
@@ -786,8 +851,10 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			MasterAccountDiff: exeCtx.MasterAccountDiff,
 			BatchTx:           batchTx,
 			StartingFeeRate:   chainfee.FeePerKwFloor,
+			LifetimePackages:  env.lifetimePkgs,
 		}
 		if err := b.batchStorer.Store(ctxb, env.result); err != nil {
+			log.Errorf("Failed to store batch: %v", err)
 			return 0, env, err
 		}
 

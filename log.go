@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -36,6 +37,7 @@ func init() {
 	addSubLogger(batchtx.Subsystem, batchtx.UseLogger)
 	addSubLogger(venue.Subsystem, venue.UseLogger)
 	addSubLogger(auth.Subsystem, auth.UseLogger)
+	addSubLogger(chanenforcement.Subsystem, chanenforcement.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the

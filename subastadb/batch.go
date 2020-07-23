@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
@@ -160,7 +161,7 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAccount *account.Auctioneer, batchID orderT.BatchID,
 	batch *matching.OrderBatch, newBatchKey *btcec.PublicKey,
-	batchTx *wire.MsgTx) error {
+	batchTx *wire.MsgTx, lifetimePkgs []*chanenforcement.LifetimePackage) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -196,6 +197,15 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 		err = s.updateAuctioneerAccountSTM(stm, masterAccount)
 		if err != nil {
 			return err
+		}
+
+		// Store the lifetime packages of each channel created as part
+		// of the batch.
+		for _, lifetimePkg := range lifetimePkgs {
+			err := s.storeLifetimePackage(stm, lifetimePkg)
+			if err != nil {
+				return err
+			}
 		}
 
 		// Store a self-contained snapshot of the current batch.

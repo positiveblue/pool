@@ -11,27 +11,38 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 )
 
 var (
 	testTimeout = time.Second * 5
+
+	_, nodeKey1          = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x1})
+	_, nodeKey2          = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x2})
+	_, paymentBasePoint1 = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x3})
+	_, paymentBasePoint2 = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x4})
 )
 
-type mockBatchStorer struct {
-}
+type invalidSignAction uint8
 
-func (m *mockBatchStorer) Store(_ context.Context, _ *ExecutionResult) error {
-	return nil
-}
+const (
+	noAction invalidSignAction = iota
+	invalidSig
+	missingChanInfo
+	invalidChanInfo
+)
 
 type mockExecutorStore struct {
 	*subastadb.StoreMock
@@ -42,8 +53,10 @@ type mockExecutorStore struct {
 }
 
 func newMockExecutorStore(t *testing.T) *mockExecutorStore {
+	store := subastadb.NewStoreMock(t)
+	store.BatchPubkey = startBatchKey
 	return &mockExecutorStore{
-		StoreMock:        subastadb.NewStoreMock(t),
+		StoreMock:        store,
 		stateTransitions: make(chan ExecutionState, 1),
 	}
 }
@@ -89,7 +102,7 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		store:         store,
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
 		executor: NewBatchExecutor(
-			store, signer, msgTimeout, &mockBatchStorer{},
+			store, signer, msgTimeout, NewExeBatchStorer(store),
 		),
 	}
 }
@@ -156,7 +169,25 @@ func (e *executorTestHarness) AssertStateTransitions(states ...ExecutionState) {
 	}
 }
 
+func (e *executorTestHarness) ExpectExecutionSuccess(respChan chan *ExecutionResult) *ExecutionResult {
+	e.t.Helper()
+
+	select {
+	case resp := <-respChan:
+		if resp.Err != nil {
+			e.t.Fatalf("execution error: %v", resp.Err)
+		}
+		return resp
+
+	case <-time.After(testTimeout):
+		e.t.Fatalf("no execution result received")
+		return nil
+	}
+}
+
 func (e *executorTestHarness) ExpectExecutionError(respChan chan *ExecutionResult) error {
+	e.t.Helper()
+
 	select {
 	case resp := <-respChan:
 
@@ -246,7 +277,9 @@ func (e *executorTestHarness) SendAcceptMsg(senders ...*ActiveTrader) {
 	}
 }
 
-func (e *executorTestHarness) SendSignMsg(sender *ActiveTrader, invalidSig bool) {
+func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
+	sender *ActiveTrader, action invalidSignAction) {
+
 	senderID := sender.AccountKey
 	senderPriv, ok := acctIDToPriv[senderID]
 	if !ok {
@@ -313,7 +346,7 @@ func (e *executorTestHarness) SendSignMsg(sender *ActiveTrader, invalidSig bool)
 		e.t.Fatalf("unable to generate sig: %v", err)
 	}
 
-	if invalidSig {
+	if action == invalidSig {
 		sigs[0][12] ^= 1
 	}
 
@@ -322,11 +355,54 @@ func (e *executorTestHarness) SendSignMsg(sender *ActiveTrader, invalidSig bool)
 		e.t.Fatalf("unable to parse strader sig: %v", err)
 	}
 
+	// Prepare the info for each relevant channel to this trader.
+	chanOutputs, ok := batchCtx.ChanOutputsForTrader(sender.AccountKey)
+	if !ok {
+		e.t.Fatalf("no channel outputs found for trader %v",
+			sender.AccountKey)
+	}
+	chanInfos := make(map[wire.OutPoint]*chaninfo.ChannelInfo, len(chanOutputs))
+	for _, chanOutputs := range chanOutputs {
+		localNodeKey, remoteNodeKey := nodeKey1, nodeKey2
+		localPaymentBasePoint, remotePaymentBasePoint :=
+			paymentBasePoint1, paymentBasePoint2
+
+		// To provide matching info, it must be flipped for the opposite
+		// order.
+		if chanOutputs.Order.Type() == order.TypeAsk {
+			localNodeKey, remoteNodeKey = remoteNodeKey, localNodeKey
+			localPaymentBasePoint, remotePaymentBasePoint =
+				remotePaymentBasePoint, localPaymentBasePoint
+
+			// Produce invalid info if required.
+			if action == invalidChanInfo {
+				localNodeKey, localPaymentBasePoint =
+					localPaymentBasePoint, localNodeKey
+				remoteNodeKey, remotePaymentBasePoint =
+					remotePaymentBasePoint, remoteNodeKey
+			}
+		}
+
+		// Omit the info if required.
+		if action == missingChanInfo {
+			continue
+		}
+
+		chanInfos[chanOutputs.OutPoint] = &chaninfo.ChannelInfo{
+			Version:                chanbackup.AnchorsCommitVersion,
+			LocalNodeKey:           localNodeKey,
+			RemoteNodeKey:          remoteNodeKey,
+			LocalPaymentBasePoint:  localPaymentBasePoint,
+			RemotePaymentBasePoint: remotePaymentBasePoint,
+		}
+	}
+
 	signMsg := &TraderSignMsg{
 		Trader: sender,
 		Sigs: map[string]*btcec.Signature{
 			hex.EncodeToString(sender.AccountKey[:]): traderSig,
 		},
+		ChannelInfos: chanInfos,
 	}
 
 	if err := e.executor.HandleTraderMsg(signMsg); err != nil {
@@ -358,6 +434,40 @@ func (e *executorTestHarness) AssertInvalidWitnessErr(err error,
 
 	if traderErr.Trader != rougeTrader {
 		e.t.Fatalf("%x not flagged as sending invalid sigs",
+			rougeTrader[:])
+	}
+}
+
+func (e *executorTestHarness) AssertNonMatchingChannelInfoErr(exeErr error,
+	rougeTraders [2]matching.AccountID) {
+
+	err, ok := exeErr.(*ErrNonMatchingChannelInfo)
+	if !ok {
+		e.t.Fatalf("expected ErrNonMatchingChannelInfo instead got: %T",
+			err)
+	}
+
+	if rougeTraders[0] != err.Trader1 && rougeTraders[0] != err.Trader2 {
+		e.t.Fatalf("%x not flagged as sending non matching channel info",
+			rougeTraders[0])
+	}
+	if rougeTraders[1] != err.Trader1 && rougeTraders[1] != err.Trader2 {
+		e.t.Fatalf("%x not flagged as sending non matching channel info",
+			rougeTraders[1])
+	}
+}
+
+func (e *executorTestHarness) AssertMissingChannelInfoErr(exeErr error,
+	rougeTrader matching.AccountID) {
+
+	err, ok := exeErr.(*ErrMissingChannelInfo)
+	if !ok {
+		e.t.Fatalf("expected ErrNonMatchingChannelInfo instead got: %T",
+			err)
+	}
+
+	if err.Trader != rougeTrader {
+		e.t.Fatalf("%x not flagged as missing channel info",
 			rougeTrader[:])
 	}
 }
@@ -438,17 +548,33 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	msgTimeout := time.Millisecond * 200
 	testCtx := newExecutorTestHarness(t, msgTimeout)
 	testCtx.Start()
-
 	defer testCtx.Stop()
 
 	// Before we start, we'll also insert some initial master account state
 	// that we'll need in order to proceed, and also the on-disk state of
 	// the orders.
-	testCtx.store.MasterAcct = oldMasterAccount
+	masterAcct := oldMasterAccount
+	testCtx.store.MasterAcct = masterAcct
 	testCtx.store.Accs = map[[33]byte]*account.Account{
 		bigAcct.TraderKeyRaw:   bigAcct,
 		smallAcct.TraderKeyRaw: smallAcct,
 	}
+	for _, orderPair := range orderBatch.Orders {
+		ask := orderPair.Details.Ask
+		bid := orderPair.Details.Bid
+		testCtx.store.Orders[ask.Nonce()] = ask
+		testCtx.store.Orders[bid.Nonce()] = bid
+	}
+
+	// We'll also need the master account state to recompute the batch
+	// context later on.
+	mad := &batchtx.MasterAccountState{
+		PriorPoint:     wire.OutPoint{Hash: oldMasterOutHash},
+		OutPoint:       nil,
+		AccountBalance: masterAcct.Balance,
+		BatchKey:       nextBatchID,
+	}
+	copy(mad.AuctioneerKey[:], masterAcct.AuctioneerKey.PubKey.SerializeCompressed())
 
 	// We'll now register both traders as online so we're able to proceed
 	// as expected (though we may delay some messages at a point.
@@ -538,8 +664,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	respChan = testCtx.SubmitBatch(&batch)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 
-	stepSignToFinalize := func(invalidSig bool, slowTrader *matching.AccountID,
-		fastTraders ...*ActiveTrader) {
+	stepSignToFinalize := func(action invalidSignAction,
+		slowTrader *matching.AccountID, fastTraders ...*ActiveTrader) {
 
 		t.Helper()
 
@@ -553,15 +679,27 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		testCtx.AssertStateTransitions(BatchSigning)
 
 		// We'll now send all sig messages for all the fast traders.
+		//
+		// TODO: The fee rate will need to be changed here once proper
+		// fee estimation is in place.
+		batchCopy := orderBatch.Copy()
+		batchCtx, err := batchtx.New(
+			&batchCopy, mad, chainfee.FeePerKwFloor,
+		)
+		if err != nil {
+			t.Fatalf("unable to recreate batch context: %v", err)
+		}
 		for i, fastTrader := range fastTraders {
-			testCtx.SendSignMsg(fastTrader, invalidSig)
+			testCtx.SendSignMsg(
+				batchCtx, fastTrader, action,
+			)
 
 			// If this is the last trader, and we don't have a slow
 			// trader, and all sigs are valid, then we should
 			// transition to the finalize phase assuming those were
 			// all valid signatures.
 			if slowTrader == nil && i == len(fastTraders)-1 &&
-				!invalidSig {
+				action == noAction {
 
 				testCtx.AssertStateTransitions(BatchFinalize)
 				return
@@ -569,7 +707,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 
 			// Otherwise, we expect a self-loop as we wait in this
 			// state until we have all the signatures we need.
-			if !invalidSig {
+			if action == noAction {
 				testCtx.AssertStateTransitions(BatchSigning)
 			}
 		}
@@ -586,11 +724,34 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		// On the other hand, if we sent an invalid sig above, then we
 		// expect that we go to the error state, but emit a distinct
 		// error.
-		case invalidSig:
+		case action == invalidSig:
 			testCtx.AssertStateTransitions(BatchTempError)
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertInvalidWitnessErr(
 				exeErr, fastTraders[0].AccountKey,
+			)
+
+		// If we did not provide the required channel info above, then
+		// we expect that we go to the error state, but emit a distinct
+		// error.
+		case action == missingChanInfo:
+			testCtx.AssertStateTransitions(BatchTempError)
+			exeErr := testCtx.ExpectExecutionError(respChan)
+			testCtx.AssertMissingChannelInfoErr(
+				exeErr, fastTraders[0].AccountKey,
+			)
+
+		// If we did not provide the correct channel info above, then we
+		// expect that we go to the error state, but emit a distinct
+		// error.
+		case action == invalidChanInfo:
+			testCtx.AssertStateTransitions(BatchSigning, BatchTempError)
+			exeErr := testCtx.ExpectExecutionError(respChan)
+			testCtx.AssertNonMatchingChannelInfoErr(
+				exeErr, [2]matching.AccountID{
+					fastTraders[0].AccountKey,
+					fastTraders[1].AccountKey,
+				},
 			)
 		}
 	}
@@ -601,7 +762,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	//
 	// First, we'll hold back the OrderMatchSign response for one of the
 	// traders, we should fail out with a message time out error.
-	stepSignToFinalize(false, &bigTrader.AccountKey, activeSmallTrader)
+	stepSignToFinalize(noAction, &bigTrader.AccountKey, activeSmallTrader)
 
 	// TODO(roasbeef): timer not ticking for some reason
 
@@ -611,7 +772,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
-	stepSignToFinalize(true, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(invalidSig, nil, activeSmallTrader, activeBigTrader)
 
 	// Both signatures will be invalid, but we'll reset everything after
 	// the first invalid signature is found, leaving the second to still be
@@ -619,21 +780,53 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// NoActiveBatch as we ignore all messages in the default state.
 	testCtx.AssertStateTransitions(NoActiveBatch)
 
+	// Next we'll execute again (from the top), but one of the traders will
+	// send non matching channel info, this should cause us to again bail
+	// out as we can't proceed.
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch)
+	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(missingChanInfo, nil, activeSmallTrader, activeBigTrader)
+
+	// Both signatures will be invalid, but we'll reset everything after
+	// the first invalid signature is found, leaving the second to still be
+	// processed. As a result, we expect to transition again to
+	// NoActiveBatch as we ignore all messages in the default state.
+	testCtx.AssertStateTransitions(NoActiveBatch)
+
+	// Next we'll execute again (from the top), but one of the traders will
+	// send non matching channel info, this should cause us to again bail
+	// out as we can't proceed.
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch)
+	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(invalidChanInfo, nil, activeSmallTrader, activeBigTrader)
+
 	// Now we'll move forward with no slow traders and no invalid
 	// signatures, we should proceed to the finalize phase and end up with
 	// a final valid batch.
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
-	stepSignToFinalize(false, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(noAction, nil, activeSmallTrader, activeBigTrader)
 
 	// At this point, all parties should now receive a finalize message,
 	// which signals the completion of this batch execution.
 	testCtx.ExpectFinalizeMsgForAll()
 
 	// Once the finalize message has been sent, we expect the state machine
-	// to terminate at the BatchComplete state.
+	// to terminate at the BatchComplete state and a successful execution
+	// result to be received.
 	testCtx.AssertStateTransitions(BatchComplete)
+	exeRes := testCtx.ExpectExecutionSuccess(respChan)
+
+	// We'll assert that a lifetime package was created for each matched
+	// order.
+	if len(exeRes.LifetimePackages) != len(batch.Orders) {
+		t.Fatalf("expected %v lifetime pacakges, found %v",
+			len(batch.Orders), len(exeRes.LifetimePackages))
+	}
+	require.Equal(t, exeRes.LifetimePackages, testCtx.store.LifetimePackages)
 
 	// TODO(roasbeef): assert every input of batch transaction valid?
 }

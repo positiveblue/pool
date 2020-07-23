@@ -188,6 +188,12 @@ func NewServer(cfg *Config) (*Server, error) {
 		SubmitFee:   btcutil.Amount(cfg.OrderSubmitFee),
 		MaxDuration: cfg.MaxDuration,
 	})
+
+	channelEnforcer := chanenforcement.New(&chanenforcement.Config{
+		ChainNotifier: lnd.ChainNotifier,
+		PackageSource: store,
+	})
+
 	server := &Server{
 		lnd:            lnd,
 		store:          store,
@@ -225,15 +231,13 @@ func NewServer(cfg *Config) (*Server, error) {
 					)
 				},
 			),
-			OrderFeed:     orderBook,
-			BatchExecutor: batchExecutor,
-			FeeSchedule:   feeSchedule,
+			OrderFeed:       orderBook,
+			BatchExecutor:   batchExecutor,
+			FeeSchedule:     feeSchedule,
+			ChannelEnforcer: channelEnforcer,
 		}),
-		channelEnforcer: chanenforcement.New(&chanenforcement.Config{
-			ChainNotifier: lnd.ChainNotifier,
-			PackageSource: store,
-		}),
-		quit: make(chan struct{}),
+		channelEnforcer: channelEnforcer,
+		quit:            make(chan struct{}),
 	}
 
 	// With all our other initialization complete, we'll now create the
