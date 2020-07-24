@@ -350,8 +350,19 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 		}
 	}
 
+	var rawTraderKey [33]byte
+	copy(rawTraderKey[:], req.TraderKey)
+
+	// Get the value locked up in orders for this account.
+	lockedValue, err := s.orderBook.LockedValue(
+		ctx, rawTraderKey, s.feeSchedule,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	accountSig, err := s.accountManager.ModifyAccount(
-		ctx, traderKey, newInputs, newOutputs, modifiers,
+		ctx, traderKey, lockedValue, newInputs, newOutputs, modifiers,
 		s.bestHeight(),
 	)
 	if err != nil {

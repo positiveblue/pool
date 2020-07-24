@@ -690,7 +690,7 @@ func TestModifyAccountBanned(t *testing.T) {
 		PkScript: []byte{0x01, 0x02, 0x03},
 	}}
 	_, err = h.manager.ModifyAccount(
-		ctx, traderKey, nil, outputs, nil, bestHeight,
+		ctx, traderKey, 0, nil, outputs, nil, bestHeight,
 	)
 	if _, ok := err.(ErrBannedAccount); !ok {
 		t.Fatalf("expected ErrBannedAccount, got %v", err)
@@ -698,7 +698,7 @@ func TestModifyAccountBanned(t *testing.T) {
 
 	// Once the account is no longer banned, we should expect a signature.
 	_, err = h.manager.ModifyAccount(
-		ctx, traderKey, nil, outputs, nil, expiration,
+		ctx, traderKey, 0, nil, outputs, nil, expiration,
 	)
 	if err != nil {
 		t.Fatalf("expected valid sig for unbanned account: %v", err)
@@ -738,7 +738,7 @@ func TestModifyAccountValueBounds(t *testing.T) {
 	}
 	mods := []Modifier{ValueModifier(accountT.MinAccountValue - 1)}
 	_, err = h.manager.ModifyAccount(
-		ctx, traderKey, nil, nil, mods, bestHeight,
+		ctx, traderKey, 0, nil, nil, mods, bestHeight,
 	)
 	if err, ok := err.(ErrBelowMinAccountValue); !ok {
 		t.Fatalf("expected ErrBelowMinAccountValue, got %T", err)
@@ -748,7 +748,7 @@ func TestModifyAccountValueBounds(t *testing.T) {
 	// should result in a ErrAboveMaxAccountValue error.
 	mods = []Modifier{ValueModifier(h.manager.cfg.MaxAcctValue + 1)}
 	_, err = h.manager.ModifyAccount(
-		ctx, traderKey, nil, nil, mods, bestHeight,
+		ctx, traderKey, 0, nil, nil, mods, bestHeight,
 	)
 	if err, ok := err.(ErrAboveMaxAccountValue); !ok {
 		t.Fatalf("expected ErrAboveMaxAccountValue, got %T", err)
@@ -813,10 +813,21 @@ func TestModifyAccountWithdrawal(t *testing.T) {
 	}
 	mods := []Modifier{ValueModifier(newAccountValue)}
 
-	// Process the withdrawal request from the trader. This should succeed
-	// and return the auctioneer's signature.
+	// Set the locked value to be all of the accounts balance. This should
+	// prevent the withdrawal from being successful.
+	lockedValue := accountBeforeWithdrawal.Value
+	_, err = h.manager.ModifyAccount(
+		ctx, traderKey, lockedValue, nil, outputs, mods, bestHeight,
+	)
+	if _, ok := err.(ErrAccountLockedValue); !ok {
+		t.Fatalf("expected ErrAccountLockedValue, got %v", err)
+	}
+
+	// Process the withdrawal request from the trader with a zero locked
+	// value. This should succeed and return the auctioneer's signature.
+	lockedValue = 0
 	sig, err := h.manager.ModifyAccount(
-		ctx, traderKey, nil, outputs, mods, bestHeight,
+		ctx, traderKey, lockedValue, nil, outputs, mods, bestHeight,
 	)
 	if err != nil {
 		t.Fatalf("unable to modify account: %v", err)
