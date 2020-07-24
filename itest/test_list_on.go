@@ -37,6 +37,10 @@ var testCases = []*testCase{
 		test: testServiceLevelEnforcement,
 	},
 	{
+		name: "unconfirmed batch chain",
+		test: testUnconfirmedBatchChain,
+	},
+	{
 		name: "server-assisted recover accounts",
 		test: testServerAssistedAccountRecovery,
 	},
