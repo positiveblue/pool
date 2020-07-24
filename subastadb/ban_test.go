@@ -9,6 +9,8 @@ import (
 
 // TestBanTrader ensures that we can properly determine a trader's ban status.
 func TestBanTrader(t *testing.T) {
+	t.Parallel()
+
 	// We'll start the test by initializing our store and some variables
 	// we'll use throughout.
 	store, cleanup := newTestEtcdStore(t)

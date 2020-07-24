@@ -36,6 +36,8 @@ var (
 // TestBatchKey tests the different database operations that can be performed on
 // the per-batch key.
 func TestBatchKey(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
@@ -78,6 +80,8 @@ func TestBatchKey(t *testing.T) {
 // TestPersistBatchResult tests the different database operations that are
 // performed during the persisting phase of a batch.
 func TestPersistBatchResult(t *testing.T) {
+	t.Parallel()
+
 	var (
 		ctx     = context.Background()
 		batchID = orderT.BatchID{1, 2, 3}
@@ -257,6 +261,8 @@ func TestPersistBatchResult(t *testing.T) {
 // TestPersistBatchResultRollback tests that the persisting operation of a batch
 // is executed atomically and everything is rolled back if one operation fails.
 func TestPersistBatchResultRollback(t *testing.T) {
+	t.Parallel()
+
 	var (
 		ctx     = context.Background()
 		batchID = orderT.BatchID{1, 2, 3}
@@ -342,6 +348,8 @@ func TestPersistBatchResultRollback(t *testing.T) {
 // TestPersistBatchSnapshot makes sure a batch snapshot can be stored and
 // retrieved again correctly.
 func TestPersistBatchSnapshot(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
