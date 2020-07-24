@@ -28,6 +28,7 @@ func TestSubmitOrder(t *testing.T) {
 	defer cleanup()
 
 	// Create a dummy order and make sure it does not yet exist in the DB.
+	addDummyAccount(t, store)
 	bid := &order.Bid{
 		Bid: orderT.Bid{
 			Kit:         *dummyClientOrder(t, 500000),
@@ -92,6 +93,7 @@ func TestUpdateOrders(t *testing.T) {
 	defer cleanup()
 
 	// Store two dummy orders that we are going to update later.
+	addDummyAccount(t, store)
 	o1 := &order.Bid{
 		Bid: orderT.Bid{
 			Kit:         *dummyClientOrder(t, 500000),
@@ -253,6 +255,8 @@ func dummyClientOrder(t *testing.T, amt btcutil.Amount) *orderT.Kit {
 	kit.State = orderT.StatePartiallyFilled
 	kit.FixedRate = 21
 	kit.Amt = amt
+	kit.Units = orderT.NewSupplyFromSats(amt)
+	kit.UnitsUnfulfilled = kit.Units
 	kit.MultiSigKeyLocator = keychain.KeyLocator{Index: 1, Family: 2}
 	kit.MaxBatchFeeRate = chainfee.FeePerKwFloor
 	copy(kit.AcctKey[:], testTraderKey.SerializeCompressed())
@@ -282,4 +286,19 @@ func randomPubKey(t *testing.T) *btcec.PublicKey {
 
 	_, pub := btcec.PrivKeyFromBytes(btcec.S256(), testPriv[:])
 	return pub
+}
+
+func addDummyAccount(t *testing.T, store *EtcdStore) {
+	t.Helper()
+
+	ctx := context.Background()
+	err := store.ReserveAccount(ctx, testTokenID, &testReservation)
+	if err != nil {
+		t.Fatalf("unable to reserve account: %v", err)
+	}
+	acct := testAccount
+	err = store.CompleteReservation(ctx, &acct)
+	if err != nil {
+		t.Fatalf("unable to complete account reservation: %v", err)
+	}
 }
