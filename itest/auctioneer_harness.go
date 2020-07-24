@@ -81,7 +81,6 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			Insecure:         true,
 			FakeAuth:         true,
 			BaseDir:          cfg.BaseDir,
-			OrderSubmitFee:   1337,
 			ExecFeeBase:      subasta.DefaultExecutionFeeBase,
 			ExecFeeRate:      subasta.DefaultExecutionFeeRate,
 			MaxAcctValue:     btcutil.SatoshiPerBitcoin,

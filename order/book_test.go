@@ -100,7 +100,6 @@ func TestBookPrepareOrder(t *testing.T) {
 
 	book := order.NewBook(&order.BookConfig{
 		MaxDuration: 1234,
-		SubmitFee:   123,
 		Store:       store,
 		Signer:      signer,
 	})

@@ -44,11 +44,6 @@ type BookConfig struct {
 	// Signer is used to verify order signatures.
 	Signer lndclient.SignerClient
 
-	// SubmitFee is the fee the auctioneer server takes for offering its
-	// services of keeping an order book and matching orders. This
-	// represents a flat, one-time fee in satoshis.
-	SubmitFee btcutil.Amount
-
 	// MaxDuration is the maximum value for a bid's min duration or an ask's
 	// max duration.
 	MaxDuration uint32
@@ -200,7 +195,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
 			return fmt.Errorf("maximum allowed value for max "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
-		balanceNeeded = o.Amt + b.cfg.SubmitFee
+		balanceNeeded = o.Amt
 
 	case *Bid:
 		if o.MinDuration() == 0 {
@@ -212,7 +207,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
 		}
 		rate := order.FixedRatePremium(o.FixedRate)
 		orderFee := rate.LumpSumPremium(o.Amt, o.MinDuration())
-		balanceNeeded = orderFee + b.cfg.SubmitFee
+		balanceNeeded = orderFee
 	}
 
 	acctKey, err := btcec.ParsePubKey(

@@ -29,10 +29,6 @@ const (
 	// on.
 	defaultAdminRPCPort = 13370
 
-	// defaultOrderSubmitFee is the default one-time fee that is charged for
-	// submitting an order.
-	defaultOrderSubmitFee = 1337
-
 	// DefaultExecutionFeeBase is the default base fee in satoshis that we
 	// charge per matched order.
 	DefaultExecutionFeeBase = 1
@@ -124,7 +120,6 @@ type Config struct {
 	Network string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
 	BaseDir string `long:"basedir" description:"The base directory where auctionserver stores all its data"`
 
-	OrderSubmitFee   int64         `long:"ordersubmitfee" description:"Flat one-time fee (sat) to submit an order."`
 	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
 
 	ExecFeeBase int64 `long:"execfeebase" description:"The execution base fee in satoshis that is charged per matched order."`
@@ -167,7 +162,6 @@ type Config struct {
 var DefaultConfig = &Config{
 	Network:          "mainnet",
 	BaseDir:          DefaultBaseDir,
-	OrderSubmitFee:   defaultOrderSubmitFee,
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
 	MaxAcctValue:     defaultMaxAcctValue,
