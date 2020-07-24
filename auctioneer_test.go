@@ -223,7 +223,7 @@ type mockWallet struct {
 
 	balance btcutil.Amount
 
-	lastTx *wire.MsgTx
+	lastTxs []*wire.MsgTx
 }
 
 func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
@@ -232,13 +232,15 @@ func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
 	m.Lock()
 	defer m.Unlock()
 
-	m.lastTx = wire.NewMsgTx(2)
-	m.lastTx.TxIn = []*wire.TxIn{
+	lastTx := wire.NewMsgTx(2)
+	lastTx.TxIn = []*wire.TxIn{
 		{},
 	}
-	m.lastTx.TxOut = outputs
+	lastTx.TxOut = outputs
 
-	return m.lastTx, nil
+	m.lastTxs = append(m.lastTxs, lastTx)
+
+	return lastTx, nil
 }
 
 func (m *mockWallet) ConfirmedWalletBalance(context.Context) (btcutil.Amount, error) {
@@ -252,18 +254,14 @@ func (m *mockWallet) ListTransactions(context.Context) ([]*wire.MsgTx, error) {
 	m.RLock()
 	defer m.RUnlock()
 
-	if m.lastTx == nil {
-		return nil, nil
-	}
-
-	return []*wire.MsgTx{m.lastTx}, nil
+	return m.lastTxs, nil
 }
 
 func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {
 	m.Lock()
 	defer m.Unlock()
 
-	m.lastTx = tx
+	m.lastTxs = append(m.lastTxs, tx)
 	return nil
 }
 
@@ -505,7 +503,7 @@ func (a *auctioneerTestHarness) AssertTxBroadcast() *wire.MsgTx {
 		a.wallet.RLock()
 		defer a.wallet.RUnlock()
 
-		if a.wallet.lastTx == nil {
+		if len(a.wallet.lastTxs) != 1 {
 			return fmt.Errorf("no tx broadcast")
 		}
 
@@ -519,7 +517,30 @@ func (a *auctioneerTestHarness) AssertTxBroadcast() *wire.MsgTx {
 
 	a.wallet.RLock()
 	defer a.wallet.RUnlock()
-	return a.wallet.lastTx
+	return a.wallet.lastTxs[0]
+}
+
+func (a *auctioneerTestHarness) AssertNTxsBroadcast(n int) []*wire.MsgTx {
+	var txs []*wire.MsgTx
+	checkBroadcast := func() error {
+		a.wallet.RLock()
+		defer a.wallet.RUnlock()
+
+		if len(a.wallet.lastTxs) != n {
+			return fmt.Errorf("%d txs broadcast",
+				len(a.wallet.lastTxs))
+		}
+
+		txs = a.wallet.lastTxs
+		return nil
+	}
+
+	err := wait.NoError(checkBroadcast, time.Second*5)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+
+	return txs
 }
 
 func (a *auctioneerTestHarness) RestartAuctioneer() {
@@ -540,9 +561,11 @@ func (a *auctioneerTestHarness) RestartAuctioneer() {
 	a.StartAuctioneer()
 }
 
-func (a *auctioneerTestHarness) SendConf(tx *wire.MsgTx) {
-	a.notifier.ConfChan <- &chainntnfs.TxConfirmation{
-		Tx: tx,
+func (a *auctioneerTestHarness) SendConf(txs ...*wire.MsgTx) {
+	for _, tx := range txs {
+		a.notifier.ConfChan <- &chainntnfs.TxConfirmation{
+			Tx: tx,
+		}
 	}
 }
 
@@ -973,45 +996,76 @@ func TestAuctioneerLoadDiskOrders(t *testing.T) {
 }
 
 // TestAuctioneerPendingBatchRebroadcast tests that if we come online, and
-// there's a pending batch on disk, then we'll broadcast the pending batch.
+// there are pending batches on disk, then we'll re-broadcast them.
 func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 	t.Parallel()
+
+	const numPending = 3
 
 	// First, we'll start up the auctioneer as normal.
 	testHarness := newAuctioneerTestHarness(t)
 
-	// We'll grab the current batch key, then increment it by one. The new
-	// batch key will be the current batch key from the PoV of the
-	// auctioneer.
-	startingBatchKey := testHarness.db.batchKey
-	nextBatchKey := clmscript.IncrementKey(startingBatchKey)
-	testHarness.db.batchKey = nextBatchKey
+	// We'll grab the current batch key, then increment it by every time we
+	// create a new batch below.
+	currentBatchKey := testHarness.db.batchKey
 
-	batchTx := &wire.MsgTx{
-		TxOut: []*wire.TxOut{
-			{
-				PkScript: key[:],
+	var batchKeys []*btcec.PublicKey
+	for i := 0; i < numPending; i++ {
+		// Create a batch tx, using the script to encode what batch
+		// this corresponds to.
+		var s [32]byte
+		copy(s[:], key[:])
+		s[0] = byte(i)
+		batchTx := &wire.MsgTx{
+			TxOut: []*wire.TxOut{
+				{
+					PkScript: s[:],
+				},
 			},
-		},
-	}
+		}
 
-	// We'll now insert a pending batch snapshot and transaction, marking
-	// it as unconfirmed.
-	testHarness.MarkBatchUnconfirmed(startingBatchKey, batchTx)
+		// We'll now insert a pending batch snapshot and transaction,
+		// marking it as unconfirmed.
+		testHarness.MarkBatchUnconfirmed(currentBatchKey, batchTx)
+		batchKeys = append(batchKeys, currentBatchKey)
+
+		// Now that the new batch has been marked unconfirmed, we
+		// increment the current batch key by one. The new batch key
+		// will be the current batch key from the PoV of the
+		// auctioneer.
+		currentBatchKey = clmscript.IncrementKey(currentBatchKey)
+		testHarness.db.batchKey = currentBatchKey
+	}
 
 	// Now that the batch is marked unconfirmed, we'll start up the
 	// auctioneer. It should recognize this batch is still unconfirmed, and
-	// publish the transaction again.
+	// publish the unconfirmed batch transactions again.
 	testHarness.StartAuctioneer()
-	broadcastTx := testHarness.AssertTxBroadcast()
+	broadcastTxs := testHarness.AssertNTxsBroadcast(numPending)
 
-	// The auctioneer should now be waiting for this transaction to
+	if len(broadcastTxs) != numPending {
+		t.Fatalf("expected %d transactions, found %d",
+			numPending, len(broadcastTxs))
+	}
+
+	// The order of the broadcasted transactions should be the same as the
+	// original ordering.
+	for i, tx := range broadcastTxs {
+		b := tx.TxOut[0].PkScript[0]
+		if b != byte(i) {
+			t.Fatalf("tx %d had script byte %d", i, b)
+		}
+	}
+
+	// The auctioneer should now be waiting for these transactions to
 	// confirm, so we'll dispatch a confirmation.
-	testHarness.SendConf(broadcastTx)
+	testHarness.SendConf(broadcastTxs...)
 
 	// At this point, the batch that was marked unconfirmed, should now
 	// show up as being confirmed.
-	testHarness.AssertBatchConfirmed(startingBatchKey)
+	for _, batchKey := range batchKeys {
+		testHarness.AssertBatchConfirmed(batchKey)
+	}
 }
 
 // TestAuctioneerBatchTickNoop tests that if a master account is present, and
