@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	interval           = 50 * time.Millisecond
+	interval           = 100 * time.Millisecond
 	numActiveTicks     = 3
-	timestampTolerance = 5 * time.Millisecond
+	timestampTolerance = 10 * time.Millisecond
 )
 
 var tickers = []struct {
@@ -130,6 +130,16 @@ func assertTickTimeUpdated(t *testing.T, ticker *subasta.IntervalAwareForceTicke
 
 	lastTick := ticker.LastTimedTick()
 	diffToTarget := time.Until(lastTick)
+
+	// It could be that the ticker is just about to tick. If that's the
+	// case, we sleep to allow it to update the last timed tick.
+	if float64(diffToTarget) < -float64(interval-timestampTolerance) {
+		time.Sleep(timestampTolerance / 2)
+
+		lastTick = ticker.LastTimedTick()
+		diffToTarget = time.Until(lastTick)
+	}
+
 	if math.Abs(float64(diffToTarget)) > float64(timestampTolerance) {
 		t.Fatalf("Expected last tick %v to be within %v of tolerance "+
 			"of %v but was %v", lastTick, timestampTolerance,
