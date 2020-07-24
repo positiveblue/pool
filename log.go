@@ -3,17 +3,21 @@
 package subasta
 
 import (
+	"context"
+
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
+	"google.golang.org/grpc"
 )
 
 const Subsystem = "SRVR"
@@ -21,6 +25,7 @@ const Subsystem = "SRVR"
 var (
 	logWriter = build.NewRotatingLogWriter()
 	log       = build.NewSubLogger(Subsystem, logWriter.GenSubLogger)
+	rpcLog    = build.NewSubLogger("RPCS", logWriter.GenSubLogger)
 
 	// SupportedSubsystems is a function that returns a list of all
 	// supported logging sub systems.
@@ -29,6 +34,7 @@ var (
 
 func init() {
 	setSubLogger(Subsystem, log, nil)
+	setSubLogger("RPCS", log, nil)
 	addSubLogger(subastadb.Subsystem, subastadb.UseLogger)
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("SGNL", signal.UseLogger)
@@ -38,6 +44,7 @@ func init() {
 	addSubLogger(venue.Subsystem, venue.UseLogger)
 	addSubLogger(auth.Subsystem, auth.UseLogger)
 	addSubLogger(chanenforcement.Subsystem, chanenforcement.UseLogger)
+	addSubLogger(monitoring.Subsystem, monitoring.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the
@@ -55,5 +62,42 @@ func setSubLogger(subsystem string, logger btclog.Logger,
 	logWriter.RegisterSubLogger(subsystem, logger)
 	if useLogger != nil {
 		useLogger(logger)
+	}
+}
+
+// errorLogUnaryServerInterceptor is a simple UnaryServerInterceptor that will
+// automatically log any errors that occur when serving a client's unary
+// request.
+func errorLogUnaryServerInterceptor(
+	logger btclog.Logger) grpc.UnaryServerInterceptor { // nolint:interfacer
+
+	return func(ctx context.Context, req interface{}, info *grpc.UnaryServerInfo,
+		handler grpc.UnaryHandler) (interface{}, error) {
+
+		resp, err := handler(ctx, req)
+		if err != nil {
+			// TODO(roasbeef): also log request details?
+			logger.Errorf("[%v]: %v", info.FullMethod, err)
+		}
+
+		return resp, err
+	}
+}
+
+// errorLogStreamServerInterceptor is a simple StreamServerInterceptor that
+// will log any errors that occur while processing a client or server streaming
+// RPC.
+func errorLogStreamServerInterceptor(
+	logger btclog.Logger) grpc.StreamServerInterceptor { // nolint:interfacer
+
+	return func(srv interface{}, ss grpc.ServerStream,
+		info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+
+		err := handler(srv, ss)
+		if err != nil {
+			logger.Errorf("[%v]: %v", info.FullMethod, err)
+		}
+
+		return err
 	}
 }

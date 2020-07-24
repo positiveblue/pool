@@ -11,6 +11,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
+	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/kirin/auth"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
@@ -18,7 +19,9 @@ import (
 	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -101,6 +104,8 @@ type Server struct {
 
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
+
+	cfg *Config
 
 	store subastadb.Store
 
@@ -195,6 +200,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	})
 
 	server := &Server{
+		cfg:            cfg,
 		lnd:            lnd,
 		store:          store,
 		accountManager: accountManager,
@@ -253,9 +259,37 @@ func NewServer(cfg *Config) (*Server, error) {
 		interceptor = &regtestInterceptor{}
 	}
 	serverOpts := []grpc.ServerOption{
-		grpc.UnaryInterceptor(interceptor.UnaryInterceptor),
-		grpc.StreamInterceptor(interceptor.StreamInterceptor),
+		grpc.ChainUnaryInterceptor(
+			interceptor.UnaryInterceptor,
+			errorLogUnaryServerInterceptor(rpcLog),
+		),
+		grpc.ChainStreamInterceptor(
+			interceptor.StreamInterceptor,
+			errorLogStreamServerInterceptor(rpcLog),
+		),
 	}
+
+	// Prometheus itself needs a gRPC interceptor to measure performance
+	// of the API calls. We chain them together with the LSAT interceptor.
+	if cfg.Prometheus.Active {
+		cfg.Prometheus.Store = store
+		cfg.Prometheus.Lnd = lnd.LndServices
+
+		serverOpts = []grpc.ServerOption{
+			grpc.ChainUnaryInterceptor(
+				interceptor.UnaryInterceptor,
+				errorLogUnaryServerInterceptor(rpcLog),
+				grpc_prometheus.UnaryServerInterceptor,
+			),
+			grpc.ChainStreamInterceptor(
+				interceptor.StreamInterceptor,
+				errorLogStreamServerInterceptor(rpcLog),
+				grpc_prometheus.StreamServerInterceptor,
+			),
+		}
+	}
+
+	// Append TLS configuration to server options.
 	certOpts, err := extractCertOpt(cfg)
 	if err != nil {
 		return nil, err
@@ -362,6 +396,31 @@ func (s *Server) Start() error {
 			return
 		}
 
+		// Start the prometheus exporter if activated in the config.
+		if s.cfg.Prometheus.Active {
+			// Now let's open a persistent connection to the chain backend
+			// that we use to query transactions.
+			s.cfg.Prometheus.BitcoinClient, err = chain.NewClient(
+				s.cfg.Bitcoin,
+			)
+			if err != nil {
+				startErr = fmt.Errorf("unable to start chain "+
+					"client: %v", err)
+				return
+			}
+
+			promClient := monitoring.NewPrometheusExporter(
+				s.cfg.Prometheus,
+			)
+			log.Infof("Starting Prometheus exporter: @%v",
+				s.cfg.Prometheus.ListenAddr)
+			if err := promClient.Start(); err != nil {
+				startErr = fmt.Errorf("unable to start "+
+					"Prometheus exporter: %v", err)
+				return
+			}
+		}
+
 		// Start the gRPC server itself.
 		err = s.rpcServer.Start()
 		if err != nil {
@@ -406,10 +465,15 @@ func (s *Server) Stop() error {
 				err)
 			return
 		}
+
 		s.orderBook.Stop()
 		s.accountManager.Stop()
 		s.lnd.Close()
 		s.wg.Wait()
+
+		if s.cfg.Prometheus.Active {
+			s.cfg.Prometheus.BitcoinClient.Shutdown()
+		}
 	})
 
 	return stopErr
