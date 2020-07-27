@@ -17,6 +17,7 @@ service AuctionAdmin {
     rpc BatchSnapshot (clmrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
     rpc ListBans (EmptyRequest) returns (ListBansResponse);
     rpc RemoveBan (RemoveBanRequest) returns (EmptyResponse);
+    rpc RemoveReservation (RemoveReservationRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -265,4 +266,17 @@ message AdminBatchSnapshotResponse {
 
     // The batch transaction including all witness data.
     bytes batch_tx = 6;
+}
+
+message RemoveReservationRequest {
+    oneof reservation {
+        /*
+        Remove the reservation of an account, identified by the trader's account
+        key.
+        */
+        bytes trader_key = 1;
+
+        // Remove the reservation of an LSAT, identified by the LSAT's token ID.
+        bytes lsat = 2;
+    }
 }
