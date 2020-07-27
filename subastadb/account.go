@@ -184,19 +184,45 @@ func (s *EtcdStore) CompleteReservation(ctx context.Context,
 	// atomically. Create both operations in an STM to commit them under the
 	// same database transaction.
 	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
-		// First, make sure we have an active reservation for the LSAT
-		// token associated with the account.
-		reservationKey := s.getReservationKey(a.TokenID)
-		reservation := stm.Get(reservationKey)
-		if reservation == "" {
-			return account.ErrNoReservation
+		err := s.removeReservation(stm, a.TokenID)
+		if err != nil {
+			return err
 		}
 
-		stm.Del(reservationKey)
 		stm.Put(s.getAccountKey(traderKey), buf.String())
 		return nil
 	})
 	return err
+}
+
+// RemoveReservation deletes a reservation identified by the LSAT ID.
+func (s *EtcdStore) RemoveReservation(ctx context.Context,
+	id lsat.TokenID) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		return s.removeReservation(stm, id)
+	})
+	return err
+}
+
+// removeReservation removes a single reservation by its LSAT ID in the given
+// STM transaction. If no reservation exists, the whole STM transaction will
+// fail.
+func (s *EtcdStore) removeReservation(stm conc.STM, id lsat.TokenID) error {
+	// First, make sure we have an active reservation for the LSAT
+	// token associated with the account.
+	reservationKey := s.getReservationKey(id)
+	reservation := stm.Get(reservationKey)
+	if reservation == "" {
+		return account.ErrNoReservation
+	}
+
+	stm.Del(reservationKey)
+	return nil
 }
 
 // UpdateAccount updates an account in the database according to the given
