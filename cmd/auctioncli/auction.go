@@ -29,6 +29,7 @@ var auctionCommands = []cli.Command{
 			statusCommand,
 			batchSnapshotCommand,
 			removeBanCommand,
+			removeReservationCommand,
 		},
 	},
 }
@@ -187,7 +188,7 @@ var batchSnapshotCommand = cli.Command{
 	}),
 }
 
-var removeBanCommand = cli.Command{
+var removeBanCommand = cli.Command{ // nolint:dupl
 	Name:      "removeban",
 	ShortName: "rm",
 	Usage:     "remove a banned trader, either by account key or node key",
@@ -199,7 +200,7 @@ var removeBanCommand = cli.Command{
 		},
 		cli.StringFlag{
 			Name:  "node_key",
-			Usage: "the hex encoded trader account key",
+			Usage: "the hex encoded trader node key",
 		},
 	},
 	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
@@ -235,5 +236,58 @@ var removeBanCommand = cli.Command{
 		}
 
 		return client.RemoveBan(ctx, req)
+	}),
+}
+
+var removeReservationCommand = cli.Command{ // nolint:dupl
+	Name:      "removereservation",
+	ShortName: "rr",
+	Usage:     "remove a reserved account, either by account key or LSAT ID",
+	ArgsUsage: "--account_key | --lsat_id",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  "account_key",
+			Usage: "the hex encoded trader account key",
+		},
+		cli.StringFlag{
+			Name:  "lsat_id",
+			Usage: "the hex encoded trader LSAT ID",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		if cliCtx.NArg() != 0 || cliCtx.NumFlags() != 1 {
+			return nil, cli.ShowCommandHelp(
+				cliCtx, "removereservation",
+			)
+		}
+
+		req := &adminrpc.RemoveReservationRequest{}
+		switch {
+		case cliCtx.IsSet("account_key"):
+			acctKey, err := hex.DecodeString(
+				cliCtx.String("account_key"),
+			)
+			if err != nil {
+				return nil, err
+			}
+			req.Reservation = &adminrpc.RemoveReservationRequest_TraderKey{
+				TraderKey: acctKey,
+			}
+
+		case cliCtx.IsSet("lsat_id"):
+			lsatID, err := hex.DecodeString(
+				cliCtx.String("lsat_id"),
+			)
+			if err != nil {
+				return nil, err
+			}
+			req.Reservation = &adminrpc.RemoveReservationRequest_Lsat{
+				Lsat: lsatID,
+			}
+		}
+
+		return client.RemoveReservation(ctx, req)
 	}),
 }
