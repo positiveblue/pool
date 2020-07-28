@@ -341,3 +341,65 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 		t.Fatalf("fee scaling property violated: %v", err)
 	}
 }
+
+type dustAccScenario struct {
+	orderSet    []matching.MatchedOrder
+	endingAccsA int32
+	endingAccsB int32
+}
+
+// TestChainFeeEstimatorDustAccounts asserts the property that the lower number
+// of trader accounts that are recreated on the batch tx, the smaller will the
+// total batch tx weight be.
+func TestChainFeeEstimatorDustAccounts(t *testing.T) {
+	t.Parallel()
+
+	n := 0
+	scenario := func(d dustAccScenario) bool {
+		set := d.orderSet
+
+		estimator := newChainFeeEstimator(set, testFeeRate)
+
+		weightA := estimator.EstimateBatchWeight(int(d.endingAccsA))
+		weightB := estimator.EstimateBatchWeight(int(d.endingAccsB))
+
+		switch {
+		case d.endingAccsA < d.endingAccsB && weightA >= weightB:
+			t.Logf("tx A should be smaller than B")
+			return false
+
+		case d.endingAccsA > d.endingAccsB && weightA <= weightB:
+			t.Logf("tx A should be larger than B")
+			return false
+
+		case d.endingAccsA == d.endingAccsB && weightA != weightB:
+			t.Logf("tx A should be the equal to B")
+			return false
+		}
+
+		n++
+		return true
+	}
+	quickCfg := quick.Config{
+		Values: func(v []reflect.Value, r *rand.Rand) {
+			set := genRandMatchedOrders(
+				r,
+				rand.Int31n(100),
+				rand.Int31n(50),
+			)
+
+			testCase := dustAccScenario{
+				orderSet:    set,
+				endingAccsA: rand.Int31n(50),
+				endingAccsB: rand.Int31n(50),
+			}
+
+			v[0] = reflect.ValueOf(testCase)
+		},
+	}
+	if err := quick.Check(scenario, &quickCfg); err != nil {
+		t.Fatalf("batch weight property violated: %v", err)
+	}
+
+	t.Logf("Total number of scenarios run: %v", n)
+}
