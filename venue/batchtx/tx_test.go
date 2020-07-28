@@ -321,10 +321,6 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	// Next, we'll ensure that each trader has an entry in the chain fee
 	// index and account input index.
 	for _, trader := range traders {
-		if _, ok := batchTxCtx.ChainFeeForTrader(trader.TraderKeyRaw); !ok {
-			t.Fatalf("no chain fee entry for %x found",
-				trader.TraderKeyRaw[:])
-		}
 		if _, ok := batchTxCtx.AcctInputForTrader(trader.TraderKeyRaw); !ok {
 			t.Fatalf("acct input entry for %x found",
 				trader.TraderKeyRaw[:])

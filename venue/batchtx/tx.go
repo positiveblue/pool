@@ -118,10 +118,6 @@ type ExecutionContext struct {
 	// execute.
 	OrderBatch *matching.OrderBatch
 
-	// batchFees maps a trader's account ID to the amount of fees they need
-	// to pay in this batch.
-	batchFees map[matching.AccountID]btcutil.Amount
-
 	// orderIndex maps an order nonce to the output within the batch
 	// execution transaction that executes the order.
 	orderIndex map[orderT.Nonce][]*OrderOutput
@@ -410,7 +406,6 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		//
 		// TODO(roasbeef): dustiness
 		traderOutput.Value -= int64(traderFee)
-		e.batchFees[acctID] = traderFee
 
 		// With our internal indexes updated, we'll now also need to
 		// update the account diff themselves, which should reflect the
@@ -490,7 +485,6 @@ func New(batch *matching.OrderBatch, mad *MasterAccountState,
 	feeRate chainfee.SatPerKWeight) (*ExecutionContext, error) {
 
 	exeCtx := ExecutionContext{
-		batchFees:      make(map[matching.AccountID]btcutil.Amount),
 		orderIndex:     make(map[orderT.Nonce][]*OrderOutput),
 		traderIndex:    make(map[matching.AccountID][]*OrderOutput),
 		accountIndex:   make(map[matching.AccountID]wire.OutPoint),
@@ -535,11 +529,4 @@ func (e *ExecutionContext) AcctOutputForTrader(acct matching.AccountID) (wire.Ou
 func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (AcctInput, bool) {
 	input, ok := e.acctInputIndex[acct]
 	return *input, ok
-}
-
-// ChainFeeForTrader returns the total chain fees that the target trader needs
-// to pay in the batch execution transaction.
-func (e *ExecutionContext) ChainFeeForTrader(trader matching.AccountID) (btcutil.Amount, bool) {
-	fees, ok := e.batchFees[trader]
-	return fees, ok
 }
