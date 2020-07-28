@@ -299,12 +299,21 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	txFeeEstimator := newChainFeeEstimator(
 		orderBatch.Orders, feeRate,
 	)
+
+	var totalTraderFees btcutil.Amount
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
 		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
 
-		// With our internal indexes updated, we'll now also need to
-		// update the account diff themselves, which should reflect the
-		// end chain fee aid.
+		// The trader cannot actually pay a fee bigger than what
+		// remains in the account.
+		if traderFee <= trader.EndingBalance {
+			totalTraderFees += traderFee
+		} else {
+			totalTraderFees += trader.EndingBalance
+		}
+
+		// Update the account diff, which should reflect the end chain
+		// fee paid.
 		trader.EndingBalance -= traderFee
 	}
 
@@ -314,6 +323,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// the way, we'll also generate an index from the multi-sig script to
 	// the order nonce for the account.
 	traderAccounts := make(map[matching.AccountID]*wire.TxOut)
+	var traderOuts int
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
 		acctParams := trader.StartingState
 
@@ -355,6 +365,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		orderBatch.FeeReport.AccountDiffs[acctID] = trader
 
 		e.ExeTx.AddTxOut(traderAccountTxOut)
+		traderOuts++
 	}
 
 	// Now that we have the account state present within the ExeTx, we'll
@@ -413,7 +424,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	finalAccountBalance += int64(
 		orderBatch.FeeReport.AuctioneerFeesAccrued,
 	)
-	finalAccountBalance -= int64(txFeeEstimator.AuctioneerFee())
+	finalAccountBalance -= int64(
+		txFeeEstimator.AuctioneerFee(
+			totalTraderFees, traderOuts,
+		),
+	)
 
 	log.Infof("Master Auctioneer Output balance delta: prev_bal=%v, "+
 		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,

@@ -223,9 +223,10 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 		setA, setB := set.orderSetA, set.orderSetB
 
 		estA := newChainFeeEstimator(setA, testFeeRate)
-		feeSetA := estA.EstimateBatchWeight()
+		feeSetA := estA.EstimateBatchWeight(len(estA.traderChanCount))
+
 		estB := newChainFeeEstimator(setB, testFeeRate)
-		feeSetB := estB.EstimateBatchWeight()
+		feeSetB := estB.EstimateBatchWeight(len(estB.traderChanCount))
 
 		aLarger := (len(estA.traderChanCount) > len(estB.traderChanCount) &&
 			len(estA.orders) > len(estB.orders))
@@ -282,10 +283,25 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 	scenario := func(set matchedOrderSet) bool {
 		setA, setB := set.orderSetA, set.orderSetB
 
-		feeSetA := (newChainFeeEstimator(setA, testFeeRate).
-			AuctioneerFee())
-		feeSetB := (newChainFeeEstimator(setB, testFeeRate).
-			AuctioneerFee())
+		estimateFee := func(
+			orderSet []matching.MatchedOrder) btcutil.Amount {
+
+			estimator := newChainFeeEstimator(orderSet, testFeeRate)
+
+			// Get estimated fees paid by the traders.
+			var traders btcutil.Amount
+			for trader := range estimator.traderChanCount {
+				traders += estimator.EstimateTraderFee(trader)
+			}
+
+			// Given what the traders paid, return auctioneer fee.
+			return estimator.AuctioneerFee(
+				traders, len(estimator.traderChanCount),
+			)
+		}
+
+		feeSetA := estimateFee(setA)
+		feeSetB := estimateFee(setB)
 
 		switch {
 		case set.feeRateA > set.feeRateB && feeSetA < feeSetB:
