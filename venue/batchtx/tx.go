@@ -526,7 +526,7 @@ func (e *ExecutionContext) AcctOutputForTrader(acct matching.AccountID) (wire.Ou
 
 // AcctInputForTrader returns the account input information for the target
 // trader, if it exists.
-func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (AcctInput, bool) {
+func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (*AcctInput, bool) {
 	input, ok := e.acctInputIndex[acct]
-	return *input, ok
+	return input, ok
 }
