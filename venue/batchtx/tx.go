@@ -327,50 +327,52 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
 		acctParams := trader.StartingState
 
-		// TODO(guggero): Only re-create account output if above dust.
+		// If the ending balance is above the dust limit, it will be
+		// recreated. If not the account will be closed.
+		if trader.EndingBalance >= orderT.MinNoDustAccountSize {
+			// Using the set params of the account, and the
+			// information within the account key, we'll create a
+			// new output to place within our transaction.
+			acctKey, err := btcec.ParsePubKey(
+				acctParams.AccountKey[:], btcec.S256(),
+			)
+			if err != nil {
+				return err
+			}
+			batchKey, err := btcec.ParsePubKey(
+				acctParams.NextBatchKey[:], btcec.S256(),
+			)
+			if err != nil {
+				return err
+			}
+			accountScript, err := clmscript.AccountScript(
+				acctParams.AccountExpiry, acctKey,
+				auctioneerKey, batchKey, acctParams.VenueSecret,
+			)
+			if err != nil {
+				return err
+			}
+			traderAccountTxOut := &wire.TxOut{
+				Value:    int64(trader.EndingBalance),
+				PkScript: accountScript,
+			}
 
-		// Using the set params of the account, and the information
-		// within the account key, we'll create a new output to place
-		// within our transaction.
-		acctKey, err := btcec.ParsePubKey(
-			acctParams.AccountKey[:], btcec.S256(),
-		)
-		if err != nil {
-			return err
-		}
-		batchKey, err := btcec.ParsePubKey(
-			acctParams.NextBatchKey[:], btcec.S256(),
-		)
-		if err != nil {
-			return err
-		}
-		accountScript, err := clmscript.AccountScript(
-			acctParams.AccountExpiry, acctKey, auctioneerKey,
-			batchKey, acctParams.VenueSecret,
-		)
-		if err != nil {
-			return err
-		}
-		traderAccountTxOut := &wire.TxOut{
-			Value:    int64(trader.EndingBalance),
-			PkScript: accountScript,
+			// With the output created, we'll update our account
+			// index for our later passes, and also attach the
+			// output directly to the BET (batch execution
+			// transaction)
+			traderAccounts[acctID] = traderAccountTxOut
+			trader.RecreatedOutput = traderAccountTxOut
+			e.ExeTx.AddTxOut(traderAccountTxOut)
+			traderOuts++
 		}
 
-		// With the output created, we'll update our account index for
-		// our later passes, and also attach the output directly to the
-		// BET (batch execution transaction)
-		traderAccounts[acctID] = traderAccountTxOut
-
-		trader.RecreatedOutput = traderAccountTxOut
 		orderBatch.FeeReport.AccountDiffs[acctID] = trader
-
-		e.ExeTx.AddTxOut(traderAccountTxOut)
-		traderOuts++
 	}
 
-	// Now that we have the account state present within the ExeTx, we'll
-	// add the necessary outputs to create all channels purchased in this
-	// batch.
+	// Now that the account outputs have been created, we'll proceed to
+	// adding the necessary outputs to create all channels purchased in
+	// this batch.
 	scriptToOrders := make(map[string][2]order.Order)
 	ordersForTrader := make(map[matching.AccountID]map[orderT.Nonce]struct{})
 	for _, matchedOrder := range orderBatch.Orders {
