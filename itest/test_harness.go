@@ -431,6 +431,8 @@ func assertTraderAccount(t *harnessTest, traderKey []byte, value btcutil.Amount,
 func assertTraderAccountState(t *testing.T, trader *traderHarness,
 	traderKey []byte, state clmrpc.AccountState) {
 
+	t.Helper()
+
 	ctx := context.Background()
 	err := wait.NoError(func() error {
 		list, err := trader.ListAccounts(
