@@ -294,6 +294,20 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		PreviousOutPoint: mAccountDiff.PriorPoint,
 	})
 
+	// Update the ending balances to reflect what the traders need to pay
+	// for the execution transaction.
+	txFeeEstimator := newChainFeeEstimator(
+		orderBatch.Orders, feeRate,
+	)
+	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
+		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
+
+		// With our internal indexes updated, we'll now also need to
+		// update the account diff themselves, which should reflect the
+		// end chain fee aid.
+		trader.EndingBalance -= traderFee
+	}
+
 	// Next, we'll do our first pass amongst the outputs to add the new
 	// outputs for each account involved. The value of these outputs are
 	// the ending balance for each account after applying this batch. Along
@@ -390,27 +404,6 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			ordersForTrader[matchedOrder.Bidder.AccountKey] = bidderOrders
 		}
 		bidderOrders[bidNonce] = struct{}{}
-	}
-
-	// Next, we'll update each of the account outputs in the ExeTx to
-	// reflect the fees that each trader needs to pay for the execution
-	// transaction.
-	txFeeEstimator := newChainFeeEstimator(
-		orderBatch.Orders, feeRate,
-	)
-	for acctID, traderOutput := range traderAccounts {
-		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
-
-		// Now that we know the fee for this trader, we'll first update
-		// our indexes for our callers.
-		//
-		// TODO(roasbeef): dustiness
-		traderOutput.Value -= int64(traderFee)
-
-		// With our internal indexes updated, we'll now also need to
-		// update the account diff themselves, which should reflect the
-		// end chain fee aid.
-		orderBatch.FeeReport.AccountDiffs[acctID].EndingBalance -= traderFee
 	}
 
 	// Finally, we'll tack on our master account output, and pay any
