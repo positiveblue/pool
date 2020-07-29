@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntest"
 )
 
 // testBatchExecution is an end-to-end test of the entire system. In this test,
@@ -368,8 +369,15 @@ func testBatchExecution(t *harnessTest) {
 
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
+}
+
+// closeAllChannals closes and asserts all channels to node are closed.
+func closeAllChannels(ctx context.Context, t *harnessTest,
+	node *lntest.HarnessNode) {
+
 	chanReq := &lnrpc.ListChannelsRequest{}
-	openChans, err := charlie.ListChannels(context.Background(), chanReq)
+	openChans, err := node.ListChannels(context.Background(), chanReq)
 	if err != nil {
 		t.Fatalf("unable to list charlie's channels: %v", err)
 	}
@@ -392,18 +400,17 @@ func testBatchExecution(t *harnessTest) {
 			OutputIndex: uint32(index),
 		}
 		closeUpdates, _, err := t.lndHarness.CloseChannel(
-			ctx, charlie, chanPoint, false,
+			ctx, node, chanPoint, false,
 		)
 		if err != nil {
 			t.Fatalf("unable to close channel: %v", err)
 		}
 
 		assertChannelClosed(
-			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
+			ctx, t, t.lndHarness, node, chanPoint, closeUpdates,
 			false,
 		)
 	}
-
 }
 
 // testUnconfirmedBatchChain tests that the server supports publishing batches
@@ -579,41 +586,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
-	chanReq := &lnrpc.ListChannelsRequest{}
-	openChans, err := charlie.ListChannels(context.Background(), chanReq)
-	if err != nil {
-		t.Fatalf("unable to list charlie's channels: %v", err)
-	}
-	for _, openChan := range openChans.Channels {
-		chanPointStr := openChan.ChannelPoint
-		chanPointParts := strings.Split(chanPointStr, ":")
-		txid, err := chainhash.NewHashFromStr(chanPointParts[0])
-		if err != nil {
-			t.Fatalf("unable txid to convert to hash: %v", err)
-		}
-		index, err := strconv.Atoi(chanPointParts[1])
-		if err != nil {
-			t.Fatalf("unable to convert string to int: %v", err)
-		}
-
-		chanPoint := &lnrpc.ChannelPoint{
-			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
-				FundingTxidBytes: txid[:],
-			},
-			OutputIndex: uint32(index),
-		}
-		closeUpdates, _, err := t.lndHarness.CloseChannel(
-			ctx, charlie, chanPoint, false,
-		)
-		if err != nil {
-			t.Fatalf("unable to close channel: %v", err)
-		}
-
-		assertChannelClosed(
-			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
-			false,
-		)
-	}
+	closeAllChannels(ctx, t, charlie)
 }
 
 // assertBatchSnapshot asserts that a batch identified by the passed batchID is
@@ -966,40 +939,5 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
-	chanReq := &lnrpc.ListChannelsRequest{}
-	openChans, err := charlie.ListChannels(context.Background(), chanReq)
-	if err != nil {
-		t.Fatalf("unable to list charlie's channels: %v", err)
-	}
-	for _, openChan := range openChans.Channels {
-		chanPointStr := openChan.ChannelPoint
-		chanPointParts := strings.Split(chanPointStr, ":")
-		txid, err := chainhash.NewHashFromStr(chanPointParts[0])
-		if err != nil {
-			t.Fatalf("unable txid to convert to hash: %v", err)
-		}
-		index, err := strconv.Atoi(chanPointParts[1])
-		if err != nil {
-			t.Fatalf("unable to convert string to int: %v", err)
-		}
-
-		chanPoint := &lnrpc.ChannelPoint{
-			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
-				FundingTxidBytes: txid[:],
-			},
-			OutputIndex: uint32(index),
-		}
-		closeUpdates, _, err := t.lndHarness.CloseChannel(
-			ctx, charlie, chanPoint, false,
-		)
-		if err != nil {
-			t.Fatalf("unable to close channel: %v", err)
-		}
-
-		assertChannelClosed(
-			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
-			false,
-		)
-	}
-
+	closeAllChannels(ctx, t, charlie)
 }
