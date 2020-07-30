@@ -308,7 +308,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// remains in the account.
 		if traderFee <= trader.EndingBalance {
 			totalTraderFees += traderFee
-		} else {
+		} else if trader.EndingBalance >= 0 {
 			totalTraderFees += trader.EndingBalance
 		}
 
@@ -327,9 +327,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
 		acctParams := trader.StartingState
 
+		switch {
+
 		// If the ending balance is above the dust limit, it will be
 		// recreated. If not the account will be closed.
-		if trader.EndingBalance >= orderT.MinNoDustAccountSize {
+		case trader.EndingBalance >= orderT.MinNoDustAccountSize:
 			// Using the set params of the account, and the
 			// information within the account key, we'll create a
 			// new output to place within our transaction.
@@ -365,6 +367,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			trader.RecreatedOutput = traderAccountTxOut
 			e.ExeTx.AddTxOut(traderAccountTxOut)
 			traderOuts++
+
+		// If the trader's balance was below dust, it will go to chain
+		// fees.
+		case trader.EndingBalance >= 0:
+			totalTraderFees += trader.EndingBalance
 		}
 
 		orderBatch.FeeReport.AccountDiffs[acctID] = trader
