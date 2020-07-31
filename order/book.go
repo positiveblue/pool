@@ -97,7 +97,7 @@ func (b *Book) Stop() {
 
 // PrepareOrder validates an incoming order and stores it to the database.
 func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
-	bestHeight uint32) error {
+	feeSchedule order.FeeSchedule, bestHeight uint32) error {
 
 	// Get the account that is making this order.
 	acctKey, err := btcec.ParsePubKey(
@@ -125,6 +125,23 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 		return err
 	}
 
+	// The order was valid in isolation, but it still might be the case the
+	// account has active orders that make the balance too low to accept
+	// this additional order. We check the total locked value in case this
+	// order is added.
+	totalCost, err := b.LockedValue(
+		ctx, o.Details().AcctKey, feeSchedule, o,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Check if the trader can afford this set of orders in the worst case.
+	if totalCost > acct.Value {
+		return ErrInvalidAmt
+	}
+
+	// Order can be safely submitted.
 	err = b.cfg.Store.SubmitOrder(ctx, o)
 	if err != nil {
 		return err
@@ -167,6 +184,39 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	}
 
 	return err
+}
+
+// LockedValue uses the current active orders for the given account to
+// calculate an upper bound of how much might be deducted from the account if
+// they are matched. newOrders can be added to get this upper bound if
+// additional orders are added.
+func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
+	feeSchedule order.FeeSchedule, newOrders ...ServerOrder) (
+	btcutil.Amount, error) {
+
+	// We fetch all existing orders for this account from the store.
+	allOrders, err := b.cfg.Store.GetOrders(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	var reservedValue btcutil.Amount
+	for _, o := range allOrders {
+		// Filter by account.
+		if o.Details().AcctKey != acctKey {
+			continue
+		}
+
+		reservedValue += o.ReservedValue(feeSchedule)
+	}
+
+	// Add the new orders to the list if any and return the worst case
+	// cost.
+	for _, o := range newOrders {
+		reservedValue += o.ReservedValue(feeSchedule)
+	}
+
+	return reservedValue, nil
 }
 
 // validateAccountState makes sure the account is in a state where we can
@@ -247,7 +297,6 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 
 	// Now parse the order type specific fields and validate that the
 	// account has enough balance for the requested order.
-	var balanceNeeded btcutil.Amount
 	switch o := srvOrder.(type) {
 	case *Ask:
 		if o.MaxDuration() < order.MinimumOrderDurationBlocks {
@@ -258,7 +307,6 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 			return fmt.Errorf("maximum allowed value for max "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
-		balanceNeeded = o.Amt
 
 	case *Bid:
 		if o.MinDuration() < order.MinimumOrderDurationBlocks {
@@ -269,25 +317,6 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 			return fmt.Errorf("maximum allowed value for min "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
-		rate := order.FixedRatePremium(o.FixedRate)
-		orderFee := rate.LumpSumPremium(o.Amt, o.MinDuration())
-		balanceNeeded = orderFee
-	}
-
-	acctKey, err := btcec.ParsePubKey(
-		srvOrder.Details().AcctKey[:], btcec.S256(),
-	)
-	if err != nil {
-		return err
-	}
-	acct, err := b.cfg.Store.Account(ctx, acctKey, false)
-	if err != nil {
-		return fmt.Errorf("unable to locate account with key %x: %v",
-			acctKey.SerializeCompressed(), err)
-	}
-
-	if acct.Value < balanceNeeded {
-		return ErrInvalidAmt
 	}
 
 	return nil

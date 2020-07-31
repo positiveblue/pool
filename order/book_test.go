@@ -33,7 +33,7 @@ var (
 
 	testAccount = account.Account{
 		TraderKeyRaw:  toRawKey(testTraderKey),
-		Value:         200000,
+		Value:         200_000,
 		Expiry:        100,
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateOpen,
@@ -45,7 +45,7 @@ var (
 
 	testAccount2 = account.Account{
 		TraderKeyRaw:  toRawKey(testAuctioneerKey),
-		Value:         200000,
+		Value:         200_000,
 		Expiry:        100,
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateExpired,
@@ -99,6 +99,8 @@ func TestBookPrepareOrder(t *testing.T) {
 	store.Accs[testAccount.TraderKeyRaw] = &testAccount
 	store.Accs[testAccount2.TraderKeyRaw] = &testAccount2
 
+	feeSchedule := orderT.NewLinearFeeSchedule(1, 100)
+
 	book := order.NewBook(&order.BookConfig{
 		MaxDuration: 1234,
 		Store:       store,
@@ -130,7 +132,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					},
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "ask max duration 0",
@@ -148,7 +150,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 0,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "ask max duration low",
@@ -166,7 +168,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 143,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "ask max duration too large",
@@ -184,7 +186,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1235,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "bid min duration 0",
@@ -202,7 +204,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MinDuration: 0,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "bid min duration low",
@@ -220,7 +222,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MinDuration: 143,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "zero amount",
@@ -238,7 +240,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "bid min duration too large",
@@ -256,7 +258,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MinDuration: 1235,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "zero max batch feerate",
@@ -274,7 +276,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "low max batch feerate",
@@ -292,7 +294,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "account balance insufficient",
@@ -310,7 +312,44 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			return book.PrepareOrder(ctxb, o, bestHeight)
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name:        "maker cannot pay fees",
+		expectedErr: order.ErrInvalidAmt.Error(),
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:              200_000,
+						Units:            orderT.NewSupplyFromSats(200_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(200_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+					},
+					MaxDuration: 1024,
+				},
+			}
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name:        "taker cannot pay fees",
+		expectedErr: order.ErrInvalidAmt.Error(),
+		run: func() error {
+			o := &order.Bid{
+				Bid: orderT.Bid{
+					Kit: orderT.Kit{
+						Amt:              2_000_000,
+						Units:            orderT.NewSupplyFromSats(2_000_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(2_000_000),
+						FixedRate:        100_000,
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+					},
+					MinDuration: 1024,
+				},
+			}
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "banned account",
@@ -334,7 +373,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					err)
 			}
 
-			err = book.PrepareOrder(ctxb, o, bestHeight)
+			err = book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 
 			// Before returning the error, unban the account to not
 			// affect any following tests.
@@ -358,7 +397,7 @@ func TestBookPrepareOrder(t *testing.T) {
 					MaxDuration: 1024,
 				},
 			}
-			err := book.PrepareOrder(ctxb, o, bestHeight)
+			err := book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 			if err != nil {
 				return err
 			}
@@ -390,7 +429,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						MaxDuration: 1024,
 					},
 				}
-				return book.PrepareOrder(ctxb, o, bestHeight)
+				return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 			},
 		},
 	}
