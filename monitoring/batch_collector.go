@@ -19,6 +19,10 @@ const (
 	// batchCollector.
 	batchCollectorName = "batch"
 
+	// batchCount is the number of batches that happened up to this point
+	// in time.
+	batchCount = "batch_count"
+
 	// batchNumMatchedOrders is the number of orders matched in each
 	// completed order batch.
 	batchNumMatchedOrders = "batch_num_matched_orders"
@@ -66,6 +70,7 @@ type batchCollector struct {
 func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 	baseLabels := []string{labelBatchID}
 	g := make(gauges)
+	g.addGauge(batchCount, "number of batches", nil)
 	g.addGauge(
 		batchNumMatchedOrders, "number of matched orders", baseLabels,
 	)
@@ -138,6 +143,25 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	}
 	batchKey := decrementBatchKey(currentBatchKey)
 	batchID := orderT.NewBatchID(batchKey)
+
+	// Count the number of batches that happened so far by "counting down"
+	// until we're at the initial key. We start at 1 because if there wasn't
+	// one yet, we'd returned above.
+	numBatches := float64(1)
+	tempBatchKey := batchKey
+	for !tempBatchKey.IsEqual(subastadb.InitialBatchKey) {
+		numBatches++
+		tempBatchKey = decrementBatchKey(tempBatchKey)
+
+		// Unlikely to happen but in case we start from an invalid value
+		// we want to avoid an endless loop. Can't image we'd ever do
+		// more than a million batches before this code is replaced, so
+		// we take that as our safety net.
+		if numBatches > 1e6 {
+			break
+		}
+	}
+	c.g[batchCount].With(nil).Set(numBatches)
 
 	// Fetch the batch by its ID.
 	ctx, cancel = context.WithTimeout(context.Background(), dbTimeout)
