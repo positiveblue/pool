@@ -94,6 +94,7 @@ func testAccountCreation(t *harnessTest) {
 		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
+		Fees: &clmrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
 	if err == nil {
 		t.Fatalf("expected error when exceeding account value limit")
@@ -330,6 +331,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultExpiration,
 		},
+		Fees: &clmrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)

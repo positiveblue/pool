@@ -526,6 +526,13 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *clmrpc.InitAccountRequest) *clmrpc.Account {
 
+	// Add the default conf target of the CLI to the request if it wasn't
+	// set. This removes the need for every test to specify the value
+	// explicitly.
+	if req.Fees == nil {
+		req.Fees = &clmrpc.InitAccountRequest_ConfTarget{ConfTarget: 6}
+	}
+
 	acct, err := trader.InitAccount(context.Background(), req)
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)

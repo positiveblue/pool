@@ -21,7 +21,6 @@ require (
 	github.com/urfave/cli v1.20.0
 	go.etcd.io/etcd v3.3.22+incompatible
 	golang.org/x/crypto v0.0.0-20200510223506-06a226fb4e37
-	google.golang.org/genproto v0.0.0-20200513103714-09dca8ec2884
 	google.golang.org/grpc v1.29.1
 )
 
@@ -30,3 +29,5 @@ go 1.13
 // Fix incompatibility of etcd go.mod package.
 // See https://github.com/etcd-io/etcd/issues/11154
 replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20200520232829-54ba9589114f
+
+replace github.com/lightninglabs/llm => github.com/guggero/llm v0.0.0-20200727155022-ddbc40ff1381

@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -455,6 +456,39 @@ func (s *adminRPCServer) RemoveBan(ctx context.Context,
 		return nil, err
 	}
 	err = removeFn(ctx, key)
+	if err != nil {
+		return nil, err
+	}
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
+func (s *adminRPCServer) RemoveReservation(ctx context.Context,
+	req *adminrpc.RemoveReservationRequest) (*adminrpc.EmptyResponse, error) {
+
+	var tokenID *lsat.TokenID
+	switch {
+	case req.GetTraderKey() != nil:
+		traderKey, err := btcec.ParsePubKey(
+			req.GetTraderKey(), btcec.S256(),
+		)
+		if err != nil {
+			return nil, err
+		}
+		_, tokenID, err = s.store.HasReservationForKey(ctx, traderKey)
+		if err != nil {
+			return nil, err
+		}
+
+	case req.GetLsat() != nil:
+		tokenID = &lsat.TokenID{}
+		copy(tokenID[:], req.GetLsat())
+
+	default:
+		return nil, fmt.Errorf("must set either node or account")
+	}
+
+	err := s.store.RemoveReservation(ctx, *tokenID)
 	if err != nil {
 		return nil, err
 	}
