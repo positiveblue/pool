@@ -121,7 +121,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt: 100000,
+						Amt:     100000,
+						AcctKey: toRawKey(testTraderKey),
 					},
 				},
 			}
@@ -134,7 +135,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt: 100000,
+						Amt:     100000,
+						AcctKey: toRawKey(testTraderKey),
 					},
 					MaxDuration: 0,
 				},
@@ -148,7 +150,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt: 100000,
+						Amt:     100000,
+						AcctKey: toRawKey(testTraderKey),
 					},
 					MaxDuration: 1235,
 				},
@@ -162,7 +165,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Bid{
 				Bid: orderT.Bid{
 					Kit: orderT.Kit{
-						Amt: 100000,
+						Amt:     100000,
+						AcctKey: toRawKey(testTraderKey),
 					},
 					MinDuration: 0,
 				},
@@ -191,7 +195,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Bid{
 				Bid: orderT.Bid{
 					Kit: orderT.Kit{
-						Amt: 100000,
+						Amt:     100000,
+						AcctKey: toRawKey(testTraderKey),
 					},
 					MinDuration: 1235,
 				},

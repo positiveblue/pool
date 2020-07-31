@@ -98,7 +98,28 @@ func (b *Book) Stop() {
 func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	bestHeight uint32) error {
 
-	err := b.validateOrder(ctx, o, bestHeight)
+	// Get the account that is making this order.
+	acctKey, err := btcec.ParsePubKey(
+		o.Details().AcctKey[:], btcec.S256(),
+	)
+	if err != nil {
+		return err
+	}
+
+	acct, err := b.cfg.Store.Account(ctx, acctKey, false)
+	if err != nil {
+		return fmt.Errorf("unable to locate account with key %x: %v",
+			acctKey.SerializeCompressed(), err)
+	}
+
+	// First we make sure the account is ready to submit orders.
+	err = b.validateAccountState(ctx, acctKey, acct, bestHeight)
+	if err != nil {
+		return err
+	}
+
+	// Now that the account is cleared, validate the order.
+	err = b.validateOrder(ctx, o)
 	if err != nil {
 		return err
 	}
@@ -147,12 +168,40 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	return err
 }
 
+// validateAccountState makes sure the account is in a state where we can
+// accept a new order.
+func (b *Book) validateAccountState(ctx context.Context,
+	acctKey *btcec.PublicKey, acct *account.Account,
+	bestHeight uint32) error {
+
+	// Only allow orders to be submitted if the account is open, or open
+	// and pending an update (so they can submit orders while the update is
+	// confirming).
+	switch acct.State {
+	case account.StatePendingUpdate, account.StateOpen:
+	default:
+		return fmt.Errorf("account must be open or pending open to "+
+			"submit orders, instead state=%v", acct.State)
+	}
+
+	// Is the account banned? Don't accept the order.
+	isBanned, expiration, err := b.cfg.Store.IsAccountBanned(
+		ctx, acctKey, bestHeight,
+	)
+	if err != nil {
+		return err
+	}
+	if isBanned {
+		return account.NewErrBannedAccount(expiration)
+	}
+
+	return nil
+}
+
 // validateOrder makes sure the order is formally correct, has a correct
 // signature and that the account has enough balance to actually execute the
 // order.
-func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
-	bestHeight uint32) error {
-
+func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	kit := srvOrder.ServerDetails()
 	kit.ChanType = ChanTypeDefault
 	srvOrder.Details().State = order.StateSubmitted
@@ -222,30 +271,8 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
 			acctKey.SerializeCompressed(), err)
 	}
 
-	// Only allow orders to be submitted if the account is open, or open
-	// and pending an update (so they can submit orders while the update is
-	// confirming).
-	switch acct.State {
-	case account.StatePendingUpdate, account.StateOpen:
-		break
-	default:
-		return fmt.Errorf("account must be open or pending open to "+
-			"submit orders, instead state=%v", acct.State)
-	}
-
 	if acct.Value < balanceNeeded {
 		return ErrInvalidAmt
-	}
-
-	// Is the account banned? Don't accept the order.
-	isBanned, expiration, err := b.cfg.Store.IsAccountBanned(
-		ctx, acctKey, bestHeight,
-	)
-	if err != nil {
-		return err
-	}
-	if isBanned {
-		return account.NewErrBannedAccount(expiration)
 	}
 
 	return nil
