@@ -129,6 +129,9 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	// account has active orders that make the balance too low to accept
 	// this additional order. We check the total locked value in case this
 	// order is added.
+	// TODO(halseth): There is a race if multiple orders come in at the
+	// same time, since we will only check locked value for each against
+	// what is already in the db.
 	totalCost, err := b.LockedValue(
 		ctx, o.Details().AcctKey, feeSchedule, o,
 	)
@@ -195,6 +198,8 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 	btcutil.Amount, error) {
 
 	// We fetch all existing orders for this account from the store.
+	// TODO(halseth): cache order or reserved value, to avoid fetching ALL
+	// orders on each new order.
 	allOrders, err := b.cfg.Store.GetOrders(ctx)
 	if err != nil {
 		return 0, err
