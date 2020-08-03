@@ -10,7 +10,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585
-	github.com/lightninglabs/llm v0.1.0-alpha
+	github.com/lightninglabs/llm v0.1.0-alpha.0.20200803104550-7f84085e642d
 	github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.10.0-beta.rc6.0.20200702223723-2d4facf94061
@@ -29,5 +29,3 @@ go 1.13
 // Fix incompatibility of etcd go.mod package.
 // See https://github.com/etcd-io/etcd/issues/11154
 replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20200520232829-54ba9589114f
-
-replace github.com/lightninglabs/llm => github.com/guggero/llm v0.0.0-20200727155022-ddbc40ff1381
