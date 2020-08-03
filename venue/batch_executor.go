@@ -724,7 +724,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			}
 			auctioneerSig, witnessScript, err := b.signAcctInput(
 				env.masterAcct, trader, env.exeCtx.ExeTx,
-				&traderAcctInput,
+				traderAcctInput,
 			)
 			if err != nil {
 				return 0, env, fmt.Errorf("unable to "+
@@ -736,7 +736,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// trader gives us an invalid witness, then we'll
 			// return an error identifying them as rogue.
 			err = env.validateAccountWitness(
-				witnessScript, &traderAcctInput,
+				witnessScript, traderAcctInput,
 				acctSig, auctioneerSig,
 			)
 			if err != nil {

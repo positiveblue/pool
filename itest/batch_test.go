@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntest"
 )
 
 // testBatchExecution is an end-to-end test of the entire system. In this test,
@@ -368,8 +369,15 @@ func testBatchExecution(t *harnessTest) {
 
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
+}
+
+// closeAllChannals closes and asserts all channels to node are closed.
+func closeAllChannels(ctx context.Context, t *harnessTest,
+	node *lntest.HarnessNode) {
+
 	chanReq := &lnrpc.ListChannelsRequest{}
-	openChans, err := charlie.ListChannels(context.Background(), chanReq)
+	openChans, err := node.ListChannels(context.Background(), chanReq)
 	if err != nil {
 		t.Fatalf("unable to list charlie's channels: %v", err)
 	}
@@ -392,18 +400,17 @@ func testBatchExecution(t *harnessTest) {
 			OutputIndex: uint32(index),
 		}
 		closeUpdates, _, err := t.lndHarness.CloseChannel(
-			ctx, charlie, chanPoint, false,
+			ctx, node, chanPoint, false,
 		)
 		if err != nil {
 			t.Fatalf("unable to close channel: %v", err)
 		}
 
 		assertChannelClosed(
-			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
+			ctx, t, t.lndHarness, node, chanPoint, closeUpdates,
 			false,
 		)
 	}
-
 }
 
 // testUnconfirmedBatchChain tests that the server supports publishing batches
@@ -579,41 +586,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
-	chanReq := &lnrpc.ListChannelsRequest{}
-	openChans, err := charlie.ListChannels(context.Background(), chanReq)
-	if err != nil {
-		t.Fatalf("unable to list charlie's channels: %v", err)
-	}
-	for _, openChan := range openChans.Channels {
-		chanPointStr := openChan.ChannelPoint
-		chanPointParts := strings.Split(chanPointStr, ":")
-		txid, err := chainhash.NewHashFromStr(chanPointParts[0])
-		if err != nil {
-			t.Fatalf("unable txid to convert to hash: %v", err)
-		}
-		index, err := strconv.Atoi(chanPointParts[1])
-		if err != nil {
-			t.Fatalf("unable to convert string to int: %v", err)
-		}
-
-		chanPoint := &lnrpc.ChannelPoint{
-			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
-				FundingTxidBytes: txid[:],
-			},
-			OutputIndex: uint32(index),
-		}
-		closeUpdates, _, err := t.lndHarness.CloseChannel(
-			ctx, charlie, chanPoint, false,
-		)
-		if err != nil {
-			t.Fatalf("unable to close channel: %v", err)
-		}
-
-		assertChannelClosed(
-			ctx, t, t.lndHarness, charlie, chanPoint, closeUpdates,
-			false,
-		)
-	}
+	closeAllChannels(ctx, t, charlie)
 }
 
 // assertBatchSnapshot asserts that a batch identified by the passed batchID is
@@ -827,4 +800,144 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("expected order submission to succeed: %v", err)
 	}
+}
+
+// testBatchExecutionDustOutputs checks that an account is considered closed if
+// the remaining balance is below the dust limit.
+func testBatchExecutionDustOutputs(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader.
+	lndArgs := []string{"--maxpendingchannels=2"}
+	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	if err != nil {
+		t.Fatalf("unable to set up charlie: %v", err)
+	}
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	if err != nil {
+		t.Fatalf("unable to send coins to carol: %v", err)
+	}
+
+	// Create an account for the maker with plenty of sats.
+	account1 := openAccountAndAssert(
+		t, t.trader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We'll open a minimum sized account we'll use for bidding.
+	accountAmt := btcutil.Amount(100_000)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &clmrpc.InitAccountRequest{
+			AccountValue: uint64(accountAmt),
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We'll create an order that matches with a ridiculously high
+	// premium, in order to make what's left on the bidders account into
+	// dust.
+	//
+	// 98_500 per billion of 1_000_000 sats for 1000 blocks is 98500 sats,
+	// so the trader will only have 1500 sats left to pay for chain fees
+	// and execution fees.
+	//
+	// The execution fee is 1001 sats, chain fee 165 sats, so what is left
+	// will be dust.
+	const orderSize = 1_000_000
+	const matchRate = 98_500
+	const durationBlocks = 1000
+
+	// Submit an ask an bid which will match exactly.
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, matchRate, orderSize,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("could not submit ask order: %v", err)
+	}
+
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, matchRate, orderSize,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	// Let's kick the auctioneer now to try and create a batch.
+	_, err = t.auctioneer.AuctionAdminClient.BatchTick(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not trigger batch tick: %v", err)
+	}
+
+	// At this point, the batch should now attempt to be cleared, and find
+	// that we're able to make a market. Eventually the batch execution
+	// transaction should be broadcast to the mempool.
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("txid not found in mempool: %v", err)
+	}
+
+	if len(txids) != 1 {
+		t.Fatalf("expected a single transaction, instead have: %v",
+			spew.Sdump(txids))
+	}
+	batchTXID := txids[0]
+
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, orderSize, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, orderSize, false, t.trader.cfg.LndNode.PubKey,
+	)
+	blocks := mineBlocks(t, t.lndHarness, 1, 1)
+	batchTx := assertTxInBlock(t, blocks[0], batchTXID)
+
+	// The batch tx should have 3 inputs: the master account and the two
+	// traders.
+	if len(batchTx.TxIn) != 3 {
+		t.Fatalf("expected 3 inputs, found %d", len(batchTx.TxIn))
+	}
+
+	// There should be 3 outputs: master account, the new channel, and the
+	// first trader. The second trader's output is dust and does not
+	// materialize.
+	if len(batchTx.TxOut) != 3 {
+		t.Fatalf("expected 3 outputs, found %d", len(batchTx.TxOut))
+	}
+
+	// We'll conclude by mining enough blocks to have the channels be
+	// confirmed.
+	_ = mineBlocks(t, t.lndHarness, 3, 0)
+
+	// At this point, both traders should have no outstanding orders as
+	// they've all be bundled up into a batch.
+	assertNoOrders(t, secondTrader)
+	assertNoOrders(t, t.trader)
+
+	// Now the first account should still have money left and be open,
+	// while the second account only have dust left and should be closed.
+	assertTraderAccountState(
+		t.t, t.trader, account1.TraderKey, clmrpc.AccountState_OPEN,
+	)
+	assertTraderAccountState(
+		t.t, secondTrader, account2.TraderKey, clmrpc.AccountState_CLOSED,
+	)
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
 }

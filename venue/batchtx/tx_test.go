@@ -1,6 +1,7 @@
 package batchtx
 
 import (
+	"fmt"
 	"reflect"
 	"testing"
 
@@ -321,13 +322,247 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	// Next, we'll ensure that each trader has an entry in the chain fee
 	// index and account input index.
 	for _, trader := range traders {
-		if _, ok := batchTxCtx.ChainFeeForTrader(trader.TraderKeyRaw); !ok {
-			t.Fatalf("no chain fee entry for %x found",
-				trader.TraderKeyRaw[:])
-		}
 		if _, ok := batchTxCtx.AcctInputForTrader(trader.TraderKeyRaw); !ok {
 			t.Fatalf("acct input entry for %x found",
 				trader.TraderKeyRaw[:])
+		}
+	}
+
+	// Finally we'll make sure the master account output diff matches
+	// what's present in the batch transaction.
+	masterOutputIndex := batchTxCtx.MasterAccountDiff.OutPoint.Index
+	realMasterOutput := batchTx.TxOut[masterOutputIndex]
+	if realMasterOutput.Value != int64(batchTxCtx.MasterAccountDiff.AccountBalance) {
+		t.Fatalf("master account output balances off: expected "+
+			"%v got %v", realMasterOutput.Value,
+			int64(batchTxCtx.MasterAccountDiff.AccountBalance))
+	}
+}
+
+func newMatch(orderSize btcutil.Amount) (*matching.OrderPair, error) {
+	var (
+		askKey   [33]byte
+		askNonce [32]byte
+		bidKey   [33]byte
+		bidNonce [32]byte
+	)
+	askerFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate funding key: %v", err)
+	}
+	copy(askKey[:], askerFundingKey.PubKey().SerializeCompressed())
+	copy(askNonce[:], askKey[:])
+	ask := &order.Ask{
+		Ask: orderT.Ask{
+			Kit: *orderT.NewKit(askNonce),
+		},
+		Kit: order.Kit{
+			MultiSigKey: askKey,
+		},
+	}
+
+	bidderFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	if err != nil {
+		return nil, fmt.Errorf("unable to generate funding key: %v", err)
+	}
+	copy(bidKey[:], bidderFundingKey.PubKey().SerializeCompressed())
+	copy(bidNonce[:], bidKey[:])
+	bid := &order.Bid{
+		Bid: orderT.Bid{
+			Kit: *orderT.NewKit(bidNonce),
+		},
+		Kit: order.Kit{
+			MultiSigKey: bidKey,
+		},
+	}
+
+	return &matching.OrderPair{
+		Bid: bid,
+		Ask: ask,
+		Quote: matching.PriceQuote{
+			TotalSatsCleared: orderSize,
+		},
+	}, nil
+
+}
+
+// TestBatchTransactionDustAccounts assures that account outputs that are below
+// the dust limit does no materialize on the batch transaction.
+func TestBatchTransactionDustAccounts(t *testing.T) {
+	t.Parallel()
+
+	// For simplicity, we'll use the same clearing price of 1% for the
+	// entire batch.
+	const clearingPrice = orderT.FixedRatePremium(10000)
+	feeSchedule := mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	acctValue := btcutil.Amount(btcutil.SatoshiPerBitcoin)
+	numRandTraders := 6
+
+	// First, we'll generate a series of random traders. Each trader will
+	// have the same account size to make our calculations below much
+	// easier.
+	traders := make([]*account.Account, numRandTraders)
+	for i := 0; i < numRandTraders; i++ {
+		traderKey, err := btcec.NewPrivateKey(btcec.S256())
+		if err != nil {
+			t.Fatalf("unable to generate trader key: %v", err)
+		}
+
+		acct := &account.Account{
+			Value:    acctValue,
+			Expiry:   2016,
+			BatchKey: traderKey.PubKey(),
+		}
+		traderKeyBytes := traderKey.PubKey().SerializeCompressed()
+		copy(acct.TraderKeyRaw[:], traderKeyBytes)
+		copy(acct.Secret[:], traderKeyBytes)
+		copy(acct.OutPoint.Hash[:], traderKeyBytes)
+
+		traders[i] = acct
+	}
+
+	// We'll create orders of a size that will make an account dust if it
+	// gets two asks matched.
+	orderSize := (acctValue - 1500) / 2
+
+	// We let one trader get two asks filled, and one trader get one fill.
+	orderBatch := &matching.OrderBatch{}
+	for i := 0; i < numRandTraders/2; i++ {
+		numChans := uint32(i)
+		asker := traders[i]
+		bidder := traders[numRandTraders-1-i]
+
+		for j := 0; j < int(numChans); j++ {
+			match, err := newMatch(orderSize)
+			if err != nil {
+				t.Fatalf("unable to create match: %v", err)
+			}
+
+			orderBatch.Orders = append(orderBatch.Orders,
+				matching.MatchedOrder{
+					Asker:   matching.NewTraderFromAccount(asker),
+					Bidder:  matching.NewTraderFromAccount(bidder),
+					Details: *match,
+				})
+		}
+	}
+
+	// To complete our test batch, we'll generate an actual trading report,
+	// and also supply the clearing price of 1% that we use in our tests to
+	// make things easy.
+	orderBatch.FeeReport = matching.NewTradingFeeReport(
+		orderBatch.Orders, &feeSchedule, clearingPrice,
+	)
+	orderBatch.ClearingPrice = clearingPrice
+
+	// With all our set up done, we'll now create our master account diff,
+	// then construct the batch transaction.
+	priorAccountPoint := wire.OutPoint{}
+	auctPubKey := auctioneerKey.PubKey().SerializeCompressed()
+	copy(priorAccountPoint.Hash[:], auctPubKey)
+	mad := &MasterAccountState{
+		PriorPoint:     priorAccountPoint,
+		AccountBalance: acctValue * 10,
+	}
+	copy(mad.BatchKey[:], auctPubKey)
+	copy(mad.AuctioneerKey[:], auctPubKey)
+
+	// Now we can being the real meat of our tests: ensuring the batch
+	// transaction and all the relevant indexes ere constructed properly.
+	feeRate := chainfee.SatPerKWeight(200)
+	batchTxCtx, err := New(orderBatch, mad, feeRate)
+	if err != nil {
+		t.Fatalf("unable to construct batch tx: %v", err)
+	}
+
+	// Check that the batch tx has the expected outputs and inputs.
+	batchTx := batchTxCtx.ExeTx
+	for i := 0; i < numRandTraders; i++ {
+		trader := traders[i]
+
+		// There are three traders that should not have an account
+		// output on the resulting tx. The first and last trader was
+		// not part of any match, the third trader got two asks filled
+		// and got a dust balance as a result.
+		expOut := i != 0 && i != numRandTraders-1 && i != 2
+		_, ok := batchTxCtx.AcctOutputForTrader(
+			trader.TraderKeyRaw,
+		)
+
+		if expOut && !ok {
+			t.Fatalf("unable to find acct output for: %x",
+				trader.TraderKeyRaw[:])
+		}
+		if !expOut && ok {
+			t.Fatalf("did not expect acct output for: %x",
+				trader.TraderKeyRaw[:])
+		}
+
+		// Next, we'll ensure that each trader that was involved in a
+		// match has an entry in the account input index.
+		expIn := i != 0 && i != numRandTraders-1
+		_, ok = batchTxCtx.AcctInputForTrader(trader.TraderKeyRaw)
+		if expIn && !ok {
+			t.Fatalf("acct input entry for %x not found",
+				trader.TraderKeyRaw[:])
+		}
+
+		if !expIn && ok {
+			t.Fatalf("acct input entry for %x found",
+				trader.TraderKeyRaw[:])
+		}
+	}
+
+	// Next, for each order within the batch, we should be able to find an
+	// output in the context that actually executes the order (creates the
+	// channel).
+	for _, order := range orderBatch.Orders {
+		ask := order.Details.Ask
+		bid := order.Details.Bid
+
+		askOutputs, ok := batchTxCtx.OutputsForOrder(ask.Nonce())
+		if !ok {
+			t.Fatalf("unable to find output for ask in batch " +
+				"ctx")
+		}
+		if len(askOutputs) != 1 {
+			t.Fatal("expected one output per ask")
+		}
+		askOutput := askOutputs[0]
+		bidOutputs, ok := batchTxCtx.OutputsForOrder(bid.Nonce())
+		if !ok {
+			t.Fatalf("unable to find output for bid in batch " +
+				"ctx")
+		}
+		if len(bidOutputs) != 1 {
+			t.Fatal("expected one output per bid")
+		}
+		bidOutput := bidOutputs[0]
+
+		// Each ask output should have a matching bid output.
+
+		// The output for the bid and the ask should actually be
+		// pointing to the exact same output.
+		if askOutput.OutPoint != bidOutput.OutPoint {
+			t.Fatalf("outpoint mismatch")
+		}
+		if !reflect.DeepEqual(askOutput.TxOut, bidOutput.TxOut) {
+			t.Fatalf("txOut mismatch")
+		}
+
+		// The output as found in batch transaction should also
+		// match what is in the index.
+		realAskOutput := batchTx.TxOut[askOutput.OutPoint.Index]
+		realBidOutput := batchTx.TxOut[bidOutput.OutPoint.Index]
+		if !reflect.DeepEqual(askOutput.TxOut, realAskOutput) {
+			t.Fatalf("real ask txout mismatch")
+		}
+		if !reflect.DeepEqual(askOutput.TxOut, realBidOutput) {
+			t.Fatalf("real bid txout mismatch")
 		}
 	}
 

@@ -46,20 +46,25 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 }
 
 // EstimateBatchWeight attempts to estimate the total weight of the fully
-// signed batch execution transaction.
-func (c *chainFeeEstimator) EstimateBatchWeight() int64 {
+// signed batch execution transaction, given the number of non-dust trader
+// outputs.
+func (c *chainFeeEstimator) EstimateBatchWeight(
+	numTraderOuts int) int64 {
+
 	var weightEstimator input.TxWeightEstimator
 
 	// For each trader in this set, we'll add an input for their account
-	// spend, as well as an output for the new account to be created for
-	// them.
+	// spend.
 	for range c.traderChanCount {
 		weightEstimator.AddWitnessInput(
 			clmscript.MultiSigWitnessSize,
 		)
-		weightEstimator.AddP2WSHOutput()
+	}
 
-		// TODO(roasbeef): need to handle the case of full account consumption
+	// Add an output to the estimate for each trader account that was
+	// non-dust.
+	for i := 0; i < numTraderOuts; i++ {
+		weightEstimator.AddP2WSHOutput()
 	}
 
 	// Each new matched order pair will constitute a new channel, so we'll
@@ -92,21 +97,19 @@ func (c *chainFeeEstimator) EstimateTraderFee(acctID matching.AccountID) btcutil
 }
 
 // AuctioneerFee computes the "fee surplus" or the fees that the auctioneer
-// will pay. The goal of this is to make the auctioneer pay only the fees for
-// the "signalling" bytes within the raw transaction serialization.
+// will pay, given the total chain fees paid by the traders, and trader outputs
+// manifested on the batch tx. The goal of this is to make the auctioneer pay
+// only the fees for the "signalling" bytes within the raw transaction
+// serialization, but sometimes it will need to pay more if a trader's account
+// didn't have enough left to cover its full fee.
 //
 // NOTE: This value can be negative if there's no true "surplus".
-func (c *chainFeeEstimator) AuctioneerFee() btcutil.Amount {
+func (c *chainFeeEstimator) AuctioneerFee(
+	traderChainFeesPaid btcutil.Amount, numTraderOuts int) btcutil.Amount {
+
 	// To compute the total surplus fee that we need to pay as the
 	// auctioneer, we'll first compute the weight of a completed exeTx.
-	totalTxWeight := c.EstimateBatchWeight()
-
-	// Next, we'll tally up the total amount that each trader needs to pay
-	// for their added inputs and outputs to the batch transaction.
-	var traderChainFeesPaid btcutil.Amount
-	for trader := range c.traderChanCount {
-		traderChainFeesPaid += c.EstimateTraderFee(trader)
-	}
+	totalTxWeight := c.EstimateBatchWeight(numTraderOuts)
 
 	// Finally, the fee that we (the auctioneer) need to pay is the
 	// difference between the fee needed for the entire transaction, and

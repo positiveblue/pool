@@ -223,9 +223,10 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 		setA, setB := set.orderSetA, set.orderSetB
 
 		estA := newChainFeeEstimator(setA, testFeeRate)
-		feeSetA := estA.EstimateBatchWeight()
+		feeSetA := estA.EstimateBatchWeight(len(estA.traderChanCount))
+
 		estB := newChainFeeEstimator(setB, testFeeRate)
-		feeSetB := estB.EstimateBatchWeight()
+		feeSetB := estB.EstimateBatchWeight(len(estB.traderChanCount))
 
 		aLarger := (len(estA.traderChanCount) > len(estB.traderChanCount) &&
 			len(estA.orders) > len(estB.orders))
@@ -282,10 +283,25 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 	scenario := func(set matchedOrderSet) bool {
 		setA, setB := set.orderSetA, set.orderSetB
 
-		feeSetA := (newChainFeeEstimator(setA, testFeeRate).
-			AuctioneerFee())
-		feeSetB := (newChainFeeEstimator(setB, testFeeRate).
-			AuctioneerFee())
+		estimateFee := func(
+			orderSet []matching.MatchedOrder) btcutil.Amount {
+
+			estimator := newChainFeeEstimator(orderSet, testFeeRate)
+
+			// Get estimated fees paid by the traders.
+			var traders btcutil.Amount
+			for trader := range estimator.traderChanCount {
+				traders += estimator.EstimateTraderFee(trader)
+			}
+
+			// Given what the traders paid, return auctioneer fee.
+			return estimator.AuctioneerFee(
+				traders, len(estimator.traderChanCount),
+			)
+		}
+
+		feeSetA := estimateFee(setA)
+		feeSetB := estimateFee(setB)
 
 		switch {
 		case set.feeRateA > set.feeRateB && feeSetA < feeSetB:
@@ -324,4 +340,66 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 	if err := quick.Check(scenario, &quickCfg); err != nil {
 		t.Fatalf("fee scaling property violated: %v", err)
 	}
+}
+
+type dustAccScenario struct {
+	orderSet    []matching.MatchedOrder
+	endingAccsA int32
+	endingAccsB int32
+}
+
+// TestChainFeeEstimatorDustAccounts asserts the property that the lower number
+// of trader accounts that are recreated on the batch tx, the smaller will the
+// total batch tx weight be.
+func TestChainFeeEstimatorDustAccounts(t *testing.T) {
+	t.Parallel()
+
+	n := 0
+	scenario := func(d dustAccScenario) bool {
+		set := d.orderSet
+
+		estimator := newChainFeeEstimator(set, testFeeRate)
+
+		weightA := estimator.EstimateBatchWeight(int(d.endingAccsA))
+		weightB := estimator.EstimateBatchWeight(int(d.endingAccsB))
+
+		switch {
+		case d.endingAccsA < d.endingAccsB && weightA >= weightB:
+			t.Logf("tx A should be smaller than B")
+			return false
+
+		case d.endingAccsA > d.endingAccsB && weightA <= weightB:
+			t.Logf("tx A should be larger than B")
+			return false
+
+		case d.endingAccsA == d.endingAccsB && weightA != weightB:
+			t.Logf("tx A should be the equal to B")
+			return false
+		}
+
+		n++
+		return true
+	}
+	quickCfg := quick.Config{
+		Values: func(v []reflect.Value, r *rand.Rand) {
+			set := genRandMatchedOrders(
+				r,
+				rand.Int31n(100),
+				rand.Int31n(50),
+			)
+
+			testCase := dustAccScenario{
+				orderSet:    set,
+				endingAccsA: rand.Int31n(50),
+				endingAccsB: rand.Int31n(50),
+			}
+
+			v[0] = reflect.ValueOf(testCase)
+		},
+	}
+	if err := quick.Check(scenario, &quickCfg); err != nil {
+		t.Fatalf("batch weight property violated: %v", err)
+	}
+
+	t.Logf("Total number of scenarios run: %v", n)
 }

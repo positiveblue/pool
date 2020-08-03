@@ -118,10 +118,6 @@ type ExecutionContext struct {
 	// execute.
 	OrderBatch *matching.OrderBatch
 
-	// batchFees maps a trader's account ID to the amount of fees they need
-	// to pay in this batch.
-	batchFees map[matching.AccountID]btcutil.Amount
-
 	// orderIndex maps an order nonce to the output within the batch
 	// execution transaction that executes the order.
 	orderIndex map[orderT.Nonce][]*OrderOutput
@@ -298,58 +294,92 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		PreviousOutPoint: mAccountDiff.PriorPoint,
 	})
 
+	// Update the ending balances to reflect what the traders need to pay
+	// for the execution transaction.
+	txFeeEstimator := newChainFeeEstimator(
+		orderBatch.Orders, feeRate,
+	)
+
+	var totalTraderFees btcutil.Amount
+	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
+		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
+
+		// The trader cannot actually pay a fee bigger than what
+		// remains in the account.
+		if traderFee <= trader.EndingBalance {
+			totalTraderFees += traderFee
+		} else if trader.EndingBalance >= 0 {
+			totalTraderFees += trader.EndingBalance
+		}
+
+		// Update the account diff, which should reflect the end chain
+		// fee paid.
+		trader.EndingBalance -= traderFee
+	}
+
 	// Next, we'll do our first pass amongst the outputs to add the new
 	// outputs for each account involved. The value of these outputs are
 	// the ending balance for each account after applying this batch. Along
 	// the way, we'll also generate an index from the multi-sig script to
 	// the order nonce for the account.
 	traderAccounts := make(map[matching.AccountID]*wire.TxOut)
+	var traderOuts int
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
 		acctParams := trader.StartingState
 
-		// TODO(guggero): Only re-create account output if above dust.
+		switch {
 
-		// Using the set params of the account, and the information
-		// within the account key, we'll create a new output to place
-		// within our transaction.
-		acctKey, err := btcec.ParsePubKey(
-			acctParams.AccountKey[:], btcec.S256(),
-		)
-		if err != nil {
-			return err
-		}
-		batchKey, err := btcec.ParsePubKey(
-			acctParams.NextBatchKey[:], btcec.S256(),
-		)
-		if err != nil {
-			return err
-		}
-		accountScript, err := clmscript.AccountScript(
-			acctParams.AccountExpiry, acctKey, auctioneerKey,
-			batchKey, acctParams.VenueSecret,
-		)
-		if err != nil {
-			return err
-		}
-		traderAccountTxOut := &wire.TxOut{
-			Value:    int64(trader.EndingBalance),
-			PkScript: accountScript,
+		// If the ending balance is above the dust limit, it will be
+		// recreated. If not the account will be closed.
+		case trader.EndingBalance >= orderT.MinNoDustAccountSize:
+			// Using the set params of the account, and the
+			// information within the account key, we'll create a
+			// new output to place within our transaction.
+			acctKey, err := btcec.ParsePubKey(
+				acctParams.AccountKey[:], btcec.S256(),
+			)
+			if err != nil {
+				return err
+			}
+			batchKey, err := btcec.ParsePubKey(
+				acctParams.NextBatchKey[:], btcec.S256(),
+			)
+			if err != nil {
+				return err
+			}
+			accountScript, err := clmscript.AccountScript(
+				acctParams.AccountExpiry, acctKey,
+				auctioneerKey, batchKey, acctParams.VenueSecret,
+			)
+			if err != nil {
+				return err
+			}
+			traderAccountTxOut := &wire.TxOut{
+				Value:    int64(trader.EndingBalance),
+				PkScript: accountScript,
+			}
+
+			// With the output created, we'll update our account
+			// index for our later passes, and also attach the
+			// output directly to the BET (batch execution
+			// transaction)
+			traderAccounts[acctID] = traderAccountTxOut
+			trader.RecreatedOutput = traderAccountTxOut
+			e.ExeTx.AddTxOut(traderAccountTxOut)
+			traderOuts++
+
+		// If the trader's balance was below dust, it will go to chain
+		// fees.
+		case trader.EndingBalance >= 0:
+			totalTraderFees += trader.EndingBalance
 		}
 
-		// With the output created, we'll update our account index for
-		// our later passes, and also attach the output directly to the
-		// BET (batch execution transaction)
-		traderAccounts[acctID] = traderAccountTxOut
-
-		trader.RecreatedOutput = traderAccountTxOut
 		orderBatch.FeeReport.AccountDiffs[acctID] = trader
-
-		e.ExeTx.AddTxOut(traderAccountTxOut)
 	}
 
-	// Now that we have the account state present within the ExeTx, we'll
-	// add the necessary outputs to create all channels purchased in this
-	// batch.
+	// Now that the account outputs have been created, we'll proceed to
+	// adding the necessary outputs to create all channels purchased in
+	// this batch.
 	scriptToOrders := make(map[string][2]order.Order)
 	ordersForTrader := make(map[matching.AccountID]map[orderT.Nonce]struct{})
 	for _, matchedOrder := range orderBatch.Orders {
@@ -396,28 +426,6 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		bidderOrders[bidNonce] = struct{}{}
 	}
 
-	// Next, we'll update each of the account outputs in the ExeTx to
-	// reflect the fees that each trader needs to pay for the execution
-	// transaction.
-	txFeeEstimator := newChainFeeEstimator(
-		orderBatch.Orders, feeRate,
-	)
-	for acctID, traderOutput := range traderAccounts {
-		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
-
-		// Now that we know the fee for this trader, we'll first update
-		// our indexes for our callers.
-		//
-		// TODO(roasbeef): dustiness
-		traderOutput.Value -= int64(traderFee)
-		e.batchFees[acctID] = traderFee
-
-		// With our internal indexes updated, we'll now also need to
-		// update the account diff themselves, which should reflect the
-		// end chain fee aid.
-		orderBatch.FeeReport.AccountDiffs[acctID].EndingBalance -= traderFee
-	}
-
 	// Finally, we'll tack on our master account output, and pay any
 	// remaining surplus fees needed (left over unpaid by trader, and also
 	// accounting for our auctioneer output).
@@ -425,7 +433,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	finalAccountBalance += int64(
 		orderBatch.FeeReport.AuctioneerFeesAccrued,
 	)
-	finalAccountBalance -= int64(txFeeEstimator.AuctioneerFee())
+	finalAccountBalance -= int64(
+		txFeeEstimator.AuctioneerFee(
+			totalTraderFees, traderOuts,
+		),
+	)
 
 	log.Infof("Master Auctioneer Output balance delta: prev_bal=%v, "+
 		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,
@@ -490,7 +502,6 @@ func New(batch *matching.OrderBatch, mad *MasterAccountState,
 	feeRate chainfee.SatPerKWeight) (*ExecutionContext, error) {
 
 	exeCtx := ExecutionContext{
-		batchFees:      make(map[matching.AccountID]btcutil.Amount),
 		orderIndex:     make(map[orderT.Nonce][]*OrderOutput),
 		traderIndex:    make(map[matching.AccountID][]*OrderOutput),
 		accountIndex:   make(map[matching.AccountID]wire.OutPoint),
@@ -532,14 +543,7 @@ func (e *ExecutionContext) AcctOutputForTrader(acct matching.AccountID) (wire.Ou
 
 // AcctInputForTrader returns the account input information for the target
 // trader, if it exists.
-func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (AcctInput, bool) {
+func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (*AcctInput, bool) {
 	input, ok := e.acctInputIndex[acct]
-	return *input, ok
-}
-
-// ChainFeeForTrader returns the total chain fees that the target trader needs
-// to pay in the batch execution transaction.
-func (e *ExecutionContext) ChainFeeForTrader(trader matching.AccountID) (btcutil.Amount, bool) {
-	fees, ok := e.batchFees[trader]
-	return fees, ok
+	return input, ok
 }

@@ -41,6 +41,10 @@ var testCases = []*testCase{
 		test: testUnconfirmedBatchChain,
 	},
 	{
+		name: "batch execution dust",
+		test: testBatchExecutionDustOutputs,
+	},
+	{
 		name: "server-assisted recover accounts",
 		test: testServerAssistedAccountRecovery,
 	},
