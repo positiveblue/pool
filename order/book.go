@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
 )
 
@@ -239,13 +240,19 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 			srvOrder.Details().AcctKey)
 	}
 
+	// The max batch fee rate must be sane.
+	if srvOrder.Details().MaxBatchFeeRate < chainfee.FeePerKwFloor {
+		return fmt.Errorf("invalid max batch feerate")
+	}
+
 	// Now parse the order type specific fields and validate that the
 	// account has enough balance for the requested order.
 	var balanceNeeded btcutil.Amount
 	switch o := srvOrder.(type) {
 	case *Ask:
-		if o.MaxDuration() == 0 {
-			return fmt.Errorf("invalid max duration")
+		if o.MaxDuration() < order.MinimumOrderDurationBlocks {
+			return fmt.Errorf("invalid max duration, must be at "+
+				"least %d", order.MinimumOrderDurationBlocks)
 		}
 		if o.MaxDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for max "+
@@ -254,8 +261,9 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		balanceNeeded = o.Amt
 
 	case *Bid:
-		if o.MinDuration() == 0 {
-			return fmt.Errorf("invalid min duration")
+		if o.MinDuration() < order.MinimumOrderDurationBlocks {
+			return fmt.Errorf("invalid min duration, must be at "+
+				"least %d", order.MinimumOrderDurationBlocks)
 		}
 		if o.MinDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for min "+

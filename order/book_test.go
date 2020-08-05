@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 var (
@@ -125,6 +126,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 				},
 			}
@@ -141,8 +143,27 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MaxDuration: 0,
+				},
+			}
+			return book.PrepareOrder(ctxb, o, bestHeight)
+		},
+	}, {
+		name:        "ask max duration low",
+		expectedErr: "invalid max duration",
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+					},
+					MaxDuration: 143,
 				},
 			}
 			return book.PrepareOrder(ctxb, o, bestHeight)
@@ -158,6 +179,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MaxDuration: 1235,
 				},
@@ -175,8 +197,27 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MinDuration: 0,
+				},
+			}
+			return book.PrepareOrder(ctxb, o, bestHeight)
+		},
+	}, {
+		name:        "bid min duration low",
+		expectedErr: "invalid min duration",
+		run: func() error {
+			o := &order.Bid{
+				Bid: orderT.Bid{
+					Kit: orderT.Kit{
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+					},
+					MinDuration: 143,
 				},
 			}
 			return book.PrepareOrder(ctxb, o, bestHeight)
@@ -192,6 +233,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(0),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(0),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MaxDuration: 1024,
 				},
@@ -209,8 +251,45 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MinDuration: 1235,
+				},
+			}
+			return book.PrepareOrder(ctxb, o, bestHeight)
+		},
+	}, {
+		name:        "zero max batch feerate",
+		expectedErr: "invalid max batch feerate",
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  0,
+					},
+					MaxDuration: 1024,
+				},
+			}
+			return book.PrepareOrder(ctxb, o, bestHeight)
+		},
+	}, {
+		name:        "low max batch feerate",
+		expectedErr: "invalid max batch feerate",
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor - 1,
+					},
+					MaxDuration: 1024,
 				},
 			}
 			return book.PrepareOrder(ctxb, o, bestHeight)
@@ -226,6 +305,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(500_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(500_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MaxDuration: 1024,
 				},
@@ -243,6 +323,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MaxDuration: 1024,
 				},
@@ -272,6 +353,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						Units:            orderT.NewSupplyFromSats(100_000),
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 					},
 					MaxDuration: 1024,
 				},
@@ -303,6 +385,7 @@ func TestBookPrepareOrder(t *testing.T) {
 							Units:            orderT.NewSupplyFromSats(100_000),
 							UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 							AcctKey:          toRawKey(testAuctioneerKey),
+							MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						},
 						MaxDuration: 1024,
 					},
