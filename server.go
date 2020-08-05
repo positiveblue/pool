@@ -136,6 +136,10 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("unable to init logging: %w", err)
 	}
 
+	// Print the version before we do any more set up to ensure we output
+	// it.
+	log.Infof("Version: %v", Version())
+
 	// With our logging set up, we'll now establish our initial connection
 	// to the backing lnd instance.
 	lnd, err := lndclient.NewLndServices(&lndclient.LndServicesConfig{
