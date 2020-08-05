@@ -214,6 +214,13 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 			order.BaseSupplyUnit)
 	}
 
+	// Make sure the amount is consistent with Unit and UnitsUnfulfilled.
+	if srvOrder.Details().Units.ToSatoshis() != amt ||
+		srvOrder.Details().UnitsUnfulfilled.ToSatoshis() != amt {
+		return fmt.Errorf("units and units unfulfilled must " +
+			"translate exactly to amount")
+	}
+
 	// First validate the order signature.
 	digest, err := srvOrder.Digest()
 	if err != nil {

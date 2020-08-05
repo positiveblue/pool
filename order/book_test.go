@@ -121,8 +121,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 				},
 			}
@@ -135,8 +137,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MaxDuration: 0,
 				},
@@ -150,8 +154,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MaxDuration: 1235,
 				},
@@ -165,8 +171,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Bid{
 				Bid: orderT.Bid{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MinDuration: 0,
 				},
@@ -180,8 +188,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     0,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              0,
+						Units:            orderT.NewSupplyFromSats(0),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(0),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MaxDuration: 1024,
 				},
@@ -195,8 +205,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Bid{
 				Bid: orderT.Bid{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MinDuration: 1235,
 				},
@@ -210,8 +222,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     500000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              500_000,
+						Units:            orderT.NewSupplyFromSats(500_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(500_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MaxDuration: 1024,
 				},
@@ -225,8 +239,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MaxDuration: 1024,
 				},
@@ -252,8 +268,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			o := &order.Ask{
 				Ask: orderT.Ask{
 					Kit: orderT.Kit{
-						Amt:     100000,
-						AcctKey: toRawKey(testTraderKey),
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
 					},
 					MaxDuration: 1024,
 				},
@@ -281,8 +299,10 @@ func TestBookPrepareOrder(t *testing.T) {
 				o := &order.Ask{
 					Ask: orderT.Ask{
 						Kit: orderT.Kit{
-							Amt:     100000,
-							AcctKey: toRawKey(testAuctioneerKey),
+							Amt:              100_000,
+							Units:            orderT.NewSupplyFromSats(100_000),
+							UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+							AcctKey:          toRawKey(testAuctioneerKey),
 						},
 						MaxDuration: 1024,
 					},
