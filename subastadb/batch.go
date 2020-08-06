@@ -126,33 +126,6 @@ func (s *EtcdStore) BatchKey(ctx context.Context) (*btcec.PublicKey, error) {
 	return s.perBatchKey(ctx)
 }
 
-// NextBatchKey updates the currently running batch key by incrementing it
-// with the backing curve's base point.
-func (s *EtcdStore) NextBatchKey(ctx context.Context) (*btcec.PublicKey, error) {
-	if !s.initialized {
-		return nil, errNotInitialized
-	}
-
-	// Obtain the current per-batch key, increment it by the curve's base
-	// point, and store the result.
-	perBatchKey, err := s.perBatchKey(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	newPerBatchKey := clmscript.IncrementKey(perBatchKey)
-
-	// Wrap the update in an STM and execute it.
-	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
-		return s.putPerBatchKeySTM(stm, newPerBatchKey)
-	})
-	if err != nil {
-		return nil, err
-	}
-
-	return newPerBatchKey, err
-}
-
 // PersistBatchResult atomically updates all modified orders/accounts, persists
 // a snapshot of the batch and switches to the next batch ID. If any single
 // operation fails, the whole set of changes is rolled back.
