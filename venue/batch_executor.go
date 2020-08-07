@@ -544,7 +544,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		)
 
 		env.exeCtx, err = batchtx.New(
-			env.batch, masterAcctState, chainfee.FeePerKwFloor,
+			env.batch, masterAcctState, env.batchFeeRate,
 		)
 		if err != nil {
 			return 0, env, err

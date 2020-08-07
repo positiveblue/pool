@@ -140,9 +140,11 @@ func (e *executorTestHarness) RegisterTrader(acct *account.Account) {
 	}
 }
 
-func (e *executorTestHarness) SubmitBatch(batch *matching.OrderBatch) chan *ExecutionResult {
+func (e *executorTestHarness) SubmitBatch(batch *matching.OrderBatch,
+	feeRate chainfee.SatPerKWeight) chan *ExecutionResult {
+
 	respChan, err := e.executor.Submit(
-		batch, &order.LinearFeeSchedule{}, chainfee.FeePerKwFloor,
+		batch, &order.LinearFeeSchedule{}, feeRate,
 	)
 	if err != nil {
 		e.t.Fatalf("unable to submit batch: %v", err)
@@ -514,7 +516,7 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 		// With only one of the accounts registered, we'll attempt to
 		// submit a new batch for execution.
 		batch := orderBatch.Copy()
-		respChan := testCtx.SubmitBatch(&batch)
+		respChan := testCtx.SubmitBatch(&batch, chainfee.FeePerKwFloor)
 
 		// In the state machine itself, we should transition from the
 		// NoActiveBatch state to the BatchTempError state.
@@ -588,9 +590,13 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		Trader: &bigTrader,
 	}
 
+	// We choose a feerate other than the fee floor to ensure everything
+	// checks out with a different rate.
+	batchFeeRate := 2 * chainfee.FeePerKwFloor
+
 	// Next, we'll kick things off by submitting our canned batch.
 	batch := orderBatch.Copy()
-	respChan := testCtx.SubmitBatch(&batch)
+	respChan := testCtx.SubmitBatch(&batch, batchFeeRate)
 
 	// stepPrepareToSign handles simulating execution up to the
 	// BatchSigning phase. If a slow trader is specified, then we'll have
@@ -661,7 +667,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// accept messages for each trader, which should transition us to the
 	// next phase.
 	batch = orderBatch.Copy()
-	respChan = testCtx.SubmitBatch(&batch)
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 
 	stepSignToFinalize := func(action invalidSignAction,
@@ -679,13 +685,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		testCtx.AssertStateTransitions(BatchSigning)
 
 		// We'll now send all sig messages for all the fast traders.
-		//
-		// TODO: The fee rate will need to be changed here once proper
-		// fee estimation is in place.
 		batchCopy := orderBatch.Copy()
-		batchCtx, err := batchtx.New(
-			&batchCopy, mad, chainfee.FeePerKwFloor,
-		)
+		batchCtx, err := batchtx.New(&batchCopy, mad, batchFeeRate)
 		if err != nil {
 			t.Fatalf("unable to recreate batch context: %v", err)
 		}
@@ -770,7 +771,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// send an invalid witness, this should cause us to again bail out as
 	// we can't proceed with an invalid input.
 	batch = orderBatch.Copy()
-	respChan = testCtx.SubmitBatch(&batch)
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 	stepSignToFinalize(invalidSig, nil, activeSmallTrader, activeBigTrader)
 
@@ -784,7 +785,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// send non matching channel info, this should cause us to again bail
 	// out as we can't proceed.
 	batch = orderBatch.Copy()
-	respChan = testCtx.SubmitBatch(&batch)
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 	stepSignToFinalize(missingChanInfo, nil, activeSmallTrader, activeBigTrader)
 
@@ -798,7 +799,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// send non matching channel info, this should cause us to again bail
 	// out as we can't proceed.
 	batch = orderBatch.Copy()
-	respChan = testCtx.SubmitBatch(&batch)
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 	stepSignToFinalize(invalidChanInfo, nil, activeSmallTrader, activeBigTrader)
 
@@ -806,7 +807,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// signatures, we should proceed to the finalize phase and end up with
 	// a final valid batch.
 	batch = orderBatch.Copy()
-	respChan = testCtx.SubmitBatch(&batch)
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
 	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
 	stepSignToFinalize(noAction, nil, activeSmallTrader, activeBigTrader)
 

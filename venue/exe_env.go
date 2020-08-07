@@ -63,8 +63,9 @@ type environment struct {
 	// exeFee is the execution fee that was used to match this batch.
 	exeFee orderT.FeeSchedule
 
-	// feeRate is the target fee rate of the batch execution transaction.
-	feeRate chainfee.SatPerKWeight
+	// batchFeeRate is the target fee rate of the batch execution
+	// transaction.
+	batchFeeRate chainfee.SatPerKWeight
 
 	// batchVersion is the current batch version.
 	batchVersion uint32
@@ -139,7 +140,7 @@ func newEnvironment(newBatch *executionReq, batchKey *btcec.PublicKey,
 	env := environment{
 		batchReq:           newBatch,
 		exeFee:             newBatch.feeSchedule,
-		feeRate:            newBatch.batchFeeRate,
+		batchFeeRate:       newBatch.batchFeeRate,
 		batch:              newBatch.OrderBatch,
 		traders:            make(map[matching.AccountID]*ActiveTrader),
 		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
@@ -266,7 +267,7 @@ func (e *environment) sendPrepareMsg() error {
 			AccountOutPoints: msg.accountOutpoints,
 			ExecutionFee:     e.exeFee,
 			BatchTx:          batchTxBuf.Bytes(),
-			FeeRate:          e.feeRate,
+			FeeRate:          e.batchFeeRate,
 			BatchID:          e.batchID,
 			BatchVersion:     e.batchVersion,
 		}:

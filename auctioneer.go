@@ -247,6 +247,10 @@ type Auctioneer struct {
 	// become the finalizedBatch.
 	eligibleBatch *matching.OrderBatch
 
+	// batchFeeRate is the fee rate we have decided to use for the eligible
+	// batch.
+	batchFeeRate chainfee.SatPerKWeight
+
 	// pendingBatchID is the batch ID for the batch we're attempting to
 	// execute.
 	pendingBatchID matching.BatchID
@@ -1098,11 +1102,21 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// to our account early or w/e too many funds? notifier as is
 		// doesn't handle duplicate addrs?
 		//
-		// TODO(roasbeef): what fee to use? rely on manual anchor down
-		// if not confirming? need admin RPC get current txid and
-		// anchor down if needed?
+		// TODO(roasbeef): rely on manual anchor down if not
+		// confirming? need admin RPC get current txid and anchor down
+		// if needed?
+		feeRate, err := a.cfg.Wallet.EstimateFee(
+			ctxb, a.cfg.ConfTarget,
+		)
+		if err != nil {
+			return 0, err
+		}
+
+		log.Debugf("Sending genesis transaction to output %v using "+
+			"fee rate %v", acctOutput, feeRate)
+
 		tx, err := a.cfg.Wallet.SendOutputs(
-			ctxb, []*wire.TxOut{acctOutput}, chainfee.FeePerKwFloor,
+			ctxb, []*wire.TxOut{acctOutput}, feeRate,
 		)
 		if err != nil {
 			return 0, fmt.Errorf("unable to send funds to master "+
@@ -1148,8 +1162,19 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// storing our pending state and before broadcasting our
 		// transaction.
 		case err == errTxNotFound:
+			feeRate, err := a.cfg.Wallet.EstimateFee(
+				ctxb, a.cfg.ConfTarget,
+			)
+			if err != nil {
+				return 0, err
+			}
+
+			log.Infof("Genesis transaction not found, resending "+
+				"to output %v using fee rate %v", output,
+				feeRate)
+
 			genesisTx, err = a.cfg.Wallet.SendOutputs(
-				ctxb, []*wire.TxOut{output}, chainfee.FeePerKwFloor,
+				ctxb, []*wire.TxOut{output}, feeRate,
 			)
 			if err != nil {
 				return 0, fmt.Errorf("unable to send funds to master "+
@@ -1240,6 +1265,16 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		var batchID matching.BatchID
 		copy(batchID[:], batchKey.SerializeCompressed())
 
+		// Get a fee estimate for our batch.
+		feeRate, err := a.cfg.Wallet.EstimateFee(
+			ctxb, a.cfg.ConfTarget,
+		)
+		if err != nil {
+			return 0, err
+		}
+
+		log.Debugf("Using fee rate %v for batch transaction", feeRate)
+
 		// Now that we have the batch key, we'll attempt to make this
 		// market.
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(batchID)
@@ -1265,6 +1300,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// TODO(roasbeef): allow to send own triggers instead, or we
 		// add this to the running state instead
 		a.eligibleBatch = orderBatch
+		a.batchFeeRate = feeRate
 		a.updatePendingBatchID(batchID)
 
 		log.Infof("Market has been made for Batch(%x)", batchID[:])
@@ -1283,8 +1319,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
 		executionResult, err := a.cfg.BatchExecutor.Submit(
-			a.eligibleBatch, a.cfg.FeeSchedule,
-			chainfee.FeePerKwFloor,
+			a.eligibleBatch, a.cfg.FeeSchedule, a.batchFeeRate,
 		)
 		if err != nil {
 			return 0, err

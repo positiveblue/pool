@@ -5,7 +5,6 @@ import (
 
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/order"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 const (
@@ -34,7 +33,7 @@ func testOrderSubmission(t *harnessTest) {
 			TraderKey:               acct.TraderKey,
 			RateFixed:               100,
 			Amt:                     1500000,
-			MaxBatchFeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
 		MaxDurationBlocks: 365*144 + 1,
 		Version:           uint32(order.CurrentVersion),
