@@ -9,6 +9,8 @@ import (
 	"time"
 
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // TestCallMarketConsiderForgetOrders tests that we're able to properly add and
@@ -165,7 +167,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 		acctDB.fetchAcct,
 	)
 
-	_, err := callMarket.MaybeClear(BatchID{})
+	_, err := callMarket.MaybeClear(BatchID{}, chainfee.FeePerKwFloor)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
 	}
@@ -199,7 +201,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 
 	// If we attempt to make a market, we should get the
 	// ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(BatchID{})
+	_, err := callMarket.MaybeClear(BatchID{}, chainfee.FeePerKwFloor)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
@@ -240,7 +242,9 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
-		orderBatch, err := callMarket.MaybeClear(BatchID{})
+		orderBatch, err := callMarket.MaybeClear(
+			BatchID{}, chainfee.FeePerKwFloor,
+		)
 		if err != nil {
 			fmt.Println("clear error: ", err)
 			n++
@@ -358,4 +362,66 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 	}
 
 	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
+}
+
+// TestMaybeClearFilterFeeRates tests that orders with a max batch feerate
+// below the current fee estimate won't be considered during match making.
+func TestMaybeClearFilterFeeRates(t *testing.T) {
+	t.Parallel()
+
+	acctDB := newAcctFetcher()
+
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+
+	// Create 6 bids and asks, with increasing max batch fee rates.
+	var bids []*order.Bid
+	var asks []*order.Ask
+	for i := 0; i < 6; i++ {
+		bid := genRandBid(
+			r, acctDB, staticRateGen(1000), staticUnitGen(10),
+			staticDurationGen(144),
+		)
+		ask := genRandAsk(
+			r, acctDB, staticRateGen(1000), staticUnitGen(10),
+			staticDurationGen(144),
+		)
+
+		feeRate := chainfee.FeePerKwFloor * chainfee.SatPerKWeight(i+1)
+		bid.MaxBatchFeeRate = feeRate
+		ask.MaxBatchFeeRate = feeRate
+
+		bids = append(bids, bid)
+		asks = append(asks, ask)
+	}
+
+	// Next, we'll create our call market, and add the orders.
+	callMarket := NewUniformPriceCallMarket(
+		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		acctDB.fetchAcct,
+	)
+	if err := callMarket.ConsiderBids(bids...); err != nil {
+		t.Fatalf("unable to add bids")
+	}
+	if err := callMarket.ConsiderAsks(asks...); err != nil {
+		t.Fatalf("unable to add asks")
+	}
+
+	// If we attempt to make a market with a fee rate above all the orders'
+	// max fee rate, we should get the ErrNoMarketPossible error.
+	_, err := callMarket.MaybeClear(BatchID{}, 7*chainfee.FeePerKwFloor)
+	if err != ErrNoMarketPossible {
+		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
+	}
+
+	// Now make a market with a fee rate that should make exactly 3 matches
+	// possible.
+	orderBatch, err := callMarket.MaybeClear(BatchID{}, 4*chainfee.FeePerKwFloor)
+	if err != nil {
+		t.Fatalf("expected no error, got: %v", err)
+	}
+
+	matches := orderBatch.Orders
+	if len(matches) != 3 {
+		t.Fatalf("expected 3 matches, got %v", len(matches))
+	}
 }

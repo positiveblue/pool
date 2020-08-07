@@ -13,6 +13,7 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
 
@@ -177,6 +178,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	b.Units = numUnits
 	b.UnitsUnfulfilled = numUnits
 	b.FixedRate = genCfg.rate(r)
+	b.MaxBatchFeeRate = chainfee.FeePerKwFloor
 
 	copy(b.Bid.Kit.AcctKey[:], acct.TraderKeyRaw[:])
 	b.NodeKey = b.Bid.Kit.AcctKey
@@ -216,6 +218,7 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	a.Units = numUnits
 	a.UnitsUnfulfilled = numUnits
 	a.FixedRate = genCfg.rate(r)
+	a.MaxBatchFeeRate = chainfee.FeePerKwFloor
 
 	copy(a.Ask.Kit.AcctKey[:], acct.TraderKeyRaw[:])
 	a.NodeKey = a.Ask.Kit.AcctKey

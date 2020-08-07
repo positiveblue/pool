@@ -5,6 +5,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // FulfillType is an enum-like variable that expresses the "nature" of a match.
@@ -214,8 +215,11 @@ type BatchAuctioneer interface {
 	// possible no match is possible, in which case an error will be
 	// returned.
 	//
+	// The fee rate provided will be used to exclude orders which had their
+	// max batch fee rate set lower.
+	//
 	// TODO(roasbeef): might need other info...
-	MaybeClear(BatchID) (*OrderBatch, error)
+	MaybeClear(BatchID, chainfee.SatPerKWeight) (*OrderBatch, error)
 
 	// ConsiderBid adds a set of bids to the staging arena for match
 	// making. Only once a bid has been considered will it be eligible to

@@ -1265,7 +1265,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		var batchID matching.BatchID
 		copy(batchID[:], batchKey.SerializeCompressed())
 
-		// Get a fee estimate for our batch.
+		// Get a fee estimate for our batch. We'll use this to only
+		// include orders with a max fee rate below this value during
+		// matchmaking.
 		feeRate, err := a.cfg.Wallet.EstimateFee(
 			ctxb, a.cfg.ConfTarget,
 		)
@@ -1277,7 +1279,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// Now that we have the batch key, we'll attempt to make this
 		// market.
-		orderBatch, err := a.cfg.CallMarket.MaybeClear(batchID)
+		orderBatch, err := a.cfg.CallMarket.MaybeClear(batchID, feeRate)
 		switch {
 		// If we can't make a market at this instance, then we'll
 		// go back to the OrderSubmitState to wait for more orders.
