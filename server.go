@@ -202,6 +202,10 @@ func NewServer(cfg *Config) (*Server, error) {
 		PackageSource: store,
 	})
 
+	if cfg.BatchConfTarget < 1 {
+		return nil, fmt.Errorf("conf target must be greater than 0")
+	}
+
 	server := &Server{
 		cfg:            cfg,
 		lnd:            lnd,
@@ -244,6 +248,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			BatchExecutor:   batchExecutor,
 			FeeSchedule:     feeSchedule,
 			ChannelEnforcer: channelEnforcer,
+			ConfTarget:      cfg.BatchConfTarget,
 		}),
 		channelEnforcer: channelEnforcer,
 		quit:            make(chan struct{}),

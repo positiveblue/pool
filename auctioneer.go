@@ -113,6 +113,9 @@ type Wallet interface {
 
 	// PublishTransaction attempts to publish the target transaction.
 	PublishTransaction(ctx context.Context, tx *wire.MsgTx) error
+
+	// EstimateFee gets a fee rate estimate for the confirmation target.
+	EstimateFee(context.Context, int32) (chainfee.SatPerKWeight, error)
 }
 
 // OrderFeed is an interface that represents a live feed to the order book.
@@ -191,6 +194,10 @@ type AuctioneerConfig struct {
 	// ChannelEnforcer enforces the service lifetime of channels created as
 	// part of a finalized batch.
 	ChannelEnforcer ChannelEnforcer
+
+	// ConfTarget is the confirmation target we'll use to get fee estimates
+	// for onchain transactions.
+	ConfTarget int32
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will

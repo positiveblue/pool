@@ -273,6 +273,12 @@ func (m *mockWallet) DeriveNextKey(context.Context, int32) (
 	}, nil
 }
 
+func (m *mockWallet) EstimateFee(context.Context, int32) (
+	chainfee.SatPerKWeight, error) {
+
+	return chainfee.FeePerKwFloor, nil
+}
+
 var _ Wallet = (*mockWallet)(nil)
 
 type mockCallMarket struct {
