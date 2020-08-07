@@ -294,28 +294,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		PreviousOutPoint: mAccountDiff.PriorPoint,
 	})
 
-	// Update the ending balances to reflect what the traders need to pay
-	// for the execution transaction.
-	txFeeEstimator := newChainFeeEstimator(
-		orderBatch.Orders, feeRate,
-	)
-
+	// As we go estimate and count the chain fees paid by the traders.
+	txFeeEstimator := newChainFeeEstimator(orderBatch.Orders, feeRate)
 	var totalTraderFees btcutil.Amount
-	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
-		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
-
-		// The trader cannot actually pay a fee bigger than what
-		// remains in the account.
-		if traderFee <= trader.EndingBalance {
-			totalTraderFees += traderFee
-		} else if trader.EndingBalance >= 0 {
-			totalTraderFees += trader.EndingBalance
-		}
-
-		// Update the account diff, which should reflect the end chain
-		// fee paid.
-		trader.EndingBalance -= traderFee
-	}
 
 	// Next, we'll do our first pass amongst the outputs to add the new
 	// outputs for each account involved. The value of these outputs are
@@ -325,16 +306,31 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	traderAccounts := make(map[matching.AccountID]*wire.TxOut)
 	var traderOuts int
 	for acctID, trader := range orderBatch.FeeReport.AccountDiffs {
-		acctParams := trader.StartingState
+		// We start by finding the chain fee that should be paid by
+		// this trader, and subtracting that value from their ending
+		// balance.
+		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
 
-		switch {
+		// The trader should always have enough balance to cover the on
+		// chain fees, otherwise we shouldn't have accepted the order
+		// into this batch.
+		if traderFee > trader.EndingBalance {
+			return fmt.Errorf("account %x only had balance %v to "+
+				"cover chain fee %v", acctID,
+				trader.EndingBalance, traderFee)
+		}
+
+		// Subtract the chain fee from their balance.
+		trader.EndingBalance -= traderFee
+		totalTraderFees += traderFee
 
 		// If the ending balance is above the dust limit, it will be
 		// recreated. If not the account will be closed.
-		case trader.EndingBalance >= orderT.MinNoDustAccountSize:
+		if trader.EndingBalance >= orderT.MinNoDustAccountSize {
 			// Using the set params of the account, and the
 			// information within the account key, we'll create a
 			// new output to place within our transaction.
+			acctParams := trader.StartingState
 			acctKey, err := btcec.ParsePubKey(
 				acctParams.AccountKey[:], btcec.S256(),
 			)
@@ -367,10 +363,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			trader.RecreatedOutput = traderAccountTxOut
 			e.ExeTx.AddTxOut(traderAccountTxOut)
 			traderOuts++
-
-		// If the trader's balance was below dust, it will go to chain
-		// fees.
-		case trader.EndingBalance >= 0:
+		} else {
+			// If the trader's balance was below dust, it will all
+			// go to chain fees. Note that we keep the ending
+			// balance value intact, as that is used to check the
+			// calculation by the traders.
 			totalTraderFees += trader.EndingBalance
 		}
 
