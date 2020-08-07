@@ -224,10 +224,6 @@ type ExecutionResult struct {
 	// BatchTx is the finalized, fully signed batch transaction.
 	BatchTx *wire.MsgTx
 
-	// StartingFeeRate is the fee rate that the batch transaction above
-	// pays.
-	StartingFeeRate chainfee.SatPerKWeight
-
 	// LifetimePackages contains the service level enforcement package for
 	// each channel created as a result of the batch.
 	LifetimePackages []*chanenforcement.LifetimePackage
@@ -850,7 +846,6 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			Batch:             env.batch,
 			MasterAccountDiff: exeCtx.MasterAccountDiff,
 			BatchTx:           batchTx,
-			StartingFeeRate:   chainfee.FeePerKwFloor,
 			LifetimePackages:  env.lifetimePkgs,
 		}
 		if err := b.batchStorer.Store(ctxb, env.result); err != nil {
