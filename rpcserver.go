@@ -1570,8 +1570,8 @@ func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
 		NodePub:     order.ServerDetails().NodeKey[:],
 		NodeAddr:    marshallNodeAddrs(order.ServerDetails().NodeAddrs),
 		// TODO: ChanType should be an enum in RPC?
-		ChanType:               uint32(order.ServerDetails().ChanType),
-		FundingFeeRateSatPerKw: uint64(order.Details().FundingFeeRate),
+		ChanType:                uint32(order.ServerDetails().ChanType),
+		MaxBatchFeeRateSatPerKw: uint64(order.Details().MaxBatchFeeRate),
 	}
 }
 
@@ -1607,8 +1607,8 @@ func parseRPCServerOrder(version uint32,
 	kit.Amt = btcutil.Amount(details.Amt)
 	kit.Units = orderT.NewSupplyFromSats(kit.Amt)
 	kit.UnitsUnfulfilled = kit.Units
-	kit.FundingFeeRate = chainfee.SatPerKWeight(
-		details.FundingFeeRateSatPerKw,
+	kit.MaxBatchFeeRate = chainfee.SatPerKWeight(
+		details.MaxBatchFeeRateSatPerKw,
 	)
 
 	// The trader must supply a nonce.

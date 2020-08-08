@@ -5,6 +5,7 @@ import (
 
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/order"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 const (
@@ -30,10 +31,10 @@ func testOrderSubmission(t *harnessTest) {
 	// enforced. The order shouldn't be stored.
 	rpcAsk := &clmrpc.Ask{
 		Details: &clmrpc.Order{
-			TraderKey:      acct.TraderKey,
-			RateFixed:      100,
-			Amt:            1500000,
-			FundingFeeRate: 0,
+			TraderKey:               acct.TraderKey,
+			RateFixed:               100,
+			Amt:                     1500000,
+			MaxBatchFeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 		},
 		MaxDurationBlocks: 365*144 + 1,
 		Version:           uint32(order.CurrentVersion),
