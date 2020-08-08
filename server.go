@@ -194,7 +194,6 @@ func NewServer(cfg *Config) (*Server, error) {
 	orderBook := order.NewBook(&order.BookConfig{
 		Store:       store,
 		Signer:      lnd.Signer,
-		SubmitFee:   btcutil.Amount(cfg.OrderSubmitFee),
 		MaxDuration: cfg.MaxDuration,
 	})
 

@@ -600,8 +600,12 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
 // are based on a multi-sig, the trader requires our signature before the
 // account expires in order to modify it. This method is abstracted such that it
 // can handle any type of account modification requested by the trader.
+//
+// The lockedValue should be set to the value locked up in orders, including
+// fees that must be reserved in case the orders match.
 func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
-	newInputs []*wire.TxIn, newOutputs []*wire.TxOut, modifiers []Modifier,
+	lockedValue btcutil.Amount, newInputs []*wire.TxIn,
+	newOutputs []*wire.TxOut, modifiers []Modifier,
 	bestHeight uint32) ([]byte, error) {
 
 	// Obtain the account's modification lock to ensure there are no other
@@ -637,8 +641,6 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 		return nil, NewErrBannedAccount(expiration)
 	}
 
-	// TODO(wilmer): Reject if account has pending orders.
-
 	// If there aren't new account parameters to update, then we'll
 	// interpret this as the trader wishing to close their account.
 	//
@@ -649,8 +651,13 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 			return nil, errors.New("account has already been closed")
 		}
 
+		// Accounts with a non-zero locked value cannot be closed.
+		if lockedValue > 0 {
+			return nil, newErrAccountLockedValue(lockedValue)
+		}
+
 		sig, _, err := m.signAccountSpend(
-			ctx, account, newInputs, newOutputs, nil,
+			ctx, account, lockedValue, newInputs, newOutputs, nil,
 		)
 		if err != nil {
 			return nil, err
@@ -670,7 +677,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	// additional inputs and outputs provided by the trader, along with any
 	// account modifications.
 	sig, newAccountPoint, err := m.signAccountSpend(
-		ctx, account, newInputs, newOutputs, modifiers,
+		ctx, account, lockedValue, newInputs, newOutputs, modifiers,
 	)
 	if err != nil {
 		return nil, err
@@ -695,7 +702,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 // the given inputs and outputs, along with the account output as an input, and
 // a newly created account output if newAccountValue is not zero.
 func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
-	inputs []*wire.TxIn, outputs []*wire.TxOut,
+	lockedValue btcutil.Amount, inputs []*wire.TxIn, outputs []*wire.TxOut,
 	modifiers []Modifier) ([]byte, *wire.OutPoint, error) {
 
 	// Construct the spending transaction that we'll sign.
@@ -717,6 +724,15 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		nextAccountScript, err := modifiedAccount.NextOutputScript()
 		if err != nil {
 			return nil, nil, err
+		}
+
+		// To ensure the account's locked value is enforced, we'll make
+		// sure that its value after a withdrawal is still greater or
+		// equal to the locked value.
+		isWithdrawal := account.Value > modifiedAccount.Value
+		if isWithdrawal && modifiedAccount.Value < lockedValue {
+			return nil, nil,
+				newErrAccountLockedValue(lockedValue)
 		}
 
 		tx.AddTxOut(&wire.TxOut{

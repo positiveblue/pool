@@ -49,3 +49,18 @@ func newErrAboveMaxAccountValue(max btcutil.Amount) ErrAboveMaxAccountValue {
 func (e ErrAboveMaxAccountValue) Error() string {
 	return fmt.Sprintf("maximum account value allowed is %v", e.max)
 }
+
+// ErrAccountLockedValue is an error returned upon a failed trader action due to
+// it attempting to use an account's locked value.
+type ErrAccountLockedValue struct {
+	value btcutil.Amount
+}
+
+func newErrAccountLockedValue(value btcutil.Amount) ErrAccountLockedValue {
+	return ErrAccountLockedValue{value}
+}
+
+func (e ErrAccountLockedValue) Error() string {
+	return fmt.Sprintf("account has locked balance of %v, cancel some/all "+
+		"orders before proceeding", e.value)
+}

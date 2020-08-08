@@ -350,8 +350,19 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 		}
 	}
 
+	var rawTraderKey [33]byte
+	copy(rawTraderKey[:], req.TraderKey)
+
+	// Get the value locked up in orders for this account.
+	lockedValue, err := s.orderBook.LockedValue(
+		ctx, rawTraderKey, s.feeSchedule,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	accountSig, err := s.accountManager.ModifyAccount(
-		ctx, traderKey, newInputs, newOutputs, modifiers,
+		ctx, traderKey, lockedValue, newInputs, newOutputs, modifiers,
 		s.bestHeight(),
 	)
 	if err != nil {
@@ -422,7 +433,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
-	err := s.orderBook.PrepareOrder(ctx, o, s.bestHeight())
+	err := s.orderBook.PrepareOrder(ctx, o, s.feeSchedule, s.bestHeight())
 	return mapOrderResp(o.Nonce(), err)
 }
 
@@ -1570,8 +1581,8 @@ func marshallServerOrder(order order.ServerOrder) *clmrpc.ServerOrder {
 		NodePub:     order.ServerDetails().NodeKey[:],
 		NodeAddr:    marshallNodeAddrs(order.ServerDetails().NodeAddrs),
 		// TODO: ChanType should be an enum in RPC?
-		ChanType:               uint32(order.ServerDetails().ChanType),
-		FundingFeeRateSatPerKw: uint64(order.Details().FundingFeeRate),
+		ChanType:                uint32(order.ServerDetails().ChanType),
+		MaxBatchFeeRateSatPerKw: uint64(order.Details().MaxBatchFeeRate),
 	}
 }
 
@@ -1607,8 +1618,8 @@ func parseRPCServerOrder(version uint32,
 	kit.Amt = btcutil.Amount(details.Amt)
 	kit.Units = orderT.NewSupplyFromSats(kit.Amt)
 	kit.UnitsUnfulfilled = kit.Units
-	kit.FundingFeeRate = chainfee.SatPerKWeight(
-		details.FundingFeeRateSatPerKw,
+	kit.MaxBatchFeeRate = chainfee.SatPerKWeight(
+		details.MaxBatchFeeRateSatPerKw,
 	)
 
 	// The trader must supply a nonce.

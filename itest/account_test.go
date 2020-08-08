@@ -21,6 +21,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -131,7 +132,7 @@ func testAccountWithdrawal(t *harnessTest) {
 				Address:  "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
 			},
 		},
-		SatPerVbyte: 1,
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	}
 	_, err := t.trader.WithdrawAccount(ctx, withdrawReq)
 	isInvalidAddrErr := err != nil &&
@@ -213,9 +214,9 @@ func testAccountDeposit(t *harnessTest) {
 	// should therefore be twice that its initial value.
 	const valueAfterDeposit = initialAccountValue * 2
 	depositReq := &clmrpc.DepositAccountRequest{
-		TraderKey:   account.TraderKey,
-		AmountSat:   initialAccountValue,
-		SatPerVbyte: 1,
+		TraderKey:       account.TraderKey,
+		AmountSat:       initialAccountValue,
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	}
 	depositResp, err := t.trader.DepositAccount(ctx, depositReq)
 	if err != nil {
@@ -350,10 +351,12 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					TraderKey:      open.TraderKey,
-					RateFixed:      100,
-					Amt:            1500000,
-					FundingFeeRate: 0,
+					TraderKey: open.TraderKey,
+					RateFixed: 100,
+					Amt:       1500000,
+					MaxBatchFeeRateSatPerKw: uint64(
+						chainfee.FeePerKwFloor,
+					),
 				},
 				MaxDurationBlocks: 2 * dayInBlocks,
 				Version:           uint32(order.CurrentVersion),

@@ -10,6 +10,7 @@ import (
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
 )
 
@@ -43,11 +44,6 @@ type BookConfig struct {
 
 	// Signer is used to verify order signatures.
 	Signer lndclient.SignerClient
-
-	// SubmitFee is the fee the auctioneer server takes for offering its
-	// services of keeping an order book and matching orders. This
-	// represents a flat, one-time fee in satoshis.
-	SubmitFee btcutil.Amount
 
 	// MaxDuration is the maximum value for a bid's min duration or an ask's
 	// max duration.
@@ -101,13 +97,54 @@ func (b *Book) Stop() {
 
 // PrepareOrder validates an incoming order and stores it to the database.
 func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
-	bestHeight uint32) error {
+	feeSchedule order.FeeSchedule, bestHeight uint32) error {
 
-	err := b.validateOrder(ctx, o, bestHeight)
+	// Get the account that is making this order.
+	acctKey, err := btcec.ParsePubKey(
+		o.Details().AcctKey[:], btcec.S256(),
+	)
 	if err != nil {
 		return err
 	}
 
+	acct, err := b.cfg.Store.Account(ctx, acctKey, false)
+	if err != nil {
+		return fmt.Errorf("unable to locate account with key %x: %v",
+			acctKey.SerializeCompressed(), err)
+	}
+
+	// First we make sure the account is ready to submit orders.
+	err = b.validateAccountState(ctx, acctKey, acct, bestHeight)
+	if err != nil {
+		return err
+	}
+
+	// Now that the account is cleared, validate the order.
+	err = b.validateOrder(ctx, o)
+	if err != nil {
+		return err
+	}
+
+	// The order was valid in isolation, but it still might be the case the
+	// account has active orders that make the balance too low to accept
+	// this additional order. We check the total locked value in case this
+	// order is added.
+	// TODO(halseth): There is a race if multiple orders come in at the
+	// same time, since we will only check locked value for each against
+	// what is already in the db.
+	totalCost, err := b.LockedValue(
+		ctx, o.Details().AcctKey, feeSchedule, o,
+	)
+	if err != nil {
+		return err
+	}
+
+	// Check if the trader can afford this set of orders in the worst case.
+	if totalCost > acct.Value {
+		return ErrInvalidAmt
+	}
+
+	// Order can be safely submitted.
 	err = b.cfg.Store.SubmitOrder(ctx, o)
 	if err != nil {
 		return err
@@ -152,12 +189,75 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	return err
 }
 
+// LockedValue uses the current active orders for the given account to
+// calculate an upper bound of how much might be deducted from the account if
+// they are matched. newOrders can be added to get this upper bound if
+// additional orders are added.
+func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
+	feeSchedule order.FeeSchedule, newOrders ...ServerOrder) (
+	btcutil.Amount, error) {
+
+	// We fetch all existing orders for this account from the store.
+	// TODO(halseth): cache order or reserved value, to avoid fetching ALL
+	// orders on each new order.
+	allOrders, err := b.cfg.Store.GetOrders(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	var reservedValue btcutil.Amount
+	for _, o := range allOrders {
+		// Filter by account.
+		if o.Details().AcctKey != acctKey {
+			continue
+		}
+
+		reservedValue += o.ReservedValue(feeSchedule)
+	}
+
+	// Add the new orders to the list if any and return the worst case
+	// cost.
+	for _, o := range newOrders {
+		reservedValue += o.ReservedValue(feeSchedule)
+	}
+
+	return reservedValue, nil
+}
+
+// validateAccountState makes sure the account is in a state where we can
+// accept a new order.
+func (b *Book) validateAccountState(ctx context.Context,
+	acctKey *btcec.PublicKey, acct *account.Account,
+	bestHeight uint32) error {
+
+	// Only allow orders to be submitted if the account is open, or open
+	// and pending an update (so they can submit orders while the update is
+	// confirming).
+	switch acct.State {
+	case account.StatePendingUpdate, account.StateOpen:
+	default:
+		return fmt.Errorf("account must be open or pending open to "+
+			"submit orders, instead state=%v", acct.State)
+	}
+
+	// Is the account banned? Don't accept the order.
+	isBanned, expiration, err := b.cfg.Store.IsAccountBanned(
+		ctx, acctKey, bestHeight,
+	)
+	if err != nil {
+		return err
+	}
+	if isBanned {
+		return account.NewErrBannedAccount(expiration)
+	}
+
+	return nil
+}
+
 // validateOrder makes sure the order is formally correct, has a correct
 // signature and that the account has enough balance to actually execute the
 // order.
-func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
-	bestHeight uint32) error {
-
+func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	kit := srvOrder.ServerDetails()
 	kit.ChanType = ChanTypeDefault
 	srvOrder.Details().State = order.StateSubmitted
@@ -168,6 +268,13 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
 	if amt == 0 || amt%btcutil.Amount(order.BaseSupplyUnit) != 0 {
 		return fmt.Errorf("order amount must be multiple of %d sats",
 			order.BaseSupplyUnit)
+	}
+
+	// Make sure the amount is consistent with Unit and UnitsUnfulfilled.
+	if srvOrder.Details().Units.ToSatoshis() != amt ||
+		srvOrder.Details().UnitsUnfulfilled.ToSatoshis() != amt {
+		return fmt.Errorf("units and units unfulfilled must " +
+			"translate exactly to amount")
 	}
 
 	// First validate the order signature.
@@ -188,69 +295,33 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder,
 			srvOrder.Details().AcctKey)
 	}
 
+	// The max batch fee rate must be sane.
+	if srvOrder.Details().MaxBatchFeeRate < chainfee.FeePerKwFloor {
+		return fmt.Errorf("invalid max batch feerate")
+	}
+
 	// Now parse the order type specific fields and validate that the
 	// account has enough balance for the requested order.
-	var balanceNeeded btcutil.Amount
 	switch o := srvOrder.(type) {
 	case *Ask:
-		if o.MaxDuration() == 0 {
-			return fmt.Errorf("invalid max duration")
+		if o.MaxDuration() < order.MinimumOrderDurationBlocks {
+			return fmt.Errorf("invalid max duration, must be at "+
+				"least %d", order.MinimumOrderDurationBlocks)
 		}
 		if o.MaxDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for max "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
-		balanceNeeded = o.Amt + b.cfg.SubmitFee
 
 	case *Bid:
-		if o.MinDuration() == 0 {
-			return fmt.Errorf("invalid min duration")
+		if o.MinDuration() < order.MinimumOrderDurationBlocks {
+			return fmt.Errorf("invalid min duration, must be at "+
+				"least %d", order.MinimumOrderDurationBlocks)
 		}
 		if o.MinDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for min "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
-		rate := order.FixedRatePremium(o.FixedRate)
-		orderFee := rate.LumpSumPremium(o.Amt, o.MinDuration())
-		balanceNeeded = orderFee + b.cfg.SubmitFee
-	}
-
-	acctKey, err := btcec.ParsePubKey(
-		srvOrder.Details().AcctKey[:], btcec.S256(),
-	)
-	if err != nil {
-		return err
-	}
-	acct, err := b.cfg.Store.Account(ctx, acctKey, false)
-	if err != nil {
-		return fmt.Errorf("unable to locate account with key %x: %v",
-			acctKey.SerializeCompressed(), err)
-	}
-
-	// Only allow orders to be submitted if the account is open, or open
-	// and pending an update (so they can submit orders while the update is
-	// confirming).
-	switch acct.State {
-	case account.StatePendingUpdate, account.StateOpen:
-		break
-	default:
-		return fmt.Errorf("account must be open or pending open to "+
-			"submit orders, instead state=%v", acct.State)
-	}
-
-	if acct.Value < balanceNeeded {
-		return ErrInvalidAmt
-	}
-
-	// Is the account banned? Don't accept the order.
-	isBanned, expiration, err := b.cfg.Store.IsAccountBanned(
-		ctx, acctKey, bestHeight,
-	)
-	if err != nil {
-		return err
-	}
-	if isBanned {
-		return account.NewErrBannedAccount(expiration)
 	}
 
 	return nil

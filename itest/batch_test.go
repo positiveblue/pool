@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // testBatchExecution is an end-to-end test of the entire system. In this test,
@@ -110,9 +111,9 @@ func testBatchExecution(t *harnessTest) {
 	// To ensure the venue is aware of account deposits/withdrawals, we'll
 	// process a deposit for the account behind the ask.
 	depositResp, err := t.trader.DepositAccount(ctx, &clmrpc.DepositAccountRequest{
-		TraderKey:   account1.TraderKey,
-		AmountSat:   100_000,
-		SatPerVbyte: 1,
+		TraderKey:       account1.TraderKey,
+		AmountSat:       100_000,
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	})
 	if err != nil {
 		t.Fatalf("could not deposit into account: %v", err)
@@ -784,9 +785,9 @@ func testServiceLevelEnforcement(t *harnessTest) {
 		t.Fatalf("expected order submission to fail due to account ban")
 	}
 	_, err = t.trader.DepositAccount(ctx, &clmrpc.DepositAccountRequest{
-		TraderKey:   account1.TraderKey,
-		AmountSat:   1000,
-		SatPerVbyte: 1,
+		TraderKey:       account1.TraderKey,
+		AmountSat:       1000,
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	})
 	if err == nil || !strings.Contains(err.Error(), "banned") {
 		t.Fatalf("expected account deposit to fail due to account ban")
@@ -846,14 +847,14 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// premium, in order to make what's left on the bidders account into
 	// dust.
 	//
-	// 98_500 per billion of 1_000_000 sats for 1000 blocks is 98500 sats,
-	// so the trader will only have 1500 sats left to pay for chain fees
+	// 992_000 per billion of 100_000 sats for 1000 blocks is 99_200 sats,
+	// so the trader will only have 800 sats left to pay for chain fees
 	// and execution fees.
 	//
-	// The execution fee is 1001 sats, chain fee 165 sats, so what is left
-	// will be dust.
-	const orderSize = 1_000_000
-	const matchRate = 98_500
+	// The execution fee is 101 sats, chain fee 165 sats, so what is left
+	// will be dust (< 678 sats).
+	const orderSize = 100_000
+	const matchRate = 992_000
 	const durationBlocks = 1000
 
 	// Submit an ask an bid which will match exactly.

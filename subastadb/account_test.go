@@ -43,6 +43,7 @@ var (
 		TokenID:       testTokenID,
 		Value:         1337,
 		Expiry:        100,
+		TraderKeyRaw:  toRawKey(testTraderKey),
 		AuctioneerKey: testAuctioneerKeyDesc,
 		State:         account.StateOpen,
 		BatchKey:      InitialBatchKey,
@@ -330,8 +331,4 @@ func TestAccountDiffs(t *testing.T) {
 	if err := store.StoreAccountDiff(ctx, traderKey, mods); err != nil {
 		t.Fatalf("unable to store account diff: %v", err)
 	}
-}
-
-func init() {
-	copy(testAccount.TraderKeyRaw[:], testRawAuctioneerKey)
 }

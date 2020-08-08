@@ -108,16 +108,7 @@ func TestPersistBatchResult(t *testing.T) {
 
 	// Now prepare some test data that we are going to operate on. Begin
 	// with an account.
-	a1 := testAccount
-	traderKey, _ := testAccount.TraderKey()
-	reservation := testReservation
-	err = store.ReserveAccount(ctx, testTokenID, &reservation)
-	if err != nil {
-		t.Fatalf("unable to reserve account: %v", err)
-	}
-	if err := store.CompleteReservation(ctx, &a1); err != nil {
-		t.Fatalf("unable to complete reservation: %v", err)
-	}
+	addDummyAccount(t, store)
 
 	// Now store a test order.
 	o1 := &order.Bid{
@@ -183,7 +174,7 @@ func TestPersistBatchResult(t *testing.T) {
 	// Then call the actual persist method on the store.
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
-		[]*btcec.PublicKey{traderKey}, accountModifiers,
+		[]*btcec.PublicKey{testTraderKey}, accountModifiers,
 		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
 		batchTx, lifetimePkgs,
 	)
@@ -193,7 +184,7 @@ func TestPersistBatchResult(t *testing.T) {
 
 	// And finally validate that all changes have been written correctly.
 	// Start with the account.
-	a2, err := store.Account(ctx, traderKey, false)
+	a2, err := store.Account(ctx, testTraderKey, false)
 	if err != nil {
 		t.Fatalf("error getting account: %v", err)
 	}
@@ -271,6 +262,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	defer cleanup()
 
 	// Create a test order that we are going to try to modify.
+	addDummyAccount(t, store)
 	o1 := &order.Bid{
 		Bid: orderT.Bid{
 			Kit:         *dummyClientOrder(t, 500000),
@@ -301,18 +293,19 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	orderModifiers := [][]order.Modifier{
 		{order.StateModifier(orderT.StatePartiallyFilled)},
 	}
-	accountModifiers := [][]account.Modifier{
-		{account.StateModifier(account.StateClosed)},
-	}
+	accountModifiers := [][]account.Modifier{{
+		account.StateModifier(account.StateClosed),
+		account.CloseTxModifier(batchTx),
+	}}
 	ma1.Balance = 500_000
 
 	// Then call the actual persist method on the store. We try to apply
 	// account modifications to an account that does not exist. This should
 	// result in an error and roll back all order modifications.
-	traderKey, _ := testAccount.TraderKey()
+	invalidAccountKey := testAuctioneerKey
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
-		[]*btcec.PublicKey{traderKey}, accountModifiers,
+		[]*btcec.PublicKey{invalidAccountKey}, accountModifiers,
 		ma1, batchID, &matching.OrderBatch{}, testTraderKey, batchTx,
 		nil,
 	)
