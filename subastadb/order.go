@@ -98,25 +98,6 @@ func (s *EtcdStore) UpdateOrder(ctx context.Context,
 	return err
 }
 
-// UpdateOrders atomically updates a list of orders in the database
-// according to the given modifiers.
-//
-// NOTE: This is part of the Store interface.
-func (s *EtcdStore) UpdateOrders(mainCtx context.Context,
-	nonces []orderT.Nonce, modifiers [][]order.Modifier) error {
-
-	if !s.initialized {
-		return errNotInitialized
-	}
-
-	// Update the orders in one single STM transaction that they are updated
-	// atomically.
-	_, err := s.defaultSTM(mainCtx, func(stm conc.STM) error {
-		return s.updateOrdersSTM(stm, nonces, modifiers)
-	})
-	return err
-}
-
 // updateOrdersSTM adds all operations necessary to update multiple orders to
 // the given STM transaction. If any of the orders does not yet exist, the whole
 // STM transaction will fail.

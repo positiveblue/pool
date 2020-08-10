@@ -137,10 +137,6 @@ type Store interface {
 	// modifiers.
 	UpdateOrder(context.Context, order.Nonce, ...Modifier) error
 
-	// UpdateOrders atomically updates a list of orders in the database
-	// according to the given modifiers.
-	UpdateOrders(context.Context, []order.Nonce, [][]Modifier) error
-
 	// GetOrder returns an order by looking up the nonce. If no order with
 	// that nonce exists in the store, ErrNoOrder is returned.
 	GetOrder(context.Context, order.Nonce) (ServerOrder, error)
