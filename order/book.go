@@ -198,8 +198,6 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 	btcutil.Amount, error) {
 
 	// We fetch all existing orders for this account from the store.
-	// TODO(halseth): cache order or reserved value, to avoid fetching ALL
-	// orders on each new order.
 	allOrders, err := b.cfg.Store.GetOrders(ctx)
 	if err != nil {
 		return 0, err
