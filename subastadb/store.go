@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -16,6 +17,8 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/lntypes"
+	"github.com/lightningnetwork/lnd/multimutex"
 	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
@@ -82,10 +85,49 @@ type Store interface {
 		*matching.OrderBatch, *wire.MsgTx, error)
 }
 
+// nonceMutex is a simple wrapper around a multimutex that casts 32-byte nonces
+// to 32-byte hashes.
+type nonceMutex struct {
+	hashMutex *multimutex.HashMutex
+}
+
+func newNonceMutex() *nonceMutex {
+	return &nonceMutex{
+		hashMutex: multimutex.NewHashMutex(),
+	}
+}
+
+// lock acquires the mutex for the given nonce(s).
+func (n *nonceMutex) lock(nonces ...orderT.Nonce) {
+	for _, nonce := range nonces {
+		n.hashMutex.Lock(lntypes.Hash(nonce))
+	}
+}
+
+// unlock releases the mutex for the given nonce(s). Note that the nonces
+// should be provided in the same order as when locked.
+func (n *nonceMutex) unlock(nonces ...orderT.Nonce) {
+	// Unlock in the opposite order of locking.
+	for i := len(nonces) - 1; i >= 0; i-- {
+		nonce := nonces[i]
+		n.hashMutex.Unlock(lntypes.Hash(nonce))
+	}
+}
+
 type EtcdStore struct {
 	client      *clientv3.Client
 	networkID   string
 	initialized bool
+
+	// activeOrdersCache is map where we cache results from calls to fetch
+	// active orders. Will be created and filled on store initialization.
+	activeOrdersCache    map[orderT.Nonce]order.ServerOrder
+	activeOrdersCacheMtx sync.RWMutex
+
+	// nonceMtx is a mutex we'll lock when doing write operations for a
+	// particular nonce to the DB, in order to ensure concurrent writes
+	// don't lead to inconsitencies between the cache and the DB.
+	nonceMtx *nonceMutex
 }
 
 // NewEtcdStore creates a new etcd store instance. Chain indicates the chain to
@@ -105,8 +147,10 @@ func NewEtcdStore(activeNet chaincfg.Params,
 	}
 
 	s := &EtcdStore{
-		client:    cli,
-		networkID: activeNet.Name,
+		client:            cli,
+		networkID:         activeNet.Name,
+		nonceMtx:          newNonceMutex(),
+		activeOrdersCache: make(map[orderT.Nonce]order.ServerOrder),
 	}
 
 	return s, nil
@@ -151,7 +195,8 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 		return errDbVersionMismatch
 	}
 
-	return nil
+	// We end initialization by filling the active orders cache.
+	return s.fillActiveOrdersCache(ctx)
 }
 
 // firstTimeInit stores all initial required key-value pairs throughout the
