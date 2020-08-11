@@ -74,11 +74,6 @@ type Store interface {
 		orderT.BatchID, *matching.OrderBatch, *btcec.PublicKey,
 		*wire.MsgTx, []*chanenforcement.LifetimePackage) error
 
-	// PersistBatchSnapshot persists a self-contained snapshot of a batch
-	// including all involved orders and accounts.
-	PersistBatchSnapshot(context.Context, orderT.BatchID,
-		*matching.OrderBatch, *wire.MsgTx) error
-
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context, orderT.BatchID) (

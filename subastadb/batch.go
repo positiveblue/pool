@@ -250,30 +250,6 @@ func (s *EtcdStore) ConfirmBatch(ctx context.Context,
 	return err
 }
 
-// PersistBatchSnapshot persists a self-contained snapshot of a batch
-// including all involved orders and accounts.
-func (s *EtcdStore) PersistBatchSnapshot(ctx context.Context, id orderT.BatchID,
-	batch *matching.OrderBatch, batchTx *wire.MsgTx) error {
-
-	if !s.initialized {
-		return errNotInitialized
-	}
-
-	key := s.batchSnapshotKeyPath(id)
-	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
-		// Serialize the batch snapshot and store it. If a previous
-		// snapshots exists for the given ID, it is overwritten.
-		var buf bytes.Buffer
-		err := serializeBatch(&buf, batch, batchTx)
-		if err != nil {
-			return err
-		}
-		stm.Put(key, buf.String())
-		return nil
-	})
-	return err
-}
-
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (

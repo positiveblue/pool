@@ -436,13 +436,28 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		ClearingPrice: 123,
 	}
 
-	// Store the snapshot and then read it back again immediately.
 	var batchID orderT.BatchID
 	copy(batchID[:], initialBatchKeyBytes)
-	err := store.PersistBatchSnapshot(ctx, batchID, batch, batchTx)
-	if err != nil {
-		t.Fatalf("could not store batch snapshot: %v", err)
+
+	nextBatchKey := clmscript.IncrementKey(InitialBatchKey)
+	ma1 := &account.Auctioneer{
+		OutPoint: wire.OutPoint{
+			Index: 5,
+		},
+		Balance:       1_000_000,
+		AuctioneerKey: testAuctioneerKeyDesc,
 	}
+	copy(ma1.BatchKey[:], nextBatchKey.SerializeCompressed())
+
+	// Store the batch and then read the snapshot back again immediately.
+	err := store.PersistBatchResult(
+		ctx, nil, nil, nil, nil, ma1, batchID, batch, nextBatchKey,
+		batchTx, nil,
+	)
+	if err != nil {
+		t.Fatalf("error persisting batch result: %v", err)
+	}
+
 	dbBatch, dbBatchTx, err := store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		t.Fatalf("could not read batch snapshot: %v", err)

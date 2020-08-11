@@ -322,18 +322,6 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	return nil
 }
 
-// PersistBatchSnapshot persists a self-contained snapshot of a batch
-// including all involved orders and accounts.
-//
-// NOTE: This is part of the Store interface.
-func (s *StoreMock) PersistBatchSnapshot(_ context.Context, id orderT.BatchID,
-	batch *matching.OrderBatch, tx *wire.MsgTx) error {
-
-	s.Snapshots[id] = batch
-	s.BatchTx = tx
-	return nil
-}
-
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 //
