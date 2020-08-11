@@ -33,12 +33,15 @@ var (
 	}
 )
 
-// TestBatchKey tests the different database operations that can be performed on
-// the per-batch key.
-func TestBatchKey(t *testing.T) {
+// TestPersistBatchResult tests the different database operations that are
+// performed during the persisting phase of a batch.
+func TestPersistBatchResult(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
+	var (
+		ctx     = context.Background()
+		batchID = orderT.BatchID{1, 2, 3}
+	)
 	store, cleanup := newTestEtcdStore(t)
 	defer cleanup()
 
@@ -53,44 +56,8 @@ func TestBatchKey(t *testing.T) {
 			batchKey.SerializeCompressed())
 	}
 
-	// Increment the initial batch key by its curve's base point. We should
-	// expect to see the new key in the store.
-	nextBatchKey, err := store.NextBatchKey(ctx)
-	if err != nil {
-		t.Fatalf("unable to update current batch key: %v", err)
-	}
-	storedBatchKey, err := store.BatchKey(ctx)
-	if err != nil {
-		t.Fatalf("unable to retrieve current batch key: %v", err)
-	}
-	if !storedBatchKey.IsEqual(nextBatchKey) {
-		t.Fatalf("expected updated batch key %x, got %x",
-			nextBatchKey.SerializeCompressed(),
-			storedBatchKey.SerializeCompressed())
-	}
-
-	expectedNextBatchKey := clmscript.IncrementKey(InitialBatchKey)
-	if !nextBatchKey.IsEqual(expectedNextBatchKey) {
-		t.Fatalf("expected updated batch key %x, got %x",
-			expectedNextBatchKey.SerializeCompressed(),
-			nextBatchKey.SerializeCompressed())
-	}
-}
-
-// TestPersistBatchResult tests the different database operations that are
-// performed during the persisting phase of a batch.
-func TestPersistBatchResult(t *testing.T) {
-	t.Parallel()
-
-	var (
-		ctx     = context.Background()
-		batchID = orderT.BatchID{1, 2, 3}
-	)
-	store, cleanup := newTestEtcdStore(t)
-	defer cleanup()
-
 	// First test the basic sanity tests that are performed.
-	err := store.PersistBatchResult(
+	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{{}}, nil, nil, nil, nil, batchID, nil, nil,
 		nil, nil,
 	)
@@ -171,15 +138,28 @@ func TestPersistBatchResult(t *testing.T) {
 	}
 	lifetimePkgs := []*chanenforcement.LifetimePackage{lifetimePkg}
 
+	nextBatchKey := clmscript.IncrementKey(batchKey)
+
 	// Then call the actual persist method on the store.
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{testTraderKey}, accountModifiers,
-		ma1, batchID, &matching.OrderBatch{}, testTraderKey,
+		ma1, batchID, &matching.OrderBatch{}, nextBatchKey,
 		batchTx, lifetimePkgs,
 	)
 	if err != nil {
 		t.Fatalf("error persisting batch result: %v", err)
+	}
+
+	// Check batch key was updated.
+	batchKey, err = store.BatchKey(ctx)
+	if err != nil {
+		t.Fatalf("unable to retrieve current batch key: %v", err)
+	}
+	if !batchKey.IsEqual(nextBatchKey) {
+		t.Fatalf("expected updated batch key %x, got %x",
+			nextBatchKey.SerializeCompressed(),
+			batchKey.SerializeCompressed())
 	}
 
 	// And finally validate that all changes have been written correctly.
@@ -219,7 +199,7 @@ func TestPersistBatchResult(t *testing.T) {
 		t.Fatalf("unexpected master account balance, got %d wanted %d",
 			ma2.Balance, 500_000)
 	}
-	if !bytes.Equal(ma2.BatchKey[:], testTraderKey.SerializeCompressed()) {
+	if !bytes.Equal(ma2.BatchKey[:], batchKey.SerializeCompressed()) {
 		t.Fatalf("unexpected batch key, got %x wanted %x", ma2.BatchKey,
 			testTraderKey.SerializeCompressed())
 	}

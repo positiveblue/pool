@@ -273,6 +273,12 @@ func (m *mockWallet) DeriveNextKey(context.Context, int32) (
 	}, nil
 }
 
+func (m *mockWallet) EstimateFee(context.Context, int32) (
+	chainfee.SatPerKWeight, error) {
+
+	return chainfee.FeePerKwFloor, nil
+}
+
 var _ Wallet = (*mockWallet)(nil)
 
 type mockCallMarket struct {
@@ -289,7 +295,9 @@ func newMockCallMarket() *mockCallMarket {
 	}
 }
 
-func (m *mockCallMarket) MaybeClear(matching.BatchID) (*matching.OrderBatch, error) {
+func (m *mockCallMarket) MaybeClear(matching.BatchID,
+	chainfee.SatPerKWeight) (*matching.OrderBatch, error) {
+
 	m.Lock()
 	defer m.Unlock()
 

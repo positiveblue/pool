@@ -247,8 +247,8 @@ github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585 h1:NEC1mMh6KvNeUjiRHBuQf/Pptg19rq1CVO4jRUzhj1I=
 github.com/lightninglabs/kirin v0.0.0-20200217235049-34b4e1f6a585/go.mod h1:6RzSfM47mAGvnNl8QWWc4NbuDxoEnPGy/KbyM0uWgvs=
-github.com/lightninglabs/llm v0.1.0-alpha.0.20200807235147-e1a9f636b858 h1:LAxYljyYK+IEL+lmi/WpgPZ4gMmdnv/WDr+7ZfUNxHM=
-github.com/lightninglabs/llm v0.1.0-alpha.0.20200807235147-e1a9f636b858/go.mod h1:lRtEuwgkMOQ/YBuGfsi3/VsMFj0GrlfMMwRAUKnK1nM=
+github.com/lightninglabs/llm v0.1.0-alpha.0.20200810073508-8f65890328e5 h1:+VbAX0gyHy039ck4vz+OsbmmCUWv20AOgU6sW8x9obw=
+github.com/lightninglabs/llm v0.1.0-alpha.0.20200810073508-8f65890328e5/go.mod h1:lRtEuwgkMOQ/YBuGfsi3/VsMFj0GrlfMMwRAUKnK1nM=
 github.com/lightninglabs/loop v0.3.0-alpha.0.20200103135410-5e00ce62677a/go.mod h1:VEp7TFUL7Ehq9mjQVUuNVTjpMIeTx8kOHvQ7PdJpLuA=
 github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63 h1:R/+aHkygbuxfZsZOByiFUA6f73TNZ3EJQYhWS+hvdoc=
 github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63/go.mod h1:5TEpefapLXHYrUpbhVYXP4DenS2H3S6hSYu1koFjfZA=

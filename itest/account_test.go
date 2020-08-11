@@ -351,12 +351,10 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					TraderKey: open.TraderKey,
-					RateFixed: 100,
-					Amt:       1500000,
-					MaxBatchFeeRateSatPerKw: uint64(
-						chainfee.FeePerKwFloor,
-					),
+					TraderKey:               open.TraderKey,
+					RateFixed:               100,
+					Amt:                     1500000,
+					MaxBatchFeeRateSatPerKw: uint64(12500),
 				},
 				MaxDurationBlocks: 2 * dayInBlocks,
 				Version:           uint32(order.CurrentVersion),

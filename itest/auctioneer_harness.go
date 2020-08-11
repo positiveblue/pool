@@ -83,6 +83,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			BaseDir:          cfg.BaseDir,
 			ExecFeeBase:      subasta.DefaultExecutionFeeBase,
 			ExecFeeRate:      subasta.DefaultExecutionFeeRate,
+			BatchConfTarget:  6,
 			MaxAcctValue:     btcutil.SatoshiPerBitcoin,
 			MaxDuration:      365 * 144,
 			SubscribeTimeout: 500 * time.Millisecond,

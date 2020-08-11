@@ -38,6 +38,10 @@ const (
 	// bps, or 0.001, or 0.1%.
 	DefaultExecutionFeeRate = 1000
 
+	// defaultBatchConfTarget is the default value we'll use for the fee
+	// estimation of the batch transaction.
+	defaultBatchConfTarget = 6
+
 	// defaultTLSCertFilename is the default file name for the TLS
 	// certificate.
 	defaultTLSCertFilename = "tls.cert"
@@ -125,6 +129,8 @@ type Config struct {
 	ExecFeeBase int64 `long:"execfeebase" description:"The execution base fee in satoshis that is charged per matched order."`
 	ExecFeeRate int64 `long:"execfeerate" description:"The execution fee rate in parts per million that is charged per matched order."`
 
+	BatchConfTarget int32 `long:"batchconftarget" description:"The confirmation target that will be used for fee estimation of batch transactions."`
+
 	MaxAcctValue int64  `long:"maxacctvalue" description:"The maximum account value we enforce on the auctioneer side."`
 	MaxDuration  uint32 `long:"maxduration" description:"The maximum value for the min/max order duration values."`
 
@@ -164,6 +170,7 @@ var DefaultConfig = &Config{
 	BaseDir:          DefaultBaseDir,
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
+	BatchConfTarget:  defaultBatchConfTarget,
 	MaxAcctValue:     defaultMaxAcctValue,
 	MaxDuration:      defaultMaxDuration,
 	SubscribeTimeout: defaultSubscribeTimeout,

@@ -6,6 +6,7 @@ import (
 
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // BatchID is a 33-byte identifier that uniquely identifies this batch. This ID
@@ -86,7 +87,9 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 // returned.
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
-func (u *UniformPriceCallMarket) MaybeClear(BatchID) (*OrderBatch, error) {
+func (u *UniformPriceCallMarket) MaybeClear(_ BatchID,
+	feeRate chainfee.SatPerKWeight) (*OrderBatch, error) {
+
 	// At this point we know we have a set of orders, so we'll create the
 	// match maker for usage below.
 	matchMaker := NewMultiUnitMatchMaker(u.acctFetcher)
@@ -96,14 +99,34 @@ func (u *UniformPriceCallMarket) MaybeClear(BatchID) (*OrderBatch, error) {
 	//
 	// First we'll obtain slices pointing to the backing list so the match
 	// maker can examine all the entries easily.
-	bids := make([]*order.Bid, 0, u.bids.Len())
+	var (
+		bids = make([]*order.Bid, 0, u.bids.Len())
+		asks = make([]*order.Ask, 0, u.asks.Len())
+
+		// We'll skip orders having a max batch fee rate lower than our
+		// current estimate.
+		skippedBids []*order.Bid
+		skippedAsks []*order.Ask
+	)
+
 	for bid := u.bids.Front(); bid != nil; bid = bid.Next() {
 		b := bid.Value.(order.Bid)
+
+		if b.MaxBatchFeeRate < feeRate {
+			skippedBids = append(skippedBids, &b)
+			continue
+		}
+
 		bids = append(bids, &b)
 	}
-	asks := make([]*order.Ask, 0, u.asks.Len())
 	for ask := u.asks.Front(); ask != nil; ask = ask.Next() {
 		a := ask.Value.(order.Ask)
+
+		if a.MaxBatchFeeRate < feeRate {
+			skippedAsks = append(skippedAsks, &a)
+			continue
+		}
+
 		asks = append(asks, &a)
 	}
 
@@ -140,6 +163,12 @@ func (u *UniformPriceCallMarket) MaybeClear(BatchID) (*OrderBatch, error) {
 		return nil, err
 	}
 	if err := u.ConsiderAsks(matchSet.UnmatchedAsks...); err != nil {
+		return nil, err
+	}
+	if err := u.ConsiderBids(skippedBids...); err != nil {
+		return nil, err
+	}
+	if err := u.ConsiderAsks(skippedAsks...); err != nil {
 		return nil, err
 	}
 

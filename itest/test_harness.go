@@ -27,7 +27,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -919,12 +918,10 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 		Details: &clmrpc.SubmitOrderRequest_Bid{
 			Bid: &clmrpc.Bid{
 				Details: &clmrpc.Order{
-					TraderKey: subKey,
-					RateFixed: rate,
-					Amt:       uint64(amt),
-					MaxBatchFeeRateSatPerKw: uint64(
-						chainfee.FeePerKwFloor,
-					),
+					TraderKey:               subKey,
+					RateFixed:               rate,
+					Amt:                     uint64(amt),
+					MaxBatchFeeRateSatPerKw: uint64(12500),
 				},
 				MinDurationBlocks: duration,
 				Version:           version,
@@ -956,12 +953,10 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 		Details: &clmrpc.SubmitOrderRequest_Ask{
 			Ask: &clmrpc.Ask{
 				Details: &clmrpc.Order{
-					TraderKey: subKey,
-					RateFixed: rate,
-					Amt:       uint64(amt),
-					MaxBatchFeeRateSatPerKw: uint64(
-						chainfee.FeePerKwFloor,
-					),
+					TraderKey:               subKey,
+					RateFixed:               rate,
+					Amt:                     uint64(amt),
+					MaxBatchFeeRateSatPerKw: uint64(12500),
 				},
 				MaxDurationBlocks: duration,
 				Version:           version,
