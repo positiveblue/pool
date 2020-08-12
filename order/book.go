@@ -10,7 +10,9 @@ import (
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/multimutex"
 	"github.com/lightningnetwork/lnd/subscribe"
 )
 
@@ -59,6 +61,7 @@ type Book struct {
 	cfg BookConfig
 
 	ntfnServer *subscribe.Server
+	acctMutex  *multimutex.HashMutex
 
 	wg   sync.WaitGroup
 	quit chan struct{}
@@ -69,6 +72,7 @@ func NewBook(cfg *BookConfig) *Book {
 	return &Book{
 		ntfnServer: subscribe.NewServer(),
 		cfg:        *cfg,
+		acctMutex:  multimutex.NewHashMutex(),
 		quit:       make(chan struct{}),
 	}
 }
@@ -129,9 +133,15 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	// account has active orders that make the balance too low to accept
 	// this additional order. We check the total locked value in case this
 	// order is added.
-	// TODO(halseth): There is a race if multiple orders come in at the
-	// same time, since we will only check locked value for each against
-	// what is already in the db.
+	//
+	// To ensure no other order is submitted before we have checked the
+	// locked value and submitted this order, we get a mutex exclusive for
+	// this account. We use the first 32 bytes as an account identifier.
+	var acctID lntypes.Hash
+	copy(acctID[:], o.Details().AcctKey[:32])
+	b.acctMutex.Lock(acctID)
+	defer b.acctMutex.Unlock(acctID)
+
 	totalCost, err := b.LockedValue(
 		ctx, o.Details().AcctKey, feeSchedule, o,
 	)
