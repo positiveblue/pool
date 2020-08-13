@@ -17,6 +17,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
 // TestSubmitOrder tests that orders can be stored and retrieved correctly.
@@ -153,14 +154,22 @@ func TestUpdateOrders(t *testing.T) {
 	// Bulk update the state of both orders and check that they are
 	// persisted correctly and moved out of the active bucket into the
 	// archive.
+	var updateCache func()
 	stateModifier := order.StateModifier(orderT.StateExecuted)
-	err = store.UpdateOrders(
-		ctxb, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
-		[][]order.Modifier{{stateModifier}, {stateModifier}},
-	)
+	_, err = store.defaultSTM(ctxb, func(stm conc.STM) error {
+		var err error
+		updateCache, err = store.updateOrdersSTM(
+			stm, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
+			[][]order.Modifier{{stateModifier}, {stateModifier}},
+		)
+		return err
+	})
 	if err != nil {
 		t.Fatalf("unable to update orders: %v", err)
 	}
+
+	updateCache()
+
 	allOrders, err := store.GetOrders(ctxb)
 	if err != nil {
 		t.Fatalf("unable to get all orders: %v", err)

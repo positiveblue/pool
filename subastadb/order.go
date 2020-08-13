@@ -52,6 +52,11 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 		return errNotInitialized
 	}
 
+	// In order to guarantee consistency between the cache and what gets
+	// submitted to the DB, we obtain a mutex exclusive to this nonce.
+	s.nonceMtx.lock(order.Nonce())
+	defer s.nonceMtx.unlock(order.Nonce())
+
 	// Read and update the order in an isolated STM transaction to make sure
 	// the same order cannot be created concurrently.
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
@@ -74,7 +79,16 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 		stm.Put(key, buf.String())
 		return nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Order was successfully submitted, update cache.
+	s.activeOrdersCacheMtx.Lock()
+	s.activeOrdersCache[order.Nonce()] = order
+	s.activeOrdersCacheMtx.Unlock()
+
+	return nil
 }
 
 // UpdateOrder updates an order in the database according to the given
@@ -88,45 +102,43 @@ func (s *EtcdStore) UpdateOrder(ctx context.Context,
 		return errNotInitialized
 	}
 
+	// In order to guarantee consistency between the cache and the DB
+	// update, we obtain a mutex exclusive to this nonce.
+	s.nonceMtx.lock(nonce)
+	defer s.nonceMtx.unlock(nonce)
+
 	// Read and update the order in one single isolated STM transaction.
+	var updateCache func()
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
-		return s.updateOrdersSTM(
+		var err error
+		updateCache, err = s.updateOrdersSTM(
 			stm, []orderT.Nonce{nonce},
 			[][]order.Modifier{modifiers},
 		)
+		return err
 	})
-	return err
-}
-
-// UpdateOrders atomically updates a list of orders in the database
-// according to the given modifiers.
-//
-// NOTE: This is part of the Store interface.
-func (s *EtcdStore) UpdateOrders(mainCtx context.Context,
-	nonces []orderT.Nonce, modifiers [][]order.Modifier) error {
-
-	if !s.initialized {
-		return errNotInitialized
+	if err != nil {
+		return err
 	}
 
-	// Update the orders in one single STM transaction that they are updated
-	// atomically.
-	_, err := s.defaultSTM(mainCtx, func(stm conc.STM) error {
-		return s.updateOrdersSTM(stm, nonces, modifiers)
-	})
-	return err
+	// Now that the DB was successfully updated, also update the cache.
+	updateCache()
+	return nil
 }
 
 // updateOrdersSTM adds all operations necessary to update multiple orders to
 // the given STM transaction. If any of the orders does not yet exist, the whole
-// STM transaction will fail.
+// STM transaction will fail. In case everything went through, a function that
+// updates the activeOrdersCache is returned that should be called after the
+// transactions successfully completes.
 func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
-	modifiers [][]order.Modifier) error {
+	modifiers [][]order.Modifier) (func(), error) {
 
 	if len(nonces) != len(modifiers) {
-		return fmt.Errorf("invalid number of modifiers")
+		return nil, fmt.Errorf("invalid number of modifiers")
 	}
 
+	cacheUpdates := make(map[orderT.Nonce]order.ServerOrder)
 	for idx, nonce := range nonces {
 		// Read the current version from the DB and apply the
 		// modifications to it. If the order to be modified does not
@@ -136,14 +148,14 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		key := s.getKeyOrderPrefix(nonce)
 		resp := stm.Get(key)
 		if resp == "" {
-			return ErrNoOrder
+			return nil, ErrNoOrder
 		}
 		dbOrder, err := deserializeOrder(
 			bytes.NewReader([]byte(resp)), nonce,
 		)
 
 		if err != nil {
-			return err
+			return nil, err
 		}
 		for _, modifier := range modifiers[idx] {
 			modifier(dbOrder)
@@ -153,7 +165,7 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		var buf bytes.Buffer
 		err = serializeOrder(&buf, dbOrder)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// If the state has been modified to it being archived now, we
@@ -163,9 +175,27 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 			key = s.getKeyOrderPrefixArchive(nonce)
 		}
 		stm.Put(key, buf.String())
+
+		cacheUpdates[nonce] = dbOrder
 	}
 
-	return nil
+	// Return a function that will update the cache when called.
+	updateCache := func() {
+		s.activeOrdersCacheMtx.Lock()
+		defer s.activeOrdersCacheMtx.Unlock()
+
+		for nonce, order := range cacheUpdates {
+			// If the order now is archvied, delete it from the
+			// cache of active orders.
+			if order.Details().State.Archived() {
+				delete(s.activeOrdersCache, nonce)
+			} else {
+				s.activeOrdersCache[nonce] = order
+			}
+		}
+	}
+
+	return updateCache, nil
 }
 
 // GetOrder returns an order by looking up the nonce. If no order with that
@@ -180,15 +210,21 @@ func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 	}
 
 	// By default, we assume an order that is queried here is an active,
-	// non-archived order.
-	key := s.getKeyOrderPrefix(nonce)
-	resp, err := s.getSingleValue(ctx, key, ErrNoOrder)
-	if err == ErrNoOrder {
-		// Because a trader might be querying for an order that we have
-		// already archived, we look it up in the archive branch too.
-		key = s.getKeyOrderPrefixArchive(nonce)
-		resp, err = s.getSingleValue(ctx, key, ErrNoOrder)
+	// non-archived order, so we'll quickly check the activeOrdersCache to
+	// begin with. If not found in the cache, it can still be an archived
+	// orders, so we'll fall back to fetching from the DB.
+	s.activeOrdersCacheMtx.RLock()
+	o, ok := s.activeOrdersCache[nonce]
+	s.activeOrdersCacheMtx.RUnlock()
+	if ok {
+		return o, nil
 	}
+
+	// Because a trader might be querying for an order that we have already
+	// archived, we look it up in the archive branch too, as it won't be in
+	// the active orders cache in that case.
+	key := s.getKeyOrderPrefixArchive(nonce)
+	resp, err := s.getSingleValue(ctx, key, ErrNoOrder)
 	if err != nil {
 		return nil, err
 	}
@@ -204,25 +240,40 @@ func (s *EtcdStore) GetOrders(ctx context.Context) ([]order.ServerOrder, error) 
 		return nil, errNotInitialized
 	}
 
+	s.activeOrdersCacheMtx.RLock()
+	defer s.activeOrdersCacheMtx.RUnlock()
+
+	// We have the results cached, return them directly.
+	cached := make([]order.ServerOrder, 0, len(s.activeOrdersCache))
+	for _, v := range s.activeOrdersCache {
+		cached = append(cached, v)
+	}
+	return cached, nil
+}
+
+func (s *EtcdStore) fillActiveOrdersCache(ctx context.Context) error {
+	s.activeOrdersCacheMtx.Lock()
+	defer s.activeOrdersCacheMtx.Unlock()
+
+	// Fetch all active orders from the database and add them to the cache.
 	key := s.getKeyOrderArchivePrefix(false)
 	resultMap, err := s.getAllValuesByPrefix(ctx, key)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	orders := make([]order.ServerOrder, 0, len(resultMap))
 	for key, value := range resultMap {
 		nonce, err := nonceFromKey(key)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		o, err := deserializeOrder(bytes.NewReader(value), nonce)
 		if err != nil {
-			return nil, err
+			return err
 		}
-		orders = append(orders, o)
+		s.activeOrdersCache[nonce] = o
 	}
 
-	return orders, nil
+	return nil
 }
 
 // GetArchivedOrders returns all archived orders that are currently known to the

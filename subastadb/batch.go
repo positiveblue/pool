@@ -148,10 +148,18 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 		return fmt.Errorf("account modifier length mismatch")
 	}
 
+	// Before we can update the database, we must obtain an exclusive lock
+	// for all the nonces in the transaction, to guarantee consistency with
+	// the cache.
+	s.nonceMtx.lock(orders...)
+	defer s.nonceMtx.unlock(orders...)
+
 	// Wrap the whole batch update in one large isolated STM transaction.
+	var updateCache func()
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		// Update orders first.
-		err := s.updateOrdersSTM(stm, orders, orderModifiers)
+		var err error
+		updateCache, err = s.updateOrdersSTM(stm, orders, orderModifiers)
 		if err != nil {
 			return err
 		}
@@ -198,7 +206,13 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 		// And finally, put the new batch key in place.
 		return s.putPerBatchKeySTM(stm, newBatchKey)
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Now that the DB was successfully updated, also update the cache.
+	updateCache()
+	return nil
 }
 
 // BatchConfirmed returns true if the target batch has been marked finalized
