@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -476,13 +477,30 @@ func newMockBatchExecutor() *mockBatchExecutor {
 	}
 }
 
-func (m *mockBatchExecutor) Submit(b *matching.OrderBatch, _ terms.FeeSchedule,
-	_ chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error) {
+func (m *mockBatchExecutor) NewExecutionContext(batchKey *btcec.PublicKey,
+	batch *matching.OrderBatch, masterAcct *account.Auctioneer,
+	batchFeeRate chainfee.SatPerKWeight, feeSchedule terms.FeeSchedule) (
+	*batchtx.ExecutionContext, error) {
+
+	var batchID [33]byte
+	copy(batchID[:], batchKey.SerializeCompressed())
+
+	return &batchtx.ExecutionContext{
+		BatchID:      batchID,
+		FeeSchedule:  feeSchedule,
+		BatchFeeRate: batchFeeRate,
+		MasterAcct:   masterAcct,
+		OrderBatch:   batch,
+	}, nil
+}
+
+func (m *mockBatchExecutor) Submit(exeCtx *batchtx.ExecutionContext) (
+	chan *venue.ExecutionResult, error) {
 
 	m.Lock()
 	defer m.Unlock()
 
-	m.submittedBatch = b
+	m.submittedBatch = exeCtx.OrderBatch
 
 	return m.resChan, nil
 }

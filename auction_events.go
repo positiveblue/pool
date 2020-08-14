@@ -2,8 +2,7 @@ package subasta
 
 import (
 	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/venue/matching"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightninglabs/subasta/venue/batchtx"
 )
 
 // AuctionState is an enum-like interface that describes the current phase of
@@ -99,13 +98,9 @@ func (s MatchMakingState) String() string {
 //     * BatchClearingState -> MatchMakingState (execution fail)
 //     * BatchClearingState -> BatchClearingState
 type BatchExecutionState struct {
-	// eligibleBatch the current pending eligible batch. If there're no
-	// issues during execution, then this will become the finalizedBatch.
-	eligibleBatch *matching.OrderBatch
-
-	// batchFeeRate is the fee rate we have decided to use for the eligible
-	// batch.
-	batchFeeRate chainfee.SatPerKWeight
+	// exeCtx is the execution context for the batch to execute, including
+	// the assembled batch transaction.
+	exeCtx *batchtx.ExecutionContext
 }
 
 // String returns the string representation of the BatchExecutionState.

@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
@@ -107,16 +108,31 @@ func (m *MasterAccountState) AccountScript() ([]byte, error) {
 // execution transaction has been fully signed, a batch is complete, and the
 // next batch period can start.
 type ExecutionContext struct {
+	// BatchID is the current batch ID.
+	BatchID [33]byte
+
+	// FeeSchedule is the fee schedule that was used to construct this
+	// batch.
+	FeeSchedule terms.FeeSchedule
+
+	// BatchFeeRate is the target fee rate used when assembling the batch
+	// execution transaction.
+	BatchFeeRate chainfee.SatPerKWeight
+
+	// MasterAcct is the auctioneers account at the point at which this
+	// batch is executed.
+	MasterAcct *account.Auctioneer
+
+	// OrderBatch is a pointer to the batch that this context attempts to
+	// execute.
+	OrderBatch *matching.OrderBatch
+
 	// ExeTx is the unsigned execution transaction.
 	ExeTx *wire.MsgTx
 
 	// MasterAccountDiff is a diff that describes the prior and current
 	// state of the auctioneer's master account output.
 	MasterAccountDiff *MasterAccountState
-
-	// OrderBatch is a pointer to the batch that this context attempts to
-	// execute.
-	OrderBatch *matching.OrderBatch
 
 	// orderIndex maps an order nonce to the output within the batch
 	// execution transaction that executes the order.
@@ -493,20 +509,45 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	return nil
 }
 
-// New creates a new ExecutionContext which contains all the information needed
-// to execute the passed OrderBatch.
-func New(batch *matching.OrderBatch, mad *MasterAccountState,
-	feeRate chainfee.SatPerKWeight) (*ExecutionContext, error) {
+// NewExecutionContext creates a new ExecutionContext which contains all the
+// information needed to execute the passed OrderBatch.
+func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
+	masterAcct *account.Auctioneer, batchFeeRate chainfee.SatPerKWeight,
+	feeSchedule terms.FeeSchedule) (*ExecutionContext, error) {
+
+	// When we create this master account state, we'll ensure that
+	// we provide the "next" batch key, as this is what will be
+	// used to create the outputs in the BET.
+	masterAcctState := &MasterAccountState{
+		PriorPoint:     masterAcct.OutPoint,
+		AccountBalance: masterAcct.Balance,
+	}
+	copy(
+		masterAcctState.AuctioneerKey[:],
+		masterAcct.AuctioneerKey.PubKey.SerializeCompressed(),
+	)
+	nextBatchKey := clmscript.IncrementKey(batchKey)
+	copy(
+		masterAcctState.BatchKey[:],
+		nextBatchKey.SerializeCompressed(),
+	)
+
+	var batchID [33]byte
+	copy(batchID[:], batchKey.SerializeCompressed())
 
 	exeCtx := ExecutionContext{
+		BatchID:        batchID,
+		FeeSchedule:    feeSchedule,
+		BatchFeeRate:   batchFeeRate,
+		MasterAcct:     masterAcct,
+		OrderBatch:     batch,
 		orderIndex:     make(map[orderT.Nonce][]*OrderOutput),
 		traderIndex:    make(map[matching.AccountID][]*OrderOutput),
 		accountIndex:   make(map[matching.AccountID]wire.OutPoint),
 		acctInputIndex: make(map[matching.AccountID]*AcctInput),
-		OrderBatch:     batch,
 	}
 
-	err := exeCtx.assembleBatchTx(batch, mad, feeRate)
+	err := exeCtx.assembleBatchTx(batch, masterAcctState, batchFeeRate)
 	if err != nil {
 		return nil, err
 	}

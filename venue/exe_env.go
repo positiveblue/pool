@@ -13,13 +13,10 @@ import (
 	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // batchVesion is the current version for batch transactions.
@@ -55,40 +52,21 @@ type environment struct {
 	// NOTE: This variable MUST be used atomically.
 	stopped uint32
 
-	// batchReq is the batch request that initiated the creation of this
-	// environment.
-	batchReq *executionReq
+	// exeCtx is the execution context, which contains the batch
+	// transaction, and all other state we need to gather signatures for
+	// the batch transaction itself.
+	exeCtx *batchtx.ExecutionContext
+
+	// resultChan is a channel that will be used to send the final results
+	// of the batch.
+	//
+	// NOTE: This chan MUST be buffered.
+	resultChan chan *ExecutionResult
 
 	// result is a pointer to eventual result of this batch execution flow.
 	//
 	// TODO9roasbeef): wrap in method?
 	result *ExecutionResult
-
-	// exeFee is the execution fee that was used to match this batch.
-	exeFee terms.FeeSchedule
-
-	// batchFeeRate is the target fee rate of the batch execution
-	// transaction.
-	batchFeeRate chainfee.SatPerKWeight
-
-	// batchID is the current batch ID.
-	batchID [33]byte
-
-	// batch is the batch itself that we aim to execute using the
-	// environment.
-	batch *matching.OrderBatch
-
-	// masterAcct points to the master account state.
-	//
-	// NOTE: This will only be set after the NoActiveBatch state.
-	masterAcct *account.Auctioneer
-
-	// exeCtx is the execution context, which contains the batch
-	// transaction, and all other state we need to gather signatures for
-	// the batch transaction itself.
-	//
-	// NOTE: This will only be set after the NoActiveBatch state.
-	exeCtx *batchtx.ExecutionContext
 
 	// tempErr is an error that is set each time we need to transition to
 	// the BatchTempError state.
@@ -143,14 +121,12 @@ type environment struct {
 
 // newEnvironment creates a new environment given an executionReq and the
 // current batch public key.
-func newEnvironment(newBatch *executionReq, batchKey *btcec.PublicKey,
+func newEnvironment(newBatch *executionReq,
 	stallTimers *msgTimers) environment {
 
 	env := environment{
-		batchReq:           newBatch,
-		exeFee:             newBatch.feeSchedule,
-		batchFeeRate:       newBatch.batchFeeRate,
-		batch:              newBatch.OrderBatch,
+		exeCtx:             newBatch.exeCtx,
+		resultChan:         newBatch.Result,
 		traders:            make(map[matching.AccountID]*ActiveTrader),
 		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
 		acctWitnesses:      make(map[int]wire.TxWitness),
@@ -159,9 +135,6 @@ func newEnvironment(newBatch *executionReq, batchKey *btcec.PublicKey,
 		msgTimers:          stallTimers,
 		quit:               make(chan struct{}),
 	}
-
-	copy(env.batchID[:], batchKey.SerializeCompressed())
-
 	return env
 }
 
@@ -183,10 +156,10 @@ func (e *environment) cancel() {
 // sendPrepareMsg send a prepare message to all active traders in the batch.
 // Along the way, we'll also populate our traderToOrders map as well.
 func (e *environment) sendPrepareMsg() error {
-	accountDiffs := e.batch.FeeReport.AccountDiffs
+	accountDiffs := e.exeCtx.OrderBatch.FeeReport.AccountDiffs
 
 	log.Infof("Sending OrderMatchPrepare to %v traders for batch=%x",
-		len(e.traders), e.batchID[:])
+		len(e.traders), e.exeCtx.BatchID[:])
 
 	// Each prepare message includes the fully serialized batch
 	// transaction, so we'll encode this first before we proceed.
@@ -238,7 +211,7 @@ func (e *environment) sendPrepareMsg() error {
 		// belongs to, and also update our map tracking the order for
 		// each trader.
 		e.traderToOrders = make(map[matching.AccountID][]orderT.Nonce)
-		for _, order := range e.batch.Orders {
+		for _, order := range e.exeCtx.OrderBatch.Orders {
 			order := order
 
 			var orderNonce orderT.Nonce
@@ -272,13 +245,13 @@ func (e *environment) sendPrepareMsg() error {
 		select {
 		case msg.commLine.Send <- &PrepareMsg{
 			MatchedOrders:    msg.matchedOrders,
-			ClearingPrice:    e.batch.ClearingPrice,
+			ClearingPrice:    e.exeCtx.OrderBatch.ClearingPrice,
 			ChargedAccounts:  msg.chargedAccounts,
 			AccountOutPoints: msg.accountOutpoints,
-			ExecutionFee:     e.exeFee,
+			ExecutionFee:     e.exeCtx.FeeSchedule,
 			BatchTx:          batchTxBuf.Bytes(),
-			FeeRate:          e.batchFeeRate,
-			BatchID:          e.batchID,
+			FeeRate:          e.exeCtx.BatchFeeRate,
+			BatchID:          e.exeCtx.BatchID,
 			BatchVersion:     batchVersion,
 		}:
 		case <-e.quit:
@@ -292,7 +265,7 @@ func (e *environment) sendPrepareMsg() error {
 // sendSignBeginMsg sends the SignBeginMsg to all active traders.
 func (e *environment) sendSignBeginMsg() error {
 	log.Infof("Sending OrderSignBegin to %v traders for batch=%x",
-		len(e.traders), e.batchID[:])
+		len(e.traders), e.exeCtx.BatchID[:])
 
 	// What the venue sees as a trader is only one account of a trader's
 	// daemon that might manage multiple accounts. The sign message must
@@ -307,7 +280,7 @@ func (e *environment) sendSignBeginMsg() error {
 	for _, line := range msgs {
 		select {
 		case line.Send <- &SignBeginMsg{
-			BatchID: e.batchID,
+			BatchID: e.exeCtx.BatchID,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
@@ -320,7 +293,7 @@ func (e *environment) sendSignBeginMsg() error {
 // sendFinalizeMsg sends the finalize message to all active traders.
 func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 	log.Infof("Sending Finalize to %v traders for batch=%x",
-		len(e.traders), e.batchID[:])
+		len(e.traders), e.exeCtx.BatchID[:])
 
 	// What the venue sees as a trader is only one account of a trader's
 	// daemon that might manage multiple accounts. The finalize message must
@@ -335,7 +308,7 @@ func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 	for _, line := range msgs {
 		select {
 		case line.Send <- &FinalizeMsg{
-			BatchID:   e.batchID,
+			BatchID:   e.exeCtx.BatchID,
 			BatchTxID: batchTxID,
 		}:
 		case <-e.quit:

@@ -38,10 +38,10 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 	}
 
 	env := &environment{
-		batch:   orderBatch,
-		batchID: [33]byte{12, 34, 56},
 		exeCtx: &batchtx.ExecutionContext{
-			ExeTx: batchTx,
+			OrderBatch: orderBatch,
+			BatchID:    [33]byte{12, 34, 56},
+			ExeTx:      batchTx,
 		},
 		traders: traders,
 	}
@@ -50,9 +50,9 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 		// Make sure we receive it on our end.
 		select {
 		case msg := <-outgoingChan:
-			if msg.Batch() != env.batchID {
+			if msg.Batch() != env.exeCtx.BatchID {
 				t.Fatalf("unexpected batch ID, got %x wanted %x",
-					msg.Batch(), env.batchID[:])
+					msg.Batch(), env.exeCtx.BatchID[:])
 			}
 
 			validateContent(msg)

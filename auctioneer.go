@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -131,10 +132,17 @@ type OrderFeed interface {
 // contact all the traders to obtain signatures for a valid batch execution
 // transaction.
 type BatchExecutor interface {
+	// NewExecutionContext creates a new ExecutionContext which contains
+	// all the information needed to execute the passed OrderBatch. The
+	// execution context should later be submitted to the BatchExecutor to
+	// start the execution process.
+	NewExecutionContext(*btcec.PublicKey, *matching.OrderBatch,
+		*account.Auctioneer, chainfee.SatPerKWeight,
+		terms.FeeSchedule) (*batchtx.ExecutionContext, error)
+
 	// Submit submits the target batch for execution. If the batch is
 	// invalid, then an error should be returned.
-	Submit(*matching.OrderBatch, terms.FeeSchedule,
-		chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error)
+	Submit(*batchtx.ExecutionContext) (chan *venue.ExecutionResult, error)
 }
 
 // ChannelEnforcer is responsible for enforcing channel service lifetime
@@ -1313,6 +1321,23 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
+		// Now that we have created an eligible batch, we'll construct
+		// the execution context we need to push things forward, which
+		// includes the final batch execution transaction, which we
+		// will attempt do use during execution later.
+		masterAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
+		if err != nil {
+			return nil, err
+		}
+
+		exeCtx, err := a.cfg.BatchExecutor.NewExecutionContext(
+			batchKey, orderBatch, masterAcct, feeRate,
+			a.cfg.FeeSchedule,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		// At this point we have a batch that we can now go to execute,
 		// so we'll add it to the current environment of the state
 		// machine.
@@ -1324,8 +1349,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// BatchExecutionState where we'll actually kick off the
 		// signing protocol needed to make this batch valid.
 		return BatchExecutionState{
-			eligibleBatch: orderBatch,
-			batchFeeRate:  feeRate,
+			exeCtx: exeCtx,
 		}, nil
 
 	// In this phase, we'll attempt to execute the order by entering into a
@@ -1336,9 +1360,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
-		executionResult, err := a.cfg.BatchExecutor.Submit(
-			s.eligibleBatch, a.cfg.FeeSchedule, s.batchFeeRate,
-		)
+		executionResult, err := a.cfg.BatchExecutor.Submit(s.exeCtx)
 		if err != nil {
 			return nil, err
 		}
@@ -1378,7 +1400,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 						len(exeErr.RejectingTraders))
 
 					a.handleReject(
-						s.eligibleBatch,
+						s.exeCtx.OrderBatch,
 						exeErr.RejectingTraders,
 					)
 

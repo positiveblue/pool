@@ -163,6 +163,29 @@ func (e *executorTestHarness) Stop() {
 	}
 }
 
+func (e *executorTestHarness) newTestExecutionContext(
+	batch *matching.OrderBatch,
+	feeRate chainfee.SatPerKWeight) *batchtx.ExecutionContext {
+
+	e.t.Helper()
+
+	ctxb := context.Background()
+	masterAcct, err := e.store.FetchAuctioneerAccount(ctxb)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+
+	exeCtx, err := batchtx.NewExecutionContext(
+		startBatchKey, batch, masterAcct, feeRate,
+		&terms.LinearFeeSchedule{},
+	)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+
+	return exeCtx
+}
+
 func (e *executorTestHarness) RegisterTrader(acct *account.Account) {
 	trader := matching.NewTraderFromAccount(acct)
 
@@ -187,9 +210,10 @@ func (e *executorTestHarness) RegisterTrader(acct *account.Account) {
 func (e *executorTestHarness) SubmitBatch(batch *matching.OrderBatch,
 	feeRate chainfee.SatPerKWeight) chan *ExecutionResult {
 
-	respChan, err := e.executor.Submit(
-		batch, &terms.LinearFeeSchedule{}, feeRate,
-	)
+	e.t.Helper()
+
+	exeCtx := e.newTestExecutionContext(batch, feeRate)
+	respChan, err := e.executor.Submit(exeCtx)
 	if err != nil {
 		e.t.Fatalf("unable to submit batch: %v", err)
 	}
@@ -590,6 +614,7 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 
 		defer testCtx.Stop()
 
+		testCtx.store.MasterAcct = oldMasterAccount
 		testCtx.store.Accs = map[[33]byte]*account.Account{
 			bigAcct.TraderKeyRaw:   bigAcct,
 			smallAcct.TraderKeyRaw: smallAcct,
@@ -654,16 +679,6 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		testCtx.store.Orders[ask.Nonce()] = ask
 		testCtx.store.Orders[bid.Nonce()] = bid
 	}
-
-	// We'll also need the master account state to recompute the batch
-	// context later on.
-	mad := &batchtx.MasterAccountState{
-		PriorPoint:     wire.OutPoint{Hash: oldMasterOutHash},
-		OutPoint:       nil,
-		AccountBalance: masterAcct.Balance,
-		BatchKey:       nextBatchID,
-	}
-	copy(mad.AuctioneerKey[:], masterAcct.AuctioneerKey.PubKey.SerializeCompressed())
 
 	// We'll now register both traders as online so we're able to proceed
 	// as expected (though we may delay some messages at a point).
@@ -844,10 +859,9 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 
 		// We'll now send all sig messages for all the fast traders.
 		batchCopy := orderBatch.Copy()
-		batchCtx, err := batchtx.New(&batchCopy, mad, batchFeeRate)
-		if err != nil {
-			t.Fatalf("unable to recreate batch context: %v", err)
-		}
+		batchCtx := testCtx.newTestExecutionContext(
+			&batchCopy, batchFeeRate,
+		)
 		for i, fastTrader := range fastTraders {
 			testCtx.SendSignMsg(
 				batchCtx, fastTrader, action,
