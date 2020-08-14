@@ -1,115 +1,130 @@
 package subasta
 
 import (
-	"fmt"
-
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
-// AuctionState is an enum-like variable that describes the current phase of
+// AuctionState is an enum-like interface that describes the current phase of
 // the auction from the PoV of either the server or the client.
-type AuctionState uint32
+type AuctionState interface {
+	// String returns the name of the state.
+	String() string
+}
 
-const (
-	// DefaultState is the default state of the auction. This auction will
-	// always start in this state, but then possibly skip to a later state
-	// upon auction opening.
-	DefaultState AuctionState = iota
+// DefaultState is the default state of the auction. This auction will always
+// start in this state, but then possibly skip to a later state upon auction
+// opening.
+type DefaultState struct{}
 
-	// NoMasterAcctState indicates that no master account exists in the
-	// database.
-	//
-	// The possible transitions from this state are:
-	//     * NoMasterAcctState -> MasterAcctPending
-	NoMasterAcctState
+// String returns the string representation of the DefaultState.
+func (s DefaultState) String() string {
+	return "DefaultState"
+}
 
-	// MasterAcctPending indicates that the transaction to broadcast the
-	// master account is now in the mempool, and we're only waiting for a
-	// confirmation.
-	//
-	// The possible transitions from this state are:
-	//     * MasterAcctPending -> MasterAcctConfirmed
-	MasterAcctPending
+// NoMasterAcctState indicates that no master account exists in the database.
+//
+// The possible transitions from this state are:
+//     * NoMasterAcctState -> MasterAcctPending
+type NoMasterAcctState struct{}
 
-	// MasterAcctConfirmed is the state we transition to once the genesis
-	// transaction for the master account has been confirmed.
-	//
-	// The possible transitions from this state are:
-	//     * MasterAcctConfirmed -> OrderSubmitState
-	MasterAcctConfirmed
+// String returns the string representation of the NoMasterAcctState.
+func (s NoMasterAcctState) String() string {
+	return "NoMasterAcctState"
+}
 
-	// OrderSubmitState is the state the client is in once they have an
-	// active and valid account. During this phase the client is free to
-	// submit new orders and modify any existing orders.
-	//
-	// The possible transitions from this state are:
-	//     * OrderSubmitState -> OrderSubmitState (tick but no market)
-	//     * OrderSubmitState -> MatchMakingState (tick and market)
-	OrderSubmitState
+// MasterAcctPending indicates that the transaction to broadcast the master
+// account is now in the mempool, and we're only waiting for a confirmation.
+//
+// The possible transitions from this state are:
+//     * MasterAcctPending -> MasterAcctConfirmed
+type MasterAcctPending struct{}
 
-	// MatchMakingState is the state we enter into when we're attempting to
-	// make anew market. From this state, we'll either go to execute the
-	// market, or possibly go back to the OrderSubmitState if there're no
-	// orders that actually make a market.
-	//
-	// The possible transitions from this state are:
-	//     * MatchMakingState -> OrderSubmitState (fail to make market)
-	//     * MatchMakingState -> BatchExecutionState (market made)
-	MatchMakingState
+// String returns the string representation of the MasterAcctPending state.
+func (s MasterAcctPending) String() string {
+	return "MasterAcctPending"
+}
 
-	// BatchExecutionState is the phase the auction enters once the
-	// MatchMakingState has ended, and the auctioneer is able to make a
-	// market. During this phase, the auctioneer enters into an interactive
-	// protocol with each active trader which is a part of this batch to
-	// sign relevant inputs for the funding transaction, and also to carry
-	// out the normal funding flow process so they receive valid commitment
-	// transactions.
-	//
-	// The possible transitions from this state are:
-	//     * BatchClearingState -> MatchMakingState (execution fail)
-	//     * BatchClearingState -> BatchClearingState
-	BatchExecutionState
+// MasterAcctConfirmed is the state we transition to once the genesis
+// transaction for the master account has been confirmed.
+//
+// The possible transitions from this state are:
+//     * MasterAcctConfirmed -> OrderSubmitState
+type MasterAcctConfirmed struct{}
 
-	// BatchCommitState is the final phase of an auction. In this state,
-	// we'll "commit" the batch by broadcasting the batch execution
-	// transaction. As multiple pending batches can exist, once this batch
-	// is confirmed, it'll be marked as finalized on disk.
-	//
-	// The possible transitions from this state are:
-	//     * BatchCommitState -> OrderSubmitState
-	BatchCommitState
-)
+// String returns the string representation of the MasterAcctConfirmed state.
+func (s MasterAcctConfirmed) String() string {
+	return "MasterAcctConfirmed"
+}
 
-// String returns the string representation of the target AuctionState.
-func (a AuctionState) String() string {
-	switch a {
-	case DefaultState:
-		return "DefaultState"
+// OrderSubmitState is the state the client is in once they have an active and
+// valid account. During this phase the client is free to submit new orders and
+// modify any existing orders.
+//
+// The possible transitions from this state are:
+//     * OrderSubmitState -> OrderSubmitState (tick but no market)
+//     * OrderSubmitState -> MatchMakingState (tick and market)
+type OrderSubmitState struct{}
 
-	case NoMasterAcctState:
-		return "NoMasterAcctState"
+// String returns the string representation of the OrderSubmitState.
+func (s OrderSubmitState) String() string {
+	return "OrderSubmitState"
+}
 
-	case MasterAcctPending:
-		return "MasterAcctPending"
+// MatchMakingState is the state we enter into when we're attempting to make
+// anew market. From this state, we'll either go to execute the market, or
+// possibly go back to the OrderSubmitState if there're no orders that actually
+// make a market.
+//
+// The possible transitions from this state are:
+//     * MatchMakingState -> OrderSubmitState (fail to make market)
+//     * MatchMakingState -> BatchExecutionState (market made)
+type MatchMakingState struct {
+}
 
-	case MasterAcctConfirmed:
-		return "MasterAcctConfirmed"
+// String returns the string representation of the MatchMakingState.
+func (s MatchMakingState) String() string {
+	return "MatchMakingState"
+}
 
-	case OrderSubmitState:
-		return "OrderSubmitState"
+// BatchExecutionState is the phase the auction enters once the
+// MatchMakingState has ended, and the auctioneer is able to make a market.
+// During this phase, the auctioneer enters into an interactive protocol with
+// each active trader which is a part of this batch to sign relevant inputs for
+// the funding transaction, and also to carry out the normal funding flow
+// process so they receive valid commitment transactions.
+//
+// The possible transitions from this state are:
+//     * BatchClearingState -> MatchMakingState (execution fail)
+//     * BatchClearingState -> BatchClearingState
+type BatchExecutionState struct {
+	// eligibleBatch the current pending eligible batch. If there're no
+	// issues during execution, then this will become the finalizedBatch.
+	eligibleBatch *matching.OrderBatch
 
-	case MatchMakingState:
-		return "MatchMakingState"
+	// batchFeeRate is the fee rate we have decided to use for the eligible
+	// batch.
+	batchFeeRate chainfee.SatPerKWeight
+}
 
-	case BatchExecutionState:
-		return "BatchExecutionState"
+// String returns the string representation of the BatchExecutionState.
+func (s BatchExecutionState) String() string {
+	return "BatchExecutionState"
+}
 
-	case BatchCommitState:
-		return "BatchCommitState"
+// BatchCommitState is the final phase of an auction. In this state,
+// we'll "commit" the batch by broadcasting the batch execution
+// transaction. As multiple pending batches can exist, once this batch
+// is confirmed, it'll be marked as finalized on disk.
+//
+// The possible transitions from this state are:
+//     * BatchCommitState -> OrderSubmitState
+type BatchCommitState struct{}
 
-	default:
-		return fmt.Sprintf("<unknownState(%v)>", uint32(a))
-	}
+// String returns the string representation of the BatchCommitState.
+func (s BatchCommitState) String() string {
+	return "BatchCommitState"
 }
 
 // AuctionEvent represents a particular event that is either internally or

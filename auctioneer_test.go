@@ -74,6 +74,7 @@ type mockAuctioneerState struct {
 
 func newMockAuctioneerState(batchKey *btcec.PublicKey) *mockAuctioneerState {
 	return &mockAuctioneerState{
+		state:            DefaultState{},
 		batchKey:         batchKey,
 		stateTransitions: make(chan AuctionState, 100),
 		orders:           make(map[orderT.Nonce]order.ServerOrder),
@@ -600,7 +601,7 @@ func (a *auctioneerTestHarness) AssertStateTransitions(states ...AuctionState) {
 			a.t.Fatalf("no state transition happened")
 		}
 
-		if nextState != state {
+		if nextState.String() != state.String() {
 			a.t.Fatalf("expected transitiion to state=%v, "+
 				"instead went to state=%v", state, nextState)
 		}
@@ -677,7 +678,7 @@ func (a *auctioneerTestHarness) AssertNTxsBroadcast(n int) []*wire.MsgTx {
 func (a *auctioneerTestHarness) RestartAuctioneer() {
 	a.StopAuctioneer()
 
-	a.db.state = DefaultState
+	a.db.state = DefaultState{}
 	a.db.stateTransitions = make(chan AuctionState, 100)
 
 	a.auctioneer = NewAuctioneer(AuctioneerConfig{
@@ -1073,7 +1074,7 @@ func TestAuctioneerStateMachineDefaultAccountPresent(t *testing.T) {
 
 	// Upon startup, it should realize the we already have an auctioneer
 	// account on disk, and transition to the OrderSubmitState phase.
-	testHarness.AssertStateTransitions(OrderSubmitState)
+	testHarness.AssertStateTransitions(OrderSubmitState{})
 }
 
 // TestAuctioneerStateMachineMasterAcctInit tests that the auctioneer state
@@ -1090,7 +1091,7 @@ func TestAuctioneerStateMachineMasterAcctInit(t *testing.T) {
 	// As we don't have an account on disk, we expect the state machine to
 	// transition to the NoMasterAcctState. It should end in this state, as
 	// we have no coins in the main wallet.
-	testHarness.AssertStateTransitions(NoMasterAcctState)
+	testHarness.AssertStateTransitions(NoMasterAcctState{})
 
 	// We'll now mine a block to simulate coins being deposited into the
 	// wallet.
@@ -1111,7 +1112,7 @@ func TestAuctioneerStateMachineMasterAcctInit(t *testing.T) {
 	// We should now proceed to the MasterAcctPending state, and should
 	// have broadcasted the transaction to fund the master account along
 	// the way.
-	testHarness.AssertStateTransitions(MasterAcctPending)
+	testHarness.AssertStateTransitions(MasterAcctPending{})
 
 	broadcastTx := testHarness.AssertTxBroadcast()
 
@@ -1121,17 +1122,17 @@ func TestAuctioneerStateMachineMasterAcctInit(t *testing.T) {
 
 	// At this point, it should transition all the way to MasterAcctPending
 	// as we broadcasted the transaction before we went down.
-	testHarness.AssertStateTransitions(MasterAcctPending)
+	testHarness.AssertStateTransitions(MasterAcctPending{})
 
 	// Now we'll dispatch a confirmation to simulate the transaction being
 	// confirmed.
 	testHarness.SendConf(broadcastTx)
 
 	// With the confirmation notification dispatched, we should now go to
-	// the MasterAcctConfirmed state, then to the OrderSubmitState where we
+	// the MasterAcctConfirmed state, then to the OrderSubmitState{} where we
 	// terminate.
 	testHarness.AssertStateTransitions(
-		MasterAcctConfirmed, OrderSubmitState,
+		MasterAcctConfirmed{}, OrderSubmitState{},
 	)
 
 	// At this point, we should have a new master account on disk.
@@ -1317,7 +1318,7 @@ func TestAuctioneerBatchTickNoop(t *testing.T) {
 	defer testHarness.StopAuctioneer()
 
 	// We should now transition to the order submit state.
-	testHarness.AssertStateTransitions(OrderSubmitState)
+	testHarness.AssertStateTransitions(OrderSubmitState{})
 
 	// We haven't yet added any orders to the market, so we'll queue up a
 	// signal that no market can cleared in this instance.
@@ -1328,7 +1329,7 @@ func TestAuctioneerBatchTickNoop(t *testing.T) {
 
 	// We should now go to the MatchMakingState, then back to the
 	// OrderSubmitState as there's no market to be cleared.
-	testHarness.AssertStateTransitions(MatchMakingState, OrderSubmitState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, OrderSubmitState{})
 
 	// There should be no further state transitions at this point.
 	testHarness.AssertNoStateTransitions()
@@ -1355,7 +1356,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	defer testHarness.StopAuctioneer()
 
 	// We should now transition to the order submit state.
-	testHarness.AssertStateTransitions(OrderSubmitState)
+	testHarness.AssertStateTransitions(OrderSubmitState{})
 
 	const numOrders = 14
 	nonces := make([]orderT.Nonce, numOrders)
@@ -1398,7 +1399,9 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// to kick off this cycle. We should go from the MatchMakingState to
 	// the BatchExecutionState.
 	testHarness.ForceBatchTick()
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(
+		MatchMakingState{}, BatchExecutionState{},
+	)
 
 	// At this point, the order feeder should be stopped, we'll simulate a
 	// set of new orders being added while the market has been halted. At
@@ -1430,7 +1433,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// We should now transition back to the match making state, then
 	// finally execution to give things another go.
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
 
 	// Since two orders failed on the previous execution, there should be 6
 	// matches left.
@@ -1448,7 +1451,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// Once again, the set of orders should be removed, and we should step
 	// again until we retry execution.
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
 	testHarness.AssertOrdersRemoved(nonces[2:4])
 
 	// Now only eight orders are left, resulting in 5 matches.
@@ -1459,7 +1462,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.ReportExecutionFailure(&venue.ErrMsgTimeout{
 		OrderNonces: nonces[4:6],
 	})
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
 	testHarness.AssertOrdersRemoved(nonces[4:6])
 
 	// Now only six orders are left, resulting in 4 matches.
@@ -1472,7 +1475,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		ChannelPoint: wire.OutPoint{Index: 1},
 		OrderNonces:  nonces[6:8],
 	})
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
 	testHarness.AssertOrdersRemoved(nonces[6:8])
 	testHarness.AssertSubmittedBatch(3)
 
@@ -1487,7 +1490,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		OrderNonces:  nonces[8:10],
 	})
 
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
 	testHarness.AssertBannedTrader(bannedTrader1)
 	testHarness.AssertBannedTrader(bannedTrader2)
 	testHarness.AssertOrdersRemoved(nonces[8:10])
@@ -1520,7 +1523,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// We should now transition back to the match making state, then
 	// finally execution to give things another go.
-	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
 	testHarness.AssertOrdersRemoved(nonces[10:12])
 
 	// Only one possible match is left.
@@ -1532,7 +1535,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// Now that the batch was successful, we should transition to the
 	// BatchCommitState.
-	testHarness.AssertStateTransitions(BatchCommitState)
+	testHarness.AssertStateTransitions(BatchCommitState{})
 
 	// Make sure the finalize batch is the same one as the one that was
 	// submitted last.
@@ -1551,7 +1554,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// Finally, we should go back to the order submit state, where we'll
 	// terminate the state machine, and await another batch tick.
-	testHarness.AssertStateTransitions(OrderSubmitState)
+	testHarness.AssertStateTransitions(OrderSubmitState{})
 
 	// At this point, there should be no further state transitions, as we
 	// should be waiting for a new batch tick.
@@ -1570,7 +1573,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// We should go to the match making state, then back to the order
 	// submit state as we can't make a market with things as is, then make
 	// no further state transitions.
-	testHarness.AssertStateTransitions(MatchMakingState, OrderSubmitState)
+	testHarness.AssertStateTransitions(MatchMakingState{}, OrderSubmitState{})
 
 	// Also all the orders that we removed earlier, should now also be once
 	// again part of the call market. Note that also the last ask should

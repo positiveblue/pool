@@ -42,11 +42,17 @@ var _ Wallet = (*auctioneerWallet)(nil)
 // an in-memory atomically modified auction state.
 type auctioneerStore struct {
 	// state is the current auctioneer state.
-	//
-	// NOTE: This MUST be used atomically
-	state uint32
+	state    AuctionState
+	stateMtx sync.Mutex
 
 	*subastadb.EtcdStore
+}
+
+func newAuctioneerStore(db *subastadb.EtcdStore) *auctioneerStore {
+	return &auctioneerStore{
+		state:     DefaultState{},
+		EtcdStore: db,
+	}
 }
 
 // UpdateAuctionState updates the current state of the auction.
@@ -55,7 +61,9 @@ type auctioneerStore struct {
 // durable during the lifetime of this interface. This method is use
 // mainly to make testing state transition in the auction easier.
 func (a *auctioneerStore) UpdateAuctionState(newState AuctionState) error {
-	atomic.StoreUint32(&a.state, uint32(newState))
+	a.stateMtx.Lock()
+	a.state = newState
+	a.stateMtx.Unlock()
 	return nil
 }
 
@@ -66,7 +74,11 @@ func (a *auctioneerStore) UpdateAuctionState(newState AuctionState) error {
 // NOTE: This state doesn't need to be persisted. This method is use
 // mainly to make testing state transition in the auction easier.
 func (a *auctioneerStore) AuctionState() (AuctionState, error) {
-	return AuctionState(atomic.LoadUint32(&a.state)), nil
+	a.stateMtx.Lock()
+	state := a.state
+	a.stateMtx.Unlock()
+
+	return state, nil
 }
 
 var _ AuctioneerDatabase = (*auctioneerStore)(nil)
@@ -225,9 +237,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		orderBook:      orderBook,
 		batchExecutor:  batchExecutor,
 		auctioneer: NewAuctioneer(AuctioneerConfig{
-			DB: &auctioneerStore{
-				EtcdStore: store,
-			},
+			DB:            newAuctioneerStore(store),
 			ChainNotifier: lnd.ChainNotifier,
 			Wallet: &auctioneerWallet{
 				WalletKitClient: lnd.WalletKit,
