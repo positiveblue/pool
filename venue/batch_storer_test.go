@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -179,6 +180,10 @@ func TestBatchStorer(t *testing.T) {
 		},
 		BatchID: batchID,
 		BatchTx: batchTx,
+		FeeInfo: &feebump.TxFeeInfo{
+			Fee:    123,
+			Weight: 5000,
+		},
 	}
 
 	// Create the starting database state now.

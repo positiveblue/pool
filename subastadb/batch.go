@@ -11,6 +11,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
@@ -133,8 +134,8 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAccount *account.Auctioneer, batchID orderT.BatchID,
-	batch *matching.OrderBatch, newBatchKey *btcec.PublicKey,
-	batchTx *wire.MsgTx, lifetimePkgs []*chanenforcement.LifetimePackage) error {
+	batchSnapshot *BatchSnapshot, newBatchKey *btcec.PublicKey,
+	lifetimePkgs []*chanenforcement.LifetimePackage) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -191,7 +192,7 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 
 		// Store a self-contained snapshot of the current batch.
 		var buf bytes.Buffer
-		err = serializeBatch(&buf, batch, batchTx)
+		err = serializeBatchSnapshot(&buf, batchSnapshot)
 		if err != nil {
 			return err
 		}
@@ -253,45 +254,48 @@ func (s *EtcdStore) ConfirmBatch(ctx context.Context,
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
-	*matching.OrderBatch, *wire.MsgTx, error) {
+	*BatchSnapshot, error) {
 
 	if !s.initialized {
-		return nil, nil, errNotInitialized
+		return nil, errNotInitialized
 	}
 
 	resp, err := s.getSingleValue(
 		ctx, s.batchSnapshotKeyPath(id), errBatchSnapshotNotFound,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
-	return deserializeBatch(bytes.NewReader(resp.Kvs[0].Value))
+	return deserializeBatchSnapshot(bytes.NewReader(resp.Kvs[0].Value))
 }
 
-// serializeBatch binary serializes a batch by using the LN wire format.
-func serializeBatch(w io.Writer, b *matching.OrderBatch,
-	batchTx *wire.MsgTx) error {
+// serializeBatchSnapshot binary serializes a batch snapshot by using the LN
+// wire format.
+func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
 
 	// First, we'll encode the finalized batch tx itself.
-	if err := batchTx.Serialize(w); err != nil {
+	if err := b.BatchTx.Serialize(w); err != nil {
 		return err
 	}
 
 	// Write scalar values next.
-	err := WriteElements(w, b.ClearingPrice, uint32(len(b.Orders)))
+	err := WriteElements(
+		w, b.BatchTxFee, b.OrderBatch.ClearingPrice,
+		uint32(len(b.OrderBatch.Orders)),
+	)
 	if err != nil {
 		return err
 	}
 
 	// Now the matched orders and the fee report nested structure.
-	for idx := range b.Orders {
-		err := serializeMatchedOrder(w, &b.Orders[idx])
+	for idx := range b.OrderBatch.Orders {
+		err := serializeMatchedOrder(w, &b.OrderBatch.Orders[idx])
 		if err != nil {
 			return err
 		}
 	}
-	return serializeTradingFeeReport(w, &b.FeeReport)
+	return serializeTradingFeeReport(w, &b.OrderBatch.FeeReport)
 }
 
 // serializeMatchedOrder binary serializes a matched order by using the LN wire
@@ -395,10 +399,11 @@ func serializeAccountTally(w io.Writer, t *orderT.AccountTally) error {
 	)
 }
 
-// deserializeBatch reconstructs a batch from binary data in the LN wire
-// format.
-func deserializeBatch(r io.Reader) (*matching.OrderBatch, *wire.MsgTx, error) {
+// deserializeBatchSnapshot reconstructs a batch snapshot from binary data in
+// the LN wire format.
+func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 	var (
+		txFee            btcutil.Amount
 		b                = &matching.OrderBatch{}
 		numMatchedOrders uint32
 	)
@@ -406,20 +411,22 @@ func deserializeBatch(r io.Reader) (*matching.OrderBatch, *wire.MsgTx, error) {
 	// First, we'll read out the batch tx itself.
 	batchTx := &wire.MsgTx{}
 	if err := batchTx.Deserialize(r); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Next read the scalar values.
-	err := ReadElements(r, &b.ClearingPrice, &numMatchedOrders)
+	err := ReadElements(
+		r, &txFee, &b.ClearingPrice, &numMatchedOrders,
+	)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Now we know how many orders to read.
 	for i := uint32(0); i < numMatchedOrders; i++ {
 		o, err := deserializeMatchedOrder(r)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		b.Orders = append(b.Orders, *o)
 	}
@@ -427,11 +434,15 @@ func deserializeBatch(r io.Reader) (*matching.OrderBatch, *wire.MsgTx, error) {
 	// Finally deserialize the trading fee report nested structure.
 	feeReport, err := deserializeTradingFeeReport(r)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 	b.FeeReport = *feeReport
 
-	return b, batchTx, nil
+	return &BatchSnapshot{
+		BatchTx:    batchTx,
+		BatchTxFee: txFee,
+		OrderBatch: b,
+	}, nil
 }
 
 // deserializeMatchedOrder reconstructs a matched order from binary data in the

@@ -1311,10 +1311,12 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	copy(batchID[:], req.Id)
 
 	// TODO(wilmer): Add caching layer? LRU?
-	batch, batchTx, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
+	batch := batchSnapshot.OrderBatch
+	batchTx := batchSnapshot.BatchTx
 
 	resp := &clmrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
@@ -1917,25 +1919,27 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	}
 
 	// Next, we'll fetch the targeted batch snapshot.
-	batchSnapshot, batchTx, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
+	batch := batchSnapshot.OrderBatch
+	batchTx := batchSnapshot.BatchTx
 
 	resp := &clmrpc.BatchSnapshotResponse{
 		Version:           uint32(orderT.CurrentVersion),
 		BatchId:           batchID[:],
 		PrevBatchId:       prevBatchID,
-		ClearingPriceRate: uint32(batchSnapshot.ClearingPrice),
+		ClearingPriceRate: uint32(batch.ClearingPrice),
 	}
 
 	// The response for this call is a bit simpler than the
 	// RelevantBatchSnapshot call, in that we only need to return the set
 	// of orders, and not also the accounts diffs.
 	resp.MatchedOrders = make(
-		[]*clmrpc.MatchedOrderSnapshot, len(batchSnapshot.Orders),
+		[]*clmrpc.MatchedOrderSnapshot, len(batch.Orders),
 	)
-	for i, order := range batchSnapshot.Orders {
+	for i, order := range batch.Orders {
 		ask := order.Details.Ask
 		bid := order.Details.Bid
 		quote := order.Details.Quote

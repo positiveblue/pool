@@ -190,12 +190,14 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	// Fetch the batch by its ID.
 	ctx, cancel = context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	batch, tx, err := c.cfg.Store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := c.cfg.Store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		log.Errorf("could not query batch snapshot with ID %v: %v",
 			batchID, err)
 		return
 	}
+	batch := batchSnapshot.OrderBatch
+	tx := batchSnapshot.BatchTx
 
 	// Record all metrics for the current batch. We don't need to collect
 	// the information about previous batches, Prometheus itself will add

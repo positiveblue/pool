@@ -183,10 +183,18 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	}
 	nextBatchKey := clmscript.IncrementKey(batchKey)
 
+	// Also create a snapshot we'll store to the DB, useful if we later
+	// need to look up this batch.
+	snapshot := &subastadb.BatchSnapshot{
+		BatchTx:    result.BatchTx,
+		BatchTxFee: result.FeeInfo.Fee,
+		OrderBatch: batch,
+	}
+
 	// Everything is ready to be persisted now.
 	return s.store.PersistBatchResult(
 		ctx, orders, orderModifiers, accounts, accountModifiers,
-		auctAcct, result.BatchID, batch, nextBatchKey,
-		result.BatchTx, result.LifetimePackages,
+		auctAcct, result.BatchID, snapshot, nextBatchKey,
+		result.LifetimePackages,
 	)
 }
