@@ -1788,7 +1788,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 				"batch key: %v", err)
 		}
 
-		batchKey = DecrementBatchKey(currentBatchKey)
+		batchKey = clmscript.DecrementKey(currentBatchKey)
 		batchID = orderT.NewBatchID(batchKey)
 	} else {
 		copy(batchID[:], req.BatchId)
@@ -1804,7 +1804,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	// key so the client can use this as a sort of linked list to navigate
 	// the batch chain. Unless of course we reached the initial batch key.
 	if !batchKey.IsEqual(subastadb.InitialBatchKey) {
-		prevBatchKey := DecrementBatchKey(batchKey)
+		prevBatchKey := clmscript.DecrementKey(batchKey)
 		prevBatchID = prevBatchKey.SerializeCompressed()
 	}
 
