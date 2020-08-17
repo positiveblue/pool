@@ -63,7 +63,31 @@ func (m *MultiUnitMatchMaker) getCachedAccount(key [33]byte) (*account.Account,
 // isAccountReady determines whether an account is ready to participate in a
 // batch.
 func isAccountReady(acct *account.Account) bool {
-	return acct.State == account.StateOpen
+	switch acct.State {
+	// In the open state the funding or modification transaction is
+	// confirmed sufficiently on chain and there is no possibility of a
+	// double spend.
+	case account.StateOpen:
+		return true
+
+	// If the account was recently involved in a batch and is unconfirmed or
+	// not yet sufficiently confirmed, we can still safely allow it to
+	// participate in the next batch. This is safe all inputs to this
+	// unconfirmed outpoint are co-signed by us and therefore cannot just be
+	// double spent by the account owner.
+	case account.StatePendingBatch:
+		return true
+
+	// Because it is not safe to use the account for a batch if there
+	// potentially are "foreign" inputs which we didn't co-sign, we can't
+	// allow any other states for batch participation. Non-co-signed inputs
+	// that could potentially be double spent can happen with an account
+	// deposit for example. And even with an account withdrawal we could run
+	// into fee issues if that update transaction is not yet confirmed and
+	// has a very low fee.
+	default:
+		return false
+	}
 }
 
 // MatchPossible returns a price quote, and a bool indicating if a match is
