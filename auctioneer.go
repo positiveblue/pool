@@ -548,9 +548,7 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 
 		// Now that we know this batch isn't finalized, we'll fetch the
 		// batch transaction from disk so we can rebroadcast it.
-		var priorBatchID orderT.BatchID
-		copy(priorBatchID[:], currentBatchKey.SerializeCompressed())
-		_, batchTx, err := a.cfg.DB.GetBatchSnapshot(ctxb, priorBatchID)
+		_, batchTx, err := a.cfg.DB.GetBatchSnapshot(ctxb, batchID)
 		if err != nil {
 			return err
 		}
