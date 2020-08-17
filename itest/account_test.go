@@ -141,37 +141,9 @@ func testAccountWithdrawal(t *harnessTest) {
 	}
 
 	// Now try a valid address.
-	withdrawReq.Outputs[0].Address = validTestAddr
-	withdrawResp, err := t.trader.WithdrawAccount(ctx, withdrawReq)
-	if err != nil {
-		t.Fatalf("unable to process account withdrawal: %v", err)
-	}
-
-	// We should expect to see the transaction causing the withdrawal.
-	withdrawTxid, _ := chainhash.NewHash(withdrawResp.Account.Outpoint.Txid)
-	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
-	)
-	if err != nil {
-		t.Fatalf("withdrawal transaction not found in mempool: %v", err)
-	}
-	if !txids[0].IsEqual(withdrawTxid) {
-		t.Fatalf("found mempool transaction %v instead of %v",
-			txids[0], withdrawTxid)
-	}
-
-	// Assert that the account state is reflected correctly for both the
-	// trader and auctioneer while the withdrawal hasn't confirmed.
-	const withdrawalFee = 184
-	valueAfterWithdrawal := btcutil.Amount(account.Value) -
-		btcutil.Amount(withdrawValue) - withdrawalFee
-	assertTraderAccount(
-		t, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
-		clmrpc.AccountState_PENDING_UPDATE,
-	)
-	assertAuctioneerAccount(
-		t, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
-		auctioneerAccount.StatePendingUpdate,
+	withdrawTxid, valueAfterWithdrawal := withdrawAccountAndAssertMempool(
+		t, t.trader, account.TraderKey, int64(account.Value),
+		withdrawValue, validTestAddr,
 	)
 
 	// Confirm the withdrawal, and once again assert that the account state
@@ -179,11 +151,11 @@ func testAccountWithdrawal(t *harnessTest) {
 	block := mineBlocks(t, t.lndHarness, 6, 1)[0]
 	_ = assertTxInBlock(t, block, withdrawTxid)
 	assertTraderAccount(
-		t, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
+		t, t.trader, account.TraderKey, valueAfterWithdrawal,
 		clmrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
-		t, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
+		t, account.TraderKey, valueAfterWithdrawal,
 		auctioneerAccount.StateOpen,
 	)
 
@@ -238,7 +210,7 @@ func testAccountDeposit(t *harnessTest) {
 	// Assert that the account state is reflected correctly for both the
 	// trader and auctioneer while the deposit hasn't confirmed.
 	assertTraderAccount(
-		t, depositResp.Account.TraderKey, valueAfterDeposit,
+		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
 		clmrpc.AccountState_PENDING_UPDATE,
 	)
 	assertAuctioneerAccount(
@@ -251,7 +223,7 @@ func testAccountDeposit(t *harnessTest) {
 	block := mineBlocks(t, t.lndHarness, 6, 1)[0]
 	_ = assertTxInBlock(t, block, depositTxid)
 	assertTraderAccount(
-		t, depositResp.Account.TraderKey, valueAfterDeposit,
+		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
 		clmrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
