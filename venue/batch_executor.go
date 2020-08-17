@@ -269,6 +269,17 @@ type ExecutorStore interface {
 	UpdateExecutionState(newState ExecutionState) error
 }
 
+// AccountWatcher is an interface around the account manager's
+// WatchMatchedAccounts method that makes writing unit tests of the executor
+// easier.
+type AccountWatcher interface {
+	// WatchMatchedAccounts resumes accounts that were just matched in a
+	// batch and are expecting the batch transaction to confirm as their
+	// next account output. This will cancel all previous spend and conf
+	// watchers of all accounts involved in the batch.
+	WatchMatchedAccounts(context.Context, [][33]byte) error
+}
+
 // BatchExecutor is the primary state machine that executes a cleared batch.
 // Execution entails orchestrating the creation of hall the channels purchased
 // in the batch, and also gathering the signatures of all the input in the
@@ -300,6 +311,8 @@ type BatchExecutor struct {
 
 	batchStorer BatchStorer
 
+	accountWatcher AccountWatcher
+
 	signer lndclient.SignerClient
 
 	quit chan struct{}
@@ -308,9 +321,9 @@ type BatchExecutor struct {
 
 // NewBatchExecutor creates a new BatchExecutor given the database, and a
 // signer that's able to sign for the master account output.
-func NewBatchExecutor(store ExecutorStore,
-	signer lndclient.SignerClient, traderMsgTimeout time.Duration,
-	batchStorer BatchStorer) *BatchExecutor {
+func NewBatchExecutor(store ExecutorStore, signer lndclient.SignerClient,
+	traderMsgTimeout time.Duration, batchStorer BatchStorer,
+	accountWatcher AccountWatcher) *BatchExecutor {
 
 	return &BatchExecutor{
 		quit:             make(chan struct{}),
@@ -321,6 +334,7 @@ func NewBatchExecutor(store ExecutorStore,
 		venueEvents:      make(chan EventTrigger),
 		traderMsgTimeout: traderMsgTimeout,
 		batchStorer:      batchStorer,
+		accountWatcher:   accountWatcher,
 	}
 }
 

@@ -187,7 +187,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	batchExecutor := venue.NewBatchExecutor(
 		exeStore, lnd.Signer, defaultMsgTimeout,
-		venue.NewExeBatchStorer(store),
+		venue.NewExeBatchStorer(store), accountManager,
 	)
 
 	orderBook := order.NewBook(&order.BookConfig{

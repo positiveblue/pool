@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"fmt"
 	"testing"
 	"time"
 
@@ -77,6 +78,40 @@ func (m *mockExecutorStore) UpdateExecutionState(newState ExecutionState) error 
 // interface.
 var _ ExecutorStore = (*mockExecutorStore)(nil)
 
+type mockAccountWatcher struct {
+	watchedAccounts []*btcec.PublicKey
+}
+
+func (m *mockAccountWatcher) WatchMatchedAccounts(_ context.Context,
+	accts [][33]byte) error {
+
+	for _, rawAcctKey := range accts {
+		acctKey, err := btcec.ParsePubKey(rawAcctKey[:], btcec.S256())
+		if err != nil {
+			return err
+		}
+
+		m.watchedAccounts = append(m.watchedAccounts, acctKey)
+	}
+
+	return nil
+}
+
+func (m *mockAccountWatcher) isWatching(acctKey *btcec.PublicKey) error {
+	for _, watchedAcct := range m.watchedAccounts {
+		if watchedAcct.IsEqual(acctKey) {
+			return nil
+		}
+	}
+
+	return fmt.Errorf("account %x is not being watched",
+		acctKey.SerializeCompressed())
+}
+
+// A compile-time assertion to ensure mockAccountWatcher meets the
+// AccountWatcher interface.
+var _ AccountWatcher = (*mockAccountWatcher)(nil)
+
 // executorTestHarness contains several helper functions that drive the main
 // test below.
 type executorTestHarness struct {
@@ -85,6 +120,8 @@ type executorTestHarness struct {
 	store *mockExecutorStore
 
 	executor *BatchExecutor
+
+	watcher *mockAccountWatcher
 
 	outgoingChans map[matching.AccountID]chan ExecutionMsg
 
@@ -97,13 +134,16 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		PrivKey: batchPriv,
 	}
 
+	watcher := &mockAccountWatcher{}
 	return &executorTestHarness{
 		t:             t,
 		store:         store,
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
 		executor: NewBatchExecutor(
 			store, signer, msgTimeout, NewExeBatchStorer(store),
+			watcher,
 		),
+		watcher: watcher,
 	}
 }
 
