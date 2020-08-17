@@ -20,7 +20,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/auctioneer"
 	"github.com/lightninglabs/llm/chaninfo"
@@ -28,7 +28,6 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -1458,7 +1457,7 @@ func mapOrderResp(orderNonce orderT.Nonce, err error) (
 // token is found, the zero token is returned.
 func tokenIDFromContext(ctx context.Context) lsat.TokenID {
 	var zeroToken lsat.TokenID
-	tokenValue := auth.FromContext(ctx, auth.KeyTokenID)
+	tokenValue := lsat.FromContext(ctx, lsat.KeyTokenID)
 	if token, ok := tokenValue.(lsat.TokenID); ok {
 		return token
 	}

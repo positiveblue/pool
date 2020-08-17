@@ -8,9 +8,9 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 

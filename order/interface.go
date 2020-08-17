@@ -5,8 +5,8 @@ import (
 	"errors"
 	"net"
 
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 

@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"github.com/btcsuite/btclog"
-	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/aperture/auth"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"

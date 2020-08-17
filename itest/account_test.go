@@ -11,11 +11,10 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
@@ -596,7 +595,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 
 func getTokenContext(token *lsat.TokenID) context.Context {
 	return metadata.AppendToOutgoingContext(
-		context.Background(), auth.HeaderAuthorization,
+		context.Background(), lsat.HeaderAuthorization,
 		fmt.Sprintf("LSATID %x", token[:]),
 	)
 }

@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"

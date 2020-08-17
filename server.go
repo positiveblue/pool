@@ -12,11 +12,10 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
-	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
@@ -259,7 +258,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	//
 	// First, we'll set up the series of interceptors for our gRPC server
 	// which we'll initialize shortly below.
-	var interceptor ServerInterceptor = &auth.ServerInterceptor{}
+	var interceptor ServerInterceptor = &lsat.ServerInterceptor{}
 	if cfg.FakeAuth && cfg.Network == "mainnet" {
 		return nil, fmt.Errorf("cannot use fake LSAT auth for mainnet")
 	}
@@ -530,7 +529,7 @@ func (i *regtestInterceptor) UnaryInterceptor(ctx context.Context,
 		log.Debugf("No ID extracted, error was: %v", err)
 		return handler(ctx, req)
 	}
-	idCtx := auth.AddToContext(ctx, auth.KeyTokenID, *id)
+	idCtx := lsat.AddToContext(ctx, lsat.KeyTokenID, *id)
 	return handler(idCtx, req)
 }
 
@@ -547,7 +546,7 @@ func (i *regtestInterceptor) StreamInterceptor(srv interface{},
 		return handler(srv, ss)
 	}
 
-	idCtx := auth.AddToContext(ctx, auth.KeyTokenID, *id)
+	idCtx := lsat.AddToContext(ctx, lsat.KeyTokenID, *id)
 	wrappedStream := &wrappedStream{ss, idCtx}
 	return handler(srv, wrappedStream)
 }
@@ -561,7 +560,7 @@ func idFromContext(ctx context.Context) (*lsat.TokenID, error) {
 	if !ok {
 		return nil, fmt.Errorf("context contains no metadata")
 	}
-	authHeader := md.Get(auth.HeaderAuthorization)[0]
+	authHeader := md.Get(lsat.HeaderAuthorization)[0]
 	log.Debugf("Auth header present in request: %s", authHeader)
 	if !dummyRex.MatchString(authHeader) {
 		log.Debugf("Auth header didn't match dummy ID")

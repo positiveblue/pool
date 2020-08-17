@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"

@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
