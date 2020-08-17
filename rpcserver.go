@@ -1531,6 +1531,9 @@ func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error
 	case account.StatePendingUpdate:
 		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_UPDATE
 
+	case account.StatePendingBatch:
+		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_BATCH
+
 	default:
 		return nil, fmt.Errorf("unknown account state")
 	}
