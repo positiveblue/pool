@@ -76,8 +76,8 @@ const (
 	StatePendingOpen State = 0
 
 	// StatePendingUpdate denotes that the account has undergone an update
-	// on-chain either as part of a matched order or a trader modification
-	// and we are currently waiting for its confirmation.
+	// on-chain as part of a trader modification and we are currently
+	// waiting for its confirmation.
 	StatePendingUpdate State = 1
 
 	// StateOpen denotes that the account's funding transaction has been
@@ -91,6 +91,10 @@ const (
 	// StateClosed denotes that an account has been cooperatively closed out
 	// on-chain by the trader.
 	StateClosed State = 4
+
+	// StatePendingBatch denotes an account that recently participated in a
+	// batch and is not yet confirmed.
+	StatePendingBatch State = 5
 )
 
 // String returns a human-readable description of an account's state.
@@ -106,6 +110,8 @@ func (s State) String() string {
 		return "StateExpired"
 	case StateClosed:
 		return "StateClosed"
+	case StatePendingBatch:
+		return "StatePendingBatch"
 	default:
 		return "unknown"
 	}
