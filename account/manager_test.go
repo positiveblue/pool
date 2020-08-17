@@ -20,6 +20,7 @@ import (
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -894,5 +895,83 @@ func TestModifyAccountWithdrawal(t *testing.T) {
 			Version: 2,
 			TxOut:   []*wire.TxOut{newAccountOutput},
 		},
+	})
+}
+
+// TestAccountConsecutiveBatches ensures that we can process an account update
+// through multiple consecutive batches that only confirm after we've already
+// updated our database state.
+func TestAccountConsecutiveBatches(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	account := h.initAccount()
+	accountOutput, err := account.Output()
+	require.NoError(t, err)
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		Tx: &wire.MsgTx{
+			Version: 2,
+			TxOut:   []*wire.TxOut{accountOutput},
+		},
+	})
+
+	// Then, we'll simulate the maximum number of unconfirmed batches to
+	// happen that'll all confirm in the same block.
+	newValue := testAccountValue / 2
+	numBatches := 10
+	batchTxs := make([]*wire.MsgTx, numBatches)
+	for i := 0; i < numBatches; i++ {
+		newPkScript, err := account.NextOutputScript()
+		require.NoError(t, err)
+
+		// Create an account spend which we'll notify later. This spend
+		// should take the multi-sig path to trigger the logic to lookup
+		// previous outpoints.
+		batchTx := &wire.MsgTx{
+			Version: 2,
+			TxIn: []*wire.TxIn{{
+				PreviousOutPoint: account.OutPoint,
+				Witness: wire.TxWitness{
+					{0x01}, // Use multi-sig path.
+					{},
+					{},
+				},
+			}},
+			TxOut: []*wire.TxOut{{
+				Value:    int64(newValue) - int64(i),
+				PkScript: newPkScript,
+			}},
+		}
+		batchTxs[i] = batchTx
+
+		mods := []Modifier{
+			ValueModifier(newValue - btcutil.Amount(i)),
+			StateModifier(StatePendingBatch),
+			OutPointModifier(wire.OutPoint{
+				Hash:  batchTx.TxHash(),
+				Index: 0,
+			}),
+			IncrementBatchKey(),
+		}
+		err = h.store.UpdateAccount(
+			context.Background(), account, mods...,
+		)
+		require.NoError(t, err)
+
+		// The batch executor will notify the manager each time a batch
+		// is finalized, we do the same here.
+		err = h.manager.WatchMatchedAccounts(
+			context.Background(), [][33]byte{account.TraderKeyRaw},
+		)
+		require.NoError(t, err)
+	}
+
+	// Finally, confirming the account should allow it to transition back to
+	// StateOpen.
+	h.confirmAccount(account, true, &chainntnfs.TxConfirmation{
+		Tx: batchTxs[len(batchTxs)-1],
 	})
 }

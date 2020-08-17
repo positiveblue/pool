@@ -869,6 +869,19 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 		log.Infof("Batch(%x) finalized and committed!", env.batchID[:])
 
+		diffs := env.batch.FeeReport.AccountDiffs
+		matchedAccounts := make([][33]byte, 0, len(diffs))
+		for id := range diffs {
+			matchedAccounts = append(matchedAccounts, id)
+		}
+		err = b.accountWatcher.WatchMatchedAccounts(
+			ctxb, matchedAccounts,
+		)
+		if err != nil {
+			log.Errorf("Failed to watch matched accounts: %v", err)
+			return 0, env, err
+		}
+
 		// Next, we'll send the finalize message to all the active
 		// traders.
 		if err := env.sendFinalizeMsg(batchTx.TxHash()); err != nil {

@@ -869,6 +869,11 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	}
 	require.Equal(t, exeRes.LifetimePackages, testCtx.store.LifetimePackages)
 
+	// We'll also make sure the account manager has been instructed to start
+	// watching the recreated accounts again.
+	require.NoError(t, testCtx.watcher.isWatching(acctKeySmall))
+	require.NoError(t, testCtx.watcher.isWatching(acctKeyBig))
+
 	// TODO(roasbeef): assert every input of batch transaction valid?
 }
 
