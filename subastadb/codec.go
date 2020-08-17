@@ -5,8 +5,8 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clientdb"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"

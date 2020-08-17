@@ -242,7 +242,9 @@ func (b *Book) validateAccountState(ctx context.Context,
 	// and pending an update (so they can submit orders while the update is
 	// confirming).
 	switch acct.State {
-	case account.StatePendingUpdate, account.StateOpen:
+	case account.StatePendingUpdate, account.StatePendingBatch,
+		account.StateOpen:
+
 	default:
 		return fmt.Errorf("account must be open or pending open to "+
 			"submit orders, instead state=%v", acct.State)

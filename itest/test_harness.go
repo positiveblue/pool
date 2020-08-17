@@ -17,16 +17,19 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/test/bufconn"
 )
 
@@ -391,12 +394,12 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 
 // assertTraderAccount asserts that the account with the corresponding trader
 // key is found in the given state.
-func assertTraderAccount(t *harnessTest, traderKey []byte, value btcutil.Amount,
-	state clmrpc.AccountState) {
+func assertTraderAccount(t *harnessTest, trader *traderHarness,
+	traderKey []byte, value btcutil.Amount, state clmrpc.AccountState) {
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
-		list, err := t.trader.ListAccounts(
+		list, err := trader.ListAccounts(
 			ctx, &clmrpc.ListAccountsRequest{},
 		)
 		if err != nil {
@@ -1153,4 +1156,91 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	_ = mineBlocks(t, net, 1, 1)
 
 	return closingTxid
+}
+
+func executeBatch(t *harnessTest) *chainhash.Hash {
+	ctx := context.Background()
+
+	// Let's kick the auctioneer now to try and create a batch.
+	_, err := t.auctioneer.AuctionAdminClient.BatchTick(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	if err != nil {
+		t.Fatalf("could not trigger batch tick: %v", err)
+	}
+
+	// At this point, the batch should now attempt to be cleared, and find
+	// that we're able to make a market. Eventually the batch execution
+	// transaction should be broadcast to the mempool.
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("txid not found in mempool: %v", err)
+	}
+
+	if len(txids) != 1 {
+		t.Fatalf("expected a single transaction, instead have: %v",
+			spew.Sdump(txids))
+	}
+	return txids[0]
+}
+
+func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
+	accountKey []byte, startValue int64, withdrawValue uint64,
+	address string) (*chainhash.Hash, btcutil.Amount) {
+
+	t.t.Helper()
+
+	withdrawReq := &clmrpc.WithdrawAccountRequest{
+		TraderKey: accountKey,
+		Outputs: []*clmrpc.Output{{
+			ValueSat: withdrawValue,
+			Address:  address,
+		}},
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+	}
+	withdrawResp, err := trader.WithdrawAccount(
+		context.Background(), withdrawReq,
+	)
+	require.NoError(t.t, err)
+
+	// We should expect to see the transaction causing the withdrawal.
+	withdrawTxid, _ := chainhash.NewHash(withdrawResp.Account.Outpoint.Txid)
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, withdrawTxid, txids[0])
+
+	// Assert that the account state is reflected correctly for both the
+	// trader and auctioneer while the withdrawal hasn't confirmed.
+	// If the caller doesn't care about the value, we only assert the state.
+	if startValue == -1 {
+		assertTraderAccountState(
+			t.t, trader, withdrawResp.Account.TraderKey,
+			clmrpc.AccountState_PENDING_UPDATE,
+		)
+		assertAuctioneerAccountState(
+			t, withdrawResp.Account.TraderKey,
+			auctioneerAccount.StatePendingUpdate,
+		)
+
+		return withdrawTxid, -1
+	}
+
+	// The caller cares about the account value.
+	const withdrawalFee = 184
+	valueAfterWithdrawal := btcutil.Amount(startValue) -
+		btcutil.Amount(withdrawValue) - withdrawalFee
+	assertTraderAccount(
+		t, trader, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
+		clmrpc.AccountState_PENDING_UPDATE,
+	)
+	assertAuctioneerAccount(
+		t, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
+		auctioneerAccount.StatePendingUpdate,
+	)
+
+	return withdrawTxid, valueAfterWithdrawal
 }

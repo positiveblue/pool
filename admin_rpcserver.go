@@ -11,9 +11,10 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -254,7 +255,7 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	// Don't calculate the last key if the current one is the initial one as
 	// that would result in a value that is never used anywhere.
 	if !currentBatchKey.IsEqual(subastadb.InitialBatchKey) {
-		lastBatchKey := DecrementBatchKey(currentBatchKey)
+		lastBatchKey := clmscript.DecrementKey(currentBatchKey)
 		result.LastBatchId = lastBatchKey.SerializeCompressed()
 	}
 
@@ -281,7 +282,7 @@ func (s *adminRPCServer) ListBatches(ctx context.Context,
 		}
 
 		// Walk back by decrementing the key.
-		currentBatchKey = DecrementBatchKey(currentBatchKey)
+		currentBatchKey = clmscript.DecrementKey(currentBatchKey)
 	}
 
 	// Reverse the list to put the oldest/initial batch first to get a more
@@ -322,7 +323,7 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 				"batch key: %v", err)
 		}
 
-		batchKey = DecrementBatchKey(currentBatchKey)
+		batchKey = clmscript.DecrementKey(currentBatchKey)
 		batchID = orderT.NewBatchID(batchKey)
 	} else {
 		copy(batchID[:], req.BatchId)
@@ -338,7 +339,7 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	// key so the client can use this as a sort of linked list to navigate
 	// the batch chain. Unless of course we reached the initial batch key.
 	if !batchKey.IsEqual(subastadb.InitialBatchKey) {
-		prevBatchKey := DecrementBatchKey(batchKey)
+		prevBatchKey := clmscript.DecrementKey(batchKey)
 		prevBatchID = prevBatchKey.SerializeCompressed()
 	}
 

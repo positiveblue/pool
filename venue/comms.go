@@ -1,7 +1,7 @@
 package venue
 
 import (
-	"github.com/lightninglabs/loop/lsat"
+	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 

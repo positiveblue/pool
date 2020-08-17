@@ -13,11 +13,11 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
+	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/account/watcher"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -381,7 +381,7 @@ func (m *Manager) resumeAccount(account *Account) error {
 	switch account.State {
 	// If the account is in a pending state, we'll wait for its confirmation
 	// on-chain.
-	case StatePendingOpen, StatePendingUpdate:
+	case StatePendingOpen, StatePendingUpdate, StatePendingBatch:
 		numConfs := m.numConfsForValue(account.Value)
 		log.Infof("Waiting for %v confirmation(s) of account %x",
 			numConfs, account.TraderKeyRaw[:])
@@ -564,6 +564,49 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 		ctx, account, StateModifier(StateClosed),
 		CloseTxModifier(spendTx),
 	)
+}
+
+// WatchMatchedAccounts resumes accounts that were just matched in a batch and
+// are expecting the batch transaction to confirm as their next account output.
+// This will cancel all previous spend and conf watchers of all accounts
+// involved in the batch.
+func (m *Manager) WatchMatchedAccounts(ctx context.Context,
+	matchedAccounts [][33]byte) error {
+
+	for _, rawAcctKey := range matchedAccounts {
+		acctKey, err := btcec.ParsePubKey(rawAcctKey[:], btcec.S256())
+		if err != nil {
+			return fmt.Errorf("error parsing account key: %v", err)
+		}
+
+		acct, err := m.cfg.Store.Account(ctx, acctKey, false)
+		if err != nil {
+			return fmt.Errorf("error reading account: %v", err)
+		}
+
+		// The account was just involved in a batch. That means the
+		// account output was spent by a batch transaction. Since we
+		// know that we don't roll back or replace a batch transaction,
+		// we know that the batch TX will eventually confirm. To handle
+		// the case where an account is involved in multiple consecutive
+		// batches that are all unconfirmed, we make sure we only track
+		// the latest state by canceling all previous spend and
+		// confirmation watchers. We then only watch the latest batch
+		// and once it confirms, create a new spend watcher on that.
+		m.watcher.CancelAccountSpend(acctKey)
+		m.watcher.CancelAccountConf(acctKey)
+
+		// After taking part in a batch, the account is either pending
+		// closed because it was used up or pending batch update because
+		// it was recreated. Either way, let's resume it now by creating
+		// the appropriate watchers again if necessary.
+		err = m.resumeAccount(acct)
+		if err != nil {
+			return fmt.Errorf("error resuming account: %v", err)
+		}
+	}
+
+	return nil
 }
 
 // handleAccountExpiry handles the expiration of an account.

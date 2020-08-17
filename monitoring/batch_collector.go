@@ -4,10 +4,9 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"math/big"
 
-	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -141,7 +140,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	if currentBatchKey.IsEqual(subastadb.InitialBatchKey) {
 		return
 	}
-	batchKey := decrementBatchKey(currentBatchKey)
+	batchKey := clmscript.DecrementKey(currentBatchKey)
 	batchID := orderT.NewBatchID(batchKey)
 
 	// Count the number of batches that happened so far by "counting down"
@@ -151,7 +150,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	tempBatchKey := batchKey
 	for !tempBatchKey.IsEqual(subastadb.InitialBatchKey) {
 		numBatches++
-		tempBatchKey = decrementBatchKey(tempBatchKey)
+		tempBatchKey = clmscript.DecrementKey(tempBatchKey)
 
 		// Unlikely to happen but in case we start from an invalid value
 		// we want to avoid an endless loop. Can't image we'd ever do
@@ -180,28 +179,6 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Finally, collect the metrics into the prometheus collect channel.
 	c.g.collect(ch)
-}
-
-// decrementBatchKey is the opposite of IncrementBatchKey, is "subtracts one"
-// for the current batch key to arrive at the key used in the prior batch.
-//
-// NOTE: This is a duplicate of subasta.DecrementBatchKey that is copied here
-// to avoid a circular package dependency.
-func decrementBatchKey(batchKey *btcec.PublicKey) *btcec.PublicKey {
-	//  priorKey = batchKey - G
-	//  priorKey = (batchKey.x, batchKey.y) + (G.x, -G.y)
-	curveParams := btcec.S256().Params()
-	negY := new(big.Int).Neg(curveParams.Gy)
-	negY = negY.Mod(negY, curveParams.P)
-	x, y := batchKey.Curve.Add(
-		batchKey.X, batchKey.Y, curveParams.Gx, negY,
-	)
-
-	return &btcec.PublicKey{
-		X:     x,
-		Y:     y,
-		Curve: btcec.S256(),
-	}
 }
 
 // observeBatch records all metrics of a batch and fetches the details of the

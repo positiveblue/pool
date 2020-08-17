@@ -13,12 +13,11 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/kirin/auth"
+	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/loop/lndclient"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -119,8 +118,8 @@ var _ clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer = (*mockStream)(nil)
 // and then disconnecting.
 func TestRPCServerBatchAuction(t *testing.T) {
 	var (
-		authCtx = auth.AddToContext(
-			context.Background(), auth.KeyTokenID, testTokenID,
+		authCtx = lsat.AddToContext(
+			context.Background(), lsat.KeyTokenID, testTokenID,
 		)
 		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
@@ -229,8 +228,8 @@ func TestRPCServerBatchAuction(t *testing.T) {
 func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 	var (
 		ctxb    = context.Background()
-		authCtx = auth.AddToContext(
-			ctxb, auth.KeyTokenID, testTokenID,
+		authCtx = lsat.AddToContext(
+			ctxb, lsat.KeyTokenID, testTokenID,
 		)
 		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
@@ -355,8 +354,8 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 // during stream operations.
 func TestRPCServerBatchAuctionStreamError(t *testing.T) {
 	var (
-		authCtx = auth.AddToContext(
-			context.Background(), auth.KeyTokenID, testTokenID,
+		authCtx = lsat.AddToContext(
+			context.Background(), lsat.KeyTokenID, testTokenID,
 		)
 		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
@@ -406,8 +405,8 @@ func TestRPCServerBatchAuctionStreamError(t *testing.T) {
 // connects to the stream but doesn't send a subscription within the timeout.
 func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 	var (
-		authCtx = auth.AddToContext(
-			context.Background(), auth.KeyTokenID, testTokenID,
+		authCtx = lsat.AddToContext(
+			context.Background(), lsat.KeyTokenID, testTokenID,
 		)
 		mockStore  = subastadb.NewStoreMock(t)
 		rpcServer  = newServer(mockStore)
@@ -466,8 +465,8 @@ func newServer(store subastadb.Store) *rpcServer {
 	batchExecutor := venue.NewBatchExecutor(
 		&executorStore{
 			Store: store,
-		},
-		lndServices.Signer, time.Second*15, venue.NewExeBatchStorer(store),
+		}, lndServices.Signer, time.Second*15,
+		venue.NewExeBatchStorer(store), nil,
 	)
 
 	return newRPCServer(

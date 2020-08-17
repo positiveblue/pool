@@ -7,8 +7,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/loop/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
