@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -101,7 +102,7 @@ func (b *Book) Stop() {
 
 // PrepareOrder validates an incoming order and stores it to the database.
 func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
-	feeSchedule order.FeeSchedule, bestHeight uint32) error {
+	feeSchedule terms.FeeSchedule, bestHeight uint32) error {
 
 	// Get the account that is making this order.
 	acctKey, err := btcec.ParsePubKey(
@@ -204,7 +205,7 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 // they are matched. newOrders can be added to get this upper bound if
 // additional orders are added.
 func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
-	feeSchedule order.FeeSchedule, newOrders ...ServerOrder) (
+	feeSchedule terms.FeeSchedule, newOrders ...ServerOrder) (
 	btcutil.Amount, error) {
 
 	// We fetch all existing orders for this account from the store.

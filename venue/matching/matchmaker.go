@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
@@ -47,7 +48,7 @@ type UniformPriceCallMarket struct {
 	// feeSchedule is the current fee schedule of the auctioneer. This will
 	// be used to determine how much to charge traders in venue and
 	// execution fees.
-	feeSchedule orderT.FeeSchedule
+	feeSchedule terms.FeeSchedule
 
 	// acctFetcher is the function that'll be used to fetch the latest
 	// state of an account from disk so we can do things like compute the
@@ -59,7 +60,7 @@ type UniformPriceCallMarket struct {
 // UniformPriceCallMarket struct given the price clearer and fee schedule for
 // this current batch epoch.
 func NewUniformPriceCallMarket(priceClearer PriceClearer,
-	feeSchedule orderT.FeeSchedule,
+	feeSchedule terms.FeeSchedule,
 	acctFetcher AccountFetcher) *UniformPriceCallMarket {
 
 	u := &UniformPriceCallMarket{

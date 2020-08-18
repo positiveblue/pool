@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
@@ -129,7 +130,7 @@ type rpcServer struct {
 
 	bestHeight func() uint32
 
-	feeSchedule *orderT.LinearFeeSchedule
+	feeSchedule *terms.LinearFeeSchedule
 
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
@@ -145,7 +146,7 @@ type rpcServer struct {
 func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
-	feeSchedule *orderT.LinearFeeSchedule, listener net.Listener,
+	feeSchedule *terms.LinearFeeSchedule, listener net.Listener,
 	serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
@@ -1078,7 +1079,7 @@ func (s *rpcServer) sendToTrader(
 
 	switch m := msg.(type) {
 	case *venue.PrepareMsg:
-		feeSchedule, ok := m.ExecutionFee.(*orderT.LinearFeeSchedule)
+		feeSchedule, ok := m.ExecutionFee.(*terms.LinearFeeSchedule)
 		if !ok {
 			return fmt.Errorf("FeeSchedule w/o fee rate used: %T",
 				m.ExecutionFee)
@@ -1279,11 +1280,12 @@ func (s *rpcServer) OrderState(ctx context.Context,
 	}, nil
 }
 
-// FeeQuote returns all the fees as they are currently configured.
-func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
-	*clmrpc.FeeQuoteResponse, error) {
+// Terms returns the current dynamic terms like max account size, max order
+// duration in blocks and the auction fee schedule.
+func (s *rpcServer) Terms(_ context.Context, _ *clmrpc.TermsRequest) (
+	*clmrpc.TermsResponse, error) {
 
-	return &clmrpc.FeeQuoteResponse{
+	return &clmrpc.TermsResponse{
 		ExecutionFee: &clmrpc.ExecutionFee{
 			BaseFee: uint64(s.feeSchedule.BaseFee()),
 			FeeRate: uint64(s.feeSchedule.FeeRate()),

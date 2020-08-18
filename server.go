@@ -14,7 +14,7 @@ import (
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -176,7 +176,7 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// Instantiate our fee schedule now that will be used by different parts
 	// during the batch execution.
-	feeSchedule := orderT.NewLinearFeeSchedule(
+	feeSchedule := terms.NewLinearFeeSchedule(
 		btcutil.Amount(cfg.ExecFeeBase), btcutil.Amount(cfg.ExecFeeRate),
 	)
 

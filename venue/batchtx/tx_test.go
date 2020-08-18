@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -32,7 +33,7 @@ func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
 	return btcutil.Amount(orderT.PerBlockPremium(amt, uint32(m.exeFeeRate)))
 }
 
-var _ orderT.FeeSchedule = (*mockFeeSchedule)(nil)
+var _ terms.FeeSchedule = (*mockFeeSchedule)(nil)
 
 // TestBatchTransactionAssembly tests that given a valid set of parameters,
 // we're able to construct a complete batch transaction. All relevant outputs

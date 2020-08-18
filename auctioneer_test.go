@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
@@ -364,7 +365,7 @@ func newMockBatchExecutor() *mockBatchExecutor {
 	}
 }
 
-func (m *mockBatchExecutor) Submit(*matching.OrderBatch, orderT.FeeSchedule,
+func (m *mockBatchExecutor) Submit(*matching.OrderBatch, terms.FeeSchedule,
 	chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error) {
 
 	return m.resChan, nil
