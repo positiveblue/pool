@@ -471,8 +471,10 @@ func newServer(store subastadb.Store) *rpcServer {
 
 	return newRPCServer(
 		store, lndServices, nil, nil, nil, batchExecutor,
-		terms.NewLinearFeeSchedule(1, 100),
-		bufconn.Listen(100), nil, defaultTimeout,
+		&terms.AuctioneerTerms{
+			OrderExecBaseFee: 1,
+			OrderExecFeeRate: 100,
+		}, bufconn.Listen(100), nil, defaultTimeout,
 	)
 }
 

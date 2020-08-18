@@ -130,7 +130,7 @@ type rpcServer struct {
 
 	bestHeight func() uint32
 
-	feeSchedule *terms.LinearFeeSchedule
+	terms *terms.AuctioneerTerms
 
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
@@ -146,7 +146,7 @@ type rpcServer struct {
 func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
-	feeSchedule *terms.LinearFeeSchedule, listener net.Listener,
+	terms *terms.AuctioneerTerms, listener net.Listener,
 	serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
@@ -159,7 +159,7 @@ func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 		orderBook:        orderBook,
 		store:            store,
 		batchExecutor:    batchExecutor,
-		feeSchedule:      feeSchedule,
+		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
 		subscribeTimeout: subscribeTimeout,
@@ -355,7 +355,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 
 	// Get the value locked up in orders for this account.
 	lockedValue, err := s.orderBook.LockedValue(
-		ctx, rawTraderKey, s.feeSchedule,
+		ctx, rawTraderKey, s.terms.FeeSchedule(),
 	)
 	if err != nil {
 		return nil, err
@@ -433,7 +433,9 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
-	err := s.orderBook.PrepareOrder(ctx, o, s.feeSchedule, s.bestHeight())
+	err := s.orderBook.PrepareOrder(
+		ctx, o, s.terms.FeeSchedule(), s.bestHeight(),
+	)
 	return mapOrderResp(o.Nonce(), err)
 }
 
@@ -1286,9 +1288,11 @@ func (s *rpcServer) Terms(_ context.Context, _ *clmrpc.TermsRequest) (
 	*clmrpc.TermsResponse, error) {
 
 	return &clmrpc.TermsResponse{
+		MaxAccountValue:        uint64(s.terms.MaxAccountValue),
+		MaxOrderDurationBlocks: s.terms.MaxOrderDuration,
 		ExecutionFee: &clmrpc.ExecutionFee{
-			BaseFee: uint64(s.feeSchedule.BaseFee()),
-			FeeRate: uint64(s.feeSchedule.FeeRate()),
+			BaseFee: uint64(s.terms.OrderExecBaseFee),
+			FeeRate: uint64(s.terms.OrderExecFeeRate),
 		},
 	}, nil
 }
