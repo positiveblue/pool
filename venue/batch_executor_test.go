@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -184,7 +185,7 @@ func (e *executorTestHarness) SubmitBatch(batch *matching.OrderBatch,
 	feeRate chainfee.SatPerKWeight) chan *ExecutionResult {
 
 	respChan, err := e.executor.Submit(
-		batch, &order.LinearFeeSchedule{}, feeRate,
+		batch, &terms.LinearFeeSchedule{}, feeRate,
 	)
 	if err != nil {
 		e.t.Fatalf("unable to submit batch: %v", err)

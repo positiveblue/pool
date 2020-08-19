@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
@@ -129,7 +130,7 @@ type rpcServer struct {
 
 	bestHeight func() uint32
 
-	feeSchedule *orderT.LinearFeeSchedule
+	terms *terms.AuctioneerTerms
 
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
@@ -145,7 +146,7 @@ type rpcServer struct {
 func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
-	feeSchedule *orderT.LinearFeeSchedule, listener net.Listener,
+	terms *terms.AuctioneerTerms, listener net.Listener,
 	serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
@@ -158,7 +159,7 @@ func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 		orderBook:        orderBook,
 		store:            store,
 		batchExecutor:    batchExecutor,
-		feeSchedule:      feeSchedule,
+		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
 		subscribeTimeout: subscribeTimeout,
@@ -354,7 +355,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 
 	// Get the value locked up in orders for this account.
 	lockedValue, err := s.orderBook.LockedValue(
-		ctx, rawTraderKey, s.feeSchedule,
+		ctx, rawTraderKey, s.terms.FeeSchedule(),
 	)
 	if err != nil {
 		return nil, err
@@ -432,7 +433,9 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
-	err := s.orderBook.PrepareOrder(ctx, o, s.feeSchedule, s.bestHeight())
+	err := s.orderBook.PrepareOrder(
+		ctx, o, s.terms.FeeSchedule(), s.bestHeight(),
+	)
 	return mapOrderResp(o.Nonce(), err)
 }
 
@@ -1078,7 +1081,7 @@ func (s *rpcServer) sendToTrader(
 
 	switch m := msg.(type) {
 	case *venue.PrepareMsg:
-		feeSchedule, ok := m.ExecutionFee.(*orderT.LinearFeeSchedule)
+		feeSchedule, ok := m.ExecutionFee.(*terms.LinearFeeSchedule)
 		if !ok {
 			return fmt.Errorf("FeeSchedule w/o fee rate used: %T",
 				m.ExecutionFee)
@@ -1279,14 +1282,17 @@ func (s *rpcServer) OrderState(ctx context.Context,
 	}, nil
 }
 
-// FeeQuote returns all the fees as they are currently configured.
-func (s *rpcServer) FeeQuote(_ context.Context, _ *clmrpc.FeeQuoteRequest) (
-	*clmrpc.FeeQuoteResponse, error) {
+// Terms returns the current dynamic terms like max account size, max order
+// duration in blocks and the auction fee schedule.
+func (s *rpcServer) Terms(_ context.Context, _ *clmrpc.TermsRequest) (
+	*clmrpc.TermsResponse, error) {
 
-	return &clmrpc.FeeQuoteResponse{
+	return &clmrpc.TermsResponse{
+		MaxAccountValue:        uint64(s.terms.MaxAccountValue),
+		MaxOrderDurationBlocks: s.terms.MaxOrderDuration,
 		ExecutionFee: &clmrpc.ExecutionFee{
-			BaseFee: uint64(s.feeSchedule.BaseFee()),
-			FeeRate: uint64(s.feeSchedule.FeeRate()),
+			BaseFee: uint64(s.terms.OrderExecBaseFee),
+			FeeRate: uint64(s.terms.OrderExecFeeRate),
 		},
 	}, nil
 }

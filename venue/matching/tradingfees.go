@@ -4,6 +4,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 )
 
 // AccountDiff represents a matching+clearing event for a trader's account.
@@ -36,7 +37,7 @@ type TradingFeeReport struct {
 // NewTradingFeeReport creates a new trading fee report given a set of matched
 // orders, the clearing price for the batch, and the feeSchedule of the
 // auctioneer.
-func NewTradingFeeReport(orders []MatchedOrder, feeSchedule orderT.FeeSchedule,
+func NewTradingFeeReport(orders []MatchedOrder, feeSchedule terms.FeeSchedule,
 	clearingPrice orderT.FixedRatePremium) TradingFeeReport {
 
 	accountDiffs := make(map[AccountID]AccountDiff)

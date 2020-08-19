@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/llm/order"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
@@ -56,7 +57,7 @@ type PrepareMsg struct {
 	AccountOutPoints []wire.OutPoint
 
 	// ExecutionFee describes the execution fee used to craft this batch.
-	ExecutionFee orderT.FeeSchedule
+	ExecutionFee terms.FeeSchedule
 
 	// BatchTx is the batch transaction itself, without any witnesses
 	// populated.
@@ -243,7 +244,7 @@ type executionReq struct {
 
 	// feeSchedule is the fee schedule that was used to construct this
 	// batch.
-	feeSchedule orderT.FeeSchedule
+	feeSchedule terms.FeeSchedule
 
 	// batchFeeRate is the target fee rate of the batch execution
 	// transaction.
@@ -1035,7 +1036,7 @@ func (b *BatchExecutor) executor() {
 
 // Submit submits a new batch for execution to the main state machine.
 func (b *BatchExecutor) Submit(batch *matching.OrderBatch,
-	feeSchedule orderT.FeeSchedule,
+	feeSchedule terms.FeeSchedule,
 	batchFeeRate chainfee.SatPerKWeight) (chan *ExecutionResult, error) {
 
 	exeReq := &executionReq{

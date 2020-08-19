@@ -14,6 +14,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
@@ -132,7 +133,7 @@ type OrderFeed interface {
 type BatchExecutor interface {
 	// Submit submits the target batch for execution. If the batch is
 	// invalid, then an error should be returned.
-	Submit(*matching.OrderBatch, orderT.FeeSchedule,
+	Submit(*matching.OrderBatch, terms.FeeSchedule,
 		chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error)
 }
 
@@ -188,7 +189,7 @@ type AuctioneerConfig struct {
 
 	// FeeSchedule describes how we charge the traders in an executed
 	// batch.
-	FeeSchedule orderT.FeeSchedule
+	FeeSchedule terms.FeeSchedule
 
 	// ChannelEnforcer enforces the service lifetime of channels created as
 	// part of a finalized batch.

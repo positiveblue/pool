@@ -797,15 +797,15 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// premium, in order to make what's left on the bidders account into
 	// dust.
 	//
-	// 915_000 per billion of 100_000 sats for 1000 blocks is 91_500 sats,
-	// so the trader will only have 8500 sats left to pay for chain fees
+	// 635_000 per billion of 100_000 sats for 1440 blocks is 91_440 sats,
+	// so the trader will only have 8560 sats left to pay for chain fees
 	// and execution fees.
 	//
 	// The execution fee is 101 sats, chain fee 8162 sats (at the static
 	// fee rate of 12500 s/kw), so what is left will be dust (< 678 sats).
 	const orderSize = 100_000
-	const matchRate = 915_000
-	const durationBlocks = 1000
+	const matchRate = 635_000
+	const durationBlocks = 1440
 
 	// Submit an ask an bid which will match exactly.
 	_, err = submitAskOrder(

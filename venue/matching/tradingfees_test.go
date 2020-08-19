@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 )
 
 type mockFeeSchedule struct {
@@ -24,7 +25,7 @@ func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
 	return btcutil.Amount(orderT.PerBlockPremium(amt, uint32(m.exeFeeRate)))
 }
 
-var _ orderT.FeeSchedule = (*mockFeeSchedule)(nil)
+var _ terms.FeeSchedule = (*mockFeeSchedule)(nil)
 
 func genRandMatchedOrders(r *rand.Rand, acctDB *acctFetcher,
 	opts ...orderGenOption) []MatchedOrder {

@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
@@ -61,7 +62,7 @@ type environment struct {
 	result *ExecutionResult
 
 	// exeFee is the execution fee that was used to match this batch.
-	exeFee orderT.FeeSchedule
+	exeFee terms.FeeSchedule
 
 	// batchFeeRate is the target fee rate of the batch execution
 	// transaction.

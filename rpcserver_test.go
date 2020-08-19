@@ -16,7 +16,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/subasta/account"
@@ -184,7 +184,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	var acctID matching.AccountID
 	copy(acctID[:], testAccount.TraderKeyRaw[:])
 	comms.toTrader <- &venue.PrepareMsg{
-		ExecutionFee: order.NewLinearFeeSchedule(1, 100),
+		ExecutionFee: terms.NewLinearFeeSchedule(1, 100),
 	}
 	select {
 	case rpcMsg := <-mockStream.toClient:
@@ -471,8 +471,10 @@ func newServer(store subastadb.Store) *rpcServer {
 
 	return newRPCServer(
 		store, lndServices, nil, nil, nil, batchExecutor,
-		order.NewLinearFeeSchedule(1, 100),
-		bufconn.Listen(100), nil, defaultTimeout,
+		&terms.AuctioneerTerms{
+			OrderExecBaseFee: 1,
+			OrderExecFeeRate: 100,
+		}, bufconn.Listen(100), nil, defaultTimeout,
 	)
 }
 

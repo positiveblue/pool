@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -99,7 +100,7 @@ func TestBookPrepareOrder(t *testing.T) {
 	store.Accs[testAccount.TraderKeyRaw] = &testAccount
 	store.Accs[testAccount2.TraderKeyRaw] = &testAccount2
 
-	feeSchedule := orderT.NewLinearFeeSchedule(1, 100)
+	feeSchedule := terms.NewLinearFeeSchedule(1, 100)
 
 	book := order.NewBook(&order.BookConfig{
 		MaxDuration: 1234,

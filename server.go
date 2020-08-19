@@ -14,7 +14,7 @@ import (
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -174,11 +174,14 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 
-	// Instantiate our fee schedule now that will be used by different parts
-	// during the batch execution.
-	feeSchedule := orderT.NewLinearFeeSchedule(
-		btcutil.Amount(cfg.ExecFeeBase), btcutil.Amount(cfg.ExecFeeRate),
-	)
+	// Instantiate our fee schedule and other terms now that will be used
+	// by different parts during the batch execution.
+	auctionTerms := &terms.AuctioneerTerms{
+		MaxAccountValue:  btcutil.Amount(cfg.MaxAcctValue),
+		MaxOrderDuration: cfg.MaxDuration,
+		OrderExecBaseFee: btcutil.Amount(cfg.ExecFeeBase),
+		OrderExecFeeRate: btcutil.Amount(cfg.ExecFeeRate),
+	}
 
 	// Continuing, we create the batch executor which will communicate
 	// between the trader's an auctioneer for each batch epoch.
@@ -226,7 +229,8 @@ func NewServer(cfg *Config) (*Server, error) {
 				defaultBatchTickInterval,
 			),
 			CallMarket: matching.NewUniformPriceCallMarket(
-				&matching.LastAcceptedBid{}, feeSchedule,
+				&matching.LastAcceptedBid{},
+				auctionTerms.FeeSchedule(),
 				func(acctID matching.AccountID) (*account.Account, error) {
 					acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
 					if err != nil {
@@ -245,7 +249,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 			OrderFeed:       orderBook,
 			BatchExecutor:   batchExecutor,
-			FeeSchedule:     feeSchedule,
+			FeeSchedule:     auctionTerms.FeeSchedule(),
 			ChannelEnforcer: channelEnforcer,
 			ConfTarget:      cfg.BatchConfTarget,
 		}),
@@ -318,7 +322,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	auctioneerServer := newRPCServer(
 		store, lnd, accountManager, server.auctioneer.BestHeight,
-		server.orderBook, batchExecutor, feeSchedule, grpcListener,
+		server.orderBook, batchExecutor, auctionTerms, grpcListener,
 		serverOpts, cfg.SubscribeTimeout,
 	)
 	server.rpcServer = auctioneerServer
