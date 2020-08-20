@@ -240,6 +240,25 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 			return false
 		}
 
+		// Check all bids and asks are found in the bid index.
+		bidNonces := make(map[orderT.Nonce]struct{})
+		for _, bid := range orders.Bids {
+			if _, ok := callMarket.bidIndex[bid.Nonce()]; !ok {
+				t.Logf("bid not found in index")
+				return false
+			}
+			bidNonces[bid.Nonce()] = struct{}{}
+		}
+
+		askNonces := make(map[orderT.Nonce]struct{})
+		for _, ask := range orders.Asks {
+			if _, ok := callMarket.askIndex[ask.Nonce()]; !ok {
+				t.Logf("ask not found in index")
+				return false
+			}
+			askNonces[ask.Nonce()] = struct{}{}
+		}
+
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
 		orderBatch, err := callMarket.MaybeClear(
@@ -258,8 +277,21 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 		matchedOrders := orderBatch.Orders
 		fullyConsumedOrders := make(map[orderT.Nonce]struct{})
 		for _, matchedOrder := range matchedOrders {
-			bid := matchedOrder.Details.Ask
-			ask := matchedOrder.Details.Bid
+			bid := matchedOrder.Details.Bid
+			ask := matchedOrder.Details.Ask
+
+			// Check that the bid and ask was among our original
+			// orders.
+			_, ok := bidNonces[bid.Nonce()]
+			if !ok {
+				t.Logf("bid not found among nonces")
+				return false
+			}
+			_, ok = askNonces[ask.Nonce()]
+			if !ok {
+				t.Logf("ask not found among nonces")
+				return false
+			}
 
 			// If the order set was totally filled, then it
 			// shouldn't be found in current set of active orders.
