@@ -283,7 +283,8 @@ func (m *mockWallet) EstimateFee(context.Context, int32) (
 var _ Wallet = (*mockWallet)(nil)
 
 type mockCallMarket struct {
-	orders map[orderT.Nonce]order.ServerOrder
+	bids map[orderT.Nonce]*order.Bid
+	asks map[orderT.Nonce]*order.Ask
 
 	shouldClear bool
 
@@ -292,7 +293,8 @@ type mockCallMarket struct {
 
 func newMockCallMarket() *mockCallMarket {
 	return &mockCallMarket{
-		orders: make(map[orderT.Nonce]order.ServerOrder),
+		bids: make(map[orderT.Nonce]*order.Bid),
+		asks: make(map[orderT.Nonce]*order.Ask),
 	}
 }
 
@@ -306,10 +308,50 @@ func (m *mockCallMarket) MaybeClear(chainfee.SatPerKWeight) (
 		return nil, matching.ErrNoMarketPossible
 	}
 
-	return &matching.OrderBatch{}, nil
+	if len(m.bids) == 0 {
+		return nil, fmt.Errorf("no market to clear")
+	}
+
+	// The mock will just match each bid to one ask.
+	if len(m.bids) != len(m.asks) {
+		return nil, fmt.Errorf("only supports same number of bids/asks")
+	}
+
+	bids := make([]*order.Bid, 0, len(m.bids))
+	for _, bid := range m.bids {
+		bids = append(bids, bid)
+	}
+
+	matches := make([]matching.MatchedOrder, 0, len(m.asks))
+	i := 0
+	for _, ask := range m.asks {
+		bid := bids[i]
+		i++
+
+		match := matching.MatchedOrder{
+			Details: matching.OrderPair{
+				Bid: bid,
+				Ask: ask,
+			},
+		}
+
+		matches = append(matches, match)
+	}
+
+	return &matching.OrderBatch{
+		Orders: matches,
+	}, nil
 }
 
 func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {
+	m.Lock()
+	defer m.Unlock()
+
+	for _, match := range matches {
+		delete(m.bids, match.Details.Bid.Nonce())
+		delete(m.asks, match.Details.Ask.Nonce())
+	}
+
 	return nil
 }
 
@@ -318,7 +360,7 @@ func (m *mockCallMarket) ConsiderBids(bids ...*order.Bid) error {
 	defer m.Unlock()
 
 	for _, bid := range bids {
-		m.orders[bid.Nonce()] = bid
+		m.bids[bid.Nonce()] = bid
 	}
 
 	return nil
@@ -329,7 +371,7 @@ func (m *mockCallMarket) ForgetBids(nonces ...orderT.Nonce) error {
 	defer m.Unlock()
 
 	for _, nonce := range nonces {
-		delete(m.orders, nonce)
+		delete(m.bids, nonce)
 	}
 
 	return nil
@@ -340,7 +382,7 @@ func (m *mockCallMarket) ConsiderAsks(asks ...*order.Ask) error {
 	defer m.Unlock()
 
 	for _, ask := range asks {
-		m.orders[ask.Nonce()] = ask
+		m.asks[ask.Nonce()] = ask
 	}
 
 	return nil
@@ -351,7 +393,7 @@ func (m *mockCallMarket) ForgetAsks(nonces ...orderT.Nonce) error {
 	defer m.Unlock()
 
 	for _, nonce := range nonces {
-		delete(m.orders, nonce)
+		delete(m.asks, nonce)
 	}
 
 	return nil
@@ -690,10 +732,14 @@ func (a *auctioneerTestHarness) AssertOrdersPresent(nonces ...orderT.Nonce) {
 		defer a.callMarket.Unlock()
 
 		for _, nonce := range nonces {
-			if _, ok := a.callMarket.orders[nonce]; !ok {
-				return fmt.Errorf("nonce %x not found",
-					nonce[:])
+			if _, ok := a.callMarket.bids[nonce]; ok {
+				continue
 			}
+			if _, ok := a.callMarket.asks[nonce]; ok {
+				continue
+			}
+			return fmt.Errorf("nonce %x not found",
+				nonce[:])
 		}
 
 		return nil
@@ -710,7 +756,7 @@ func (a *auctioneerTestHarness) AssertNoOrdersPreesnt() {
 		a.callMarket.Lock()
 		defer a.callMarket.Unlock()
 
-		if len(a.callMarket.orders) > 0 {
+		if len(a.callMarket.bids) > 0 || len(a.callMarket.asks) > 0 {
 			return fmt.Errorf("found orders in call market, " +
 				"none should exist")
 		}
@@ -731,7 +777,7 @@ func (a *auctioneerTestHarness) OrderFeederResume() {
 }
 
 func (a *auctioneerTestHarness) AddDiskOrder(isAsk bool, fixedRate uint32,
-	duration uint32) orderT.Nonce {
+	duration uint32) order.ServerOrder {
 
 	a.db.Lock()
 	defer a.db.Unlock()
@@ -753,7 +799,7 @@ func (a *auctioneerTestHarness) AddDiskOrder(isAsk bool, fixedRate uint32,
 	nonce := order.Nonce()
 	a.db.orders[nonce] = order
 
-	return nonce
+	return order
 }
 
 func (a *auctioneerTestHarness) AssertLifetimesEnforced() {
@@ -812,6 +858,38 @@ func (a *auctioneerTestHarness) ForceBatchTick() {
 func (a *auctioneerTestHarness) ReportExecutionFailure(err error) {
 	a.executor.resChan <- &venue.ExecutionResult{
 		Err: err,
+	}
+}
+
+func (a *auctioneerTestHarness) AssertSubmittedBatch(numOrders int) {
+	a.t.Helper()
+
+	err := wait.NoError(func() error {
+		a.executor.Lock()
+		defer a.executor.Unlock()
+
+		n := len(a.executor.submittedBatch.Orders)
+		if numOrders != n {
+			return fmt.Errorf("submitted batch didn't have "+
+				"the expected(%d) number of orders: %d",
+				numOrders, n)
+		}
+
+		return nil
+	}, time.Second*5)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+
+}
+
+func (a *auctioneerTestHarness) AssertFinalizedBatch(numOrders int) {
+	a.t.Helper()
+
+	n := len(a.auctioneer.finalizedBatch.Batch.Orders)
+	if numOrders != n {
+		a.t.Fatalf("finalized batch didn't have the expected(%d) "+
+			"number of orders: %d", numOrders, n)
 	}
 }
 
@@ -1011,7 +1089,7 @@ func TestAuctioneerLoadDiskOrders(t *testing.T) {
 			orderNonces,
 			testHarness.AddDiskOrder(
 				isAsk, orderPrice, orderDuration,
-			),
+			).Nonce(),
 		)
 	}
 
@@ -1160,6 +1238,27 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// We should now transition to the order submit state.
 	testHarness.AssertStateTransitions(OrderSubmitState)
 
+	const numOrders = 12
+	nonces := make([]orderT.Nonce, numOrders)
+	for i := 0; i < numOrders; i++ {
+		var o order.ServerOrder
+		if i%2 == 0 {
+			o = testHarness.AddDiskOrder(true, 10, 10)
+			err := testHarness.callMarket.ConsiderAsks(o.(*order.Ask))
+			if err != nil {
+				t.Fatalf("unable to consider ask: %v", err)
+			}
+		} else {
+			o = testHarness.AddDiskOrder(false, 10, 10)
+			err := testHarness.callMarket.ConsiderBids(o.(*order.Bid))
+			if err != nil {
+				t.Fatalf("unable to consider ask: %v", err)
+			}
+		}
+
+		nonces[i] = o.Nonce()
+	}
+
 	// We'll now enter the main loop to execute a batch, but before that
 	// we'll ensure all calls to the call market return a proper batch.
 	testHarness.QueueMarketClear()
@@ -1184,18 +1283,16 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		newOrders[i] = testHarness.NotifyBidOrder(30, 30)
 	}
 
+	// The matchmaking should have resulted in 6 matches.
+	testHarness.AssertSubmittedBatch(6)
+
 	// In this scenario, we'll return an error that a sub-set of the
 	// traders are missing.
-	const numOrders = 10
-	missingNonces := make([]orderT.Nonce, numOrders)
-	for i := 0; i < numOrders; i++ {
-		missingNonces[i] = testHarness.AddDiskOrder(i%2 == 0, 10, 10)
-	}
 	testHarness.ReportExecutionFailure(
 		&venue.ErrMissingTraders{
 			OrderNonces: map[orderT.Nonce]struct{}{
-				missingNonces[0]: {},
-				missingNonces[1]: {},
+				nonces[0]: {},
+				nonces[1]: {},
 			},
 		},
 	)
@@ -1204,38 +1301,49 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// finally execution to give things another go.
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 
+	// Since two orders failed on the previous execution, there should be 5
+	// matches left.
+	testHarness.AssertSubmittedBatch(5)
+
 	// The set of orders referenced above should now have been removed from
 	// the call market
-	testHarness.AssertOrdersRemoved(missingNonces[:2])
+	testHarness.AssertOrdersRemoved(nonces[:2])
 
 	// This time, we'll report a failure that one of the traders gave us an
 	// invalid witness.
 	testHarness.ReportExecutionFailure(&venue.ErrInvalidWitness{
-		OrderNonces: missingNonces[2:4],
+		OrderNonces: nonces[2:4],
 	})
 
 	// Once again, the set of orders should be removed, and we should step
 	// again until we retry execution.
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
-	testHarness.AssertOrdersRemoved(missingNonces[2:4])
+	testHarness.AssertOrdersRemoved(nonces[2:4])
+
+	// Now only eight orders are left, resulting in four matches.
+	testHarness.AssertSubmittedBatch(4)
 
 	// We'll now simulate one of the traders failing to send a message in
 	// time.
 	testHarness.ReportExecutionFailure(&venue.ErrMsgTimeout{
-		OrderNonces: missingNonces[4:6],
+		OrderNonces: nonces[4:6],
 	})
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
-	testHarness.AssertOrdersRemoved(missingNonces[4:6])
+	testHarness.AssertOrdersRemoved(nonces[4:6])
+
+	// Now only six orders are left, resulting in 3 matches.
+	testHarness.AssertSubmittedBatch(3)
 
 	// We'll now simulate one of the traders failing to include required
 	// channel information.
 	testHarness.ReportExecutionFailure(&venue.ErrMissingChannelInfo{
 		Trader:       matching.AccountID{1},
 		ChannelPoint: wire.OutPoint{Index: 1},
-		OrderNonces:  missingNonces[6:8],
+		OrderNonces:  nonces[6:8],
 	})
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
-	testHarness.AssertOrdersRemoved(missingNonces[6:8])
+	testHarness.AssertOrdersRemoved(nonces[6:8])
+	testHarness.AssertSubmittedBatch(2)
 
 	// We'll now simulate one of the traders providing non-matching channel
 	// information. Both traders should be banned and their orders removed.
@@ -1245,12 +1353,16 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		ChannelPoint: wire.OutPoint{Index: 1},
 		Trader1:      bannedTrader1,
 		Trader2:      bannedTrader2,
-		OrderNonces:  missingNonces[8:10],
+		OrderNonces:  nonces[8:10],
 	})
+
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 	testHarness.AssertBannedTrader(bannedTrader1)
 	testHarness.AssertBannedTrader(bannedTrader2)
-	testHarness.AssertOrdersRemoved(missingNonces[8:10])
+	testHarness.AssertOrdersRemoved(nonces[8:10])
+
+	// Only one possible match is left.
+	testHarness.AssertSubmittedBatch(1)
 
 	// At long last, we're now ready to trigger a successful batch
 	// execution.
@@ -1259,6 +1371,10 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// Now that the batch was successful, we should transition to the
 	// BatchCommitState.
 	testHarness.AssertStateTransitions(BatchCommitState)
+
+	// Make sure the finialize batch is the same one as the one that was
+	// submitted last.
+	testHarness.AssertFinalizedBatch(1)
 
 	// In this state, we expect that the batch transaction was properly
 	// broadcast and the channel lifetimes are being enforced.
@@ -1294,9 +1410,9 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// no further state transitions.
 	testHarness.AssertStateTransitions(MatchMakingState, OrderSubmitState)
 
-	// Also all the orders that we removed earlier should now also be once
-	// again part of the call market.
-	testHarness.AssertOrdersPresent(missingNonces...)
+	// Also all the orders that we removed earlier, except the two that
+	// succeeded, should now also be once again part of the call market.
+	testHarness.AssertOrdersPresent(nonces[:numOrders-2]...)
 
 	testHarness.AssertNoStateTransitions()
 }
