@@ -296,8 +296,8 @@ func newMockCallMarket() *mockCallMarket {
 	}
 }
 
-func (m *mockCallMarket) MaybeClear(matching.BatchID,
-	chainfee.SatPerKWeight) (*matching.OrderBatch, error) {
+func (m *mockCallMarket) MaybeClear(chainfee.SatPerKWeight) (
+	*matching.OrderBatch, error) {
 
 	m.Lock()
 	defer m.Unlock()
@@ -307,6 +307,10 @@ func (m *mockCallMarket) MaybeClear(matching.BatchID,
 	}
 
 	return &matching.OrderBatch{}, nil
+}
+
+func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {
+	return nil
 }
 
 func (m *mockCallMarket) ConsiderBids(bids ...*order.Bid) error {

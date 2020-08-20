@@ -1,6 +1,7 @@
 package matching
 
 import (
+	"container/list"
 	"fmt"
 	"math/rand"
 	"reflect"
@@ -167,7 +168,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 		acctDB.fetchAcct,
 	)
 
-	_, err := callMarket.MaybeClear(BatchID{}, chainfee.FeePerKwFloor)
+	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
 	}
@@ -201,7 +202,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 
 	// If we attempt to make a market, we should get the
 	// ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(BatchID{}, chainfee.FeePerKwFloor)
+	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
@@ -219,7 +220,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 // TestMaybeClearClearingPriceConsistency tests that once a market has been
 // cleared, all internal state is consistent with the outcome of the matching
 // event.
-func TestMaybeClearClearingPriceConsistency(t *testing.T) {
+func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
@@ -261,20 +262,55 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) {
 
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
-		orderBatch, err := callMarket.MaybeClear(
-			BatchID{}, chainfee.FeePerKwFloor,
-		)
+		orderBatch, err := callMarket.MaybeClear(chainfee.FeePerKwFloor)
 		if err != nil {
 			fmt.Println("clear error: ", err)
 			n++
 			return true
 		}
 
-		// At this point we know that we have a match.
-		//
+		// Indexes should not be mutated.
+		checkEqual := func(n map[orderT.Nonce]struct{},
+			index map[orderT.Nonce]*list.Element) error {
+
+			for k := range n {
+				if _, ok := index[k]; ok {
+					continue
+				}
+				return fmt.Errorf("nonce %v not found in index", k)
+			}
+
+			for k := range index {
+				if _, ok := n[k]; ok {
+					continue
+				}
+				return fmt.Errorf("nonce %v not found among nonces", k)
+			}
+
+			return nil
+		}
+
+		if err := checkEqual(bidNonces, callMarket.bidIndex); err != nil {
+			t.Logf("not equal: %v", err)
+			return false
+		}
+
+		if err := checkEqual(askNonces, callMarket.askIndex); err != nil {
+			t.Logf("not equal: %v", err)
+			return false
+		}
+
+		// At this point we know that we have a match. We remove the
+		// matched orders from the order book, and check that it gets
+		// updated accordingly.
+		matchedOrders := orderBatch.Orders
+		if err := callMarket.RemoveMatches(matchedOrders...); err != nil {
+			t.Logf("unable to remove matches: %v", err)
+			return false
+		}
+
 		// First, we'll ensure that the set of internal orders are
 		// consistent.
-		matchedOrders := orderBatch.Orders
 		fullyConsumedOrders := make(map[orderT.Nonce]struct{})
 		for _, matchedOrder := range matchedOrders {
 			bid := matchedOrder.Details.Bid
@@ -440,14 +476,14 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 
 	// If we attempt to make a market with a fee rate above all the orders'
 	// max fee rate, we should get the ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(BatchID{}, 7*chainfee.FeePerKwFloor)
+	_, err := callMarket.MaybeClear(7 * chainfee.FeePerKwFloor)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
 
 	// Now make a market with a fee rate that should make exactly 3 matches
 	// possible.
-	orderBatch, err := callMarket.MaybeClear(BatchID{}, 4*chainfee.FeePerKwFloor)
+	orderBatch, err := callMarket.MaybeClear(4 * chainfee.FeePerKwFloor)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

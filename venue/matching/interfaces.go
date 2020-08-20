@@ -219,7 +219,11 @@ type BatchAuctioneer interface {
 	// max batch fee rate set lower.
 	//
 	// TODO(roasbeef): might need other info...
-	MaybeClear(BatchID, chainfee.SatPerKWeight) (*OrderBatch, error)
+	MaybeClear(chainfee.SatPerKWeight) (*OrderBatch, error)
+
+	// RemoveMatches updates the order book by subtracting the given
+	// matches filled volume.
+	RemoveMatches(...MatchedOrder) error
 
 	// ConsiderBid adds a set of bids to the staging arena for match
 	// making. Only once a bid has been considered will it be eligible to
