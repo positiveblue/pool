@@ -480,7 +480,12 @@ func (a *auctioneerTestHarness) AssertStateTransitions(states ...AuctionState) {
 
 	// TODO(roasbeef): assert starting state?
 	for _, state := range states {
-		nextState := <-a.db.stateTransitions
+		var nextState AuctionState
+		select {
+		case nextState = <-a.db.stateTransitions:
+		case <-time.After(5 * time.Second):
+			a.t.Fatalf("no state transition happened")
+		}
 
 		if nextState != state {
 			a.t.Fatalf("expected transitiion to state=%v, "+
@@ -834,9 +839,6 @@ func (a *auctioneerTestHarness) AssertOrdersRemoved(nonces []orderT.Nonce) {
 			a.t.Fatalf("order %v not removed", nonce)
 		}
 	}
-}
-
-func (a *auctioneerTestHarness) InsertOrders(nonces []orderT.Nonce) {
 }
 
 // TestAuctioneerStateMachineDefaultAccountPresent tests that the state machine
