@@ -1276,14 +1276,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return 0, err
 		}
 
-		// Now that we know which orders will execute in this batch, we
-		// remove them from our in-memory set of orders so we can
-		// properly make a market for the next batch.
-		err = a.cfg.CallMarket.RemoveMatches(orderBatch.Orders...)
-		if err != nil {
-			return 0, err
-		}
-
 		// At this point we have a batch that we can now go to execute,
 		// so we'll add it to the current environment of the state
 		// machine.
@@ -1402,6 +1394,16 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		if err != nil {
 			return 0, fmt.Errorf("unable to enforce channel "+
 				"lifetimes: %v", err)
+		}
+
+		// Now that we have the finalized batch and know which orders
+		// was executed, we remove them from our in-memory set of
+		// orders so we can properly make a market for the next batch.
+		err = a.cfg.CallMarket.RemoveMatches(
+			a.finalizedBatch.Batch.Orders...,
+		)
+		if err != nil {
+			return 0, err
 		}
 
 		// We'll reload the set of orders from disk so we have a

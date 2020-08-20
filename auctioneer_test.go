@@ -360,7 +360,10 @@ func (m *mockCallMarket) ForgetAsks(nonces ...orderT.Nonce) error {
 var _ matching.BatchAuctioneer = (*mockCallMarket)(nil)
 
 type mockBatchExecutor struct {
-	resChan chan *venue.ExecutionResult
+	submittedBatch *matching.OrderBatch
+	resChan        chan *venue.ExecutionResult
+
+	sync.Mutex
 }
 
 func newMockBatchExecutor() *mockBatchExecutor {
@@ -369,8 +372,13 @@ func newMockBatchExecutor() *mockBatchExecutor {
 	}
 }
 
-func (m *mockBatchExecutor) Submit(*matching.OrderBatch, terms.FeeSchedule,
-	chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error) {
+func (m *mockBatchExecutor) Submit(b *matching.OrderBatch, _ terms.FeeSchedule,
+	_ chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error) {
+
+	m.Lock()
+	defer m.Unlock()
+
+	m.submittedBatch = b
 
 	return m.resChan, nil
 }
@@ -808,7 +816,12 @@ func (a *auctioneerTestHarness) ReportExecutionFailure(err error) {
 }
 
 func (a *auctioneerTestHarness) ReportExecutionSuccess() {
+	a.executor.Lock()
+	batch := a.executor.submittedBatch
+	a.executor.Unlock()
+
 	a.executor.resChan <- &venue.ExecutionResult{
+		Batch: batch,
 		BatchTx: &wire.MsgTx{
 			TxOut: []*wire.TxOut{
 				{
