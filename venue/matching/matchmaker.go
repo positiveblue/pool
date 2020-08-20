@@ -101,6 +101,9 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight) (
 	//
 	// First we'll obtain slices pointing to the backing list so the match
 	// maker can examine all the entries easily.
+	//
+	// NOTE: we make value copies of the orders found in the backing lists,
+	// such that MatchBatch won't actually mutate the order book contents.
 	var (
 		bids = make([]*order.Bid, 0, u.bids.Len())
 		asks = make([]*order.Ask, 0, u.asks.Len())
@@ -208,7 +211,9 @@ func (u *UniformPriceCallMarket) RemoveMatches(matches ...MatchedOrder) error {
 	)
 
 	// We now go through the order book and subtract the filled volume for
-	// each bid and ask.
+	// each bid and ask. Note that we make a copy of the orders found in
+	// the order book before mutating them, so we'll reset the whole order
+	// book with the modified orders below.
 	for bid := u.bids.Front(); bid != nil; bid = bid.Next() {
 		b := bid.Value.(order.Bid)
 
