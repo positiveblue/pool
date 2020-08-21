@@ -544,7 +544,11 @@ func TestAccountExpirySpend(t *testing.T) {
 			},
 		},
 	}
-	mods := []Modifier{StateModifier(StateClosed), CloseTxModifier(closeTx)}
+	mods := []Modifier{
+		ValueModifier(0),
+		StateModifier(StateClosed),
+		CloseTxModifier(closeTx),
+	}
 	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx:        closeTx,
 		SpenderInputIndex: 0,
@@ -590,7 +594,11 @@ func TestAccountMultiSigClose(t *testing.T) {
 			},
 		},
 	}
-	mods := []Modifier{StateModifier(StateClosed), CloseTxModifier(spendTx)}
+	mods := []Modifier{
+		ValueModifier(0),
+		StateModifier(StateClosed),
+		CloseTxModifier(spendTx),
+	}
 	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx:        spendTx,
 		SpenderInputIndex: 0,
