@@ -57,10 +57,14 @@ func testAccountCreation(t *harnessTest) {
 	closeAddr := resp.Address
 	closeTx := closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
-		Outputs: []*clmrpc.Output{
-			{
-				ValueSat: outputValue,
-				Address:  closeAddr,
+		FundsDestination: &clmrpc.CloseAccountRequest_Outputs{
+			Outputs: &clmrpc.OutputsWithImplicitFee{
+				Outputs: []*clmrpc.Output{
+					{
+						ValueSat: outputValue,
+						Address:  closeAddr,
+					},
+				},
 			},
 		},
 	})
@@ -287,10 +291,6 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	})
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: closed.TraderKey,
-		Outputs: []*clmrpc.Output{{
-			ValueSat: defaultAccountValue / 2,
-			Address:  validTestAddr,
-		}},
 	})
 	open := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
@@ -442,24 +442,12 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// Finally, make sure we can close out all open accounts.
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: open.TraderKey,
-		Outputs: []*clmrpc.Output{{
-			ValueSat: defaultAccountValue / 2,
-			Address:  validTestAddr,
-		}},
 	})
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: pending.TraderKey,
-		Outputs: []*clmrpc.Output{{
-			ValueSat: defaultAccountValue / 2,
-			Address:  validTestAddr,
-		}},
 	})
 	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
 		TraderKey: resRecoveryOk,
-		Outputs: []*clmrpc.Output{{
-			ValueSat: defaultAccountValue / 2,
-			Address:  validTestAddr,
-		}},
 	})
 
 	// Query the auctioneer directly about the status of the ask we

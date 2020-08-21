@@ -582,6 +582,18 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 
 	t.t.Helper()
 
+	// If a destination for the funds was not provided in the request, we'll
+	// use the default.
+	if req.FundsDestination == nil {
+		req.FundsDestination = &clmrpc.CloseAccountRequest_OutputWithFee{
+			OutputWithFee: &clmrpc.OutputWithFee{
+				Fees: &clmrpc.OutputWithFee_FeeRateSatPerKw{
+					FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+				},
+			},
+		}
+	}
+
 	// Send the close account request and wait for the closing transaction
 	// to be broadcast. The account should also be found in a
 	// StatePendingClosed state.
