@@ -328,10 +328,19 @@ func (m *mockCallMarket) MaybeClear(chainfee.SatPerKWeight) (
 		bid := bids[i]
 		i++
 
+		// Matched volume will be the minimum of the two orders.
+		vol := bid.UnitsUnfulfilled
+		if ask.UnitsUnfulfilled < vol {
+			vol = ask.UnitsUnfulfilled
+		}
+
 		match := matching.MatchedOrder{
 			Details: matching.OrderPair{
 				Bid: bid,
 				Ask: ask,
+				Quote: matching.PriceQuote{
+					UnitsMatched: vol,
+				},
 			},
 		}
 
@@ -348,8 +357,29 @@ func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {
 	defer m.Unlock()
 
 	for _, match := range matches {
-		delete(m.bids, match.Details.Bid.Nonce())
-		delete(m.asks, match.Details.Ask.Nonce())
+		vol := match.Details.Quote.UnitsMatched
+
+		bidNonce := match.Details.Bid.Nonce()
+		bid, ok := m.bids[bidNonce]
+		if !ok {
+			return fmt.Errorf("bid not found")
+		}
+
+		bid.UnitsUnfulfilled -= vol
+		if bid.UnitsUnfulfilled == 0 {
+			delete(m.bids, bidNonce)
+		}
+
+		askNonce := match.Details.Ask.Nonce()
+		ask, ok := m.asks[askNonce]
+		if !ok {
+			return fmt.Errorf("ask not found")
+		}
+
+		ask.UnitsUnfulfilled -= vol
+		if ask.UnitsUnfulfilled == 0 {
+			delete(m.asks, askNonce)
+		}
 	}
 
 	return nil
@@ -747,6 +777,56 @@ func (a *auctioneerTestHarness) AssertOrdersPresent(nonces ...orderT.Nonce) {
 	if err != nil {
 		a.t.Fatal(err)
 	}
+}
+
+func (a *auctioneerTestHarness) AssertOrdersNotPresent(nonces ...orderT.Nonce) {
+	a.t.Helper()
+	err := wait.NoError(func() error {
+		a.callMarket.Lock()
+		defer a.callMarket.Unlock()
+
+		for _, nonce := range nonces {
+			if _, ok := a.callMarket.bids[nonce]; ok {
+				return fmt.Errorf("nonce %x found in call "+
+					"market", nonce[:])
+			}
+			if _, ok := a.callMarket.asks[nonce]; ok {
+				return fmt.Errorf("nonce %x found in call "+
+					"market", nonce[:])
+			}
+		}
+
+		return nil
+	}, time.Second*5)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+}
+
+func (a *auctioneerTestHarness) AssertSingleOrder(nonce orderT.Nonce,
+	f func(order.ServerOrder) error) {
+
+	a.t.Helper()
+
+	a.callMarket.Lock()
+	defer a.callMarket.Unlock()
+
+	if bid, ok := a.callMarket.bids[nonce]; ok {
+		err := f(bid)
+		if err != nil {
+			a.t.Fatal(err)
+		}
+		return
+	}
+	if ask, ok := a.callMarket.asks[nonce]; ok {
+		err := f(ask)
+		if err != nil {
+			a.t.Fatal(err)
+		}
+		return
+	}
+
+	a.t.Fatalf("nonce %x not found", nonce[:])
 }
 
 func (a *auctioneerTestHarness) AssertNoOrdersPreesnt() {
@@ -1241,15 +1321,27 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	const numOrders = 12
 	nonces := make([]orderT.Nonce, numOrders)
 	for i := 0; i < numOrders; i++ {
+		fixedRate := uint32(10)
+		duration := uint32(10)
+
+		// To ensure partial matches have their remaining volume found
+		// in the order book after successful batch execution, we'll
+		// let the last bid order have a smaller volume by setting a
+		// shorter duration (since the generated orders have units
+		// fixedRate*duration).
+		if i == numOrders-1 {
+			duration = 5
+		}
+
 		var o order.ServerOrder
 		if i%2 == 0 {
-			o = testHarness.AddDiskOrder(true, 10, 10)
+			o = testHarness.AddDiskOrder(true, fixedRate, duration)
 			err := testHarness.callMarket.ConsiderAsks(o.(*order.Ask))
 			if err != nil {
 				t.Fatalf("unable to consider ask: %v", err)
 			}
 		} else {
-			o = testHarness.AddDiskOrder(false, 10, 10)
+			o = testHarness.AddDiskOrder(false, fixedRate, duration)
 			err := testHarness.callMarket.ConsiderBids(o.(*order.Bid))
 			if err != nil {
 				t.Fatalf("unable to consider ask: %v", err)
@@ -1410,9 +1502,27 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// no further state transitions.
 	testHarness.AssertStateTransitions(MatchMakingState, OrderSubmitState)
 
-	// Also all the orders that we removed earlier, except the two that
-	// succeeded, should now also be once again part of the call market.
-	testHarness.AssertOrdersPresent(nonces[:numOrders-2]...)
+	// Also all the orders that we removed earlier, should now also be once
+	// again part of the call market. Note that also the last ask should
+	// still be present, as it was only partially matched.
+	testHarness.AssertOrdersPresent(nonces[:numOrders-1]...)
+
+	// The last bid should not be found as it was fully matched.
+	testHarness.AssertOrdersNotPresent(nonces[numOrders-1])
+
+	// Make sure the ask order that matched with the smaller bid is still
+	// in the call market, and has had 50 of its 100 units matched.
+	testHarness.AssertSingleOrder(
+		nonces[numOrders-2], func(o order.ServerOrder) error {
+			exp := orderT.SupplyUnit(50)
+			if o.Details().UnitsUnfulfilled != exp {
+				return fmt.Errorf("expected %v rem units, had "+
+					"%v", exp, o.Details().UnitsUnfulfilled)
+			}
+
+			return nil
+		},
+	)
 
 	testHarness.AssertNoStateTransitions()
 }
