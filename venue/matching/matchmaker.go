@@ -3,6 +3,7 @@ package matching
 import (
 	"container/list"
 	"encoding/hex"
+	"fmt"
 
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
@@ -88,8 +89,8 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 // returned.
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
-func (u *UniformPriceCallMarket) MaybeClear(_ BatchID,
-	feeRate chainfee.SatPerKWeight) (*OrderBatch, error) {
+func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight) (
+	*OrderBatch, error) {
 
 	// At this point we know we have a set of orders, so we'll create the
 	// match maker for usage below.
@@ -100,21 +101,18 @@ func (u *UniformPriceCallMarket) MaybeClear(_ BatchID,
 	//
 	// First we'll obtain slices pointing to the backing list so the match
 	// maker can examine all the entries easily.
+	//
+	// NOTE: we make value copies of the orders found in the backing lists,
+	// such that MatchBatch won't actually mutate the order book contents.
 	var (
 		bids = make([]*order.Bid, 0, u.bids.Len())
 		asks = make([]*order.Ask, 0, u.asks.Len())
-
-		// We'll skip orders having a max batch fee rate lower than our
-		// current estimate.
-		skippedBids []*order.Bid
-		skippedAsks []*order.Ask
 	)
 
 	for bid := u.bids.Front(); bid != nil; bid = bid.Next() {
 		b := bid.Value.(order.Bid)
 
 		if b.MaxBatchFeeRate < feeRate {
-			skippedBids = append(skippedBids, &b)
 			continue
 		}
 
@@ -124,7 +122,6 @@ func (u *UniformPriceCallMarket) MaybeClear(_ BatchID,
 		a := ask.Value.(order.Ask)
 
 		if a.MaxBatchFeeRate < feeRate {
-			skippedAsks = append(skippedAsks, &a)
 			continue
 		}
 
@@ -154,43 +151,6 @@ func (u *UniformPriceCallMarket) MaybeClear(_ BatchID,
 		return nil, err
 	}
 
-	// Now that we know which orders will execute in this batch, we'll
-	// update our in-memory set of orders so we can properly make a market
-	// for the next batch.
-	//
-	// TODO(roasbeef): remove orders instead?
-	u.resetOrderState()
-	if err := u.ConsiderBids(matchSet.UnmatchedBids...); err != nil {
-		return nil, err
-	}
-	if err := u.ConsiderAsks(matchSet.UnmatchedAsks...); err != nil {
-		return nil, err
-	}
-	if err := u.ConsiderBids(skippedBids...); err != nil {
-		return nil, err
-	}
-	if err := u.ConsiderAsks(skippedAsks...); err != nil {
-		return nil, err
-	}
-
-	// Next, we'll also add any orders that weren't fully consumed we'll
-	// also re-add those to the current active order set.
-	for _, order := range matchSet.MatchedOrders {
-		bid := order.Details.Bid
-		if bid.UnitsUnfulfilled != 0 {
-			if err := u.ConsiderBids(bid); err != nil {
-				return nil, err
-			}
-		}
-
-		ask := order.Details.Ask
-		if ask.UnitsUnfulfilled != 0 {
-			if err := u.ConsiderAsks(ask); err != nil {
-				return nil, err
-			}
-		}
-	}
-
 	// As a final step, we'll compute the diff for each trader's account.
 	// With this final piece of information, the caller will be able to
 	// easily update all the order/account state in a single atomic
@@ -204,6 +164,99 @@ func (u *UniformPriceCallMarket) MaybeClear(_ BatchID,
 		FeeReport:     feeReport,
 		ClearingPrice: clearingPrice,
 	}, nil
+}
+
+// RemoveMatches updates the order book by subtracting the given matches filled
+// volume.
+//
+// NOTE: This method is a part of the BatchAuctioneer interface.
+func (u *UniformPriceCallMarket) RemoveMatches(matches ...MatchedOrder) error {
+	// Index the filled volume by nonce.
+	filledVolume := make(map[orderT.Nonce]orderT.SupplyUnit)
+	for _, match := range matches {
+		filled := match.Details.Quote.UnitsMatched
+
+		filledVolume[match.Details.Bid.Nonce()] += filled
+		filledVolume[match.Details.Ask.Nonce()] += filled
+	}
+
+	// subtractFilled subtracts from the order kit's UnitsFulfilled  the
+	// filled volume for the nonce. If true is returned there is still
+	// volume left after subtraction, and the order should be added back to
+	// the order book.
+	subtractFilled := func(o *orderT.Kit) (bool, error) {
+		// If this order was part of a match, subtract the matched
+		// volume.
+		if filled, ok := filledVolume[o.Nonce()]; ok {
+			if filled > o.UnitsUnfulfilled {
+				return false, fmt.Errorf("match size larger " +
+					"than unfulfilled units")
+			}
+
+			o.UnitsUnfulfilled -= filled
+
+			// If no more units remain, it should not be added back
+			// to the order book.
+			if o.UnitsUnfulfilled == 0 {
+				return false, nil
+			}
+		}
+
+		return true, nil
+	}
+
+	var (
+		bids []*order.Bid
+		asks []*order.Ask
+	)
+
+	// We now go through the order book and subtract the filled volume for
+	// each bid and ask. Note that we make a copy of the orders found in
+	// the order book before mutating them, so we'll reset the whole order
+	// book with the modified orders below.
+	for bid := u.bids.Front(); bid != nil; bid = bid.Next() {
+		b := bid.Value.(order.Bid)
+
+		ok, err := subtractFilled(&b.Bid.Kit)
+		if err != nil {
+			return err
+		}
+
+		// Nothing remains, it will be removed from the order book.
+		if !ok {
+			continue
+		}
+
+		bids = append(bids, &b)
+	}
+
+	for ask := u.asks.Front(); ask != nil; ask = ask.Next() {
+		a := ask.Value.(order.Ask)
+
+		ok, err := subtractFilled(&a.Ask.Kit)
+		if err != nil {
+			return err
+		}
+
+		// Nothing remains, it will be removed from the order book.
+		if !ok {
+			continue
+		}
+
+		asks = append(asks, &a)
+	}
+
+	// Finally reset the order book state, and add back the updated bids
+	// and asks.
+	u.resetOrderState()
+	if err := u.ConsiderBids(bids...); err != nil {
+		return err
+	}
+	if err := u.ConsiderAsks(asks...); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 // ConsiderBid adds a set of bids to the staging arena for match making. Only

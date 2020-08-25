@@ -75,6 +75,29 @@ func testBatchExecution(t *harnessTest) {
 		},
 	)
 
+	// We'll add a third trader that we will shut down after placing an
+	// order, to ensure batch execution still can proceed.
+	dave, err := t.lndHarness.NewNode("dave", lndArgs)
+	if err != nil {
+		t.Fatalf("unable to set up charlie: %v", err)
+	}
+	thirdTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
+	if err != nil {
+		t.Fatalf("unable to send coins to carol: %v", err)
+	}
+
+	account4 := openAccountAndAssert(
+		t, thirdTrader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
 	const orderFixedRate = 100
@@ -109,6 +132,20 @@ func testBatchExecution(t *harnessTest) {
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	// Make the third account submit a bid that will get matched, but shut
+	// down the trader immediately after.
+	_, err = submitBidOrder(
+		thirdTrader, account4.TraderKey, orderFixedRate, bidAmt2,
+		dayInBlocks, uint32(order.CurrentVersion),
+	)
+	if err != nil {
+		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	if err := thirdTrader.stop(); err != nil {
+		t.Fatalf("unable to stop trader %v", err)
 	}
 
 	// To ensure the venue is aware of account deposits/withdrawals, we'll

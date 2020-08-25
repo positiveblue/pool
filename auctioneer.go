@@ -1260,7 +1260,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// Now that we have the batch key, we'll attempt to make this
 		// market.
-		orderBatch, err := a.cfg.CallMarket.MaybeClear(batchID, feeRate)
+		orderBatch, err := a.cfg.CallMarket.MaybeClear(feeRate)
 		switch {
 		// If we can't make a market at this instance, then we'll
 		// go back to the OrderSubmitState to wait for more orders.
@@ -1394,6 +1394,16 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		if err != nil {
 			return 0, fmt.Errorf("unable to enforce channel "+
 				"lifetimes: %v", err)
+		}
+
+		// Now that we have the finalized batch and know which orders
+		// was executed, we remove them from our in-memory set of
+		// orders so we can properly make a market for the next batch.
+		err = a.cfg.CallMarket.RemoveMatches(
+			a.finalizedBatch.Batch.Orders...,
+		)
+		if err != nil {
+			return 0, err
 		}
 
 		// We'll reload the set of orders from disk so we have a
