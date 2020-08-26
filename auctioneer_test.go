@@ -298,7 +298,7 @@ func newMockCallMarket() *mockCallMarket {
 	}
 }
 
-func (m *mockCallMarket) MaybeClear(chainfee.SatPerKWeight) (
+func (m *mockCallMarket) MaybeClear(chainfee.SatPerKWeight, uint32) (
 	*matching.OrderBatch, error) {
 
 	m.Lock()

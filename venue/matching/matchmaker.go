@@ -89,12 +89,12 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 // returned.
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
-func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight) (
-	*OrderBatch, error) {
+func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
+	currentHeight uint32) (*OrderBatch, error) {
 
 	// At this point we know we have a set of orders, so we'll create the
 	// match maker for usage below.
-	matchMaker := NewMultiUnitMatchMaker(u.acctFetcher)
+	matchMaker := NewMultiUnitMatchMaker(u.acctFetcher, currentHeight)
 
 	// At this point, there's may be at least a single order that we can
 	// execute, so we'll attempt to match the entire pending batch.

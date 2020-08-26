@@ -24,6 +24,12 @@ type MultiUnitMatchMaker struct {
 	// accountCache maintains a cache of trader accounts which are retrieved
 	// throughout matchmaking.
 	accountCache map[[33]byte]*account.Account
+
+	// accountExpiryCutoff is used to determine when an account expires
+	// "too soon" to be included in a batch. If the expiry height of an
+	// account is before this cutoff, then we'll ignore it when clearing
+	// the market.
+	accountExpiryCutoff uint32
 }
 
 // AccountFetcher denotes a function that's able to fetch the latest state of
@@ -34,11 +40,14 @@ type AccountFetcher func(AccountID) (*account.Account, error)
 //
 // TODO(roasbeef): comparator function for tie-breaking? can be sued to give
 // preferred fulfils if needed
-func NewMultiUnitMatchMaker(acctFetcher AccountFetcher) *MultiUnitMatchMaker {
+func NewMultiUnitMatchMaker(acctFetcher AccountFetcher,
+	accountExpiryCutoff uint32) *MultiUnitMatchMaker {
+
 	return &MultiUnitMatchMaker{
-		orderRemainders: make(map[orderT.Nonce]orderT.SupplyUnit),
-		fetchAcct:       acctFetcher,
-		accountCache:    make(map[[33]byte]*account.Account),
+		orderRemainders:     make(map[orderT.Nonce]orderT.SupplyUnit),
+		fetchAcct:           acctFetcher,
+		accountCache:        make(map[[33]byte]*account.Account),
+		accountExpiryCutoff: accountExpiryCutoff,
 	}
 }
 
@@ -62,7 +71,14 @@ func (m *MultiUnitMatchMaker) getCachedAccount(key [33]byte) (*account.Account,
 
 // isAccountReady determines whether an account is ready to participate in a
 // batch.
-func isAccountReady(acct *account.Account) bool {
+func isAccountReady(acct *account.Account, expiryHeightCutoff uint32) bool {
+	// If the account is almost about to expire, then we won't allow it in
+	// a batch to make sure we don't run into a race condition, which can
+	// potentially invalidate the entire batch.
+	if expiryHeightCutoff != 0 && acct.Expiry <= expiryHeightCutoff {
+		return false
+	}
+
 	switch acct.State {
 	// In the open state the funding or modification transaction is
 	// confirmed sufficiently on chain and there is no possibility of a
@@ -146,7 +162,8 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 		return NullQuote, false
 
 	// Ensure both accounts are ready to participate in a batch.
-	case !isAccountReady(bidAcct) || !isAccountReady(askAcct):
+	case !isAccountReady(bidAcct, m.accountExpiryCutoff) ||
+		!isAccountReady(askAcct, m.accountExpiryCutoff):
 		return NullQuote, false
 
 	// If the highest bid is below the lowest ask, then no match at all is
