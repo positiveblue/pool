@@ -561,7 +561,7 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 		account.TraderKeyRaw, spendTx.TxHash())
 
 	return m.cfg.Store.UpdateAccount(
-		ctx, account, StateModifier(StateClosed),
+		ctx, account, ValueModifier(0), StateModifier(StateClosed),
 		CloseTxModifier(spendTx),
 	)
 }

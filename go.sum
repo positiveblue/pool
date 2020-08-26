@@ -241,8 +241,9 @@ github.com/lightninglabs/aperture v0.0.0-20200811173827-537716305eba h1:rEI6XdRG
 github.com/lightninglabs/aperture v0.0.0-20200811173827-537716305eba/go.mod h1:LbxSjvNlM3RAB7vBhIW8TKkH4Qm2WNIT03iJ+iZqlvk=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI/f/O0Avg7t8sqkPo78HFzjmeYFl6DPnc=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
-github.com/lightninglabs/llm v0.1.0-alpha.0.20200818235245-fa6842b8eb62 h1:oWvcM5xD3YhqSJViwnoKb/hWgBrOWSlIjdqsVKeos/0=
-github.com/lightninglabs/llm v0.1.0-alpha.0.20200818235245-fa6842b8eb62/go.mod h1:5+sBPE6uqBkaxnp97TNWCjkJlq9/+3r0xFxuEXspfX8=
+github.com/lightninglabs/llm v0.1.0-alpha.0.20200825014016-852870e4e943 h1:56e8x/qIU02M15UdE+cpFsTNqS0SNZVkif04P5PSNx0=
+github.com/lightninglabs/llm v0.1.0-alpha.0.20200825014016-852870e4e943/go.mod h1:5+sBPE6uqBkaxnp97TNWCjkJlq9/+3r0xFxuEXspfX8=
+github.com/lightninglabs/lndclient v1.0.1-0.20200708223031-76709c25d859 h1:MrKZJ35EuWPAXR1tS8KCGL+hcsGwhC2jtL0AqlXXOvY=
 github.com/lightninglabs/lndclient v1.0.1-0.20200708223031-76709c25d859/go.mod h1:nKEd6j54LxPYuIe3K/BUwQPus24sbvWTdoweoBcHas0=
 github.com/lightninglabs/lndclient v1.0.1-0.20200811080044-d1a60f30cf60 h1:V5tXFlWoIqx/ycsQ+dibjuem/cAOboNMbUcroBVwupU=
 github.com/lightninglabs/lndclient v1.0.1-0.20200811080044-d1a60f30cf60/go.mod h1:7UNQg6WLBgt+T/KBQjlSXtid7bFlwBRWdOk7ZMLYkrM=
