@@ -264,7 +264,7 @@ func TestMatchPossibleSpreadNeverMatches(t *testing.T) {
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -323,7 +323,7 @@ func TestMatchPossibleDurationIncompatability(t *testing.T) {
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -382,7 +382,7 @@ func TestMatchPossibleMatchPartialBid(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -471,7 +471,7 @@ func TestMatchPossibleMatchPartialAsk(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -560,7 +560,7 @@ func TestMatchPossibleMatchFullFill(t *testing.T) {
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(testPair orderPair) bool {
@@ -673,7 +673,7 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -839,7 +839,7 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -1008,7 +1008,7 @@ func TestMatchBatchNoMatch(t *testing.T) {
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -1125,7 +1125,7 @@ func TestMatchMakingBatch(t *testing.T) {
 	t.Parallel()
 
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
@@ -1258,7 +1258,7 @@ func TestMatchingNoSelfOrderMatch(t *testing.T) {
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	traderAcct := genRandAccount(r)
 
@@ -1282,7 +1282,7 @@ func TestMatchingAccountNotReady(t *testing.T) {
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	acctDB := newAcctFetcher()
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 
 	ask := genRandAsk(r, acctDB)
 	asks := []*order.Ask{ask}
@@ -1303,6 +1303,76 @@ func TestMatchingAccountNotReady(t *testing.T) {
 	require.Empty(t, matchSet.MatchedOrders)
 	require.Equal(t, matchSet.UnmatchedAsks, asks)
 	require.Equal(t, matchSet.UnmatchedBids, bids)
+}
+
+// TestMatchingAccountNotReadyCloseToExpiry tests that if an account is close
+// to being expired, then it's excluded from being cleared in a batch.
+func TestMatchingAccountNotReadyCloseToExpiry(t *testing.T) {
+	t.Parallel()
+
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	acctDB := newAcctFetcher()
+
+	const accountExpiryOffset = 144
+	currentHeight := uint32(1000)
+	matchMaker := NewMultiUnitMatchMaker(
+		acctDB.fetchAcct, currentHeight+accountExpiryOffset,
+	)
+
+	// We'll create another set of bids that should match, however the
+	// account of the Bidder will be close to final expiry. This should
+	// result in no match being found.
+	askDuration := uint32(1000)
+	targetRate := uint32(1000)
+	askSupply := uint16(100)
+	ask := genRandAsk(
+		r, acctDB,
+		staticUnitGen(orderT.SupplyUnit(askSupply)),
+		staticDurationGen(askDuration), staticRateGen(targetRate),
+	)
+	bid := genRandBid(
+		r,
+		acctDB,
+		staticUnitGen(orderT.SupplyUnit(askSupply)),
+		staticDurationGen(askDuration), staticRateGen(targetRate),
+	)
+
+	asks := []*order.Ask{ask}
+	bids := []*order.Bid{bid}
+
+	assertNotInBatch := func() {
+		matchSet, err := matchMaker.MatchBatch(bids, asks)
+		require.NoError(t, err)
+		require.Empty(t, matchSet.MatchedOrders)
+		require.Equal(t, matchSet.UnmatchedAsks, asks)
+		require.Equal(t, matchSet.UnmatchedBids, bids)
+	}
+
+	// As the expiry is one block before the current height, it shouldn't
+	// be able to join the batch.
+	acctDB.accts[bid.NodeKey].Expiry = currentHeight - 1
+
+	assertNotInBatch()
+
+	// We'll invalidate the cache so we fetch the latest state for the next
+	// attempt.
+	matchMaker.accountCache = make(map[[33]byte]*account.Account)
+
+	// If we modify the expiry to be _right before_ our cut off, it still
+	// shouldn't be allowed in the batch due to the strictness of the
+	// check.
+	acctDB.accts[bid.NodeKey].Expiry = currentHeight + accountExpiryOffset
+
+	assertNotInBatch()
+
+	// Finally, if we set a height well ahead of our cut off, then we
+	// should have a match.
+	matchMaker.accountCache = make(map[[33]byte]*account.Account)
+	acctDB.accts[bid.NodeKey].Expiry = currentHeight + (accountExpiryOffset * 2)
+
+	matchSet, err := matchMaker.MatchBatch(bids, asks)
+	require.NoError(t, err)
+	require.NotEmpty(t, matchSet.MatchedOrders)
 }
 
 // TestMatchingLowestAskNoMatchMultiPass tests that if the lowest ask doesn't
@@ -1354,7 +1424,7 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 		),
 	}
 
-	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct)
+	matchMaker := NewMultiUnitMatchMaker(acctDB.fetchAcct, 0)
 	matchSet, err := matchMaker.MatchBatch(bids, asks)
 	if err != nil {
 		t.Fatalf("unable to match orders: %v", err)

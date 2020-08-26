@@ -198,6 +198,11 @@ type AuctioneerConfig struct {
 	// ConfTarget is the confirmation target we'll use to get fee estimates
 	// for onchain transactions.
 	ConfTarget int32
+
+	// AccountExpiryOffset is the value we'll use to determine if an
+	// account expires "too soon". This value is added to the current block
+	// height to determine what the expiry cut off is.
+	AccountExpiryOffset uint32
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1260,7 +1265,10 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// Now that we have the batch key, we'll attempt to make this
 		// market.
-		orderBatch, err := a.cfg.CallMarket.MaybeClear(feeRate)
+		expiryCutoff := a.BestHeight() + a.cfg.AccountExpiryOffset
+		orderBatch, err := a.cfg.CallMarket.MaybeClear(
+			feeRate, expiryCutoff,
+		)
 		switch {
 		// If we can't make a market at this instance, then we'll
 		// go back to the OrderSubmitState to wait for more orders.

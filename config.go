@@ -88,6 +88,14 @@ const (
 	// duration (bid) or max duration (ask). The default is equal to the
 	// number of blocks in a year.
 	defaultMaxDuration uint32 = 365 * 144
+
+	// defaultAccountExpiryOffset is a value expressed in blocks that subtracted
+	// from the expiry of an account in order to determine if it expires
+	// "too soon". This value should essentially represent an upper bound
+	// on worst-case block confirmation. If a batch takes longer than this
+	// to confirm, then a race condition can happen if the account was
+	// involved in a prior batch.
+	defaultAccountExpiryOffset = 144
 )
 
 var (
@@ -151,6 +159,8 @@ type Config struct {
 	Profile    string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65535"`
 	FakeAuth   bool   `long:"fakeauth" description:"Use fake LSAT authentication, allow traders to set fake LSAT ID. For testing only, cannot be set on mainnet."`
 
+	AccountExpiryOffset uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
+
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
@@ -189,12 +199,13 @@ var DefaultConfig = &Config{
 	Bitcoin: &chain.BitcoinConfig{
 		Host: "localhost:8332",
 	},
-	TLSCertPath:    defaultTLSCertPath,
-	TLSKeyPath:     defaultTLSKeyPath,
-	MaxLogFiles:    defaultMaxLogFiles,
-	MaxLogFileSize: defaultMaxLogFileSize,
-	DebugLevel:     defaultLogLevel,
-	LogDir:         defaultLogDir,
+	TLSCertPath:         defaultTLSCertPath,
+	TLSKeyPath:          defaultTLSKeyPath,
+	MaxLogFiles:         defaultMaxLogFiles,
+	MaxLogFileSize:      defaultMaxLogFileSize,
+	DebugLevel:          defaultLogLevel,
+	LogDir:              defaultLogDir,
+	AccountExpiryOffset: defaultAccountExpiryOffset,
 }
 
 // extractCertOpt examines the main configuration to create a grpc.ServerOption

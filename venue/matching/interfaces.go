@@ -217,9 +217,8 @@ type BatchAuctioneer interface {
 	//
 	// The fee rate provided will be used to exclude orders which had their
 	// max batch fee rate set lower.
-	//
-	// TODO(roasbeef): might need other info...
-	MaybeClear(chainfee.SatPerKWeight) (*OrderBatch, error)
+	MaybeClear(feeRate chainfee.SatPerKWeight,
+		blockHeight uint32) (*OrderBatch, error)
 
 	// RemoveMatches updates the order book by subtracting the given
 	// matches filled volume.

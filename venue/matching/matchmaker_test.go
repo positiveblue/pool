@@ -168,7 +168,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 		acctDB.fetchAcct,
 	)
 
-	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor)
+	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor, 0)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
 	}
@@ -202,7 +202,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 
 	// If we attempt to make a market, we should get the
 	// ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor)
+	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor, 0)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
@@ -262,7 +262,9 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
-		orderBatch, err := callMarket.MaybeClear(chainfee.FeePerKwFloor)
+		orderBatch, err := callMarket.MaybeClear(
+			chainfee.FeePerKwFloor, 0,
+		)
 		if err != nil {
 			fmt.Println("clear error: ", err)
 			n++
@@ -476,14 +478,14 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 
 	// If we attempt to make a market with a fee rate above all the orders'
 	// max fee rate, we should get the ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(7 * chainfee.FeePerKwFloor)
+	_, err := callMarket.MaybeClear(7*chainfee.FeePerKwFloor, 0)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
 
 	// Now make a market with a fee rate that should make exactly 3 matches
 	// possible.
-	orderBatch, err := callMarket.MaybeClear(4 * chainfee.FeePerKwFloor)
+	orderBatch, err := callMarket.MaybeClear(4*chainfee.FeePerKwFloor, 0)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}
