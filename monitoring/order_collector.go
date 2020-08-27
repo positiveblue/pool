@@ -2,6 +2,8 @@ package monitoring
 
 import (
 	"context"
+	"sort"
+	"strconv"
 
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/order"
@@ -36,6 +38,7 @@ const (
 	labelOrderType  = "order_type"
 	labelOrderState = "order_state"
 	labelOrderNonce = "order_nonce"
+	labelOrderRate  = "order_rate"
 )
 
 // orderCollector is a collector that keeps track of our accounts.
@@ -54,11 +57,11 @@ func newOrderCollector(cfg *PrometheusConfig) *orderCollector {
 	)
 	g.addGauge(
 		orderUnits, "number of units in orders",
-		append(baseLabels, labelOrderNonce),
+		append(baseLabels, labelOrderNonce, labelOrderRate),
 	)
 	g.addGauge(
 		orderUnitsUnfulfilled, "number of unfulfilled units in orders",
-		append(baseLabels, labelOrderNonce),
+		append(baseLabels, labelOrderNonce, labelOrderRate),
 	)
 	g.addGauge(
 		orderDuration, "min/max duration of orders",
@@ -109,8 +112,38 @@ func (c *orderCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
+	// To ensure that we're able to export orders in a way that'll allow
+	// our make-shift order book to work, we'll divide up the bid and ask
+	// orders, then sort them according to their price.
+	asks := make([]order.ServerOrder, 0, len(activeOrders))
+	bids := make([]order.ServerOrder, 0, len(activeOrders))
+	for _, activeOrder := range activeOrders {
+		if _, ok := activeOrder.(*order.Bid); ok {
+			bids = append(bids, activeOrder)
+		}
+	}
+	for _, activeOrder := range activeOrders {
+		if _, ok := activeOrder.(*order.Ask); ok {
+			asks = append(asks, activeOrder)
+		}
+	}
+
+	// Sort the bids in _increasing_ order and the asks in _decreasing_
+	// order.
+	sort.Slice(bids, func(i, j int) bool {
+		return bids[i].Details().FixedRate < bids[j].Details().FixedRate
+	})
+	sort.Slice(asks, func(i, j int) bool {
+		return asks[i].Details().FixedRate > asks[j].Details().FixedRate
+	})
+
+	// Finally appned the sorted bids to the set of sorted asks to create
+	// our ideal "depth chart": the bids will be sorted in increasing
+	// order, while the asks will be sorted in decreasing order.
+	sortedOrders := append(bids, asks...)
+
 	// Record all metrics for each order.
-	for _, o := range activeOrders {
+	for _, o := range sortedOrders {
 		c.observeOrder(o, true)
 	}
 
@@ -153,8 +186,20 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 		labelOrderNonce: o.Nonce().String(),
 	}
 
-	c.g[orderUnits].With(labels).Set(float64(o.Details().Units))
-	c.g[orderUnitsUnfulfilled].With(labels).Set(
+	rateString := strconv.Itoa(int(o.Details().FixedRate))
+	if _, ok := o.(*order.Bid); ok {
+		rateString = "-" + rateString
+	}
+
+	unitLabels := prometheus.Labels{
+		labelOrderType:  o.Type().String(),
+		labelOrderState: o.Details().State.String(),
+		labelOrderNonce: o.Nonce().String(),
+		labelOrderRate:  rateString,
+	}
+
+	c.g[orderUnits].With(unitLabels).Set(float64(o.Details().Units))
+	c.g[orderUnitsUnfulfilled].With(unitLabels).Set(
 		float64(o.Details().UnitsUnfulfilled),
 	)
 	c.g[orderRate].With(labels).Set(float64(o.Details().FixedRate))

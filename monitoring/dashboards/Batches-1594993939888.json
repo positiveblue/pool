@@ -1,38 +1,7 @@
 {
-  "__inputs": [
-    {
-      "name": "DS_PROMETHEUS",
-      "label": "Prometheus",
-      "description": "",
-      "type": "datasource",
-      "pluginId": "prometheus",
-      "pluginName": "Prometheus"
-    }
-  ],
-  "__requires": [
-    {
-      "type": "grafana",
-      "id": "grafana",
-      "name": "Grafana",
-      "version": "6.7.3"
-    },
-    {
-      "type": "panel",
-      "id": "graph",
-      "name": "Graph",
-      "version": ""
-    },
-    {
-      "type": "datasource",
-      "id": "prometheus",
-      "name": "Prometheus",
-      "version": "1.0.0"
-    }
-  ],
   "annotations": {
     "list": [
       {
-        "$$hashKey": "object:817",
         "builtIn": 1,
         "datasource": "-- Grafana --",
         "enable": true,
@@ -46,9 +15,100 @@
   "editable": true,
   "gnetId": null,
   "graphTooltip": 0,
-  "id": null,
+  "id": 12,
   "links": [],
   "panels": [
+    {
+      "aliasColors": {},
+      "bars": true,
+      "dashLength": 10,
+      "dashes": false,
+      "datasource": null,
+      "fill": 1,
+      "fillGradient": 0,
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "hiddenSeries": false,
+      "id": 18,
+      "legend": {
+        "avg": false,
+        "current": false,
+        "max": false,
+        "min": false,
+        "show": false,
+        "total": false,
+        "values": false
+      },
+      "lines": false,
+      "linewidth": 1,
+      "nullPointMode": "null",
+      "options": {
+        "dataLinks": []
+      },
+      "percentage": false,
+      "pointradius": 2,
+      "points": false,
+      "renderer": "flot",
+      "seriesOverrides": [],
+      "spaceLength": 10,
+      "stack": false,
+      "steppedLine": false,
+      "targets": [
+        {
+          "expr": "sum by (order_type, order_rate) (order_units_unfulfilled)",
+          "format": "time_series",
+          "instant": true,
+          "legendFormat": "{{order_type}} : {{order_rate}}",
+          "refId": "A"
+        }
+      ],
+      "thresholds": [],
+      "timeFrom": null,
+      "timeRegions": [],
+      "timeShift": null,
+      "title": "WIP Depth Chart",
+      "tooltip": {
+        "shared": false,
+        "sort": 0,
+        "value_type": "individual"
+      },
+      "type": "graph",
+      "xaxis": {
+        "buckets": null,
+        "mode": "series",
+        "name": null,
+        "show": true,
+        "values": [
+          "total"
+        ]
+      },
+      "yaxes": [
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        },
+        {
+          "format": "short",
+          "label": null,
+          "logBase": 1,
+          "max": null,
+          "min": null,
+          "show": true
+        }
+      ],
+      "yaxis": {
+        "align": false,
+        "alignLevel": null
+      }
+    },
     {
       "aliasColors": {},
       "bars": false,
@@ -62,7 +122,7 @@
         "h": 9,
         "w": 12,
         "x": 0,
-        "y": 0
+        "y": 8
       },
       "hiddenSeries": false,
       "id": 2,
@@ -118,7 +178,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:954",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -128,7 +187,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:955",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -155,7 +213,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 0
+        "y": 8
       },
       "hiddenSeries": false,
       "id": 4,
@@ -210,7 +268,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:1175",
           "decimals": 1,
           "format": "short",
           "label": "",
@@ -220,7 +277,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:1176",
           "decimals": 1,
           "format": "short",
           "label": null,
@@ -248,7 +304,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 9
+        "y": 17
       },
       "hiddenSeries": false,
       "id": 6,
@@ -304,7 +360,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:1551",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -314,7 +369,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:1552",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -341,7 +395,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 9
+        "y": 17
       },
       "hiddenSeries": false,
       "id": 8,
@@ -397,7 +451,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:1719",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -407,7 +460,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:1720",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -434,7 +486,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 17
+        "y": 25
       },
       "hiddenSeries": false,
       "id": 10,
@@ -490,7 +542,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:1802",
           "decimals": 0,
           "format": "currencyBTC",
           "label": "Satoshis",
@@ -500,7 +551,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:1803",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -527,7 +577,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 17
+        "y": 25
       },
       "hiddenSeries": false,
       "id": 12,
@@ -591,7 +641,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:1946",
           "decimals": 0,
           "format": "short",
           "label": "",
@@ -601,7 +650,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:1947",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -628,7 +676,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 25
+        "y": 33
       },
       "hiddenSeries": false,
       "id": 14,
@@ -684,7 +732,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:2037",
           "decimals": 0,
           "format": "currencyBTC",
           "label": "Satoshis",
@@ -694,7 +741,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:2038",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -721,7 +767,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 25
+        "y": 33
       },
       "hiddenSeries": false,
       "id": 16,
@@ -776,7 +822,6 @@
       },
       "yaxes": [
         {
-          "$$hashKey": "object:124",
           "decimals": 0,
           "format": "short",
           "label": "Number of batches",
@@ -786,7 +831,6 @@
           "show": true
         },
         {
-          "$$hashKey": "object:125",
           "decimals": 0,
           "format": "short",
           "label": null,
@@ -802,7 +846,7 @@
       }
     }
   ],
-  "schemaVersion": 22,
+  "schemaVersion": 21,
   "style": "dark",
   "tags": [],
   "templating": {
@@ -829,8 +873,5 @@
   "timezone": "",
   "title": "Batches",
   "uid": "4Y5nS17Mz",
-  "variables": {
-    "list": []
-  },
-  "version": 2
+  "version": 3
 }
