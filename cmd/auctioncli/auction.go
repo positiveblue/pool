@@ -26,6 +26,7 @@ var auctionCommands = []cli.Command{
 			batchTickCommand,
 			pauseBatchTickerCommand,
 			resumeBatchTickerCommand,
+			bumpBatchFeeRateCommand,
 			statusCommand,
 			batchSnapshotCommand,
 			removeBanCommand,
@@ -139,6 +140,37 @@ var resumeBatchTickerCommand = cli.Command{
 		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
 		return client.ResumeBatchTicker(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var bumpBatchFeeRateCommand = cli.Command{
+	Name:      "bumpbatchfeerate",
+	ShortName: "bb",
+	Usage: "manually set the effective fee rate of the next batch in " +
+		"order to bump the fee of any unconfirmed batches. Note that " +
+		"this might end up creating an empty batch.",
+	Flags: []cli.Flag{
+		cli.Uint64Flag{
+			Name: "conf_target",
+			Usage: "set the fee estimation for next batch to " +
+				"target this number",
+		},
+		cli.Uint64Flag{
+			Name: "fee_rate",
+			Usage: "set the fee rate for next batch to this " +
+				"sat/kw (overrides conf_target)",
+		},
+	},
+
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.BumpBatchFeeRate(
+			ctx, &adminrpc.BumpBatchFeeRateRequest{
+				ConfTarget:      uint32(cliCtx.Uint64("conf_target")),
+				FeeRateSatPerKw: uint32(cliCtx.Uint64("fee_rate")),
+			},
+		)
 	}),
 }
 
