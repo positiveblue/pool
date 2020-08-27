@@ -28,6 +28,13 @@ var (
 				PreviousOutPoint: wire.OutPoint{
 					Index: 5,
 				},
+				SignatureScript: []byte("aaa"),
+			},
+		},
+		TxOut: []*wire.TxOut{
+			{
+				Value:    4444,
+				PkScript: []byte("ddd"),
 			},
 		},
 	}
@@ -448,9 +455,9 @@ func TestPersistBatchSnapshot(t *testing.T) {
 
 	// We'll also ensure that we get the exact same batch transaction as
 	// well.
-	if reflect.DeepEqual(dbBatchTx, batchTx) {
+	if !reflect.DeepEqual(dbBatchTx, batchTx) {
 		t.Fatalf("batch tx mismatch: expected %v, got %v",
-			spew.Sdump(dbBatchTx), spew.Sdump(batchTx))
+			spew.Sdump(batchTx), spew.Sdump(dbBatchTx))
 	}
 }
 
