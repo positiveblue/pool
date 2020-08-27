@@ -26,6 +26,7 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
+	"github.com/lightningnetwork/lnd/sweep"
 )
 
 var (
@@ -258,6 +259,16 @@ type Auctioneer struct {
 	// (externally triggered) will be sent over.
 	auctionEvents chan EventTrigger
 
+	// feeBumpRequests is a channel where we will receive request for fee
+	// rates to use for the next batch. This is used for fee bumping any
+	// unconfirmed batches.
+	feeBumpRequests chan sweep.FeePreference
+
+	// feeBumpPreference holds a fee preference if a fee bump request has
+	// been made. If this is set we will create a new batch no matter what,
+	// even if it is empty.
+	feeBumpPreference *sweep.FeePreference
+
 	// watchAccountConfOnce is used to watch for the confirmation of the
 	// master account. This is only ever really used when the system is
 	// first initialized.
@@ -312,6 +323,7 @@ func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
 	return &Auctioneer{
 		cfg:                cfg,
 		auctionEvents:      make(chan EventTrigger),
+		feeBumpRequests:    make(chan sweep.FeePreference),
 		quit:               make(chan struct{}),
 		orderFeederSignals: make(chan orderFeederState),
 		removedOrders:      make(map[orderT.Nonce]struct{}),
@@ -445,6 +457,22 @@ func (a *Auctioneer) Stop() error {
 // auctioneer.
 func (a *Auctioneer) BestHeight() uint32 {
 	return atomic.LoadUint32(&a.bestHeight)
+}
+
+// RequestBatchFeeBump sets the effective fee rate to target for the next batch
+// transaction, in order to bump the fee rate of any unconfirmed batches.
+func (a *Auctioneer) RequestBatchFeeBump(pref sweep.FeePreference) error {
+	if pref.FeeRate <= 0 && pref.ConfTarget <= 0 {
+		return fmt.Errorf("either fee rate or conf target must be " +
+			"specified")
+	}
+
+	select {
+	case a.feeBumpRequests <- pref:
+		return nil
+	case <-a.quit:
+		return fmt.Errorf("shutting down")
+	}
 }
 
 // publishBatchTx attempts to publish (or re-publish) the batch execution
@@ -790,6 +818,11 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 				case <-a.quit:
 				}
 			}()
+
+		// A fee bump request have arrived, set it so we'll use it for
+		// the next batch.
+		case feeReq := <-a.feeBumpRequests:
+			a.feeBumpPreference = &feeReq
 
 		// A new internally/externally initiated auction event has
 		// arrived. We'll process this event, advancing our state
@@ -1264,11 +1297,31 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// Get a fee estimate for our batch. We'll use this to only
 		// include orders with a max fee rate below this value during
 		// matchmaking.
-		feeRate, err := a.cfg.Wallet.EstimateFee(
-			ctxb, a.cfg.ConfTarget,
-		)
-		if err != nil {
-			return nil, err
+		var feeRate chainfee.SatPerKWeight
+		confTarget := a.cfg.ConfTarget
+
+		// If we have requested a fee bump for the next batch, use
+		// that.
+		if a.feeBumpPreference != nil {
+			// We'll use the specified fee rate, or if not set the
+			// given conf target.
+			feeRate = a.feeBumpPreference.FeeRate
+			if feeRate == 0 {
+				confTarget = int32(
+					a.feeBumpPreference.ConfTarget,
+				)
+			}
+		}
+
+		// If fee rate wasn't specified, use the conf target to get an
+		// estimate.
+		if feeRate == 0 {
+			feeRate, err = a.cfg.Wallet.EstimateFee(
+				ctxb, confTarget,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 
 		log.Debugf("Using fee rate %v for batch transaction", feeRate)
@@ -1423,6 +1476,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				a.getPendingBatchID())
 
 			a.finalizedBatch = result
+			a.feeBumpPreference = nil
+
 			return BatchCommitState{}, nil
 
 		case <-a.quit:
