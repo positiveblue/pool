@@ -392,7 +392,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	case *clmrpc.ServerSubmitOrderRequest_Ask:
 		a := requestOrder.Ask
 		clientKit, serverKit, err := s.parseRPCOrder(
-			ctx, a.Version, a.Details,
+			ctx, a.Version, a.Details, true,
 		)
 		if err != nil {
 			return nil, err
@@ -409,7 +409,7 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	case *clmrpc.ServerSubmitOrderRequest_Bid:
 		b := requestOrder.Bid
 		clientKit, serverKit, err := s.parseRPCOrder(
-			ctx, b.Version, b.Details,
+			ctx, b.Version, b.Details, false,
 		)
 		if err != nil {
 			return nil, err
@@ -1394,11 +1394,12 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 // parseRPCOrder parses the incoming raw RPC order into the go native data
 // types used in the order struct.
 func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
-	details *clmrpc.ServerOrder) (*orderT.Kit, *order.Kit, error) {
+	details *clmrpc.ServerOrder,
+	orderIsAsk bool) (*orderT.Kit, *order.Kit, error) {
 
 	// Parse the RPC fields into the common client struct.
 	clientKit, nodeKey, addrs, multiSigKey, err := parseRPCServerOrder(
-		version, details,
+		version, details, orderIsAsk,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("unable to parse server order: %v",
@@ -1608,9 +1609,8 @@ func marshallNodeAddrs(addrs []net.Addr) []*clmrpc.NodeAddress {
 
 // parseRPCServerOrder parses the incoming raw RPC server order into the go
 // native data types used in the order struct.
-func parseRPCServerOrder(version uint32,
-	details *clmrpc.ServerOrder) (*orderT.Kit, [33]byte, []net.Addr,
-	[33]byte, error) {
+func parseRPCServerOrder(version uint32, details *clmrpc.ServerOrder,
+	orderIsAsk bool) (*orderT.Kit, [33]byte, []net.Addr, [33]byte, error) {
 
 	var (
 		nonce       orderT.Nonce
@@ -1645,7 +1645,11 @@ func parseRPCServerOrder(version uint32,
 				err)
 	}
 	copy(nodeKey[:], nodePubKey.SerializeCompressed())
-	if len(details.NodeAddr) == 0 {
+
+	// We expect nodes that submit ask orders to have an advertised address
+	// so they can accept inbound connections. For bids, it's ok if they
+	// don't have an addr as they'll be connecting out to the maker.
+	if len(details.NodeAddr) == 0 && orderIsAsk {
 		return nil, nodeKey, nodeAddrs, multiSigKey,
 			fmt.Errorf("invalid node addresses")
 	}
@@ -1657,6 +1661,7 @@ func parseRPCServerOrder(version uint32,
 		}
 		nodeAddrs = append(nodeAddrs, addr)
 	}
+
 	multiSigPubkey, err := btcec.ParsePubKey(
 		details.MultiSigKey, btcec.S256(),
 	)
