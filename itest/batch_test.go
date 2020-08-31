@@ -1019,3 +1019,127 @@ func testConsecutiveBatches(t *harnessTest) {
 	// Let's now mine the withdrawal to clean up the mempool.
 	_ = mineBlocks(t, t.lndHarness, 3, 1)
 }
+
+// testTraderPartialRejectNewNodesOnly tests that the server supports traders
+// rejecting parts of a batch. If some orders within a batch are rejected by a
+// trader (for example because they have the --newnodesonly flag set), a new
+// match making process is started. We also test that trader accounts can take
+// part in subsequent batches and don't need 3 confirmations first.
+func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third and fourth lnd node, Charlie and Dave that are used
+	// for the second and third trader. Charlie is very picky and only wants
+	// channels from new nodes.
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	require.NoError(t.t, err)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+		newNodesOnlyOpt(),
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	require.NoError(t.t, err)
+
+	dave, err := t.lndHarness.NewNode("dave", nil)
+	require.NoError(t.t, err)
+	thirdTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, dave, thirdTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
+	require.NoError(t.t, err)
+
+	// Create an account for the maker with plenty of sats.
+	askAccount := openAccountAndAssert(
+		t, t.trader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We'll also create accounts for both bidders as well.
+	bidAccountCharlie := openAccountAndAssert(
+		t, secondTrader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	bidAccountDave := openAccountAndAssert(
+		t, thirdTrader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We'll create an ask order that is large enough to be matched twice.
+	// First, Charlie will buy half of that ask in batch 1.
+	const askSize = 400_000
+	const askRate = 2000
+	const durationBlocks = 1440
+
+	// Submit an ask an bid that matches half of the ask.
+	_, err = submitAskOrder(
+		t.trader, askAccount.TraderKey, askRate, askSize,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		secondTrader, bidAccountCharlie.TraderKey, askRate, askSize/2,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+
+	// Execute the batch and make sure there's a channel between Bob and
+	// Charlie now.
+	_ = executeBatch(t)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, askSize/2, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, askSize/2, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// Now the ask still has 2 units left. We'll now create competing bid
+	// orders for those 2 units. Charlie is willing to pay double the rate
+	// than Dave so he should be matched first. But because Charlie already
+	// has a channel, he will reject the batch. Matchmaking will be retried
+	// and the second time Dave will get the remaining 2 units.
+	_, err = submitBidOrder(
+		secondTrader, bidAccountCharlie.TraderKey, askRate*2,
+		askSize/2, durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		thirdTrader, bidAccountDave.TraderKey, askRate,
+		askSize/2, durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+
+	// Execute the batch and make sure there's a channel between Bob and
+	// Dave now.
+	_, _ = executeBatch(t, 2)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, askSize/2, true, dave.PubKey,
+	)
+	assertPendingChannel(
+		t, dave, askSize/2, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// Let's now mine the batch to clean up the mempool and make sure Bob's
+	// and Dave's accounts are confirmed again.
+	_ = mineBlocks(t, t.lndHarness, 3, 2)
+	assertTraderAccountState(
+		t.t, t.trader, askAccount.TraderKey, clmrpc.AccountState_OPEN,
+	)
+	assertTraderAccountState(
+		t.t, thirdTrader, bidAccountDave.TraderKey,
+		clmrpc.AccountState_OPEN,
+	)
+}

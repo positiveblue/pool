@@ -253,13 +253,14 @@ func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
 // setupTraderHarness creates a new trader that connects to the given lnd node
 // and to the given auction server.
 func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
-	node *lntest.HarnessNode, auctioneer *auctioneerHarness) *traderHarness {
+	node *lntest.HarnessNode, auctioneer *auctioneerHarness,
+	opts ...traderCfgOpt) *traderHarness {
 
 	traderHarness, err := newTraderHarness(traderConfig{
 		BackendCfg: backend,
 		NetParams:  harnessNetParams,
 		LndNode:    node,
-	})
+	}, opts)
 	if err != nil {
 		t.Fatalf("could not create trader server: %v", err)
 	}

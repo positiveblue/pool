@@ -52,4 +52,8 @@ var testCases = []*testCase{
 		name: "consecutive batch execution",
 		test: testConsecutiveBatches,
 	},
+	{
+		name: "batch partial reject new nodes only",
+		test: testTraderPartialRejectNewNodesOnly,
+	},
 }
