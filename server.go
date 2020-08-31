@@ -183,6 +183,12 @@ func NewServer(cfg *Config) (*Server, error) {
 		OrderExecFeeRate: btcutil.Amount(cfg.ExecFeeRate),
 	}
 
+	// We also need to keep some shared state between the auctioneer/match
+	// maker and the executor. Partial rejects from the trader need to be
+	// taken into account for the next match making attempt.
+	fundingConflicts := matching.NewNodeConflictPredicate()
+	traderRejected := matching.NewNodeConflictPredicate()
+
 	// Continuing, we create the batch executor which will communicate
 	// between the trader's an auctioneer for each batch epoch.
 	exeStore := &executorStore{
@@ -256,6 +262,8 @@ func NewServer(cfg *Config) (*Server, error) {
 					context.Background(), acctKey, true,
 				)
 			},
+			FundingConflicts: fundingConflicts,
+			TraderRejected:   traderRejected,
 		}),
 		channelEnforcer: channelEnforcer,
 		quit:            make(chan struct{}),

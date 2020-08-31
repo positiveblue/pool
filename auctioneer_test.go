@@ -525,6 +525,8 @@ func newAuctioneerTestHarness(t *testing.T) *auctioneerTestHarness {
 		CallMarket:        callMarket,
 		BatchExecutor:     executor,
 		ChannelEnforcer:   channelEnforcer,
+		TraderRejected:    matching.NewNodeConflictPredicate(),
+		FundingConflicts:  matching.NewNodeConflictPredicate(),
 	})
 
 	return &auctioneerTestHarness{

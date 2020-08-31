@@ -208,6 +208,20 @@ type AuctioneerConfig struct {
 	// state of an account from disk so we can do things like compute the
 	// fee report using the latest account balance for a trader.
 	AccountFetcher matching.AccountFetcher
+
+	// FundingConflicts is a map that keeps track of nodes that have a
+	// conflict between each other that arose from them having failed
+	// opening a channel between them. This map lives for the whole runtime
+	// of the auctioneer and therefore keeps its state across multiple
+	// batches. For now, the map is not persisted to survive auctioneer
+	// restarts. It can be manually cleared through the admin interface.
+	FundingConflicts *matching.NodeConflictPredicate
+
+	// TraderRejected is a map that keeps track of nodes that have expressed
+	// the preference to not be matched together, for example because they
+	// already have channels between each other. This map is reset before
+	// each new batch but survives multiple match making attempts.
+	TraderRejected *matching.NodeConflictPredicate
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1224,9 +1238,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			// As we're now attempting to perform match making,
 			// we'll pause the order book subscription so we only
-			// look at the set of orders created before now.
+			// look at the set of orders created before now. We also
+			// clear any previously rejected node pairs as things
+			// might have changed in the meantime.
 			a.pauseOrderFeeder()
 			a.pauseBatchTicker()
+			a.cfg.TraderRejected.Clear()
 			return MatchMakingState, nil
 		}
 
@@ -1275,7 +1292,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		accountPredicate := matching.NewAccountPredicate(
 			a.cfg.AccountFetcher, expiryCutoff,
 		)
-		predicateChain := []matching.MatchPredicate{accountPredicate}
+
+		// We pass in our two conflict handlers that also act as match
+		// predicates together with the default predicate chain.
+		predicateChain := []matching.MatchPredicate{
+			accountPredicate, a.cfg.FundingConflicts,
+			a.cfg.TraderRejected,
+		}
 		predicateChain = append(
 			predicateChain, matching.DefaultPredicateChain...,
 		)
