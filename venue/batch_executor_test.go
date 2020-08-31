@@ -140,10 +140,13 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		t:             t,
 		store:         store,
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
-		executor: NewBatchExecutor(
-			store, signer, msgTimeout, NewExeBatchStorer(store),
-			watcher,
-		),
+		executor: NewBatchExecutor(&ExecutorConfig{
+			Store:            store,
+			Signer:           signer,
+			BatchStorer:      NewExeBatchStorer(store),
+			AccountWatcher:   watcher,
+			TraderMsgTimeout: msgTimeout,
+		}),
 		watcher: watcher,
 	}
 }

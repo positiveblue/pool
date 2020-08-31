@@ -462,12 +462,14 @@ func newServer(store subastadb.Store) *rpcServer {
 		},
 	}
 
-	batchExecutor := venue.NewBatchExecutor(
-		&executorStore{
+	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
+		Store: &executorStore{
 			Store: store,
-		}, lndServices.Signer, time.Second*15,
-		venue.NewExeBatchStorer(store), nil,
-	)
+		},
+		Signer:           lndServices.Signer,
+		BatchStorer:      venue.NewExeBatchStorer(store),
+		TraderMsgTimeout: time.Second * 15,
+	})
 
 	return newRPCServer(
 		store, lndServices, nil, nil, nil, batchExecutor,

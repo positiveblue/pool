@@ -194,10 +194,13 @@ func NewServer(cfg *Config) (*Server, error) {
 	exeStore := &executorStore{
 		Store: store,
 	}
-	batchExecutor := venue.NewBatchExecutor(
-		exeStore, lnd.Signer, defaultMsgTimeout,
-		venue.NewExeBatchStorer(store), accountManager,
-	)
+	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
+		Store:            exeStore,
+		Signer:           lnd.Signer,
+		BatchStorer:      venue.NewExeBatchStorer(store),
+		AccountWatcher:   accountManager,
+		TraderMsgTimeout: defaultMsgTimeout,
+	})
 
 	orderBook := order.NewBook(&order.BookConfig{
 		Store:       store,

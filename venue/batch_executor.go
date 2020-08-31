@@ -281,6 +281,29 @@ type AccountWatcher interface {
 	WatchMatchedAccounts(context.Context, [][33]byte) error
 }
 
+// ExecutorConfig is a struct that holds all configuration items passed to an
+// executor.
+type ExecutorConfig struct {
+	// Store is the store that can hold the execution state and other data.
+	Store ExecutorStore
+
+	// Signer can sign batch inputs.
+	Signer lndclient.SignerClient
+
+	// BatchStorer can persist a batch after it's been completed.
+	BatchStorer BatchStorer
+
+	// AccountWatcher can watch account outputs on chain for confirmations
+	// and spends.
+	AccountWatcher AccountWatcher
+
+	// TraderMsgTimeout is the maximum time we allow a trader to take for
+	// one individual step in the batch signing conversation. If a trader
+	// takes longer than that it is timed out and removed from the current
+	// batch.
+	TraderMsgTimeout time.Duration
+}
+
 // BatchExecutor is the primary state machine that executes a cleared batch.
 // Execution entails orchestrating the creation of hall the channels purchased
 // in the batch, and also gathering the signatures of all the input in the
@@ -302,40 +325,23 @@ type BatchExecutor struct {
 	// execution is sent.
 	venueEvents chan EventTrigger
 
-	// traderMsgTimeout is the amount of time we'll wait for a trader to
-	// send us an expected message.
-	traderMsgTimeout time.Duration
+	cfg *ExecutorConfig
 
 	sync.RWMutex
-
-	store ExecutorStore
-
-	batchStorer BatchStorer
-
-	accountWatcher AccountWatcher
-
-	signer lndclient.SignerClient
 
 	quit chan struct{}
 	wg   sync.WaitGroup
 }
 
-// NewBatchExecutor creates a new BatchExecutor given the database, and a
-// signer that's able to sign for the master account output.
-func NewBatchExecutor(store ExecutorStore, signer lndclient.SignerClient,
-	traderMsgTimeout time.Duration, batchStorer BatchStorer,
-	accountWatcher AccountWatcher) *BatchExecutor {
-
+// NewBatchExecutor creates a new BatchExecutor given the execution
+// configuration.
+func NewBatchExecutor(cfg *ExecutorConfig) *BatchExecutor {
 	return &BatchExecutor{
-		quit:             make(chan struct{}),
-		activeTraders:    make(map[matching.AccountID]*ActiveTrader),
-		signer:           signer,
-		newBatches:       make(chan *executionReq),
-		store:            store,
-		venueEvents:      make(chan EventTrigger),
-		traderMsgTimeout: traderMsgTimeout,
-		batchStorer:      batchStorer,
-		accountWatcher:   accountWatcher,
+		cfg:           cfg,
+		quit:          make(chan struct{}),
+		activeTraders: make(map[matching.AccountID]*ActiveTrader),
+		newBatches:    make(chan *executionReq),
+		venueEvents:   make(chan EventTrigger),
 	}
 }
 
@@ -458,7 +464,7 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 		InputIndex:    int(traderAcctInput.InputIndex),
 		SigHashes:     txscript.NewTxSigHashes(batchTx),
 	}
-	auctioneerSigs, err := b.signer.SignOutputRaw(
+	auctioneerSigs, err := b.cfg.Signer.SignOutputRaw(
 		context.Background(), batchTx, []*input.SignDescriptor{signDesc},
 	)
 	if err != nil {
@@ -528,7 +534,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// Now that we know the batch is valid, we'll construct the
 		// execution context we need to push things forward, which
 		// includes the final batch execution transaction.
-		masterAcct, err := b.store.FetchAuctioneerAccount(ctxb)
+		masterAcct, err := b.cfg.Store.FetchAuctioneerAccount(ctxb)
 		if err != nil {
 			return 0, env, err
 		}
@@ -840,7 +846,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// create the witness for the auctioneer's account point.
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
 		auctioneerWitness, err := env.masterAcct.AccountWitness(
-			b.signer, batchTx, auctioneerInputIndex,
+			b.cfg.Signer, batchTx, auctioneerInputIndex,
 		)
 		if err != nil {
 			return 0, env, err
@@ -863,7 +869,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			BatchTx:           batchTx,
 			LifetimePackages:  env.lifetimePkgs,
 		}
-		if err := b.batchStorer.Store(ctxb, env.result); err != nil {
+		if err := b.cfg.BatchStorer.Store(ctxb, env.result); err != nil {
 			log.Errorf("Failed to store batch: %v", err)
 			return 0, env, err
 		}
@@ -875,7 +881,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		for id := range diffs {
 			matchedAccounts = append(matchedAccounts, id)
 		}
-		err = b.accountWatcher.WatchMatchedAccounts(
+		err = b.cfg.AccountWatcher.WatchMatchedAccounts(
 			ctxb, matchedAccounts,
 		)
 		if err != nil {
@@ -946,7 +952,7 @@ func (b *BatchExecutor) executor() {
 
 				// We transitioned successfully, so we'll go
 				// ahead and store that new state now.
-				err := b.store.UpdateExecutionState(exeState)
+				err := b.cfg.Store.UpdateExecutionState(exeState)
 				if err != nil {
 					log.Errorf("unable to update "+
 						"execution state: %v", err)
@@ -988,7 +994,7 @@ func (b *BatchExecutor) executor() {
 			// always need to use the same ID. Only after clearing
 			// the batch, the ID is increased and stored as the ID
 			// to use for the next batch.
-			batchKey, err := b.store.BatchKey(batchCtx)
+			batchKey, err := b.cfg.Store.BatchKey(batchCtx)
 			if err != nil {
 				log.Errorf("Nope, couldn't get batch key!")
 
@@ -1004,7 +1010,7 @@ func (b *BatchExecutor) executor() {
 
 			exeState = NoActiveBatch
 
-			msgTimers := newMsgTimers(b.traderMsgTimeout)
+			msgTimers := newMsgTimers(b.cfg.TraderMsgTimeout)
 			env = newEnvironment(
 				newBatch, batchKey, msgTimers,
 			)
@@ -1124,7 +1130,7 @@ func (b *BatchExecutor) syncTraderState() error {
 		if err != nil {
 			return err
 		}
-		diskTraderAcct, err := b.store.Account(
+		diskTraderAcct, err := b.cfg.Store.Account(
 			context.Background(), acctKey, false,
 		)
 		if err != nil {
