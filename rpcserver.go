@@ -919,15 +919,19 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 	// The trader rejected an order execution.
 	case *clmrpc.ClientAuctionMessage_Reject:
+		var batchID orderT.BatchID
+		copy(batchID[:], msg.Reject.BatchId)
+
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
-			var batchID orderT.BatchID
-			copy(batchID[:], msg.Reject.BatchId)
-			traderMsg := &venue.TraderRejectMsg{
-				BatchID: batchID,
-				Trader:  subscribedTrader,
-				Reason:  msg.Reject.Reason,
+			traderMsg, err := parseRPCReject(
+				msg, batchID, subscribedTrader,
+			)
+			if err != nil {
+				comms.err <- err
+				return
 			}
+
 			comms.toServer <- traderMsg
 		}
 
@@ -1739,6 +1743,78 @@ func parseRPCChannelInfo(rpcChanInfos map[string]*clmrpc.ChannelInfo) (
 	}
 
 	return chanInfos, nil
+}
+
+func parseRPCReject(msg *clmrpc.ClientAuctionMessage_Reject,
+	batchID orderT.BatchID, trader *venue.ActiveTrader) (venue.TraderMsg,
+	error) {
+
+	// Handle partial reject differently, needs to be a specific message.
+	switch msg.Reject.ReasonCode {
+	// Only some of the orders are rejected.
+	case clmrpc.OrderMatchReject_PARTIAL_REJECT:
+		orders := make(venue.OrderRejectMap)
+		for nonceStr, reason := range msg.Reject.RejectedOrders {
+			// Parse the nonce of the rejected order first.
+			nonceBytes, err := hex.DecodeString(nonceStr)
+			if err != nil {
+				return nil, fmt.Errorf("unable to parse "+
+					"nonce: %v", err)
+			}
+			var nonce orderT.Nonce
+			copy(nonce[:], nonceBytes)
+
+			// Then parse the reject type.
+			var rejectType venue.RejectType
+			switch reason.ReasonCode {
+			case clmrpc.OrderReject_DUPLICATE_PEER:
+				rejectType = venue.PartialRejectDuplicatePeer
+
+			case clmrpc.OrderReject_CHANNEL_FUNDING_FAILED:
+				rejectType = venue.PartialRejectFundingFailed
+
+			default:
+				return nil, fmt.Errorf("unknown RPC reject "+
+					"type: %v", reason.ReasonCode)
+			}
+
+			orders[nonce] = &venue.Reject{
+				Type:   rejectType,
+				Reason: reason.Reason,
+			}
+		}
+
+		return &venue.TraderPartialRejectMsg{
+			BatchID: batchID,
+			Trader:  trader,
+			Orders:  orders,
+		}, nil
+
+	// Trader rejects the whole batch.
+	default:
+		var rejectType venue.RejectType
+		switch msg.Reject.ReasonCode {
+		case clmrpc.OrderMatchReject_BATCH_VERSION_MISMATCH:
+			rejectType = venue.FullRejectBatchVersionMismatch
+
+		case clmrpc.OrderMatchReject_SERVER_MISBEHAVIOR:
+			rejectType = venue.FullRejectServerMisbehavior
+
+		case clmrpc.OrderMatchReject_UNKNOWN:
+			rejectType = venue.FullRejectUnknown
+
+		default:
+			return nil, fmt.Errorf("unknown RPC reject "+
+				"type: %v", msg.Reject.ReasonCode)
+		}
+
+		return &venue.TraderRejectMsg{
+			BatchID: batchID,
+			Trader:  trader,
+			Type:    rejectType,
+			Reason:  msg.Reject.Reason,
+		}, nil
+	}
 }
 
 // newAcctResNotCompletedError creates a new AcctResNotCompletedError error from
