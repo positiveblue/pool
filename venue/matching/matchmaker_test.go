@@ -19,7 +19,7 @@ import (
 func TestCallMarketConsiderForgetOrders(t *testing.T) {
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	acctDB, _, _ := newAcctCacher()
 
 	// In this scenario, we test that given a set of bids (clamping to
 	// ensure we don't have too long a runtime. We're able to add all the
@@ -28,7 +28,6 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 	scenario := func(orders orderSet) bool {
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
-			acctDB.fetchAcct,
 		)
 
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
@@ -162,13 +161,14 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 func TestMaybeClearNoOrders(t *testing.T) {
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	_, acctCacher, predicates := newAcctCacher()
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
-		acctDB.fetchAcct,
 	)
 
-	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor, 0)
+	_, err := callMarket.MaybeClear(
+		chainfee.FeePerKwFloor, acctCacher, predicates,
+	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 func TestMaybeClearNoClearPossible(t *testing.T) {
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	acctDB, acctCacher, predicates := newAcctCacher()
 
 	// First, we'll generate a bid and ask that can't match as the rate
 	// they request is incompatible.
@@ -191,7 +191,6 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 	// orders.
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
-		acctDB.fetchAcct,
 	)
 	if err := callMarket.ConsiderBids(bid); err != nil {
 		t.Fatalf("unable to add bids")
@@ -202,7 +201,9 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 
 	// If we attempt to make a market, we should get the
 	// ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(chainfee.FeePerKwFloor, 0)
+	_, err := callMarket.MaybeClear(
+		chainfee.FeePerKwFloor, acctCacher, predicates,
+	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
@@ -223,14 +224,13 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	acctDB, acctCacher, predicates := newAcctCacher()
 
 	n, y := 0, 0
 	scenario := func(orders orderSet) bool {
 		// We'll start with making a new call market,
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
-			acctDB.fetchAcct,
 		)
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
 			t.Logf("unable to add bids")
@@ -263,7 +263,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
 		orderBatch, err := callMarket.MaybeClear(
-			chainfee.FeePerKwFloor, 0,
+			chainfee.FeePerKwFloor, acctCacher, predicates,
 		)
 		if err != nil {
 			fmt.Println("clear error: ", err)
@@ -439,7 +439,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 func TestMaybeClearFilterFeeRates(t *testing.T) {
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	acctDB, acctCacher, predicates := newAcctCacher()
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 
@@ -467,7 +467,6 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	// Next, we'll create our call market, and add the orders.
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
-		acctDB.fetchAcct,
 	)
 	if err := callMarket.ConsiderBids(bids...); err != nil {
 		t.Fatalf("unable to add bids")
@@ -478,14 +477,18 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 
 	// If we attempt to make a market with a fee rate above all the orders'
 	// max fee rate, we should get the ErrNoMarketPossible error.
-	_, err := callMarket.MaybeClear(7*chainfee.FeePerKwFloor, 0)
+	_, err := callMarket.MaybeClear(
+		7*chainfee.FeePerKwFloor, acctCacher, predicates,
+	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
 	}
 
 	// Now make a market with a fee rate that should make exactly 3 matches
 	// possible.
-	orderBatch, err := callMarket.MaybeClear(4*chainfee.FeePerKwFloor, 0)
+	orderBatch, err := callMarket.MaybeClear(
+		4*chainfee.FeePerKwFloor, acctCacher, predicates,
+	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
 	}

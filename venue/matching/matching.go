@@ -4,11 +4,10 @@ import (
 	"sort"
 
 	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 )
 
-// MultiUnitMatchMaker is a conrete implemtantion of the MatchMaker interface.
+// MultiUnitMatchMaker is a concrete implementation of the MatchMaker interface.
 // This match maker is multi-uni tin that it accepts partial fills of bids and
 // asks. Note that since this struct is stateful a _new_ instance should be
 // created for each new match making attempt.
@@ -17,92 +16,26 @@ type MultiUnitMatchMaker struct {
 	// each active order.
 	orderRemainders map[orderT.Nonce]orderT.SupplyUnit
 
-	// fetchAcct fetches the latest state of an account identified by its
-	// trader public key.
-	fetchAcct AccountFetcher
+	// accountCacher is the cache of accounts that is held for the lifetime
+	// of this matcher.
+	accountCacher AccountCacher
 
-	// accountCache maintains a cache of trader accounts which are retrieved
-	// throughout matchmaking.
-	accountCache map[[33]byte]*account.Account
-
-	// accountExpiryCutoff is used to determine when an account expires
-	// "too soon" to be included in a batch. If the expiry height of an
-	// account is before this cutoff, then we'll ignore it when clearing
-	// the market.
-	accountExpiryCutoff uint32
+	// predicateChain is the chain of predicates that each potential order
+	// pair has to pass to be considered a potential match.
+	predicateChain []MatchPredicate
 }
-
-// AccountFetcher denotes a function that's able to fetch the latest state of
-// an account which is identified the its trader public key (or acctID).
-type AccountFetcher func(AccountID) (*account.Account, error)
 
 // NewMultiUnitMatchMaker creates a new instance of the MultiUnitMatchMaker.
 //
 // TODO(roasbeef): comparator function for tie-breaking? can be sued to give
 // preferred fulfils if needed
-func NewMultiUnitMatchMaker(acctFetcher AccountFetcher,
-	accountExpiryCutoff uint32) *MultiUnitMatchMaker {
+func NewMultiUnitMatchMaker(acctCacher AccountCacher,
+	predicateChain []MatchPredicate) *MultiUnitMatchMaker {
 
 	return &MultiUnitMatchMaker{
-		orderRemainders:     make(map[orderT.Nonce]orderT.SupplyUnit),
-		fetchAcct:           acctFetcher,
-		accountCache:        make(map[[33]byte]*account.Account),
-		accountExpiryCutoff: accountExpiryCutoff,
-	}
-}
-
-// getCachedAccount retrieves the account with the given key from the cache. If
-// if it hasn't been cached yet, then it's retrieved from disk and cached.
-func (m *MultiUnitMatchMaker) getCachedAccount(key [33]byte) (*account.Account,
-	error) {
-
-	if account, ok := m.accountCache[key]; ok {
-		return account, nil
-	}
-
-	account, err := m.fetchAcct(key)
-	if err != nil {
-		return nil, err
-	}
-	m.accountCache[key] = account
-
-	return account, nil
-}
-
-// isAccountReady determines whether an account is ready to participate in a
-// batch.
-func isAccountReady(acct *account.Account, expiryHeightCutoff uint32) bool {
-	// If the account is almost about to expire, then we won't allow it in
-	// a batch to make sure we don't run into a race condition, which can
-	// potentially invalidate the entire batch.
-	if expiryHeightCutoff != 0 && acct.Expiry <= expiryHeightCutoff {
-		return false
-	}
-
-	switch acct.State {
-	// In the open state the funding or modification transaction is
-	// confirmed sufficiently on chain and there is no possibility of a
-	// double spend.
-	case account.StateOpen:
-		return true
-
-	// If the account was recently involved in a batch and is unconfirmed or
-	// not yet sufficiently confirmed, we can still safely allow it to
-	// participate in the next batch. This is safe all inputs to this
-	// unconfirmed outpoint are co-signed by us and therefore cannot just be
-	// double spent by the account owner.
-	case account.StatePendingBatch:
-		return true
-
-	// Because it is not safe to use the account for a batch if there
-	// potentially are "foreign" inputs which we didn't co-sign, we can't
-	// allow any other states for batch participation. Non-co-signed inputs
-	// that could potentially be double spent can happen with an account
-	// deposit for example. And even with an account withdrawal we could run
-	// into fee issues if that update transaction is not yet confirmed and
-	// has a very low fee.
-	default:
-		return false
+		orderRemainders: make(map[orderT.Nonce]orderT.SupplyUnit),
+		accountCacher:   acctCacher,
+		predicateChain:  predicateChain,
 	}
 }
 
@@ -120,15 +53,6 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 
 		unitsMatched, unitsUnmatched orderT.SupplyUnit
 	)
-
-	bidAcct, err := m.getCachedAccount(bid.AcctKey)
-	if err != nil {
-		return NullQuote, false
-	}
-	askAcct, err := m.getCachedAccount(ask.AcctKey)
-	if err != nil {
-		return NullQuote, false
-	}
 
 	// To start with, we'll obtain the total amount of units tendered for
 	// each ask/bid. If there's an entry in our partial match (remainders)
@@ -151,57 +75,41 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	// there is no market to be made. Most of this logic is implemented in
 	// predicates, only the parts that require more information than just
 	// the two orders are implemented here directly.
-	switch {
-	// Ensure the order pair passes our default chain of predicates.
-	case !ChainMatches(ask, bid, DefaultPredicateChain...):
+	if !ChainMatches(ask, bid, m.predicateChain...) {
 		return NullQuote, false
-
-	// Ensure both accounts are ready to participate in a batch.
-	case !isAccountReady(bidAcct, m.accountExpiryCutoff) ||
-		!isAccountReady(askAcct, m.accountExpiryCutoff):
-		return NullQuote, false
-
-	// If the highest bid is greater than or equal to the lowest ask, then
-	// we may have a match, but it depends on other constraints like the
-	// available supply.
-	case bid.FixedRate >= ask.FixedRate:
-
-		// At this point we know we have a match, the only remaining work
-		// is to ascertain exactly _what_ type of match it is.
-		switch {
-
-		// We have a match! However, it's a partial fill for the bid.
-		// In this case we'll mark it as a proper match, but that the
-		// bid still has units to be fulfilled.
-		case bidSupply > askSupply:
-			matchType = PartialBidFulfill
-
-			unitsMatched = askSupply
-			unitsUnmatched = bidSupply - askSupply
-
-		// Like the above case, this is also a match. However, in this
-		// case that Ask can still be paired with other bids to attempt
-		// to fully fill the order.
-		case bidSupply < askSupply:
-			matchType = PartialAskFulfill
-
-			unitsMatched = bidSupply
-			unitsUnmatched = askSupply - bidSupply
-
-		// If the bid and ask supply match exactly, then we have a
-		// total fulfil. In this case there're no unmatched units, and
-		// we match the entire of the supply.
-		case bidSupply == askSupply:
-			matchType = TotalFulfill
-
-			unitsMatched = bidSupply
-			unitsUnmatched = 0
-		}
 	}
 
-	// TODO(roasbeef): split into two diff methods?
-	//  * MatchPossible... (external)
-	//  * clearMatch... (updates internal state, private method?)
+	// At this point we know we have a match, the only remaining work
+	// is to ascertain exactly _what_ type of match it is.
+	switch {
+
+	// We have a match! However, it's a partial fill for the bid.
+	// In this case we'll mark it as a proper match, but that the
+	// bid still has units to be fulfilled.
+	case bidSupply > askSupply:
+		matchType = PartialBidFulfill
+
+		unitsMatched = askSupply
+		unitsUnmatched = bidSupply - askSupply
+
+	// Like the above case, this is also a match. However, in this
+	// case that Ask can still be paired with other bids to attempt
+	// to fully fill the order.
+	case bidSupply < askSupply:
+		matchType = PartialAskFulfill
+
+		unitsMatched = bidSupply
+		unitsUnmatched = askSupply - bidSupply
+
+	// If the bid and ask supply match exactly, then we have a
+	// total fulfil. In this case there're no unmatched units, and
+	// we match the entire of the supply.
+	case bidSupply == askSupply:
+		matchType = TotalFulfill
+
+		unitsMatched = bidSupply
+		unitsUnmatched = 0
+	}
 
 	return PriceQuote{
 		MatchingRate:     orderT.FixedRatePremium(bid.FixedRate),
@@ -337,11 +245,15 @@ func (m *MultiUnitMatchMaker) MatchBatch(bids []*order.Bid,
 			matchedIndex[bid.Nonce()] = struct{}{}
 			matchedIndex[ask.Nonce()] = struct{}{}
 
-			bidAcct, err := m.getCachedAccount(bid.AcctKey)
+			bidAcct, err := m.accountCacher.GetCachedAccount(
+				bid.AcctKey,
+			)
 			if err != nil {
 				return nil, err
 			}
-			askAcct, err := m.getCachedAccount(ask.AcctKey)
+			askAcct, err := m.accountCacher.GetCachedAccount(
+				ask.AcctKey,
+			)
 			if err != nil {
 				return nil, err
 			}

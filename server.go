@@ -231,21 +231,6 @@ func NewServer(cfg *Config) (*Server, error) {
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{},
 				auctionTerms.FeeSchedule(),
-				func(acctID matching.AccountID) (*account.Account, error) {
-					acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
-					if err != nil {
-						return nil, err
-					}
-
-					// We retrieve the pending diff of the
-					// account, if any, to ensure
-					// matchmaking can determine whether it
-					// is ready to participate in a batch.
-					return store.Account(
-						context.Background(), acctKey,
-						true,
-					)
-				},
 			),
 			OrderFeed:           orderBook,
 			BatchExecutor:       batchExecutor,
@@ -253,6 +238,24 @@ func NewServer(cfg *Config) (*Server, error) {
 			ChannelEnforcer:     channelEnforcer,
 			ConfTarget:          cfg.BatchConfTarget,
 			AccountExpiryOffset: cfg.AccountExpiryOffset,
+			AccountFetcher: func(acctID matching.AccountID) (
+				*account.Account, error) {
+
+				acctKey, err := btcec.ParsePubKey(
+					acctID[:], btcec.S256(),
+				)
+				if err != nil {
+					return nil, err
+				}
+
+				// We retrieve the pending diff of the account,
+				// if any, to ensure matchmaking can determine
+				// whether it is ready to participate in a
+				// batch.
+				return store.Account(
+					context.Background(), acctKey, true,
+				)
+			},
 		}),
 		channelEnforcer: channelEnforcer,
 		quit:            make(chan struct{}),

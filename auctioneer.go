@@ -203,6 +203,11 @@ type AuctioneerConfig struct {
 	// account expires "too soon". This value is added to the current block
 	// height to determine what the expiry cut off is.
 	AccountExpiryOffset uint32
+
+	// AccountFetcher is the function that'll be used to fetch the latest
+	// state of an account from disk so we can do things like compute the
+	// fee report using the latest account balance for a trader.
+	AccountFetcher matching.AccountFetcher
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1263,11 +1268,22 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		log.Debugf("Using fee rate %v for batch transaction", feeRate)
 
+		// Create our basic chain of predicates each order pair has to
+		// pass to be considered a potential match. Most predicates are
+		// stateless pure functions while others can retain a state.
+		expiryCutoff := a.BestHeight() + a.cfg.AccountExpiryOffset
+		accountPredicate := matching.NewAccountPredicate(
+			a.cfg.AccountFetcher, expiryCutoff,
+		)
+		predicateChain := []matching.MatchPredicate{accountPredicate}
+		predicateChain = append(
+			predicateChain, matching.DefaultPredicateChain...,
+		)
+
 		// Now that we have the batch key, we'll attempt to make this
 		// market.
-		expiryCutoff := a.BestHeight() + a.cfg.AccountExpiryOffset
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
-			feeRate, expiryCutoff,
+			feeRate, accountPredicate, predicateChain,
 		)
 		switch {
 		// If we can't make a market at this instance, then we'll
