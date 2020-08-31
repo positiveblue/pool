@@ -180,6 +180,27 @@ func (m *TraderRejectMsg) Src() matching.AccountID {
 	return m.Trader.AccountKey
 }
 
+// TraderPartialRejectMsg is the message a Trader sends to reject the execution
+// of certain orders of a batch.
+type TraderPartialRejectMsg struct {
+	// BatchID is the batch ID of the pending batch.
+	BatchID order.BatchID
+
+	// Trader is the trader that's rejecting this batch.
+	Trader *ActiveTrader
+
+	// Orders is the map of orders they wish to reject and the reasons for
+	// rejecting them.
+	Orders OrderRejectMap
+}
+
+// Src returns the trader that sent us this message.
+//
+// NOTE: This method is a part of the TraderMsg interface.
+func (m *TraderPartialRejectMsg) Src() matching.AccountID {
+	return m.Trader.AccountKey
+}
+
 // TraderSignMsg is the message a Trader sends when they have signed all account
 // inputs of a batch transaction.
 type TraderSignMsg struct {
