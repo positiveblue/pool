@@ -283,8 +283,8 @@ func (m *mockWallet) EstimateFee(context.Context, int32) (
 var _ Wallet = (*mockWallet)(nil)
 
 type mockCallMarket struct {
-	bids map[orderT.Nonce]*order.Bid
-	asks map[orderT.Nonce]*order.Ask
+	bids []*order.Bid
+	asks []*order.Ask
 
 	shouldClear bool
 
@@ -292,10 +292,7 @@ type mockCallMarket struct {
 }
 
 func newMockCallMarket() *mockCallMarket {
-	return &mockCallMarket{
-		bids: make(map[orderT.Nonce]*order.Bid),
-		asks: make(map[orderT.Nonce]*order.Ask),
-	}
+	return &mockCallMarket{}
 }
 
 func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
@@ -318,16 +315,9 @@ func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
 		return nil, fmt.Errorf("only supports same number of bids/asks")
 	}
 
-	bids := make([]*order.Bid, 0, len(m.bids))
-	for _, bid := range m.bids {
-		bids = append(bids, bid)
-	}
-
 	matches := make([]matching.MatchedOrder, 0, len(m.asks))
-	i := 0
-	for _, ask := range m.asks {
-		bid := bids[i]
-		i++
+	for idx, ask := range m.asks {
+		bid := m.bids[idx]
 
 		// Matched volume will be the minimum of the two orders.
 		vol := bid.UnitsUnfulfilled
@@ -367,25 +357,25 @@ func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {
 		vol := match.Details.Quote.UnitsMatched
 
 		bidNonce := match.Details.Bid.Nonce()
-		bid, ok := m.bids[bidNonce]
+		bid, ok := m.getBid(bidNonce)
 		if !ok {
 			return fmt.Errorf("bid not found")
 		}
 
 		bid.UnitsUnfulfilled -= vol
 		if bid.UnitsUnfulfilled == 0 {
-			delete(m.bids, bidNonce)
+			m.removeBid(bidNonce)
 		}
 
 		askNonce := match.Details.Ask.Nonce()
-		ask, ok := m.asks[askNonce]
+		ask, ok := m.getAsk(askNonce)
 		if !ok {
 			return fmt.Errorf("ask not found")
 		}
 
 		ask.UnitsUnfulfilled -= vol
 		if ask.UnitsUnfulfilled == 0 {
-			delete(m.asks, askNonce)
+			m.removeAsk(askNonce)
 		}
 	}
 
@@ -396,9 +386,7 @@ func (m *mockCallMarket) ConsiderBids(bids ...*order.Bid) error {
 	m.Lock()
 	defer m.Unlock()
 
-	for _, bid := range bids {
-		m.bids[bid.Nonce()] = bid
-	}
+	m.bids = append(m.bids, bids...)
 
 	return nil
 }
@@ -408,19 +396,36 @@ func (m *mockCallMarket) ForgetBids(nonces ...orderT.Nonce) error {
 	defer m.Unlock()
 
 	for _, nonce := range nonces {
-		delete(m.bids, nonce)
+		m.removeBid(nonce)
 	}
 
 	return nil
+}
+
+func (m *mockCallMarket) getBid(nonce orderT.Nonce) (*order.Bid, bool) {
+	for _, bid := range m.bids {
+		if bid.Nonce() == nonce {
+			return bid, true
+		}
+	}
+
+	return nil, false
+}
+
+func (m *mockCallMarket) removeBid(nonce orderT.Nonce) {
+	for i := 0; i < len(m.bids); i++ {
+		if m.bids[i].Nonce() == nonce {
+			m.bids = append(m.bids[:i], m.bids[i+1:]...)
+			i--
+		}
+	}
 }
 
 func (m *mockCallMarket) ConsiderAsks(asks ...*order.Ask) error {
 	m.Lock()
 	defer m.Unlock()
 
-	for _, ask := range asks {
-		m.asks[ask.Nonce()] = ask
-	}
+	m.asks = append(m.asks, asks...)
 
 	return nil
 }
@@ -430,10 +435,29 @@ func (m *mockCallMarket) ForgetAsks(nonces ...orderT.Nonce) error {
 	defer m.Unlock()
 
 	for _, nonce := range nonces {
-		delete(m.asks, nonce)
+		m.removeAsk(nonce)
 	}
 
 	return nil
+}
+
+func (m *mockCallMarket) getAsk(nonce orderT.Nonce) (*order.Ask, bool) {
+	for _, ask := range m.asks {
+		if ask.Nonce() == nonce {
+			return ask, true
+		}
+	}
+
+	return nil, false
+}
+
+func (m *mockCallMarket) removeAsk(nonce orderT.Nonce) {
+	for i := 0; i < len(m.asks); i++ {
+		if m.asks[i].Nonce() == nonce {
+			m.asks = append(m.asks[:i], m.asks[i+1:]...)
+			i--
+		}
+	}
 }
 
 var _ matching.BatchAuctioneer = (*mockCallMarket)(nil)
@@ -777,10 +801,10 @@ func (a *auctioneerTestHarness) AssertOrdersPresent(nonces ...orderT.Nonce) {
 		defer a.callMarket.Unlock()
 
 		for _, nonce := range nonces {
-			if _, ok := a.callMarket.bids[nonce]; ok {
+			if _, ok := a.callMarket.getBid(nonce); ok {
 				continue
 			}
-			if _, ok := a.callMarket.asks[nonce]; ok {
+			if _, ok := a.callMarket.getAsk(nonce); ok {
 				continue
 			}
 			return fmt.Errorf("nonce %x not found",
@@ -801,11 +825,11 @@ func (a *auctioneerTestHarness) AssertOrdersNotPresent(nonces ...orderT.Nonce) {
 		defer a.callMarket.Unlock()
 
 		for _, nonce := range nonces {
-			if _, ok := a.callMarket.bids[nonce]; ok {
+			if _, ok := a.callMarket.getBid(nonce); ok {
 				return fmt.Errorf("nonce %x found in call "+
 					"market", nonce[:])
 			}
-			if _, ok := a.callMarket.asks[nonce]; ok {
+			if _, ok := a.callMarket.getAsk(nonce); ok {
 				return fmt.Errorf("nonce %x found in call "+
 					"market", nonce[:])
 			}
@@ -826,14 +850,14 @@ func (a *auctioneerTestHarness) AssertSingleOrder(nonce orderT.Nonce,
 	a.callMarket.Lock()
 	defer a.callMarket.Unlock()
 
-	if bid, ok := a.callMarket.bids[nonce]; ok {
+	if bid, ok := a.callMarket.getBid(nonce); ok {
 		err := f(bid)
 		if err != nil {
 			a.t.Fatal(err)
 		}
 		return
 	}
-	if ask, ok := a.callMarket.asks[nonce]; ok {
+	if ask, ok := a.callMarket.getAsk(nonce); ok {
 		err := f(ask)
 		if err != nil {
 			a.t.Fatal(err)
