@@ -785,6 +785,25 @@ func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode,
 	}
 }
 
+func assertNumPendingChannels(t *harnessTest, node *lntest.HarnessNode,
+	numChans int) {
+
+	req := &lnrpc.PendingChannelsRequest{}
+	err := wait.NoError(func() error {
+		resp, err := node.PendingChannels(context.Background(), req)
+		require.NoError(t.t, err)
+
+		if len(resp.PendingOpenChannels) != numChans {
+			return fmt.Errorf("num channel mismatch: expected %v, "+
+				"got %v", numChans,
+				len(resp.PendingOpenChannels))
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	require.NoError(t.t, err)
+}
+
 // completePaymentRequests sends payments from a lightning node to complete all
 // payment requests. If the awaitResponse parameter is true, this function
 // does not return until all payments successfully complete without errors.

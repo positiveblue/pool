@@ -56,4 +56,8 @@ var testCases = []*testCase{
 		name: "batch partial reject new nodes only",
 		test: testTraderPartialRejectNewNodesOnly,
 	},
+	{
+		name: "batch partial reject funding failure",
+		test: testTraderPartialRejectFundingFailure,
+	},
 }

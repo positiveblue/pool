@@ -3,6 +3,7 @@ package itest
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
@@ -1098,7 +1099,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 
 	// Execute the batch and make sure there's a channel between Bob and
 	// Charlie now.
-	_ = executeBatch(t)
+	_, _ = executeBatch(t, 1)
 	assertPendingChannel(
 		t, t.trader.cfg.LndNode, askSize/2, true, charlie.PubKey,
 	)
@@ -1142,4 +1143,168 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 		t.t, thirdTrader, bidAccountDave.TraderKey,
 		clmrpc.AccountState_OPEN,
 	)
+}
+
+// testTraderPartialRejectFundingFailure tests that the server supports traders
+// rejecting parts of a batch because of a funding failure.
+func testTraderPartialRejectFundingFailure(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie, that is used for the second
+	// trader. Charlie can only have one pending incoming channel (default
+	// setting of lnd).
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	require.NoError(t.t, err)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	require.NoError(t.t, err)
+
+	// And as an "innocent bystander" we also create Dave who will buy a
+	// channel during the second round so we can make sure being matched
+	// multiple times in the same batch (because another node rejected and
+	// the matchmaking had to be restarted) can still succeed.
+	dave, err := t.lndHarness.NewNode("dave", nil)
+	require.NoError(t.t, err)
+	thirdTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, dave, thirdTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
+	require.NoError(t.t, err)
+
+	// Create an account for the maker and taker with plenty of sats.
+	askAccount := openAccountAndAssert(
+		t, t.trader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	bidAccountCharlie := openAccountAndAssert(
+		t, secondTrader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	bidAccountDave := openAccountAndAssert(
+		t, thirdTrader, &clmrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We'll create an ask order that is large enough to be matched multiple
+	// times. First, Charlie will buy half of that ask in batch 1.
+	const askSize = 600_000
+	const bidSize1 = 300_000
+	const bidSize2 = 200_000
+	const askRate = 2000
+	const durationBlocks = 1440
+
+	// Submit an ask order that is large enough to be matched multiple
+	// times.
+	_, err = submitAskOrder(
+		t.trader, askAccount.TraderKey, askRate, askSize,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+
+	// We manually open a channel between Bob and Charlie now to saturate
+	// the maxpendingchannels setting.
+	err = t.lndHarness.EnsureConnected(ctx, t.trader.cfg.LndNode, charlie)
+	require.NoError(t.t, err)
+	_, err = t.lndHarness.OpenPendingChannel(
+		ctx, t.trader.cfg.LndNode, charlie, 1_000_000, 0,
+	)
+	require.NoError(t.t, err)
+
+	// Let's now create a bid that will be matched against the ask but
+	// should result in Charlie rejecting it because of too many pending
+	// channels. That is, the asker, Bob, will open the channel and Charlie
+	// will reject the channel funding. That leads to both trader daemons
+	// rejecting the batch because of a failed funding attempt.
+	_, err = submitBidOrder(
+		secondTrader, bidAccountCharlie.TraderKey, askRate, bidSize1,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+
+	// Dave also participates. He should be matched twice with a pending
+	// channel already initiated during the first try. We need to make sure
+	// the same matched order can still result in a channel the second time
+	// around.
+	_, err = submitBidOrder(
+		thirdTrader, bidAccountDave.TraderKey, askRate, bidSize2,
+		durationBlocks, uint32(order.CurrentVersion),
+	)
+	require.NoError(t.t, err)
+
+	// Try to execute the batch now. It should fail in the first round
+	// because both Bob and Charlie reject the orders. A conflict should
+	// then be recorded in the conflict tracker and they shouldn't be
+	// matched again. But the channel between Bob and Dave should still be
+	// created.
+	_, _ = executeBatch(t, 2)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidSize2, true, dave.PubKey,
+	)
+	assertPendingChannel(
+		t, dave, bidSize2, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// Because the first round never happened, Dave now has two pending
+	// channels. One that's eventually going to confirm with the most recent
+	// batch transaction and one that's going to stay pending forever.
+	//
+	// TODO(guggero): Clean up this state by calling abandonchannel or
+	// similar on new BatchPrepare message.
+	assertNumPendingChannels(t, dave, 2)
+
+	// Make sure we have a conflict reported from both sides.
+	conflicts, err := t.auctioneer.FundingConflicts(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, 2, len(conflicts.Conflicts))
+
+	askerNodeHex := hex.EncodeToString(t.trader.cfg.LndNode.PubKey[:])
+	bidderNodeHex := hex.EncodeToString(charlie.PubKey[:])
+	require.Equal(t.t, 1, len(conflicts.Conflicts[askerNodeHex].Conflicts))
+	require.Equal(t.t, 1, len(conflicts.Conflicts[bidderNodeHex].Conflicts))
+
+	askerConflict := conflicts.Conflicts[askerNodeHex].Conflicts[0]
+	require.Equal(t.t, bidderNodeHex, askerConflict.Subject)
+	require.Contains(t.t, askerConflict.Reason, "received funding error")
+	require.Contains(t.t, askerConflict.Reason, "pending channels exceed")
+
+	bidderConflict := conflicts.Conflicts[bidderNodeHex].Conflicts[0]
+	require.Equal(t.t, askerNodeHex, bidderConflict.Subject)
+	require.Contains(t.t, bidderConflict.Reason, "timed out waiting")
+
+	// Let's now confirm the channel and try creating a batch again. It
+	// should still fail because the conflicts are kept in memory over the
+	// lifetime of the auctioneer.
+	mineBlocks(t, t.lndHarness, 1, 2)
+	_, _ = executeBatch(t, 0)
+
+	// If we now clear the conflicts, we should be able to create the
+	// batch and channel.
+	_, err = t.auctioneer.ClearConflicts(ctx, &adminrpc.EmptyRequest{})
+	require.NoError(t.t, err)
+	_, _ = executeBatch(t, 1)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidSize1, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidSize1, false, t.trader.cfg.LndNode.PubKey,
+	)
+	mineBlocks(t, t.lndHarness, 1, 1)
 }
