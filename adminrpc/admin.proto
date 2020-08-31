@@ -18,6 +18,8 @@ service AuctionAdmin {
     rpc ListBans (EmptyRequest) returns (ListBansResponse);
     rpc RemoveBan (RemoveBanRequest) returns (EmptyResponse);
     rpc RemoveReservation (RemoveReservationRequest) returns (EmptyResponse);
+    rpc FundingConflicts (EmptyRequest) returns (FundingConflictsResponse);
+    rpc ClearConflicts (EmptyRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -145,6 +147,11 @@ message AuctionStatusResponse {
     batch being executed if batch execution is currently paused.
     */
     uint64 seconds_to_next_tick = 6;
+
+    /*
+    The string representation of the current auctioneer's state.
+    */
+    string auction_state = 7;
 }
 
 message ListBatchesResponse {
@@ -279,4 +286,28 @@ message RemoveReservationRequest {
         // Remove the reservation of an LSAT, identified by the LSAT's token ID.
         bytes lsat = 2;
     }
+}
+
+message FundingConflictsResponse {
+    /*
+    A map that is keyed by the hex encoded node ID of the reporting node and a
+    list of all conflicts that node reported.
+    */
+    map<string, ConflictList> conflicts = 1;
+}
+
+message ConflictList {
+    // The list of all reported conflicts.
+    repeated Conflict conflicts = 1;
+}
+
+message Conflict {
+    // The hex encoded node ID of the subject of the report.
+    string subject = 1;
+    
+    // The reported reason for the conflict.
+    string reason = 2;
+    
+    // The unix timestamp in seconds of the time the conflict was reported.
+    int64 report_timestamp = 3;
 }
