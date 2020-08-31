@@ -10,7 +10,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.0.0-20200811173827-537716305eba
-	github.com/lightninglabs/llm v0.1.0-alpha.0.20200825014016-852870e4e943
+	github.com/lightninglabs/llm v0.1.0-alpha.0.20200825081359-777abd551855
 	github.com/lightninglabs/loop v0.6.4-beta.0.20200617020450-0d67b3987a63
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.11.0-beta.rc2
