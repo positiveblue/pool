@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd"
@@ -517,6 +518,29 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 		if account.State != state {
 			return fmt.Errorf("expected account state %v, got %v",
 				state, account.State)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
+// assertAuctionState asserts that the auctioneer is in the given state.
+func assertAuctionState(t *harnessTest, state subasta.AuctionState) {
+	ctx := context.Background()
+	err := wait.NoError(func() error {
+		status, err := t.auctioneer.AuctionStatus(
+			ctx, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("unable to retrieve status: %v", err)
+		}
+
+		if status.AuctionState != state.String() {
+			return fmt.Errorf("expected auction state %v, got %v",
+				state, status.AuctionState)
 		}
 
 		return nil
@@ -1170,32 +1194,44 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	return closingTxid
 }
 
-func executeBatch(t *harnessTest) *chainhash.Hash {
+func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
+	[]*chainhash.Hash) {
+
 	ctx := context.Background()
 
 	// Let's kick the auctioneer now to try and create a batch.
 	_, err := t.auctioneer.AuctionAdminClient.BatchTick(
 		ctx, &adminrpc.EmptyRequest{},
 	)
-	if err != nil {
-		t.Fatalf("could not trigger batch tick: %v", err)
-	}
+	require.NoError(t.t, err)
+
+	// Before we check anything else, let's first wait for the auctioneer
+	// to do its job and then return back to its "waiting" state where new
+	// orders are accepted.
+	assertAuctionState(t, subasta.OrderSubmitState)
 
 	// At this point, the batch should now attempt to be cleared, and find
 	// that we're able to make a market. Eventually the batch execution
 	// transaction should be broadcast to the mempool.
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Node, expectedMempoolTxns,
+		minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("txid not found in mempool: %v", err)
+	require.NoError(t.t, err)
+
+	if len(txids) != expectedMempoolTxns {
+		t.Fatalf("expected %d transaction(s), instead have: %v",
+			expectedMempoolTxns, spew.Sdump(txids))
 	}
 
-	if len(txids) != 1 {
-		t.Fatalf("expected a single transaction, instead have: %v",
-			spew.Sdump(txids))
+	msgTxs := make([]*wire.MsgTx, len(txids))
+	for idx, txid := range txids {
+		tx, err := t.lndHarness.Miner.Node.GetRawTransaction(txid)
+		require.NoError(t.t, err)
+		msgTxs[idx] = tx.MsgTx()
+
 	}
-	return txids[0]
+	return msgTxs, txids
 }
 
 func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,

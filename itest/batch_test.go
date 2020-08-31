@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -180,28 +179,11 @@ func testBatchExecution(t *harnessTest) {
 		t, depositResp.Account.TraderKey, account.StatePendingUpdate,
 	)
 
-	// Let's kick the auctioneer now to try and create a batch.
-	_, err = t.auctioneer.AuctionAdminClient.BatchTick(
-		ctx, &adminrpc.EmptyRequest{},
-	)
-	if err != nil {
-		t.Fatalf("could not trigger batch tick: %v", err)
-	}
-
 	// Since the ask account is pending an update, a batch should not be
-	// cleared, so a batch transaction should not be broadcast.
-	//
-	// TODO: Determine whether a batch has been made without waiting for the
-	// mempool timeout? Waiting is not ideal here as it slows down the test.
-	isMempoolEmpty, err := isMempoolEmpty(
-		t.lndHarness.Miner.Node, minerMempoolTimeout/2,
-	)
-	if err != nil {
-		t.Fatalf("unable to determine if mempool is empty: %v", err)
-	}
-	if !isMempoolEmpty {
-		t.Fatalf("found unexpected non-empty mempool")
-	}
+	// cleared, so a batch transaction should not be broadcast. Kick the
+	// auctioneer and wait for it to return back to the order submit state.
+	// No tx should be in the mempool as no market should be possible.
+	_, _ = executeBatch(t, 0)
 
 	// Proceed to fully confirm the account deposit.
 	_ = mineBlocks(t, t.lndHarness, 5, 0)
@@ -210,7 +192,8 @@ func testBatchExecution(t *harnessTest) {
 	)
 
 	// Let's kick the auctioneer once again to try and create a batch.
-	batchTXID := executeBatch(t)
+	_, batchTXIDs := executeBatch(t, 1)
+	batchTXID := batchTXIDs[0]
 
 	// At this point, the lnd nodes backed by each trader should have a
 	// single pending channel, which matches the amount of the order
@@ -341,7 +324,8 @@ func testBatchExecution(t *harnessTest) {
 	// We'll now tick off another batch, which should trigger a clearing of
 	// the market, to produce another channel which Charlie has just
 	// purchased. Let's kick the auctioneer now to try and create a batch.
-	batchTXID = executeBatch(t)
+	_, batchTXIDs = executeBatch(t, 1)
+	batchTXID = batchTXIDs[0]
 
 	// Both parties should once again have a pending channel.
 	assertPendingChannel(
@@ -707,7 +691,8 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	}
 
 	// Let's kick the auctioneer now to try and create a batch.
-	batchTXID := executeBatch(t)
+	_, batchTXIDs := executeBatch(t, 1)
+	batchTXID := batchTXIDs[0]
 
 	// At this point, the lnd nodes backed by each trader should have a
 	// single pending channel, which matches the amount of the order
@@ -862,7 +847,8 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	}
 
 	// Let's kick the auctioneer now to try and create a batch.
-	batchTXID := executeBatch(t)
+	_, batchTXIDs := executeBatch(t, 1)
+	batchTXID := batchTXIDs[0]
 	assertPendingChannel(
 		t, t.trader.cfg.LndNode, orderSize, true, charlie.PubKey,
 	)
@@ -969,7 +955,7 @@ func testConsecutiveBatches(t *harnessTest) {
 
 	// Execute the batch and make sure there's a channel between Bob and
 	// Charlie now.
-	_ = executeBatch(t)
+	_, _ = executeBatch(t, 1)
 	assertPendingChannel(
 		t, t.trader.cfg.LndNode, bid1Size, true, charlie.PubKey,
 	)
@@ -988,7 +974,7 @@ func testConsecutiveBatches(t *harnessTest) {
 
 	// Execute the batch and make sure there's a second channel between Bob
 	// and Charlie now.
-	_ = executeBatch(t)
+	_, _ = executeBatch(t, 2)
 	assertPendingChannel(
 		t, t.trader.cfg.LndNode, bid2Size, true, charlie.PubKey,
 	)
@@ -1019,12 +1005,11 @@ func testConsecutiveBatches(t *harnessTest) {
 	)
 	require.NoError(t.t, err)
 
-	// We don't have a reliable way of making sure no batch happened yet. So
-	// we're just going to wait a bit and make sure we still only have the
-	// previous unconfirmed transaction from the withdrawal.
-	time.Sleep(200 * time.Millisecond)
-	_, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
-	)
-	require.NoError(t.t, err)
+	// Execute another batch now and wait until it's completed. There should
+	// not be a new batch transaction in the mempool (only the withdrawal
+	// TX) as we don't expect a batch to have been successful.
+	_, _ = executeBatch(t, 1)
+
+	// Let's now mine the withdrawal to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
 }
