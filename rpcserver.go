@@ -906,16 +906,6 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 
 	// The trader accepts an order execution.
 	case *clmrpc.ClientAuctionMessage_Accept:
-		nonces := make([]orderT.Nonce, len(msg.Accept.OrderNonce))
-		for idx, rawNonce := range msg.Accept.OrderNonce {
-			if len(rawNonce) != 32 {
-				comms.err <- fmt.Errorf("invalid nonce: %x",
-					rawNonce)
-				return
-			}
-			copy(nonces[idx][:], rawNonce)
-		}
-
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
 			var batchID orderT.BatchID
@@ -923,7 +913,6 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 			traderMsg := &venue.TraderAcceptMsg{
 				BatchID: batchID,
 				Trader:  subscribedTrader,
-				Orders:  nonces,
 			}
 			comms.toServer <- traderMsg
 		}

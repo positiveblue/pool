@@ -141,12 +141,6 @@ type TraderAcceptMsg struct {
 
 	// Trader is the trader that's accepting this batch.
 	Trader *ActiveTrader
-
-	// Orders is the set of orders they wish to accept.
-	//
-	// TODO(roasbeef): remove? no way to accept only part of them, as they
-	// should accept if all are valid
-	Orders []order.Nonce
 }
 
 // Src returns the trader that sent us this message.
