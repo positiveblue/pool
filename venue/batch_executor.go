@@ -659,6 +659,20 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 				b.handleFullReject(m, &env)
 
+			// The trader rejected part of the batch either because
+			// of a problem or because of a preference. We don't
+			// want to remove any orders from the match making
+			// process completely. Instead we just note these
+			// conflicts in our conflict trackers and give the match
+			// maker a chance to find more suitable matches.
+			case *TraderPartialRejectMsg:
+				// Add the rejected orders/peers to our conflict
+				// trackers according to the reject reason sent
+				// by the trader. This also marks this trader
+				// as having responded while giving all other
+				// traders a chance to still respond.
+				b.handlePartialReject(m, &env)
+
 			// The trader accepted the batch.
 			case *TraderAcceptMsg:
 				log.Debugf("Received OrderMatchAccept from "+
@@ -678,6 +692,19 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// advance to the next phase, as we received all the
 			// intended messages.
 			if env.noTimersActive() {
+				// In case we have any rejects, we need to
+				// signal now that the match making has to be
+				// started over.
+				if len(env.rejectingTraders) > 0 {
+					rejects := env.rejectingTraders
+					env.tempErr = &ErrReject{
+						RejectingTraders: rejects,
+					}
+					return BatchTempError, env, nil
+				}
+
+				// Otherwise we have a successful batch
+				// preparation.
 				log.Infof("All traders accepted batch, " +
 					"entering signing phase")
 
@@ -728,7 +755,39 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// the user specified a witness for their account.
 			// React depending on the type of the message the trader
 			// sent us.
-			switch msgRecv.msg.(type) {
+			switch m := msgRecv.msg.(type) {
+			// The trader rejected part of the batch either because
+			// of a problem or because of a preference. We don't
+			// want to remove any orders from the match making
+			// process completely. Instead we just note these
+			// conflicts in our conflict trackers and give the match
+			// maker a chance to find more suitable matches.
+			case *TraderPartialRejectMsg:
+				// Add the rejected orders/peers to our conflict
+				// trackers according to the reject reason sent
+				// by the trader. This also marks this trader
+				// as having responded while giving all other
+				// traders a chance to still respond.
+				b.handlePartialReject(m, &env)
+
+				// We can't continue here. Are we done yet or
+				// do we need to wait for more messages?
+				if env.noTimersActive() {
+					// As this is the last message and it's
+					// a reject, we can now return the
+					// temporary failure causing the batch
+					// to go back into the match making
+					// phase.
+					rejects := env.rejectingTraders
+					env.tempErr = &ErrReject{
+						RejectingTraders: rejects,
+					}
+					return BatchTempError, env, nil
+				}
+
+				// Give the other traders a chance to respond.
+				return BatchSigning, env, nil
+
 			// The trader accepted the batch.
 			case *TraderSignMsg:
 				log.Debugf("Received OrderMatchSign from "+
@@ -750,6 +809,16 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 					msgRecv.msg)
 
 				return BatchSigning, env, nil
+			}
+
+			// If we've gotten all messages and there were some
+			// rejects, we need to restart at matchmaking.
+			if env.noTimersActive() && len(env.rejectingTraders) > 0 {
+				rejects := env.rejectingTraders
+				env.tempErr = &ErrReject{
+					RejectingTraders: rejects,
+				}
+				return BatchTempError, env, nil
 			}
 
 			b.RLock()
@@ -973,6 +1042,44 @@ func (b *BatchExecutor) handleFullReject(msg *TraderRejectMsg,
 	// will do the more detailed check and rate limiting of the actual
 	// reject messages.
 	env.rejectingTraders[reporter] = rejectMap
+}
+
+// handlePartialReject processes the partial reject message of a trader. The
+// local and remote node of the two matched orders are extracted and, depending
+// on the type of reported conflict, the two nodes are reported to the conflict
+// handler responsible for that type of conflict.
+func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
+	env *environment) {
+
+	// The source of the message is the trader rejecting the orders.
+	reporter := msg.Src()
+
+	// We mark this trader as having responded and give all other traders
+	// also a chance to maybe reject parts of the order too. But we track
+	// the reject to flag we have to restart match making and also to detect
+	// potential DoS attacks from too many rejects.
+	env.cancelTimerForTrader(reporter)
+
+	// The executor gets de-multiplexed messages from the RPC. That means if
+	// a trader daemon has multiple accounts, we get the same message for
+	// all those accounts. We first need to make sure the reporter is even
+	// involved in the batch. If not, we simply skip adding an entry.
+	var involvedOrders []matching.MatchedOrder
+	for _, orderPair := range env.batch.Orders {
+		if orderPair.Asker.AccountKey == reporter ||
+			orderPair.Bidder.AccountKey == reporter {
+
+			involvedOrders = append(involvedOrders, orderPair)
+		}
+	}
+	if len(involvedOrders) == 0 {
+		return
+	}
+
+	// If the reporter was involved, we simply store the rejected orders
+	// with the reasons. The auctioneer will do the more detailed check and
+	// rate limiting of the actual reject messages.
+	env.rejectingTraders[reporter] = msg.Orders
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new
