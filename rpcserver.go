@@ -126,6 +126,8 @@ type rpcServer struct {
 
 	batchExecutor *venue.BatchExecutor
 
+	auctioneer *Auctioneer
+
 	lnd *lndclient.GrpcLndServices
 
 	bestHeight func() uint32
@@ -146,8 +148,8 @@ type rpcServer struct {
 func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
-	terms *terms.AuctioneerTerms, listener net.Listener,
-	serverOpts []grpc.ServerOption,
+	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
+	listener net.Listener, serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
 	return &rpcServer{
@@ -159,6 +161,7 @@ func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 		orderBook:        orderBook,
 		store:            store,
 		batchExecutor:    batchExecutor,
+		auctioneer:       auctioneer,
 		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
