@@ -148,34 +148,17 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	// The two items passed should be the highest bid, and the lowest ask.
 	// This is our base case, and is where we employ the bulk of our
 	// algorithm: if the highest bid is lower than the lowest ask, then
-	// there is no market to be made.
+	// there is no market to be made. Most of this logic is implemented in
+	// predicates, only the parts that require more information than just
+	// the two orders are implemented here directly.
 	switch {
-	// Ensure that if the order is made by the same trader, then we reject
-	// the match as making a channel to yourself doesn't make any sense.
-	case ask.AcctKey == bid.AcctKey:
-		return NullQuote, false
-
-	// Ensure we don't match any orders of the same node. It doesn't make
-	// sense to open a channel to one self, and the protocol doesn't allow
-	// it anyway.
-	case ask.NodeKey == bid.NodeKey:
+	// Ensure the order pair passes our default chain of predicates.
+	case !ChainMatches(ask, bid, DefaultPredicateChain...):
 		return NullQuote, false
 
 	// Ensure both accounts are ready to participate in a batch.
 	case !isAccountReady(bidAcct, m.accountExpiryCutoff) ||
 		!isAccountReady(askAcct, m.accountExpiryCutoff):
-		return NullQuote, false
-
-	// If the highest bid is below the lowest ask, then no match at all is
-	// possible.
-	case bid.FixedRate < ask.FixedRate:
-		return NullQuote, false
-
-	// Next we'll compare the lease duration values for compatibility. The
-	// bid declares the minimum amount of time channels are needed, while
-	// asks declare the maximum time. If the minimum for a bid is above the
-	// ask, then no match can occur.
-	case bid.MinDuration() > ask.MaxDuration():
 		return NullQuote, false
 
 	// If the highest bid is greater than or equal to the lowest ask, then
@@ -214,9 +197,6 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 			unitsMatched = bidSupply
 			unitsUnmatched = 0
 		}
-
-		// TODO(roasbeef): need to consider other fields like the min accepted
-		// channel and such
 	}
 
 	// TODO(roasbeef): split into two diff methods?
