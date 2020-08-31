@@ -183,15 +183,24 @@ func NewServer(cfg *Config) (*Server, error) {
 		OrderExecFeeRate: btcutil.Amount(cfg.ExecFeeRate),
 	}
 
+	// We also need to keep some shared state between the auctioneer/match
+	// maker and the executor. Partial rejects from the trader need to be
+	// taken into account for the next match making attempt.
+	fundingConflicts := matching.NewNodeConflictPredicate()
+	traderRejected := matching.NewNodeConflictPredicate()
+
 	// Continuing, we create the batch executor which will communicate
 	// between the trader's an auctioneer for each batch epoch.
 	exeStore := &executorStore{
 		Store: store,
 	}
-	batchExecutor := venue.NewBatchExecutor(
-		exeStore, lnd.Signer, defaultMsgTimeout,
-		venue.NewExeBatchStorer(store), accountManager,
-	)
+	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
+		Store:            exeStore,
+		Signer:           lnd.Signer,
+		BatchStorer:      venue.NewExeBatchStorer(store),
+		AccountWatcher:   accountManager,
+		TraderMsgTimeout: defaultMsgTimeout,
+	})
 
 	orderBook := order.NewBook(&order.BookConfig{
 		Store:       store,
@@ -231,21 +240,6 @@ func NewServer(cfg *Config) (*Server, error) {
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{},
 				auctionTerms.FeeSchedule(),
-				func(acctID matching.AccountID) (*account.Account, error) {
-					acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
-					if err != nil {
-						return nil, err
-					}
-
-					// We retrieve the pending diff of the
-					// account, if any, to ensure
-					// matchmaking can determine whether it
-					// is ready to participate in a batch.
-					return store.Account(
-						context.Background(), acctKey,
-						true,
-					)
-				},
 			),
 			OrderFeed:           orderBook,
 			BatchExecutor:       batchExecutor,
@@ -253,6 +247,26 @@ func NewServer(cfg *Config) (*Server, error) {
 			ChannelEnforcer:     channelEnforcer,
 			ConfTarget:          cfg.BatchConfTarget,
 			AccountExpiryOffset: cfg.AccountExpiryOffset,
+			AccountFetcher: func(acctID matching.AccountID) (
+				*account.Account, error) {
+
+				acctKey, err := btcec.ParsePubKey(
+					acctID[:], btcec.S256(),
+				)
+				if err != nil {
+					return nil, err
+				}
+
+				// We retrieve the pending diff of the account,
+				// if any, to ensure matchmaking can determine
+				// whether it is ready to participate in a
+				// batch.
+				return store.Account(
+					context.Background(), acctKey, true,
+				)
+			},
+			FundingConflicts: fundingConflicts,
+			TraderRejected:   traderRejected,
 		}),
 		channelEnforcer: channelEnforcer,
 		quit:            make(chan struct{}),

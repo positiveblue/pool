@@ -211,14 +211,14 @@ func (o *OrderBatch) Copy() OrderBatch {
 // TODO(roasbeef): just pass in order book instead?
 //  * needs to be interface? other impl is the continuous variant?
 type BatchAuctioneer interface {
-	// MaybeClear attempts to clear a batch given a BatchID. Note that it's
-	// possible no match is possible, in which case an error will be
-	// returned.
+	// MaybeClear attempts to clear a batch given the fee rate and a chain
+	// of match predicates to check. Note that it can happen that no match
+	// is possible, in which case an error will be returned.
 	//
 	// The fee rate provided will be used to exclude orders which had their
 	// max batch fee rate set lower.
-	MaybeClear(feeRate chainfee.SatPerKWeight,
-		blockHeight uint32) (*OrderBatch, error)
+	MaybeClear(feeRate chainfee.SatPerKWeight, acctCacher AccountCacher,
+		predicateChain []MatchPredicate) (*OrderBatch, error)
 
 	// RemoveMatches updates the order book by subtracting the given
 	// matches filled volume.

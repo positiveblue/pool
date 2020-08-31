@@ -50,24 +50,17 @@ type UniformPriceCallMarket struct {
 	// be used to determine how much to charge traders in venue and
 	// execution fees.
 	feeSchedule terms.FeeSchedule
-
-	// acctFetcher is the function that'll be used to fetch the latest
-	// state of an account from disk so we can do things like compute the
-	// fee report using the latest account balance for a trader.
-	acctFetcher AccountFetcher
 }
 
 // NewUniformPriceCallMarket returns a new instance of the
 // UniformPriceCallMarket struct given the price clearer and fee schedule for
 // this current batch epoch.
 func NewUniformPriceCallMarket(priceClearer PriceClearer,
-	feeSchedule terms.FeeSchedule,
-	acctFetcher AccountFetcher) *UniformPriceCallMarket {
+	feeSchedule terms.FeeSchedule) *UniformPriceCallMarket {
 
 	u := &UniformPriceCallMarket{
 		priceClearer: priceClearer,
 		feeSchedule:  feeSchedule,
-		acctFetcher:  acctFetcher,
 	}
 	u.resetOrderState()
 
@@ -84,17 +77,21 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 	u.askIndex = make(map[orderT.Nonce]*list.Element)
 }
 
-// MaybeClear attempts to clear a batch given a BatchID. Note that it's
-// possible no match is possible, in which case an error will be
-// returned.
+// MaybeClear attempts to clear a batch given the fee rate and a list of default
+// match predicates to check. Note that it can happen that no match is possible,
+// in which case an error will be returned.
+//
+// The fee rate provided will be used to exclude orders which had their
+// max batch fee rate set lower.
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
-	currentHeight uint32) (*OrderBatch, error) {
+	acctCacher AccountCacher, predicateChain []MatchPredicate) (*OrderBatch,
+	error) {
 
 	// At this point we know we have a set of orders, so we'll create the
 	// match maker for usage below.
-	matchMaker := NewMultiUnitMatchMaker(u.acctFetcher, currentHeight)
+	matchMaker := NewMultiUnitMatchMaker(acctCacher, predicateChain)
 
 	// At this point, there's may be at least a single order that we can
 	// execute, so we'll attempt to match the entire pending batch.

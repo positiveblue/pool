@@ -98,6 +98,8 @@ func (s *adminRPCServer) Stop() {
 	log.Info("Admin server stopped")
 }
 
+// MasterAccount returns information about the current state of the master
+// account.
 func (s *adminRPCServer) MasterAccount(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.MasterAccountResponse, error) {
 
@@ -126,6 +128,8 @@ func (s *adminRPCServer) MasterAccount(ctx context.Context,
 	}, nil
 }
 
+// ConnectedTraders returns a map of all connected traders identified by their
+// LSAT ID and the account keys they have subscribed to.
 func (s *adminRPCServer) ConnectedTraders(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.ConnectedTradersResponse, error) {
 
@@ -148,6 +152,7 @@ func (s *adminRPCServer) ConnectedTraders(_ context.Context,
 	return result, nil
 }
 
+// BatchTick forces the auctioneer to try to make a batch now.
 func (s *adminRPCServer) BatchTick(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
@@ -157,6 +162,8 @@ func (s *adminRPCServer) BatchTick(_ context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
+// PauseBatchTicker halts the automatic batch making ticker so only manually
+// forced ticks will result in a match making attempt.
 func (s *adminRPCServer) PauseBatchTicker(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
@@ -165,6 +172,8 @@ func (s *adminRPCServer) PauseBatchTicker(_ context.Context,
 
 	return &adminrpc.EmptyResponse{}, nil
 }
+
+// ResumeBatchTicker resumes the automatic batch making ticker.
 func (s *adminRPCServer) ResumeBatchTicker(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
@@ -174,6 +183,8 @@ func (s *adminRPCServer) ResumeBatchTicker(_ context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
+// ListOrders lists all currently known orders of the auctioneer database. A
+// flag can specify if all active or all archived orders should be returned.
 func (s *adminRPCServer) ListOrders(ctx context.Context,
 	req *adminrpc.ListOrdersRequest) (*adminrpc.ListOrdersResponse, error) {
 
@@ -212,6 +223,8 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 	}, nil
 }
 
+// ListAccounts returns a list of all currently known accounts of the auctioneer
+// database.
 func (s *adminRPCServer) ListAccounts(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.ListAccountsResponse, error) {
 
@@ -234,10 +247,17 @@ func (s *adminRPCServer) ListAccounts(ctx context.Context,
 	}, nil
 }
 
+// AuctionState returns information about the current state of the auctioneer
+// and the auction itself.
 func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.AuctionStatusResponse, error) {
 
 	currentBatchKey, err := s.store.BatchKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	state, err := s.auctioneer.cfg.DB.AuctionState()
 	if err != nil {
 		return nil, err
 	}
@@ -250,6 +270,7 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 		BatchTickerActive: batchTicker.IsActive(),
 		LastTimedTick:     uint64(batchTicker.LastTimedTick().Unix()),
 		SecondsToNextTick: uint64(batchTicker.NextTickIn().Seconds()),
+		AuctionState:      state.String(),
 	}
 
 	// Don't calculate the last key if the current one is the initial one as
@@ -262,6 +283,8 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	return result, nil
 }
 
+// ListBatches returns a list of all known batch IDs, including the most recent
+// one which hasn't been used for a batch yet but will be for the next one.
 func (s *adminRPCServer) ListBatches(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.ListBatchesResponse, error) {
 
@@ -296,6 +319,8 @@ func (s *adminRPCServer) ListBatches(ctx context.Context,
 	}, nil
 }
 
+// BatchSnapshot returns the stored snapshot information of one batch specified
+// by its ID.
 func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	req *clmrpc.BatchSnapshotRequest) (*adminrpc.AdminBatchSnapshotResponse,
 	error) {
@@ -397,6 +422,8 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	return resp, nil
 }
 
+// ListBans returns a list of all currently banned accounts and nodes stored in
+// the auctioneer's database.
 func (s *adminRPCServer) ListBans(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.ListBansResponse, error) {
 
@@ -432,6 +459,7 @@ func (s *adminRPCServer) ListBans(ctx context.Context,
 	}, nil
 }
 
+// RemoveBan removes the ban for either a node or account ID.
 func (s *adminRPCServer) RemoveBan(ctx context.Context,
 	req *adminrpc.RemoveBanRequest) (*adminrpc.EmptyResponse, error) {
 
@@ -464,6 +492,9 @@ func (s *adminRPCServer) RemoveBan(ctx context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
+// RemoveReservation removes the reservation of either an account key or an LSAT
+// ID. This can be used to manually un-stuck a trader that crashed during the
+// account funding process.
 func (s *adminRPCServer) RemoveReservation(ctx context.Context,
 	req *adminrpc.RemoveReservationRequest) (*adminrpc.EmptyResponse, error) {
 
@@ -493,6 +524,52 @@ func (s *adminRPCServer) RemoveReservation(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
+// FundingConflicts returns a map of all recorded channel funding conflicts that
+// occurred during match making attempts. These conflicts are recorded if two
+// nodes either can't connect to each other or the channel funding negotiation
+// fails for another reason. An entry in this list will prevent the match maker
+// from matching orders between the two reported nodes in the future. The
+// conflict is currently only held in memory and won't survive a restart of the
+// auctioneer.
+func (s *adminRPCServer) FundingConflicts(context.Context,
+	*adminrpc.EmptyRequest) (*adminrpc.FundingConflictsResponse, error) {
+
+	resp := &adminrpc.FundingConflictsResponse{
+		Conflicts: make(map[string]*adminrpc.ConflictList),
+	}
+	conflictMap := s.auctioneer.cfg.FundingConflicts.Export()
+	for reporter, subjectMap := range conflictMap {
+		var rpcConflicts []*adminrpc.Conflict
+		for subject, conflicts := range subjectMap {
+			for _, conflict := range conflicts {
+				subjectHex := hex.EncodeToString(subject[:])
+				rpcConflict := &adminrpc.Conflict{
+					Subject:         subjectHex,
+					Reason:          conflict.Reason,
+					ReportTimestamp: conflict.Reported.Unix(),
+				}
+				rpcConflicts = append(rpcConflicts, rpcConflict)
+			}
+		}
+
+		reporterHex := hex.EncodeToString(reporter[:])
+		resp.Conflicts[reporterHex] = &adminrpc.ConflictList{
+			Conflicts: rpcConflicts,
+		}
+	}
+
+	return resp, nil
+}
+
+// ClearConflicts removes all entries in the funding conflict map.
+func (s *adminRPCServer) ClearConflicts(context.Context,
+	*adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
+
+	s.auctioneer.cfg.FundingConflicts.Clear()
 
 	return &adminrpc.EmptyResponse{}, nil
 }

@@ -26,7 +26,7 @@ func (x *daemonCommand) Execute(_ []string) error {
 		os.Exit(0)
 	}
 
-	signal.Intercept()
+	_ = signal.Intercept()
 
 	// Enable http profiling and Validate profile port number if reqeusted.
 	if x.cfg.Profile != "" {

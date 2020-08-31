@@ -141,12 +141,6 @@ type TraderAcceptMsg struct {
 
 	// Trader is the trader that's accepting this batch.
 	Trader *ActiveTrader
-
-	// Orders is the set of orders they wish to accept.
-	//
-	// TODO(roasbeef): remove? no way to accept only part of them, as they
-	// should accept if all are valid
-	Orders []order.Nonce
 }
 
 // Src returns the trader that sent us this message.
@@ -165,6 +159,9 @@ type TraderRejectMsg struct {
 	// Trader is the trader that's rejecting this batch.
 	Trader *ActiveTrader
 
+	// Type denotes the type of the reject.
+	Type RejectType
+
 	// Reason is a human-readable string that describes why the batch was
 	// rejected.
 	Reason string
@@ -174,6 +171,27 @@ type TraderRejectMsg struct {
 //
 // NOTE: This method is a part of the TraderMsg interface.
 func (m *TraderRejectMsg) Src() matching.AccountID {
+	return m.Trader.AccountKey
+}
+
+// TraderPartialRejectMsg is the message a Trader sends to reject the execution
+// of certain orders of a batch.
+type TraderPartialRejectMsg struct {
+	// BatchID is the batch ID of the pending batch.
+	BatchID order.BatchID
+
+	// Trader is the trader that's rejecting this batch.
+	Trader *ActiveTrader
+
+	// Orders is the map of orders they wish to reject and the reasons for
+	// rejecting them.
+	Orders OrderRejectMap
+}
+
+// Src returns the trader that sent us this message.
+//
+// NOTE: This method is a part of the TraderMsg interface.
+func (m *TraderPartialRejectMsg) Src() matching.AccountID {
 	return m.Trader.AccountKey
 }
 
@@ -281,6 +299,29 @@ type AccountWatcher interface {
 	WatchMatchedAccounts(context.Context, [][33]byte) error
 }
 
+// ExecutorConfig is a struct that holds all configuration items passed to an
+// executor.
+type ExecutorConfig struct {
+	// Store is the store that can hold the execution state and other data.
+	Store ExecutorStore
+
+	// Signer can sign batch inputs.
+	Signer lndclient.SignerClient
+
+	// BatchStorer can persist a batch after it's been completed.
+	BatchStorer BatchStorer
+
+	// AccountWatcher can watch account outputs on chain for confirmations
+	// and spends.
+	AccountWatcher AccountWatcher
+
+	// TraderMsgTimeout is the maximum time we allow a trader to take for
+	// one individual step in the batch signing conversation. If a trader
+	// takes longer than that it is timed out and removed from the current
+	// batch.
+	TraderMsgTimeout time.Duration
+}
+
 // BatchExecutor is the primary state machine that executes a cleared batch.
 // Execution entails orchestrating the creation of hall the channels purchased
 // in the batch, and also gathering the signatures of all the input in the
@@ -302,40 +343,23 @@ type BatchExecutor struct {
 	// execution is sent.
 	venueEvents chan EventTrigger
 
-	// traderMsgTimeout is the amount of time we'll wait for a trader to
-	// send us an expected message.
-	traderMsgTimeout time.Duration
+	cfg *ExecutorConfig
 
 	sync.RWMutex
-
-	store ExecutorStore
-
-	batchStorer BatchStorer
-
-	accountWatcher AccountWatcher
-
-	signer lndclient.SignerClient
 
 	quit chan struct{}
 	wg   sync.WaitGroup
 }
 
-// NewBatchExecutor creates a new BatchExecutor given the database, and a
-// signer that's able to sign for the master account output.
-func NewBatchExecutor(store ExecutorStore, signer lndclient.SignerClient,
-	traderMsgTimeout time.Duration, batchStorer BatchStorer,
-	accountWatcher AccountWatcher) *BatchExecutor {
-
+// NewBatchExecutor creates a new BatchExecutor given the execution
+// configuration.
+func NewBatchExecutor(cfg *ExecutorConfig) *BatchExecutor {
 	return &BatchExecutor{
-		quit:             make(chan struct{}),
-		activeTraders:    make(map[matching.AccountID]*ActiveTrader),
-		signer:           signer,
-		newBatches:       make(chan *executionReq),
-		store:            store,
-		venueEvents:      make(chan EventTrigger),
-		traderMsgTimeout: traderMsgTimeout,
-		batchStorer:      batchStorer,
-		accountWatcher:   accountWatcher,
+		cfg:           cfg,
+		quit:          make(chan struct{}),
+		activeTraders: make(map[matching.AccountID]*ActiveTrader),
+		newBatches:    make(chan *executionReq),
+		venueEvents:   make(chan EventTrigger),
 	}
 }
 
@@ -458,7 +482,7 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 		InputIndex:    int(traderAcctInput.InputIndex),
 		SigHashes:     txscript.NewTxSigHashes(batchTx),
 	}
-	auctioneerSigs, err := b.signer.SignOutputRaw(
+	auctioneerSigs, err := b.cfg.Signer.SignOutputRaw(
 		context.Background(), batchTx, []*input.SignDescriptor{signDesc},
 	)
 	if err != nil {
@@ -528,7 +552,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// Now that we know the batch is valid, we'll construct the
 		// execution context we need to push things forward, which
 		// includes the final batch execution transaction.
-		masterAcct, err := b.store.FetchAuctioneerAccount(ctxb)
+		masterAcct, err := b.cfg.Store.FetchAuctioneerAccount(ctxb)
 		if err != nil {
 			return 0, env, err
 		}
@@ -619,31 +643,68 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// last one we need.
 		case MsgRecv:
 			// As we've received a message from this trader, we can
-			// cancel the timer as they've behaving as expected.
-			//
-			// TODO(roasbeef): if it's a reject message
-			//  * hard bail out?
-			//  * instruct to remove then try again? (as could be
-			//    malicious)
+			// cancel the timer as they're behaving as expected.
 			msgRecv := event.(*msgRecvEvent)
-			_, ok := msgRecv.msg.(*TraderAcceptMsg)
-			if !ok {
-				log.Errorf("expected "+
-					"OrdrMatchAccept, instead got %T",
-					msgRecv.msg)
+
+			// React depending on the type of the message the trader
+			// sent us.
+			switch m := msgRecv.msg.(type) {
+			// This is bad: The trader either disagrees with our
+			// batch calculation or failed hard during the setup
+			// part. We'll just exclude the trader completely from
+			// this batch.
+			case *TraderRejectMsg:
+				log.Warnf("Received TraderRejectMsg from "+
+					"trader=%x", m.Src())
+
+				b.handleFullReject(m, &env)
+
+			// The trader rejected part of the batch either because
+			// of a problem or because of a preference. We don't
+			// want to remove any orders from the match making
+			// process completely. Instead we just note these
+			// conflicts in our conflict trackers and give the match
+			// maker a chance to find more suitable matches.
+			case *TraderPartialRejectMsg:
+				// Add the rejected orders/peers to our conflict
+				// trackers according to the reject reason sent
+				// by the trader. This also marks this trader
+				// as having responded while giving all other
+				// traders a chance to still respond.
+				b.handlePartialReject(m, &env)
+
+			// The trader accepted the batch.
+			case *TraderAcceptMsg:
+				log.Debugf("Received OrderMatchAccept from "+
+					"trader=%x", m.Src())
+
+				env.cancelTimerForTrader(m.Src())
+
+			// We got a message that we don't expect at this time.
+			default:
+				log.Errorf("expected accept or reject msg, "+
+					"instead got %T", msgRecv.msg)
 
 				return PrepareSent, env, nil
 			}
-
-			log.Debugf("Received OrderMatchAccept from trader=%x",
-				msgRecv.msg.Src())
-
-			env.cancelTimerForTrader(msgRecv.msg.Src())
 
 			// If there're no more active timers, then we can
 			// advance to the next phase, as we received all the
 			// intended messages.
 			if env.noTimersActive() {
+				// In case we have any rejects, we need to
+				// signal now that the match making has to be
+				// started over.
+				if len(env.rejectingTraders) > 0 {
+					rejects := env.rejectingTraders
+					env.tempErr = &ErrReject{
+						RejectingTraders: rejects,
+					}
+					return BatchTempError, env, nil
+				}
+
+				// Otherwise we have a successful batch
+				// preparation.
 				log.Infof("All traders accepted batch, " +
 					"entering signing phase")
 
@@ -691,12 +752,58 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 			// Now that we've stopped their message timer, we'll
 			// check to see that this is the message we expect, and
-			// the user specified a witness for their account. If a
-			// trader sent the wrong message, then we'll treat that
-			// as a no-op to ensure a single trader can't disrupt
-			// the entire state machine.
-			signMsg, ok := msgRecv.msg.(*TraderSignMsg)
-			if !ok {
+			// the user specified a witness for their account.
+			// React depending on the type of the message the trader
+			// sent us.
+			switch m := msgRecv.msg.(type) {
+			// The trader rejected part of the batch either because
+			// of a problem or because of a preference. We don't
+			// want to remove any orders from the match making
+			// process completely. Instead we just note these
+			// conflicts in our conflict trackers and give the match
+			// maker a chance to find more suitable matches.
+			case *TraderPartialRejectMsg:
+				// Add the rejected orders/peers to our conflict
+				// trackers according to the reject reason sent
+				// by the trader. This also marks this trader
+				// as having responded while giving all other
+				// traders a chance to still respond.
+				b.handlePartialReject(m, &env)
+
+				// We can't continue here. Are we done yet or
+				// do we need to wait for more messages?
+				if env.noTimersActive() {
+					// As this is the last message and it's
+					// a reject, we can now return the
+					// temporary failure causing the batch
+					// to go back into the match making
+					// phase.
+					rejects := env.rejectingTraders
+					env.tempErr = &ErrReject{
+						RejectingTraders: rejects,
+					}
+					return BatchTempError, env, nil
+				}
+
+				// Give the other traders a chance to respond.
+				return BatchSigning, env, nil
+
+			// The trader accepted the batch.
+			case *TraderSignMsg:
+				log.Debugf("Received OrderMatchSign from "+
+					"trader=%x", src)
+
+				// As we've received the expected message from
+				// this trader, we'll cancel it timer now,
+				// draining out the channel if it already
+				// ticked. Then we continue with extracting the
+				// signature below.
+				env.cancelTimerForTrader(src)
+
+			// If a trader sent the wrong message, then we'll treat
+			// that as a no-op to ensure a single trader can't
+			// disrupt the entire state machine.
+			default:
 				log.Errorf("expected "+
 					"OrderMatchSign, instead got %T",
 					msgRecv.msg)
@@ -704,17 +811,21 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchSigning, env, nil
 			}
 
-			log.Debugf("Received OrderMatchSign from trader=%x",
-				msgRecv.msg.Src())
-
-			// As we've received the expected message from this
-			// trader, we'll cancel it timer now, draining out the
-			// channel if it already ticked.
-			env.cancelTimerForTrader(src)
+			// If we've gotten all messages and there were some
+			// rejects, we need to restart at matchmaking.
+			if env.noTimersActive() && len(env.rejectingTraders) > 0 {
+				rejects := env.rejectingTraders
+				env.tempErr = &ErrReject{
+					RejectingTraders: rejects,
+				}
+				return BatchTempError, env, nil
+			}
 
 			b.RLock()
 			trader := b.activeTraders[src]
 			b.RUnlock()
+
+			signMsg := msgRecv.msg.(*TraderSignMsg)
 			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
 			if !ok {
 				return 0, env, fmt.Errorf("account witness "+
@@ -840,7 +951,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// create the witness for the auctioneer's account point.
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
 		auctioneerWitness, err := env.masterAcct.AccountWitness(
-			b.signer, batchTx, auctioneerInputIndex,
+			b.cfg.Signer, batchTx, auctioneerInputIndex,
 		)
 		if err != nil {
 			return 0, env, err
@@ -863,7 +974,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			BatchTx:           batchTx,
 			LifetimePackages:  env.lifetimePkgs,
 		}
-		if err := b.batchStorer.Store(ctxb, env.result); err != nil {
+		if err := b.cfg.BatchStorer.Store(ctxb, env.result); err != nil {
 			log.Errorf("Failed to store batch: %v", err)
 			return 0, env, err
 		}
@@ -875,7 +986,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		for id := range diffs {
 			matchedAccounts = append(matchedAccounts, id)
 		}
-		err = b.accountWatcher.WatchMatchedAccounts(
+		err = b.cfg.AccountWatcher.WatchMatchedAccounts(
 			ctxb, matchedAccounts,
 		)
 		if err != nil {
@@ -899,6 +1010,76 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 	default:
 		return 0, env, fmt.Errorf("unknown state: %v", currentState)
 	}
+}
+
+// handleFullReject processes the full reject message of a trader. All orders
+// of the trader that were involved in the batch are added to the map of
+// rejected orders as the trader likely won't be able to participate in this or
+// future batches because of technical issues.
+func (b *BatchExecutor) handleFullReject(msg *TraderRejectMsg,
+	env *environment) {
+
+	// The source of the message is the trader rejecting the orders.
+	reporter := msg.Src()
+
+	// We mark this trader as having responded and give all other traders
+	// also a chance to maybe reject parts of the order too. But we track
+	// the reject to flag we have to restart match making and also to detect
+	// potential DoS attacks from too many rejects.
+	env.cancelTimerForTrader(reporter)
+
+	// Add the appropriate entries to the reject report map now for all the
+	// trader's order involved in this batch.
+	rejectMap := make(OrderRejectMap)
+	for _, rejectedOrder := range env.traderToOrders[reporter] {
+		rejectMap[rejectedOrder] = &Reject{
+			Type:   msg.Type,
+			Reason: msg.Reason,
+		}
+	}
+
+	// We simply store the rejected orders with the reasons. The auctioneer
+	// will do the more detailed check and rate limiting of the actual
+	// reject messages.
+	env.rejectingTraders[reporter] = rejectMap
+}
+
+// handlePartialReject processes the partial reject message of a trader. The
+// local and remote node of the two matched orders are extracted and, depending
+// on the type of reported conflict, the two nodes are reported to the conflict
+// handler responsible for that type of conflict.
+func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
+	env *environment) {
+
+	// The source of the message is the trader rejecting the orders.
+	reporter := msg.Src()
+
+	// We mark this trader as having responded and give all other traders
+	// also a chance to maybe reject parts of the order too. But we track
+	// the reject to flag we have to restart match making and also to detect
+	// potential DoS attacks from too many rejects.
+	env.cancelTimerForTrader(reporter)
+
+	// The executor gets de-multiplexed messages from the RPC. That means if
+	// a trader daemon has multiple accounts, we get the same message for
+	// all those accounts. We first need to make sure the reporter is even
+	// involved in the batch. If not, we simply skip adding an entry.
+	var involvedOrders []matching.MatchedOrder
+	for _, orderPair := range env.batch.Orders {
+		if orderPair.Asker.AccountKey == reporter ||
+			orderPair.Bidder.AccountKey == reporter {
+
+			involvedOrders = append(involvedOrders, orderPair)
+		}
+	}
+	if len(involvedOrders) == 0 {
+		return
+	}
+
+	// If the reporter was involved, we simply store the rejected orders
+	// with the reasons. The auctioneer will do the more detailed check and
+	// rate limiting of the actual reject messages.
+	env.rejectingTraders[reporter] = msg.Orders
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new
@@ -946,7 +1127,7 @@ func (b *BatchExecutor) executor() {
 
 				// We transitioned successfully, so we'll go
 				// ahead and store that new state now.
-				err := b.store.UpdateExecutionState(exeState)
+				err := b.cfg.Store.UpdateExecutionState(exeState)
 				if err != nil {
 					log.Errorf("unable to update "+
 						"execution state: %v", err)
@@ -988,7 +1169,7 @@ func (b *BatchExecutor) executor() {
 			// always need to use the same ID. Only after clearing
 			// the batch, the ID is increased and stored as the ID
 			// to use for the next batch.
-			batchKey, err := b.store.BatchKey(batchCtx)
+			batchKey, err := b.cfg.Store.BatchKey(batchCtx)
 			if err != nil {
 				log.Errorf("Nope, couldn't get batch key!")
 
@@ -1004,7 +1185,7 @@ func (b *BatchExecutor) executor() {
 
 			exeState = NoActiveBatch
 
-			msgTimers := newMsgTimers(b.traderMsgTimeout)
+			msgTimers := newMsgTimers(b.cfg.TraderMsgTimeout)
 			env = newEnvironment(
 				newBatch, batchKey, msgTimers,
 			)
@@ -1124,7 +1305,7 @@ func (b *BatchExecutor) syncTraderState() error {
 		if err != nil {
 			return err
 		}
-		diskTraderAcct, err := b.store.Account(
+		diskTraderAcct, err := b.cfg.Store.Account(
 			context.Background(), acctKey, false,
 		)
 		if err != nil {

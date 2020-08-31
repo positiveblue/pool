@@ -39,9 +39,21 @@ type traderConfig struct {
 	BaseDir        string
 }
 
+// traderCfgOpt is a function type that can manipulate the trader's config
+// options.
+type traderCfgOpt func(*llm.Config)
+
+func newNodesOnlyOpt() traderCfgOpt {
+	return func(cfg *llm.Config) {
+		cfg.NewNodesOnly = true
+	}
+}
+
 // newTraderHarness creates a new trader server harness with the given
 // configuration.
-func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
+func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
+	error) {
+
 	if cfg.BaseDir == "" {
 		var err error
 		cfg.BaseDir, err = ioutil.TempDir("", "itest-llmd")
@@ -61,27 +73,33 @@ func newTraderHarness(cfg traderConfig) (*traderHarness, error) {
 		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
 	)
 
-	return &traderHarness{
-		cfg:      &cfg,
-		listener: listener,
-		clientCfg: &llm.Config{
-			LogDir:         ".",
-			MaxLogFiles:    99,
-			MaxLogFileSize: 999,
-			Network:        cfg.NetParams.Name,
-			Insecure:       true,
-			FakeAuth:       true,
-			BaseDir:        cfg.BaseDir,
-			DebugLevel:     "debug",
-			MinBackoff:     100 * time.Millisecond,
-			MaxBackoff:     500 * time.Millisecond,
-			RPCListener:    listener,
-			Lnd: &llm.LndConfig{
-				Host:        cfg.LndNode.Cfg.RPCAddr(),
-				MacaroonDir: rpcMacaroonDir,
-				TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
-			},
+	traderCfg := &llm.Config{
+		LogDir:         ".",
+		MaxLogFiles:    99,
+		MaxLogFileSize: 999,
+		Network:        cfg.NetParams.Name,
+		Insecure:       true,
+		FakeAuth:       true,
+		BaseDir:        cfg.BaseDir,
+		DebugLevel:     "debug",
+		MinBackoff:     100 * time.Millisecond,
+		MaxBackoff:     500 * time.Millisecond,
+		RPCListener:    listener,
+		NewNodesOnly:   false,
+		Lnd: &llm.LndConfig{
+			Host:        cfg.LndNode.Cfg.RPCAddr(),
+			MacaroonDir: rpcMacaroonDir,
+			TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
 		},
+	}
+	for _, opt := range opts {
+		opt(traderCfg)
+	}
+
+	return &traderHarness{
+		cfg:       &cfg,
+		listener:  listener,
+		clientCfg: traderCfg,
 	}, nil
 }
 

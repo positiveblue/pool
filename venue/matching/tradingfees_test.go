@@ -73,7 +73,7 @@ const clearingPrice = orderT.FixedRatePremium(10000)
 func TestTradingReportCompletion(t *testing.T) {
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	acctDB, _, _ := newAcctCacher()
 
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,
@@ -125,7 +125,7 @@ func TestTradingReportCompletion(t *testing.T) {
 func TestTradingReportGeneration(t *testing.T) {
 	t.Parallel()
 
-	acctDB := newAcctFetcher()
+	acctDB, _, _ := newAcctCacher()
 
 	feeSchedule := mockFeeSchedule{
 		baseFee:    1,

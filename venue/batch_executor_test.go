@@ -140,10 +140,13 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		t:             t,
 		store:         store,
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
-		executor: NewBatchExecutor(
-			store, signer, msgTimeout, NewExeBatchStorer(store),
-			watcher,
-		),
+		executor: NewBatchExecutor(&ExecutorConfig{
+			Store:            store,
+			Signer:           signer,
+			BatchStorer:      NewExeBatchStorer(store),
+			AccountWatcher:   watcher,
+			TraderMsgTimeout: msgTimeout,
+		}),
 		watcher: watcher,
 	}
 }
@@ -320,6 +323,35 @@ func (e *executorTestHarness) SendAcceptMsg(senders ...*ActiveTrader) {
 	}
 }
 
+func (e *executorTestHarness) SendRejectMsg(sender *ActiveTrader,
+	rejectType RejectType) {
+
+	var rejectMsg TraderMsg
+
+	switch rejectType {
+	case PartialRejectFundingFailed,
+		PartialRejectDuplicatePeer:
+		rejectMsg = &TraderRejectMsg{
+			Trader: sender,
+			Type:   rejectType,
+			Reason: "mismatch",
+		}
+
+	case FullRejectUnknown,
+		FullRejectServerMisbehavior,
+		FullRejectBatchVersionMismatch:
+
+		rejectMsg = &TraderPartialRejectMsg{
+			Trader: sender,
+			Orders: map[order.Nonce]*Reject{},
+		}
+	}
+
+	if err := e.executor.HandleTraderMsg(rejectMsg); err != nil {
+		e.t.Fatalf("unable to send msg: %v", err)
+	}
+}
+
 func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 	sender *ActiveTrader, action invalidSignAction) {
 
@@ -464,6 +496,20 @@ func (e *executorTestHarness) AssertMsgTimeoutErr(err error,
 	if traderErr.Trader != slowTrader {
 		e.t.Fatalf("%x not found as slow trader",
 			slowTrader[:])
+	}
+}
+
+func (e *executorTestHarness) AssertMsgRejectErr(err error,
+	rejectingTrader matching.AccountID) {
+
+	traderErr, ok := err.(*ErrReject)
+	if !ok {
+		e.t.Fatalf("expected ErrReject instead got: %T", err)
+	}
+
+	if _, ok := traderErr.RejectingTraders[rejectingTrader]; !ok {
+		e.t.Fatalf("%x not found as rejecting trader",
+			rejectingTrader[:])
 	}
 }
 
@@ -620,7 +666,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	copy(mad.AuctioneerKey[:], masterAcct.AuctioneerKey.PubKey.SerializeCompressed())
 
 	// We'll now register both traders as online so we're able to proceed
-	// as expected (though we may delay some messages at a point.
+	// as expected (though we may delay some messages at a point).
 	testCtx.RegisterTrader(smallAcct)
 	testCtx.RegisterTrader(bigAcct)
 
@@ -642,8 +688,13 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// stepPrepareToSign handles simulating execution up to the
 	// BatchSigning phase. If a slow trader is specified, then we'll have
 	// them hold back the accept message to trigger our error handling.
+	// If a rejecting trader is specified, the execution will be halted with
+	// a reject error.
 	stepPrepareToSign := func(slowTrader *matching.AccountID,
-		fastTraders ...*ActiveTrader) {
+		rejectingTrader *ActiveTrader, rejectType *RejectType,
+		acceptingTraders ...*ActiveTrader) {
+
+		t.Helper()
 
 		// At this point, both of our active traders should have the
 		// prepare message sent to them.
@@ -657,19 +708,58 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		testCtx.AssertStateTransitions(PrepareSent)
 		testCtx.AssertStateTransitions(PrepareSent)
 
+		// If we have a full or partially rejecting trader, then we'll
+		// assert that we don't immediately transition to an error state
+		// because this is just the first message and the executor
+		// should wait until all messages arrived.
+		if rejectingTrader != nil {
+			testCtx.SendRejectMsg(rejectingTrader, *rejectType)
+
+			// The executioner should not yet go into the error
+			// state as there are still messages to be received.
+			testCtx.AssertStateTransitions(PrepareSent)
+		}
+
 		// Next, we'll send the accept message, but only for the set of
-		// fast traders. As a result, this should trip our expiry timer
-		// shortly.
-		//
-		// TODO(roasbeef): also the reject msg codepath
-		for i, fastTrader := range fastTraders {
+		// fast, accepting traders. As a result, this should trip our
+		// expiry timer shortly.
+		for i, fastTrader := range acceptingTraders {
 			testCtx.SendAcceptMsg(fastTrader)
 
-			// If this is the last trader, and we don't have a slow
-			// trader, then we'll transition to BatchSigning and
-			// can exit here.
-			if slowTrader == nil && i == len(fastTraders)-1 {
+			lastTrader := i == len(acceptingTraders)-1
+			goodTradersOnly := slowTrader == nil &&
+				rejectingTrader == nil
+
+			// If this isn't the last responding trader, we expect
+			// no change in the auction state.
+			if !lastTrader {
+				testCtx.AssertStateTransitions(PrepareSent)
+				continue
+			}
+
+			// This was the last of the accepting traders to respond
+			// now. Should this result in a success or failure now?
+			switch {
+			// If this is the last trader, and we don't have any
+			// interrupting traders, then we'll transition to
+			// BatchSigning and can exit here.
+			case goodTradersOnly:
 				testCtx.AssertStateTransitions(BatchSigning)
+				return
+
+			// If there is a trader that rejected the batch, we now
+			// should transition into the temporary error state.
+			case rejectingTrader != nil:
+				testCtx.AssertStateTransitions(BatchTempError)
+
+				// We should now receive an execution error
+				// which singles out that one trader as the one
+				// that rejected the batch.
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertMsgRejectErr(
+					exeErr, rejectingTrader.AccountKey,
+				)
+
 				return
 			}
 
@@ -694,25 +784,38 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			// send the message in time.
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertMsgTimeoutErr(exeErr, *slowTrader)
-
-			return
 		}
 	}
 
 	// We'll test the timeout handling of the transition from NoActiveBatch
 	// -> PrepareSent -> BatchSigning. We'll have the big trader be the one
 	// that fails to send the prepare message.
-	stepPrepareToSign(&bigTrader.AccountKey, activeSmallTrader)
+	stepPrepareToSign(&bigTrader.AccountKey, nil, nil, activeSmallTrader)
+
+	// We'll now re-submit the batch once again, this time with a trader
+	// that will fully reject the batch.
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
+	reject := FullRejectBatchVersionMismatch
+	stepPrepareToSign(nil, activeBigTrader, &reject, activeSmallTrader)
+
+	// We try yet again but this time with a trader that partially rejects
+	// the batch.
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
+	reject = PartialRejectDuplicatePeer
+	stepPrepareToSign(nil, activeBigTrader, &reject, activeSmallTrader)
 
 	// We'll now re-submit the batch once again, this time, sending all
 	// accept messages for each trader, which should transition us to the
 	// next phase.
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
-	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
+	stepPrepareToSign(nil, nil, nil, activeSmallTrader, activeBigTrader)
 
 	stepSignToFinalize := func(action invalidSignAction,
-		slowTrader *matching.AccountID, fastTraders ...*ActiveTrader) {
+		slowTrader *matching.AccountID, rejectingTrader *ActiveTrader,
+		fastTraders ...*ActiveTrader) {
 
 		t.Helper()
 
@@ -725,6 +828,20 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		// as we self-loop waiting for responses.
 		testCtx.AssertStateTransitions(BatchSigning)
 
+		// If we have a partially rejecting trader, then we'll again
+		// assert that we don't immediately transition to an error state
+		// because this is just the first message and the executor
+		// should wait until all messages arrived.
+		if rejectingTrader != nil {
+			testCtx.SendRejectMsg(
+				rejectingTrader, PartialRejectFundingFailed,
+			)
+
+			// The executioner should not yet go into the error
+			// state as there are still messages to be received.
+			testCtx.AssertStateTransitions(BatchSigning)
+		}
+
 		// We'll now send all sig messages for all the fast traders.
 		batchCopy := orderBatch.Copy()
 		batchCtx, err := batchtx.New(&batchCopy, mad, batchFeeRate)
@@ -736,13 +853,15 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 				batchCtx, fastTrader, action,
 			)
 
-			// If this is the last trader, and we don't have a slow
-			// trader, and all sigs are valid, then we should
-			// transition to the finalize phase assuming those were
-			// all valid signatures.
-			if slowTrader == nil && i == len(fastTraders)-1 &&
-				action == noAction {
+			lastTrader := i == len(fastTraders)-1
+			goodTradersOnly := slowTrader == nil &&
+				rejectingTrader == nil
 
+			// If this is the last trader, and we don't have a slow
+			// or rejecting trader, and all sigs are valid, then we
+			// should transition to the finalize phase assuming
+			// those were all valid signatures.
+			if goodTradersOnly && lastTrader && action == noAction {
 				testCtx.AssertStateTransitions(BatchFinalize)
 				return
 			}
@@ -762,6 +881,16 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			testCtx.AssertStateTransitions(BatchTempError)
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertMsgTimeoutErr(exeErr, *slowTrader)
+
+		// If we had a rejecting trader, then we'll ensure that we go
+		// to the expected error state, and also that the rejecting
+		// trader was flagged as the one that didn't accept the batch.
+		case rejectingTrader != nil:
+			testCtx.AssertStateTransitions(BatchTempError)
+			exeErr := testCtx.ExpectExecutionError(respChan)
+			testCtx.AssertMsgTimeoutErr(
+				exeErr, rejectingTrader.AccountKey,
+			)
 
 		// On the other hand, if we sent an invalid sig above, then we
 		// expect that we go to the error state, but emit a distinct
@@ -799,12 +928,24 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	}
 
 	// Similar to the scenario above, we'll execute this step once with one
-	// trader failing to send their sigs, and then another time with a
-	// trader sending an invalid sig before we move forward.
+	// trader failing to send their sigs, once with a trader rejecting part
+	// of the order because of a funding failure, and then another time with
+	// a trader sending an invalid sig before we move forward.
 	//
 	// First, we'll hold back the OrderMatchSign response for one of the
 	// traders, we should fail out with a message time out error.
-	stepSignToFinalize(noAction, &bigTrader.AccountKey, activeSmallTrader)
+	stepSignToFinalize(
+		noAction, &bigTrader.AccountKey, nil, activeSmallTrader,
+	)
+
+	// Next, we'll make sure a rejecting trader results in a new match
+	// making process.
+	batch = orderBatch.Copy()
+	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
+	stepPrepareToSign(nil, nil, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(
+		noAction, nil, activeBigTrader, activeSmallTrader,
+	)
 
 	// TODO(roasbeef): timer not ticking for some reason
 
@@ -813,8 +954,10 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// we can't proceed with an invalid input.
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
-	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
-	stepSignToFinalize(invalidSig, nil, activeSmallTrader, activeBigTrader)
+	stepPrepareToSign(nil, nil, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(
+		invalidSig, nil, nil, activeSmallTrader, activeBigTrader,
+	)
 
 	// Both signatures will be invalid, but we'll reset everything after
 	// the first invalid signature is found, leaving the second to still be
@@ -827,8 +970,10 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// out as we can't proceed.
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
-	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
-	stepSignToFinalize(missingChanInfo, nil, activeSmallTrader, activeBigTrader)
+	stepPrepareToSign(nil, nil, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(
+		missingChanInfo, nil, nil, activeSmallTrader, activeBigTrader,
+	)
 
 	// Both signatures will be invalid, but we'll reset everything after
 	// the first invalid signature is found, leaving the second to still be
@@ -841,16 +986,20 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// out as we can't proceed.
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
-	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
-	stepSignToFinalize(invalidChanInfo, nil, activeSmallTrader, activeBigTrader)
+	stepPrepareToSign(nil, nil, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(
+		invalidChanInfo, nil, nil, activeSmallTrader, activeBigTrader,
+	)
 
 	// Now we'll move forward with no slow traders and no invalid
 	// signatures, we should proceed to the finalize phase and end up with
 	// a final valid batch.
 	batch = orderBatch.Copy()
 	respChan = testCtx.SubmitBatch(&batch, batchFeeRate)
-	stepPrepareToSign(nil, activeSmallTrader, activeBigTrader)
-	stepSignToFinalize(noAction, nil, activeSmallTrader, activeBigTrader)
+	stepPrepareToSign(nil, nil, nil, activeSmallTrader, activeBigTrader)
+	stepSignToFinalize(
+		noAction, nil, nil, activeSmallTrader, activeBigTrader,
+	)
 
 	// At this point, all parties should now receive a finalize message,
 	// which signals the completion of this batch execution.

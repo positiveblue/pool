@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/subasta"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd"
@@ -252,13 +253,14 @@ func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
 // setupTraderHarness creates a new trader that connects to the given lnd node
 // and to the given auction server.
 func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
-	node *lntest.HarnessNode, auctioneer *auctioneerHarness) *traderHarness {
+	node *lntest.HarnessNode, auctioneer *auctioneerHarness,
+	opts ...traderCfgOpt) *traderHarness {
 
 	traderHarness, err := newTraderHarness(traderConfig{
 		BackendCfg: backend,
 		NetParams:  harnessNetParams,
 		LndNode:    node,
-	})
+	}, opts)
 	if err != nil {
 		t.Fatalf("could not create trader server: %v", err)
 	}
@@ -526,6 +528,29 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 	}
 }
 
+// assertAuctionState asserts that the auctioneer is in the given state.
+func assertAuctionState(t *harnessTest, state subasta.AuctionState) {
+	ctx := context.Background()
+	err := wait.NoError(func() error {
+		status, err := t.auctioneer.AuctionStatus(
+			ctx, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("unable to retrieve status: %v", err)
+		}
+
+		if status.AuctionState != state.String() {
+			return fmt.Errorf("expected auction state %v, got %v",
+				state, status.AuctionState)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf(err.Error())
+	}
+}
+
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
 func openAccountAndAssert(t *harnessTest, trader *traderHarness,
@@ -758,6 +783,25 @@ func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode,
 	if err != nil {
 		t.Fatalf("pending channel assertion failed: %v", err)
 	}
+}
+
+func assertNumPendingChannels(t *harnessTest, node *lntest.HarnessNode,
+	numChans int) {
+
+	req := &lnrpc.PendingChannelsRequest{}
+	err := wait.NoError(func() error {
+		resp, err := node.PendingChannels(context.Background(), req)
+		require.NoError(t.t, err)
+
+		if len(resp.PendingOpenChannels) != numChans {
+			return fmt.Errorf("num channel mismatch: expected %v, "+
+				"got %v", numChans,
+				len(resp.PendingOpenChannels))
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	require.NoError(t.t, err)
 }
 
 // completePaymentRequests sends payments from a lightning node to complete all
@@ -1170,32 +1214,44 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	return closingTxid
 }
 
-func executeBatch(t *harnessTest) *chainhash.Hash {
+func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
+	[]*chainhash.Hash) {
+
 	ctx := context.Background()
 
 	// Let's kick the auctioneer now to try and create a batch.
 	_, err := t.auctioneer.AuctionAdminClient.BatchTick(
 		ctx, &adminrpc.EmptyRequest{},
 	)
-	if err != nil {
-		t.Fatalf("could not trigger batch tick: %v", err)
-	}
+	require.NoError(t.t, err)
+
+	// Before we check anything else, let's first wait for the auctioneer
+	// to do its job and then return back to its "waiting" state where new
+	// orders are accepted.
+	assertAuctionState(t, subasta.OrderSubmitState)
 
 	// At this point, the batch should now attempt to be cleared, and find
 	// that we're able to make a market. Eventually the batch execution
 	// transaction should be broadcast to the mempool.
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Node, expectedMempoolTxns,
+		minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("txid not found in mempool: %v", err)
+	require.NoError(t.t, err)
+
+	if len(txids) != expectedMempoolTxns {
+		t.Fatalf("expected %d transaction(s), instead have: %v",
+			expectedMempoolTxns, spew.Sdump(txids))
 	}
 
-	if len(txids) != 1 {
-		t.Fatalf("expected a single transaction, instead have: %v",
-			spew.Sdump(txids))
+	msgTxs := make([]*wire.MsgTx, len(txids))
+	for idx, txid := range txids {
+		tx, err := t.lndHarness.Miner.Node.GetRawTransaction(txid)
+		require.NoError(t.t, err)
+		msgTxs[idx] = tx.MsgTx()
+
 	}
-	return txids[0]
+	return msgTxs, txids
 }
 
 func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
@@ -1255,4 +1311,20 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 	)
 
 	return withdrawTxid, valueAfterWithdrawal
+}
+
+// shutdownAndAssert shuts down the given node and asserts that no errors
+// occur.
+func shutdownAndAssert(t *harnessTest, node *lntest.HarnessNode,
+	trader *traderHarness) {
+
+	if trader != nil {
+		if err := trader.stop(); err != nil {
+			t.Fatalf("unable to shutdown trader: %v", err)
+		}
+	}
+
+	if err := t.lndHarness.ShutdownNode(node); err != nil {
+		t.Fatalf("unable to shutdown %v: %v", node.Name(), err)
+	}
 }

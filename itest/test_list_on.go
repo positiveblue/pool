@@ -52,4 +52,12 @@ var testCases = []*testCase{
 		name: "consecutive batch execution",
 		test: testConsecutiveBatches,
 	},
+	{
+		name: "batch partial reject new nodes only",
+		test: testTraderPartialRejectNewNodesOnly,
+	},
+	{
+		name: "batch partial reject funding failure",
+		test: testTraderPartialRejectFundingFailure,
+	},
 }
