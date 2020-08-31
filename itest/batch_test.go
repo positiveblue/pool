@@ -41,6 +41,7 @@ func testBatchExecution(t *harnessTest) {
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
 	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
 	if err != nil {
 		t.Fatalf("unable to send coins to carol: %v", err)
@@ -83,6 +84,7 @@ func testBatchExecution(t *harnessTest) {
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
+	defer shutdownAndAssert(t, dave, thirdTrader)
 	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
 	if err != nil {
 		t.Fatalf("unable to send coins to carol: %v", err)
@@ -426,6 +428,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
 
 	// We fund both traders so they have enough funds to open multiple
 	// accounts.
@@ -644,6 +647,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
 	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
 	if err != nil {
 		t.Fatalf("unable to send coins to carol: %v", err)
@@ -789,6 +793,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
 	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
 	if err != nil {
 		t.Fatalf("unable to send coins to carol: %v", err)
@@ -907,6 +912,7 @@ func testConsecutiveBatches(t *harnessTest) {
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
 	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
 	require.NoError(t.t, err)
 

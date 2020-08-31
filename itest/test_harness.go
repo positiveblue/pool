@@ -1292,3 +1292,19 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 
 	return withdrawTxid, valueAfterWithdrawal
 }
+
+// shutdownAndAssert shuts down the given node and asserts that no errors
+// occur.
+func shutdownAndAssert(t *harnessTest, node *lntest.HarnessNode,
+	trader *traderHarness) {
+
+	if trader != nil {
+		if err := trader.stop(); err != nil {
+			t.Fatalf("unable to shutdown trader: %v", err)
+		}
+	}
+
+	if err := t.lndHarness.ShutdownNode(node); err != nil {
+		t.Fatalf("unable to shutdown %v: %v", node.Name(), err)
+	}
+}
