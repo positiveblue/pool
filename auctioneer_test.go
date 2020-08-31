@@ -39,6 +39,8 @@ var (
 	}
 
 	_, pubKey = btcec.PrivKeyFromBytes(btcec.S256(), key[:])
+
+	defaultFeeSchedule = terms.NewLinearFeeSchedule(1, 1000)
 )
 
 func randomPubKey(t *testing.T) *btcec.PublicKey {
@@ -73,11 +75,18 @@ type mockAuctioneerState struct {
 	bannedAccounts map[matching.AccountID]struct{}
 }
 
-func newMockAuctioneerState(batchKey *btcec.PublicKey) *mockAuctioneerState {
+func newMockAuctioneerState(batchKey *btcec.PublicKey,
+	bufferStateTransitions bool) *mockAuctioneerState {
+
+	stateTransitionsBuffer := 0
+	if bufferStateTransitions {
+		stateTransitionsBuffer = 100
+	}
+
 	return &mockAuctioneerState{
 		state:            DefaultState{},
 		batchKey:         batchKey,
-		stateTransitions: make(chan AuctionState, 100),
+		stateTransitions: make(chan AuctionState, stateTransitionsBuffer),
 		orders:           make(map[orderT.Nonce]order.ServerOrder),
 		batchStates:      make(map[orderT.BatchID]bool),
 		snapshots:        make(map[orderT.BatchID]*wire.MsgTx),
@@ -117,11 +126,11 @@ func (m *mockAuctioneerState) BatchKey(context.Context) (*btcec.PublicKey, error
 }
 
 func (m *mockAuctioneerState) UpdateAuctionState(state AuctionState) error {
+	m.stateTransitions <- state
+
 	m.Lock()
 	m.state = state
 	m.Unlock()
-
-	m.stateTransitions <- state
 
 	return nil
 }
@@ -330,15 +339,32 @@ func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
 		match := matching.MatchedOrder{
 			Asker: matching.Trader{
 				AccountKey: ask.AcctKey,
+				AccountOutPoint: wire.OutPoint{
+					Index: uint32(idx*2 + 1),
+				},
+				BatchKey: toRawKey(pubKey),
+				NextBatchKey: toRawKey(
+					clmscript.IncrementKey(pubKey),
+				),
+				AccountBalance: btcutil.SatoshiPerBitcoin,
 			},
 			Bidder: matching.Trader{
 				AccountKey: bid.AcctKey,
+				AccountOutPoint: wire.OutPoint{
+					Index: uint32(idx*2 + 2),
+				},
+				BatchKey: toRawKey(pubKey),
+				NextBatchKey: toRawKey(
+					clmscript.IncrementKey(pubKey),
+				),
+				AccountBalance: btcutil.SatoshiPerBitcoin,
 			},
 			Details: matching.OrderPair{
 				Bid: bid,
 				Ask: ask,
 				Quote: matching.PriceQuote{
-					UnitsMatched: vol,
+					UnitsMatched:     vol,
+					TotalSatsCleared: vol.ToSatoshis(),
 				},
 			},
 		}
@@ -346,8 +372,22 @@ func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
 		matches = append(matches, match)
 	}
 
+	var priceClearer matching.LastAcceptedBid
+	matchSet := &matching.MatchSet{
+		MatchedOrders: matches,
+	}
+	clearingPrice, err := priceClearer.ExtractClearingPrice(matchSet)
+	if err != nil {
+		return nil, fmt.Errorf("unable to extract clearing price: %v",
+			err)
+	}
+
 	return &matching.OrderBatch{
 		Orders: matches,
+		FeeReport: matching.NewTradingFeeReport(
+			matches, defaultFeeSchedule, clearingPrice,
+		),
+		ClearingPrice: clearingPrice,
 	}, nil
 }
 
@@ -482,16 +522,9 @@ func (m *mockBatchExecutor) NewExecutionContext(batchKey *btcec.PublicKey,
 	batchFeeRate chainfee.SatPerKWeight, feeSchedule terms.FeeSchedule) (
 	*batchtx.ExecutionContext, error) {
 
-	var batchID [33]byte
-	copy(batchID[:], batchKey.SerializeCompressed())
-
-	return &batchtx.ExecutionContext{
-		BatchID:      batchID,
-		FeeSchedule:  feeSchedule,
-		BatchFeeRate: batchFeeRate,
-		MasterAcct:   masterAcct,
-		OrderBatch:   batch,
-	}, nil
+	return batchtx.NewExecutionContext(
+		batchKey, batch, masterAcct, batchFeeRate, feeSchedule,
+	)
 }
 
 func (m *mockBatchExecutor) Submit(exeCtx *batchtx.ExecutionContext) (
@@ -548,8 +581,10 @@ type auctioneerTestHarness struct {
 	channelEnforcer *mockChannelEnforcer
 }
 
-func newAuctioneerTestHarness(t *testing.T) *auctioneerTestHarness {
-	mockDB := newMockAuctioneerState(pubKey)
+func newAuctioneerTestHarness(t *testing.T,
+	bufferStateTransitions bool) *auctioneerTestHarness {
+
+	mockDB := newMockAuctioneerState(pubKey, bufferStateTransitions)
 	wallet := &mockWallet{}
 	notifier := account.NewMockChainNotifier()
 
@@ -725,20 +760,24 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 		return nil, fmt.Errorf("unable to read nonce: %v", err)
 	}
 
-	var acctKey [33]byte
-	if _, err := rand.Read(acctKey[:]); err != nil {
-		return nil, fmt.Errorf("unable to read acct key: %v", err)
-	}
-
 	kit := orderT.NewKit(nonce)
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
-	kit.AcctKey = acctKey
+
+	var acctPrivKey [32]byte
+	if _, err := rand.Read(acctPrivKey[:]); err != nil {
+		return nil, fmt.Errorf("could not create private key: %v", err)
+	}
+	_, acctPubKey := btcec.PrivKeyFromBytes(btcec.S256(), acctPrivKey[:])
+	kit.AcctKey = toRawKey(acctPubKey)
 
 	return &order.Ask{
 		Ask: orderT.Ask{
 			Kit:         *kit,
 			MaxDuration: duration,
+		},
+		Kit: order.Kit{
+			MultiSigKey: kit.AcctKey,
 		},
 	}, nil
 }
@@ -753,10 +792,20 @@ func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
 
+	var acctPrivKey [32]byte
+	if _, err := rand.Read(acctPrivKey[:]); err != nil {
+		return nil, fmt.Errorf("could not create private key: %v", err)
+	}
+	_, acctPubKey := btcec.PrivKeyFromBytes(btcec.S256(), acctPrivKey[:])
+	kit.AcctKey = toRawKey(acctPubKey)
+
 	return &order.Bid{
 		Bid: orderT.Bid{
 			Kit:         *kit,
 			MinDuration: duration,
+		},
+		Kit: order.Kit{
+			MultiSigKey: kit.AcctKey,
 		},
 	}, nil
 }
@@ -1078,10 +1127,14 @@ func TestAuctioneerStateMachineDefaultAccountPresent(t *testing.T) {
 
 	// We'll start our state with a pre-existing account to force the
 	// expected state transition.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 	err := testHarness.db.UpdateAuctioneerAccount(
-		context.Background(),
-		&account.Auctioneer{},
+		context.Background(), &account.Auctioneer{
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: pubKey,
+			},
+			BatchKey: toRawKey(pubKey),
+		},
 	)
 	if err != nil {
 		t.Fatalf("unable to add acct: %v", err)
@@ -1103,7 +1156,7 @@ func TestAuctioneerStateMachineMasterAcctInit(t *testing.T) {
 	t.Parallel()
 
 	// First, we'll start up the auctioneer as normal.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 	testHarness.StartAuctioneer()
 
 	// As we don't have an account on disk, we expect the state machine to
@@ -1171,7 +1224,7 @@ func TestAuctioneerOrderFeederStates(t *testing.T) {
 	t.Parallel()
 
 	// First, we'll start up the auctioneer as normal.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 	testHarness.StartAuctioneer()
 
 	// At this point, if add a new order, then we should see it reflected
@@ -1210,7 +1263,7 @@ func TestAuctioneerLoadDiskOrders(t *testing.T) {
 	t.Parallel()
 
 	// First, we'll start up the auctioneer as normal.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 
 	// Before we start the harness, we'll load a few orders into the
 	// database.
@@ -1247,7 +1300,7 @@ func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 	const numPending = 3
 
 	// First, we'll start up the auctioneer as normal.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 
 	// We'll grab the current batch key, then increment it by every time we
 	// create a new batch below.
@@ -1319,14 +1372,18 @@ func TestAuctioneerBatchTickNoop(t *testing.T) {
 	t.Parallel()
 
 	// First, we'll start up the auctioneer as normal.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 
 	// Before we start things, we'll insert a master account so we can skip
 	// creating the master account and go straight to the order matching
 	// phase.
 	err := testHarness.db.UpdateAuctioneerAccount(
-		context.Background(),
-		&account.Auctioneer{},
+		context.Background(), &account.Auctioneer{
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: pubKey,
+			},
+			BatchKey: toRawKey(pubKey),
+		},
 	)
 	if err != nil {
 		t.Fatalf("unable to add acct: %v", err)
@@ -1361,10 +1418,14 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	t.Parallel()
 
 	// First, we'll start up the auctioneer as normal.
-	testHarness := newAuctioneerTestHarness(t)
+	testHarness := newAuctioneerTestHarness(t, true)
 	err := testHarness.db.UpdateAuctioneerAccount(
-		context.Background(),
-		&account.Auctioneer{},
+		context.Background(), &account.Auctioneer{
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: pubKey,
+			},
+			BatchKey: toRawKey(pubKey),
+		},
 	)
 	if err != nil {
 		t.Fatalf("unable to add acct: %v", err)
@@ -1616,4 +1677,69 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	)
 
 	testHarness.AssertNoStateTransitions()
+}
+
+// TestAuctioneerAllowAccountUpdate tests whether the auctioneer allows account
+// updates throughout the batch lifecycle.
+func TestAuctioneerAllowAccountUpdate(t *testing.T) {
+	t.Parallel()
+
+	// First, we'll start up the auctioneer as normal.
+	testHarness := newAuctioneerTestHarness(t, false)
+
+	// Before we start things, we'll insert a master account so we can skip
+	// creating the master account and go straight to the order matching
+	// phase.
+	err := testHarness.db.UpdateAuctioneerAccount(
+		context.Background(), &account.Auctioneer{
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: pubKey,
+			},
+			BatchKey: toRawKey(pubKey),
+		},
+	)
+	require.NoErrorf(t, err, "unable to update auctioneer account: %v", err)
+
+	go testHarness.StartAuctioneer() // nolint:staticcheck
+	defer testHarness.StopAuctioneer()
+
+	// We should now transition to the order submit state.
+	testHarness.AssertStateTransitions(OrderSubmitState{})
+
+	// We'll submit two orders (an ask and bid pair) to clear a market and
+	// enter the batch execution phase.
+	const fixedRate = 10
+	const duration = 10
+	ask := testHarness.AddDiskOrder(true, fixedRate, duration)
+	err = testHarness.callMarket.ConsiderAsks(ask.(*order.Ask))
+	require.NoErrorf(t, err, "unable to consider ask: %v", err)
+	bid := testHarness.AddDiskOrder(false, fixedRate, duration)
+	err = testHarness.callMarket.ConsiderBids(bid.(*order.Bid))
+	require.NoErrorf(t, err, "unable to consider bid: %v", err)
+
+	testHarness.QueueMarketClear()
+
+	// Now that the call market is set up, we'll trigger a batch force tick
+	// to kick off this cycle. We should immediately go to the
+	// MatchMakingState.
+	testHarness.ForceBatchTick()
+	testHarness.AssertStateTransitions(MatchMakingState{})
+
+	// At this point, no account updates should be allowed for any account.
+	fakeAcct := matching.AccountID(toRawKey(randomPubKey(t)))
+	require.False(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
+	askAcct := matching.AccountID(ask.Details().AcctKey)
+	require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
+	bidAcct := matching.AccountID(bid.Details().AcctKey)
+	require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
+
+	// There should be no further state transitions at this point.
+	testHarness.AssertStateTransitions(BatchExecutionState{})
+
+	// Now, we can perform our final assertions. The fake account should be
+	// allowed an update as it's not part of the batch, but the ask and bid
+	// accounts shouldn't.
+	require.True(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
+	require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
+	require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
 }

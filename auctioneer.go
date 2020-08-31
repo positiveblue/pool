@@ -1650,3 +1650,30 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 		}
 	}
 }
+
+// AllowAccountUpdate determines whether the auctioneer should honor a trader's
+// request for an account update based on the current state of the auctionn.
+func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
+	auctionState, err := a.cfg.DB.AuctionState()
+	if err != nil {
+		log.Errorf("Unable to fetch auction state: %v", err)
+		return false
+	}
+
+	switch s := auctionState.(type) {
+	// We don't want to allow any account updates throughout the matchmaking
+	// state, as the account may be selected for a batch.
+	case MatchMakingState:
+		return false
+
+	// We'll only allow account updates for those which are not found within
+	// the current batch being executed.
+	case BatchExecutionState:
+		_, acctInBatch := s.exeCtx.AcctInputForTrader(acct)
+		return !acctInBatch
+
+	// Account updates are allowed within any other auction state.
+	default:
+		return true
+	}
+}
