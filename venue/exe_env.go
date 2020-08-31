@@ -22,6 +22,9 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
+// batchVesion is the current version for batch transactions.
+const batchVersion = uint32(orderT.CurrentVersion)
+
 // multiplexMessage is a helper struct that holds all data that is multi-plexed
 // from multiple venue traders to a single trader daemon/connection identified
 // by an LSAT.
@@ -67,9 +70,6 @@ type environment struct {
 	// batchFeeRate is the target fee rate of the batch execution
 	// transaction.
 	batchFeeRate chainfee.SatPerKWeight
-
-	// batchVersion is the current batch version.
-	batchVersion uint32
 
 	// batchID is the current batch ID.
 	batchID [33]byte
@@ -279,7 +279,7 @@ func (e *environment) sendPrepareMsg() error {
 			BatchTx:          batchTxBuf.Bytes(),
 			FeeRate:          e.batchFeeRate,
 			BatchID:          e.batchID,
-			BatchVersion:     e.batchVersion,
+			BatchVersion:     batchVersion,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
