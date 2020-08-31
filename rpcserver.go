@@ -356,6 +356,13 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 	var rawTraderKey [33]byte
 	copy(rawTraderKey[:], req.TraderKey)
 
+	// Consult with the auctioneer whether an account update should be
+	// allowed at the moment as it may interfere with an ongoing batch.
+	if !s.auctioneer.AllowAccountUpdate(matching.NewAccountID(traderKey)) {
+		return nil, errors.New("account modification not allowed " +
+			"during batch execution")
+	}
+
 	// Get the value locked up in orders for this account.
 	lockedValue, err := s.orderBook.LockedValue(
 		ctx, rawTraderKey, s.terms.FeeSchedule(),
