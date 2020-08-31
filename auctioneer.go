@@ -327,7 +327,7 @@ func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
 	}
 }
 
-// loadDiwe shouskOrders loads all the orders disk, and adds them to the current call
+// loadDiskOrders loads all the orders disk, and adds them to the current call
 // market.
 func (a *Auctioneer) loadDiskOrders() error {
 	// We'll read all the active order from disk and add them one by one to
@@ -1383,6 +1383,17 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				case *venue.ErrInvalidWitness:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
+				case *venue.ErrReject:
+					log.Debugf("Restarting execution "+
+						"because %d traders rejected "+
+						"the batch",
+						len(exeErr.RejectingTraders))
+
+					a.handleReject(
+						a.eligibleBatch,
+						exeErr.RejectingTraders,
+					)
+
 				case *venue.ErrMissingChannelInfo:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
@@ -1516,4 +1527,116 @@ func (a *Auctioneer) locateTxByOutput(ctx context.Context,
 	}
 
 	return nil, errTxNotFound
+}
+
+// handleReject inspects all order rejects returned from the batch executor and
+// creates the appropriate conflict reports or punishes traders if they exceeded
+// their reject limit.
+func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
+	rejectingTrader map[matching.AccountID]venue.OrderRejectMap) {
+
+	reportConflict := func(reporter matching.AccountID, reporterOrder,
+		subjectOrder order.ServerOrder, reject *venue.Reject) {
+
+		switch reject.Type {
+		// The reporter node already has channels with the subject node
+		// so we make sure we match them with another trader for this
+		// batch (this preference will be cleared for the next batch).
+		case venue.PartialRejectDuplicatePeer:
+			a.cfg.TraderRejected.ReportConflict(
+				reporterOrder.ServerDetails().NodeKey,
+				subjectOrder.ServerDetails().NodeKey,
+				reject.Reason,
+			)
+
+		// The reporter node couldn't complete the channel funding
+		// negotiation with the subject node. We won't match the two
+		// nodes anymore in the future (this conflict will be tracked
+		// across multiple batches but not across server restarts).
+		case venue.PartialRejectFundingFailed:
+			a.cfg.FundingConflicts.ReportConflict(
+				reporterOrder.ServerDetails().NodeKey,
+				subjectOrder.ServerDetails().NodeKey,
+				reject.Reason,
+			)
+
+		// The trader rejected the full batch because of a more serious
+		// problem. We can't really do more than log the error and
+		// remove their orders.
+		case venue.FullRejectBatchVersionMismatch,
+			venue.FullRejectServerMisbehavior,
+			venue.FullRejectUnknown:
+
+			log.Warnf("Trader %x rejected the full batch, order=%v",
+				reporter[:], reporterOrder.Nonce())
+			a.removeIneligibleOrders([]orderT.Nonce{
+				reporterOrder.Nonce(),
+			})
+
+		default:
+			// TODO(guggero): The trader sent an invalid reject.
+			// This needs to be rate limited very aggressively.
+			log.Warnf("Trader %x sent invalid reject type %v",
+				reporter[:], reject.Type)
+		}
+	}
+
+	// Let's inspect the list of traders that rejected. We need to be aware
+	// that messages are de-multiplexed for the venue and that we might have
+	// entries that aren't valid. We make sure we only look at entries where
+	// the reporting trader is on the other side of the reported order.
+	for reporter, rejectMap := range rejectingTrader {
+		// TODO(guggero): Also punish/rate limit a trader that partially
+		// rejected without specifying any orders they reject.
+
+		for rejectNonce, reject := range rejectMap {
+			// Find the rejected order in the batch and find out
+			// which order it was matched to.
+			var rejectedOrder, matchedOrder order.ServerOrder
+			for _, orderPair := range batch.Orders {
+				ask := orderPair.Details.Ask
+				bid := orderPair.Details.Bid
+
+				if ask.Nonce() == rejectNonce {
+					rejectedOrder = ask
+					matchedOrder = bid
+					break
+				}
+				if bid.Nonce() == rejectNonce {
+					rejectedOrder = bid
+					matchedOrder = ask
+					break
+				}
+			}
+
+			// We can't continue if the rejected nonce wasn't in the
+			// batch.
+			if rejectedOrder == nil || matchedOrder == nil {
+				// TODO(guggero): The reporter reported a nonce
+				// that wasn't in the batch. This could be an
+				// attempt at interfering and should be
+				// aggressively rate limited.
+				log.Warnf("Trader %x sent invalid order in "+
+					"reject: %v", reporter[:], rejectNonce)
+
+				continue
+			}
+
+			// Is the reporter on the other side of the rejected
+			// order? If not, this could be the result of the
+			// message de-multiplexing in the RPC server. Since we
+			// found the order that was rejected (it was a valid
+			// nonce), it is very unlikely that this is a deliberate
+			// attempt to interfere, so we can safely skip this.
+			if matchedOrder.Details().AcctKey != reporter {
+				continue
+			}
+
+			// Report the conflicts now as we know both the
+			// reporting trader's order and the subject's order.
+			reportConflict(
+				reporter, matchedOrder, rejectedOrder, reject,
+			)
+		}
+	}
 }

@@ -336,6 +336,12 @@ func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
 		}
 
 		match := matching.MatchedOrder{
+			Asker: matching.Trader{
+				AccountKey: ask.AcctKey,
+			},
+			Bidder: matching.Trader{
+				AccountKey: bid.AcctKey,
+			},
 			Details: matching.OrderPair{
 				Bid: bid,
 				Ask: ask,
@@ -676,9 +682,15 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 		return nil, fmt.Errorf("unable to read nonce: %v", err)
 	}
 
+	var acctKey [33]byte
+	if _, err := rand.Read(acctKey[:]); err != nil {
+		return nil, fmt.Errorf("unable to read acct key: %v", err)
+	}
+
 	kit := orderT.NewKit(nonce)
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
+	kit.AcctKey = acctKey
 
 	return &order.Ask{
 		Ask: orderT.Ask{
@@ -1321,7 +1333,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// We should now transition to the order submit state.
 	testHarness.AssertStateTransitions(OrderSubmitState)
 
-	const numOrders = 12
+	const numOrders = 14
 	nonces := make([]orderT.Nonce, numOrders)
 	for i := 0; i < numOrders; i++ {
 		fixedRate := uint32(10)
@@ -1378,8 +1390,8 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		newOrders[i] = testHarness.NotifyBidOrder(30, 30)
 	}
 
-	// The matchmaking should have resulted in 6 matches.
-	testHarness.AssertSubmittedBatch(6)
+	// The matchmaking should have resulted in 7 matches.
+	testHarness.AssertSubmittedBatch(7)
 
 	// In this scenario, we'll return an error that a sub-set of the
 	// traders are missing.
@@ -1396,9 +1408,9 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// finally execution to give things another go.
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 
-	// Since two orders failed on the previous execution, there should be 5
+	// Since two orders failed on the previous execution, there should be 6
 	// matches left.
-	testHarness.AssertSubmittedBatch(5)
+	testHarness.AssertSubmittedBatch(6)
 
 	// The set of orders referenced above should now have been removed from
 	// the call market
@@ -1415,8 +1427,8 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 	testHarness.AssertOrdersRemoved(nonces[2:4])
 
-	// Now only eight orders are left, resulting in four matches.
-	testHarness.AssertSubmittedBatch(4)
+	// Now only eight orders are left, resulting in 5 matches.
+	testHarness.AssertSubmittedBatch(5)
 
 	// We'll now simulate one of the traders failing to send a message in
 	// time.
@@ -1426,8 +1438,8 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 	testHarness.AssertOrdersRemoved(nonces[4:6])
 
-	// Now only six orders are left, resulting in 3 matches.
-	testHarness.AssertSubmittedBatch(3)
+	// Now only six orders are left, resulting in 4 matches.
+	testHarness.AssertSubmittedBatch(4)
 
 	// We'll now simulate one of the traders failing to include required
 	// channel information.
@@ -1438,7 +1450,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	})
 	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
 	testHarness.AssertOrdersRemoved(nonces[6:8])
-	testHarness.AssertSubmittedBatch(2)
+	testHarness.AssertSubmittedBatch(3)
 
 	// We'll now simulate one of the traders providing non-matching channel
 	// information. Both traders should be banned and their orders removed.
@@ -1456,6 +1468,37 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.AssertBannedTrader(bannedTrader2)
 	testHarness.AssertOrdersRemoved(nonces[8:10])
 
+	// In this last scenario, we'll return an error that a sub-set of the
+	// traders rejected the orders.
+	testHarness.executor.Lock()
+	rejectedPair := testHarness.executor.submittedBatch.Orders[0]
+	rejectNonce1 := rejectedPair.Details.Ask.Nonce()
+	rejectNonce2 := rejectedPair.Details.Bid.Nonce()
+	require.Equal(t, nonces[10], rejectNonce1)
+	require.Equal(t, nonces[11], rejectNonce2)
+	testHarness.executor.Unlock()
+	testHarness.ReportExecutionFailure(&venue.ErrReject{
+		RejectingTraders: map[matching.AccountID]venue.OrderRejectMap{
+			rejectedPair.Bidder.AccountKey: {
+				rejectNonce1: &venue.Reject{
+					Type:   venue.FullRejectUnknown,
+					Reason: "mismatch",
+				},
+			},
+			rejectedPair.Asker.AccountKey: {
+				rejectNonce2: &venue.Reject{
+					Type:   venue.FullRejectUnknown,
+					Reason: "mismatch",
+				},
+			},
+		},
+	})
+
+	// We should now transition back to the match making state, then
+	// finally execution to give things another go.
+	testHarness.AssertStateTransitions(MatchMakingState, BatchExecutionState)
+	testHarness.AssertOrdersRemoved(nonces[10:12])
+
 	// Only one possible match is left.
 	testHarness.AssertSubmittedBatch(1)
 
@@ -1467,7 +1510,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// BatchCommitState.
 	testHarness.AssertStateTransitions(BatchCommitState)
 
-	// Make sure the finialize batch is the same one as the one that was
+	// Make sure the finalize batch is the same one as the one that was
 	// submitted last.
 	testHarness.AssertFinalizedBatch(1)
 

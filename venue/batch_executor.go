@@ -165,6 +165,9 @@ type TraderRejectMsg struct {
 	// Trader is the trader that's rejecting this batch.
 	Trader *ActiveTrader
 
+	// Type denotes the type of the reject.
+	Type RejectType
+
 	// Reason is a human-readable string that describes why the batch was
 	// rejected.
 	Reason string
@@ -625,26 +628,36 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// last one we need.
 		case MsgRecv:
 			// As we've received a message from this trader, we can
-			// cancel the timer as they've behaving as expected.
-			//
-			// TODO(roasbeef): if it's a reject message
-			//  * hard bail out?
-			//  * instruct to remove then try again? (as could be
-			//    malicious)
+			// cancel the timer as they're behaving as expected.
 			msgRecv := event.(*msgRecvEvent)
-			_, ok := msgRecv.msg.(*TraderAcceptMsg)
-			if !ok {
-				log.Errorf("expected "+
-					"OrdrMatchAccept, instead got %T",
-					msgRecv.msg)
+
+			// React depending on the type of the message the trader
+			// sent us.
+			switch m := msgRecv.msg.(type) {
+			// This is bad: The trader either disagrees with our
+			// batch calculation or failed hard during the setup
+			// part. We'll just exclude the trader completely from
+			// this batch.
+			case *TraderRejectMsg:
+				log.Warnf("Received TraderRejectMsg from "+
+					"trader=%x", m.Src())
+
+				b.handleFullReject(m, &env)
+
+			// The trader accepted the batch.
+			case *TraderAcceptMsg:
+				log.Debugf("Received OrderMatchAccept from "+
+					"trader=%x", m.Src())
+
+				env.cancelTimerForTrader(m.Src())
+
+			// We got a message that we don't expect at this time.
+			default:
+				log.Errorf("expected accept or reject msg, "+
+					"instead got %T", msgRecv.msg)
 
 				return PrepareSent, env, nil
 			}
-
-			log.Debugf("Received OrderMatchAccept from trader=%x",
-				msgRecv.msg.Src())
-
-			env.cancelTimerForTrader(msgRecv.msg.Src())
 
 			// If there're no more active timers, then we can
 			// advance to the next phase, as we received all the
@@ -697,12 +710,26 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 			// Now that we've stopped their message timer, we'll
 			// check to see that this is the message we expect, and
-			// the user specified a witness for their account. If a
-			// trader sent the wrong message, then we'll treat that
-			// as a no-op to ensure a single trader can't disrupt
-			// the entire state machine.
-			signMsg, ok := msgRecv.msg.(*TraderSignMsg)
-			if !ok {
+			// the user specified a witness for their account.
+			// React depending on the type of the message the trader
+			// sent us.
+			switch msgRecv.msg.(type) {
+			// The trader accepted the batch.
+			case *TraderSignMsg:
+				log.Debugf("Received OrderMatchSign from "+
+					"trader=%x", src)
+
+				// As we've received the expected message from
+				// this trader, we'll cancel it timer now,
+				// draining out the channel if it already
+				// ticked. Then we continue with extracting the
+				// signature below.
+				env.cancelTimerForTrader(src)
+
+			// If a trader sent the wrong message, then we'll treat
+			// that as a no-op to ensure a single trader can't
+			// disrupt the entire state machine.
+			default:
 				log.Errorf("expected "+
 					"OrderMatchSign, instead got %T",
 					msgRecv.msg)
@@ -710,17 +737,11 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchSigning, env, nil
 			}
 
-			log.Debugf("Received OrderMatchSign from trader=%x",
-				msgRecv.msg.Src())
-
-			// As we've received the expected message from this
-			// trader, we'll cancel it timer now, draining out the
-			// channel if it already ticked.
-			env.cancelTimerForTrader(src)
-
 			b.RLock()
 			trader := b.activeTraders[src]
 			b.RUnlock()
+
+			signMsg := msgRecv.msg.(*TraderSignMsg)
 			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
 			if !ok {
 				return 0, env, fmt.Errorf("account witness "+
@@ -905,6 +926,38 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 	default:
 		return 0, env, fmt.Errorf("unknown state: %v", currentState)
 	}
+}
+
+// handleFullReject processes the full reject message of a trader. All orders
+// of the trader that were involved in the batch are added to the map of
+// rejected orders as the trader likely won't be able to participate in this or
+// future batches because of technical issues.
+func (b *BatchExecutor) handleFullReject(msg *TraderRejectMsg,
+	env *environment) {
+
+	// The source of the message is the trader rejecting the orders.
+	reporter := msg.Src()
+
+	// We mark this trader as having responded and give all other traders
+	// also a chance to maybe reject parts of the order too. But we track
+	// the reject to flag we have to restart match making and also to detect
+	// potential DoS attacks from too many rejects.
+	env.cancelTimerForTrader(reporter)
+
+	// Add the appropriate entries to the reject report map now for all the
+	// trader's order involved in this batch.
+	rejectMap := make(OrderRejectMap)
+	for _, rejectedOrder := range env.traderToOrders[reporter] {
+		rejectMap[rejectedOrder] = &Reject{
+			Type:   msg.Type,
+			Reason: msg.Reason,
+		}
+	}
+
+	// We simply store the rejected orders with the reasons. The auctioneer
+	// will do the more detailed check and rate limiting of the actual
+	// reject messages.
+	env.rejectingTraders[reporter] = rejectMap
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new
