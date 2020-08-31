@@ -1,6 +1,9 @@
 package matching
 
 import (
+	"sync"
+	"time"
+
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 )
@@ -206,3 +209,159 @@ func isAccountReady(acct *account.Account, expiryHeightCutoff uint32) bool {
 		return false
 	}
 }
+
+// NodeID is a type alias for a node's raw pubkey.
+type NodeID = [33]byte
+
+// NodeConflictMap is a composite type for the map in which node conflicts are
+// stored for easy lookup by node IDs.
+type NodeConflictMap = map[NodeID]map[NodeID][]*NodeConflict
+
+// NodeConflict denotes an entry in a NodeConflictTracker's conflict map. It
+// contains the string based reason for the reported conflict as well as a
+// timestamp.
+type NodeConflict struct {
+	// Reason is the string based reason that was reported for the conflict.
+	Reason string
+
+	// Reported is the time stamp the reason was reported at.
+	Reported time.Time
+}
+
+// NodeConflictTracker is an interface that keeps track of conflicts between
+// nodes.
+type NodeConflictTracker interface {
+	// ReportConflict signals that the reporter node has a problem with the
+	// subject node. The order of the arguments is important as the reporter
+	// will be held accountable for reporting too many false positives.
+	ReportConflict(reporter, subject NodeID, reason string)
+
+	// HasConflict returns true if there exists an entry in the conflict map
+	// that either a has a conflict with b or b has a conflict with a.
+	HasConflict(a, b NodeID) bool
+
+	// Export returns the full conflict map.
+	Export() NodeConflictMap
+
+	// Clear empties the conflict map and removes all entries.
+	Clear()
+}
+
+// NewNodeConflictPredicate creates a new node conflict predicate that also
+// implements the NodeConflictTracker interface.
+func NewNodeConflictPredicate() *NodeConflictPredicate {
+	return &NodeConflictPredicate{
+		reports: make(NodeConflictMap),
+	}
+}
+
+// NodeConflictPredicate is a type that implements the MatchPredicate interface
+// to make sure two orders don't come from peers that have a conflict between
+// them. A conflict occurs either because of technical reasons (nodes can't
+// connect or open channels between each other) or because some nodes don't want
+// channels from particular peers (bad reputation or just already existing
+// channels).
+type NodeConflictPredicate struct {
+	// reports is the internal conflict map we keep track of.
+	reports NodeConflictMap
+
+	reportsMtx sync.Mutex
+}
+
+// IsMatchable returns true if this specific predicate doesn't have any
+// objection about two orders being matched. This does not yet mean the match
+// will succeed as many predicates are usually chained together and a match only
+// succeeds if _all_ of the predicates return true.
+//
+// NOTE: This is part of the MatchPredicate interface.
+func (p *NodeConflictPredicate) IsMatchable(ask *order.Ask,
+	bid *order.Bid) bool {
+
+	return !p.HasConflict(ask.NodeKey, bid.NodeKey)
+}
+
+// ReportConflict signals that the reporter node has a problem with the
+// subject node. The order of the arguments is important as the reporter
+// will be held accountable for reporting too many false positives.
+//
+// NOTE: This is part of the NodeConflictTracker interface.
+func (p *NodeConflictPredicate) ReportConflict(reporter, subject [33]byte,
+	reason string) {
+
+	p.reportsMtx.Lock()
+	defer p.reportsMtx.Unlock()
+
+	_, ok := p.reports[reporter]
+	if !ok {
+		p.reports[reporter] = make(map[NodeID][]*NodeConflict)
+	}
+
+	p.reports[reporter][subject] = append(
+		p.reports[reporter][subject], &NodeConflict{
+			Reason:   reason,
+			Reported: time.Now(),
+		},
+	)
+}
+
+// HasConflict returns true if there exists an entry in the conflict map
+// that either a has a conflict with b or b has a conflict with a.
+//
+// NOTE: This is part of the NodeConflictTracker interface.
+func (p *NodeConflictPredicate) HasConflict(a, b [33]byte) bool {
+	p.reportsMtx.Lock()
+	defer p.reportsMtx.Unlock()
+
+	// See if a has a conflict with b.
+	aReportMap, ok := p.reports[a]
+	if ok {
+		reports, ok := aReportMap[b]
+		if ok && len(reports) > 0 {
+			return true
+		}
+	}
+
+	// See if b has a conflict with a.
+	bReportMap, ok := p.reports[b]
+	if ok {
+		reports, ok := bReportMap[a]
+		if ok && len(reports) > 0 {
+			return true
+		}
+	}
+
+	return false
+}
+
+// Export returns a copy of the full conflict map.
+//
+// NOTE: This is part of the NodeConflictTracker interface.
+func (p *NodeConflictPredicate) Export() NodeConflictMap {
+	p.reportsMtx.Lock()
+	defer p.reportsMtx.Unlock()
+
+	clone := make(NodeConflictMap, len(p.reports))
+	for reporter, subjectMap := range p.reports {
+		clone[reporter] = make(map[NodeID][]*NodeConflict)
+		for subject, conflicts := range subjectMap {
+			clone[reporter][subject] = conflicts
+		}
+	}
+
+	return clone
+}
+
+// Clear empties the conflict map and removes all entries.
+//
+// NOTE: This is part of the NodeConflictTracker interface.
+func (p *NodeConflictPredicate) Clear() {
+	p.reportsMtx.Lock()
+	defer p.reportsMtx.Unlock()
+
+	p.reports = make(NodeConflictMap)
+}
+
+// A compile time check to make sure NodeConflictPredicate implements the
+// NodeConflictTracker and MatchPredicate interface.
+var _ NodeConflictTracker = (*NodeConflictPredicate)(nil)
+var _ MatchPredicate = (*NodeConflictPredicate)(nil)
