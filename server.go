@@ -300,6 +300,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	if cfg.Prometheus.Active {
 		cfg.Prometheus.Store = store
 		cfg.Prometheus.Lnd = lnd.LndServices
+		cfg.Prometheus.FundingConflicts = fundingConflicts
 
 		serverOpts = []grpc.ServerOption{
 			grpc.ChainUnaryInterceptor(
