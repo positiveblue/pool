@@ -30,6 +30,8 @@ var auctionCommands = []cli.Command{
 			batchSnapshotCommand,
 			removeBanCommand,
 			removeReservationCommand,
+			listConflictsCommand,
+			clearConflictsCommand,
 		},
 	},
 }
@@ -289,5 +291,33 @@ var removeReservationCommand = cli.Command{ // nolint:dupl
 		}
 
 		return client.RemoveReservation(ctx, req)
+	}),
+}
+
+var listConflictsCommand = cli.Command{
+	Name:      "listconflicts",
+	ShortName: "lc",
+	Usage: "list all funding conflicts that are currently being " +
+		"tracked",
+	Description: `
+	The auctioneer tracks all funding conflicts (problems when opening
+	channels) between nodes and tries to not match nodes with conflicts
+	again. This command lists all currently recorded conflicts.
+	`,
+	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.FundingConflicts(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var clearConflictsCommand = cli.Command{
+	Name:      "clearconflicts",
+	ShortName: "cc",
+	Usage:     "manually clear all recorded conflicts",
+	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.ClearConflicts(ctx, &adminrpc.EmptyRequest{})
 	}),
 }
