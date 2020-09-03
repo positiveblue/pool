@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
+	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -131,10 +132,17 @@ type OrderFeed interface {
 // contact all the traders to obtain signatures for a valid batch execution
 // transaction.
 type BatchExecutor interface {
+	// NewExecutionContext creates a new ExecutionContext which contains
+	// all the information needed to execute the passed OrderBatch. The
+	// execution context should later be submitted to the BatchExecutor to
+	// start the execution process.
+	NewExecutionContext(*btcec.PublicKey, *matching.OrderBatch,
+		*account.Auctioneer, chainfee.SatPerKWeight,
+		terms.FeeSchedule) (*batchtx.ExecutionContext, error)
+
 	// Submit submits the target batch for execution. If the batch is
 	// invalid, then an error should be returned.
-	Submit(*matching.OrderBatch, terms.FeeSchedule,
-		chainfee.SatPerKWeight) (chan *venue.ExecutionResult, error)
+	Submit(*batchtx.ExecutionContext) (chan *venue.ExecutionResult, error)
 }
 
 // ChannelEnforcer is responsible for enforcing channel service lifetime
@@ -264,16 +272,6 @@ type Auctioneer struct {
 
 	// blockNtfnCancel is a closure used to cancel our block epoch stream.
 	blockNtfnCancel func()
-
-	// eligibleBatch is a pointer used to store the current pending
-	// eligible batch. This may be over-written if we need to create new
-	// sub-batches due to errors. If there're no issues, then this will
-	// become the finalizedBatch.
-	eligibleBatch *matching.OrderBatch
-
-	// batchFeeRate is the fee rate we have decided to use for the eligible
-	// batch.
-	batchFeeRate chainfee.SatPerKWeight
 
 	// pendingBatchID is the batch ID for the batch we're attempting to
 	// execute.
@@ -1013,7 +1011,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 	ctxb := context.Background()
 
-	switch currentState {
+	switch s := currentState.(type) {
 
 	// In the default state, we'll either go to create our new account, or
 	// jump straight to order submission if nothing needs our attention.
@@ -1037,23 +1035,23 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			log.Infof("No Master Account found, starting genesis " +
 				"transaction creation")
 
-			return NoMasterAcctState, nil
+			return NoMasterAcctState{}, nil
 
 		case err != nil:
-			return 0, err
+			return nil, err
 		}
 
 		// The account is still pending its confirmation, so we'll go
 		// straight to MasterAcctPending.
 		if acct.IsPending {
 			log.Info("Waiting for confirmation of Master Account")
-			return MasterAcctPending, nil
+			return MasterAcctPending{}, nil
 		}
 
 		// Otherwise, we don't need to do anything special, and can
 		// start accepting orders immediately.
 		log.Infof("Master Account present, moving to accept orders")
-		return OrderSubmitState, nil
+		return OrderSubmitState{}, nil
 
 	// In this state, we don't yet have a master account, so we'll need to
 	// first ask the backing wallet to create one for us.
@@ -1064,11 +1062,11 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			ctxb, a.cfg.StartingAcctValue,
 		)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		acctOutput, err := startingAcct.Output()
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		// At this point, we know we don't have a master account yet,
@@ -1081,14 +1079,14 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			ctxb,
 		)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		if walletBalance <= a.cfg.StartingAcctValue {
 			log.Infof("Need %v coins for Master Account, only "+
 				"have %v, waiting for new block...",
 				a.cfg.StartingAcctValue, walletBalance)
 
-			return NoMasterAcctState, nil
+			return NoMasterAcctState{}, nil
 		}
 
 		// Store a pending version of the account before we broadcast
@@ -1096,7 +1094,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// MasterAcctPending if we shut down before broadcast.
 		err = a.cfg.DB.UpdateAuctioneerAccount(ctxb, startingAcct)
 		if err != nil {
-			return 0, fmt.Errorf("unable to update auctioneer account: %v", err)
+			return nil, fmt.Errorf("unable to update auctioneer account: %v", err)
 		}
 
 		// Now that we know we have enough coins, we'll instruct the
@@ -1114,7 +1112,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			ctxb, a.cfg.ConfTarget,
 		)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		log.Debugf("Sending genesis transaction to output %v using "+
@@ -1124,13 +1122,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			ctxb, []*wire.TxOut{acctOutput}, feeRate,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("unable to send funds to master "+
+			return nil, fmt.Errorf("unable to send funds to master "+
 				"acct output: %w", err)
 		}
 
 		log.Infof("Sent genesis transaction txid=%v", tx.TxHash())
 
-		return MasterAcctPending, nil
+		return MasterAcctPending{}, nil
 
 	// In this state, the master account is still pending so we'll wait
 	// until it has been fully confirmed.
@@ -1141,7 +1139,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		if event.Trigger() == ConfirmationEvent {
 			log.Infof("Genesis transaction confirmed, processing " +
 				"block")
-			return MasterAcctConfirmed, nil
+			return MasterAcctConfirmed{}, nil
 		}
 
 		// At this point, we know that we've broadcast the master
@@ -1149,11 +1147,11 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// store, so we can watch for its confirmation on-chain.
 		startingAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 		output, err := startingAcct.Output()
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		// It's possible that when we were last online, we actually
@@ -1171,7 +1169,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				ctxb, a.cfg.ConfTarget,
 			)
 			if err != nil {
-				return 0, err
+				return nil, err
 			}
 
 			log.Infof("Genesis transaction not found, resending "+
@@ -1182,12 +1180,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				ctxb, []*wire.TxOut{output}, feeRate,
 			)
 			if err != nil {
-				return 0, fmt.Errorf("unable to send funds to master "+
+				return nil, fmt.Errorf("unable to send funds to master "+
 					"acct output: %w", err)
 			}
 
 		case err != nil:
-			return 0, err
+			return nil, err
 		}
 
 		// As we want to be able to process any new events, we launch a
@@ -1200,7 +1198,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			)
 		})
 
-		return MasterAcctPending, nil
+		return MasterAcctPending{}, nil
 
 	// At this point, we know the master account has confirmed, so we'll
 	// commit it to disk, then open up the system for order matching!
@@ -1215,10 +1213,10 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			ctxb, acctReadyEvent.acct,
 		)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
-		return OrderSubmitState, nil
+		return OrderSubmitState{}, nil
 
 	// From the order submit state, we'll wait and accept new orders from
 	// traders until we get a batch tick. From here, we'll either attempt
@@ -1233,7 +1231,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			// we removed due to errors in a previous run, as they
 			// may be eligible again now.
 			if err := a.restoreIneligibleOrders(); err != nil {
-				return 0, err
+				return nil, err
 			}
 
 			// As we're now attempting to perform match making,
@@ -1244,7 +1242,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.pauseOrderFeeder()
 			a.pauseBatchTicker()
 			a.cfg.TraderRejected.Clear()
-			return MatchMakingState, nil
+			return MatchMakingState{}, nil
 		}
 
 		// We can clear our retry flag now as we're terminating at this
@@ -1253,7 +1251,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// Otherwise, we'll just stay in this state and continue
 		// accepting orders.
-		return OrderSubmitState, nil
+		return OrderSubmitState{}, nil
 
 	// In the match making state, we'll attempt to make a market if
 	// possible. If we can't then we'll go back to accepting orders.
@@ -1262,7 +1260,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// current batch key.
 		batchKey, err := a.cfg.DB.BatchKey(context.Background())
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		// To avoid an infinite loop, we'll set the retry flag to
@@ -1280,7 +1278,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			ctxb, a.cfg.ConfTarget,
 		)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		log.Debugf("Using fee rate %v for batch transaction", feeRate)
@@ -1317,20 +1315,32 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			log.Infof("No market possible at this time")
 
-			return OrderSubmitState, nil
+			return OrderSubmitState{}, nil
 
 		case err != nil:
-			return 0, err
+			return nil, err
+		}
+
+		// Now that we have created an eligible batch, we'll construct
+		// the execution context we need to push things forward, which
+		// includes the final batch execution transaction, which we
+		// will attempt do use during execution later.
+		masterAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
+		if err != nil {
+			return nil, err
+		}
+
+		exeCtx, err := a.cfg.BatchExecutor.NewExecutionContext(
+			batchKey, orderBatch, masterAcct, feeRate,
+			a.cfg.FeeSchedule,
+		)
+		if err != nil {
+			return nil, err
 		}
 
 		// At this point we have a batch that we can now go to execute,
 		// so we'll add it to the current environment of the state
 		// machine.
-		//
-		// TODO(roasbeef): allow to send own triggers instead, or we
-		// add this to the running state instead
-		a.eligibleBatch = orderBatch
-		a.batchFeeRate = feeRate
 		a.updatePendingBatchID(batchID)
 
 		log.Infof("Market has been made for Batch(%x)", batchID[:])
@@ -1338,7 +1348,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// With the batch stored, we'll now transition to the
 		// BatchExecutionState where we'll actually kick off the
 		// signing protocol needed to make this batch valid.
-		return BatchExecutionState, nil
+		return BatchExecutionState{
+			exeCtx: exeCtx,
+		}, nil
 
 	// In this phase, we'll attempt to execute the order by entering into a
 	// multi-party signing protocol with all the relevant traders.
@@ -1348,11 +1360,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
-		executionResult, err := a.cfg.BatchExecutor.Submit(
-			a.eligibleBatch, a.cfg.FeeSchedule, a.batchFeeRate,
-		)
+		executionResult, err := a.cfg.BatchExecutor.Submit(s.exeCtx)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		select {
@@ -1390,7 +1400,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 						len(exeErr.RejectingTraders))
 
 					a.handleReject(
-						a.eligibleBatch,
+						s.exeCtx.OrderBatch,
 						exeErr.RejectingTraders,
 					)
 
@@ -1412,21 +1422,21 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 					//
 					// TODO(roasbeef): just go back to
 					// default state?
-					return 0, fmt.Errorf("terminal "+
+					return nil, fmt.Errorf("terminal "+
 						"execution error: %v", result.Err)
 				}
 
-				return MatchMakingState, nil
+				return MatchMakingState{}, nil
 			}
 
 			log.Infof("Batch(%v) successfully executed!!!",
 				a.getPendingBatchID())
 
 			a.finalizedBatch = result
-			return BatchCommitState, nil
+			return BatchCommitState{}, nil
 
 		case <-a.quit:
-			return 0, fmt.Errorf("server shutting down")
+			return nil, fmt.Errorf("server shutting down")
 		}
 
 	// In the batch commit state, we'll broadcast the current finalized
@@ -1440,7 +1450,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			orderT.BatchID(a.getPendingBatchID()),
 		)
 		if err != nil {
-			return 0, fmt.Errorf("unable to publish batch "+
+			return nil, fmt.Errorf("unable to publish batch "+
 				"tx: %v", err)
 		}
 
@@ -1450,7 +1460,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.finalizedBatch.LifetimePackages...,
 		)
 		if err != nil {
-			return 0, fmt.Errorf("unable to enforce channel "+
+			return nil, fmt.Errorf("unable to enforce channel "+
 				"lifetimes: %v", err)
 		}
 
@@ -1461,7 +1471,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.finalizedBatch.Batch.Orders...,
 		)
 		if err != nil {
-			return 0, err
+			return nil, err
 		}
 
 		// We'll reload the set of orders from disk so we have a
@@ -1469,10 +1479,10 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		a.resumeOrderFeeder()
 		a.resumeBatchTicker()
 
-		return OrderSubmitState, nil
+		return OrderSubmitState{}, nil
 	}
 
-	return 0, fmt.Errorf("unknown state: %v", currentState)
+	return nil, fmt.Errorf("unknown state: %v", currentState)
 }
 
 // baseAuctioneerAcct returns the base auctioneer account (genesis batch

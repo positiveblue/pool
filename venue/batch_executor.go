@@ -257,16 +257,10 @@ type ExecutionResult struct {
 
 // executionReq is an inbound request to execute a new batch.
 type executionReq struct {
-	// OrderBatch is the target batch to be executed.
-	*matching.OrderBatch
-
-	// feeSchedule is the fee schedule that was used to construct this
-	// batch.
-	feeSchedule terms.FeeSchedule
-
-	// batchFeeRate is the target fee rate of the batch execution
-	// transaction.
-	batchFeeRate chainfee.SatPerKWeight
+	// exeCtx is the ExecutionContext for the batch we want to execute.
+	// This will include an assembled batch transaction, and everything
+	// else we need to execute.
+	exeCtx *batchtx.ExecutionContext
 
 	// Result is a channel that will be used to send the final results of
 	// the batch.
@@ -390,6 +384,20 @@ func (b *BatchExecutor) Stop() error {
 	b.wg.Wait()
 
 	return nil
+}
+
+// NewExecutionContext creates a new ExecutionContext which contains all the
+// information needed to execute the passed OrderBatch. The execution context
+// should later be submitted to the BatchExecutor to start the execution
+// process.
+func (b *BatchExecutor) NewExecutionContext(batchKey *btcec.PublicKey,
+	batch *matching.OrderBatch, masterAcct *account.Auctioneer,
+	batchFeeRate chainfee.SatPerKWeight, feeSchedule terms.FeeSchedule) (
+	*batchtx.ExecutionContext, error) {
+
+	return batchtx.NewExecutionContext(
+		batchKey, batch, masterAcct, batchFeeRate, feeSchedule,
+	)
 }
 
 // validateTradersOnline ensures that all the traders included in this batch
@@ -524,7 +532,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// all the trader's in the bach are actually online and
 		// register. If one or more of them aren't, then we'll need to
 		// reject this batch with the proper error.
-		err := b.validateTradersOnline(env.batch)
+		err := b.validateTradersOnline(env.exeCtx.OrderBatch)
 		if err != nil {
 			env.tempErr = err
 			return BatchTempError, env, nil
@@ -543,51 +551,11 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// Now that we know this batch is valid, we'll populate the set
 		// of active traders in the environment so we can begin our
 		// message passing phase.
-		for trader := range env.batch.FeeReport.AccountDiffs {
+		for trader := range env.exeCtx.OrderBatch.FeeReport.AccountDiffs {
 			env.traders[trader] = b.activeTraders[trader]
 		}
 
 		b.Unlock()
-
-		// Now that we know the batch is valid, we'll construct the
-		// execution context we need to push things forward, which
-		// includes the final batch execution transaction.
-		masterAcct, err := b.cfg.Store.FetchAuctioneerAccount(ctxb)
-		if err != nil {
-			return 0, env, err
-		}
-		env.masterAcct = masterAcct
-
-		// When we create this master account state, we'll ensure that
-		// we provide the "next" batch key, as this is what will be
-		// used to create the outputs in the BET.
-		masterAcctState := &batchtx.MasterAccountState{
-			PriorPoint:     masterAcct.OutPoint,
-			AccountBalance: masterAcct.Balance,
-		}
-		copy(
-			masterAcctState.AuctioneerKey[:],
-			masterAcct.AuctioneerKey.PubKey.SerializeCompressed(),
-		)
-
-		batchKeyPub, err := btcec.ParsePubKey(
-			env.batchID[:], btcec.S256(),
-		)
-		if err != nil {
-			return 0, env, err
-		}
-		nextBatchKey := clmscript.IncrementKey(batchKeyPub)
-		copy(
-			masterAcctState.BatchKey[:],
-			nextBatchKey.SerializeCompressed(),
-		)
-
-		env.exeCtx, err = batchtx.New(
-			env.batch, masterAcctState, env.batchFeeRate,
-		)
-		if err != nil {
-			return 0, env, err
-		}
 
 		// With the execution context created, we'll now craft a
 		// PrepareMsg to send to each trader to kick off the batch. If
@@ -845,7 +813,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 					trader.AccountKey[:])
 			}
 			auctioneerSig, witnessScript, err := b.signAcctInput(
-				env.masterAcct, trader, env.exeCtx.ExeTx,
+				env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
 				traderAcctInput,
 			)
 			if err != nil {
@@ -950,7 +918,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// Now that we have all valid a account signatures, we'll
 		// create the witness for the auctioneer's account point.
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
-		auctioneerWitness, err := env.masterAcct.AccountWitness(
+		auctioneerWitness, err := env.exeCtx.MasterAcct.AccountWitness(
 			b.cfg.Signer, batchTx, auctioneerInputIndex,
 		)
 		if err != nil {
@@ -968,8 +936,8 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// disk, as we're now able to broadcast a valid multi-funding
 		// transaction.
 		env.result = &ExecutionResult{
-			BatchID:           env.batchID,
-			Batch:             env.batch,
+			BatchID:           exeCtx.BatchID,
+			Batch:             exeCtx.OrderBatch,
 			MasterAccountDiff: exeCtx.MasterAccountDiff,
 			BatchTx:           batchTx,
 			LifetimePackages:  env.lifetimePkgs,
@@ -979,9 +947,9 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			return 0, env, err
 		}
 
-		log.Infof("Batch(%x) finalized and committed!", env.batchID[:])
+		log.Infof("Batch(%x) finalized and committed!", exeCtx.BatchID[:])
 
-		diffs := env.batch.FeeReport.AccountDiffs
+		diffs := exeCtx.OrderBatch.FeeReport.AccountDiffs
 		matchedAccounts := make([][33]byte, 0, len(diffs))
 		for id := range diffs {
 			matchedAccounts = append(matchedAccounts, id)
@@ -1065,7 +1033,7 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 	// all those accounts. We first need to make sure the reporter is even
 	// involved in the batch. If not, we simply skip adding an entry.
 	var involvedOrders []matching.MatchedOrder
-	for _, orderPair := range env.batch.Orders {
+	for _, orderPair := range env.exeCtx.OrderBatch.Orders {
 		if orderPair.Asker.AccountKey == reporter ||
 			orderPair.Bidder.AccountKey == reporter {
 
@@ -1112,7 +1080,7 @@ func (b *BatchExecutor) executor() {
 					exeState, env, event,
 				)
 				if err != nil {
-					env.batchReq.Result <- &ExecutionResult{
+					env.resultChan <- &ExecutionResult{
 						Err: err,
 					}
 
@@ -1146,7 +1114,7 @@ func (b *BatchExecutor) executor() {
 				// send the result to the caller.
 				case exeState == BatchComplete:
 
-					env.batchReq.Result <- env.result
+					env.resultChan <- env.result
 
 					env.cancel()
 					env = environment{}
@@ -1160,35 +1128,13 @@ func (b *BatchExecutor) executor() {
 		// the batch execution transaction, sign it amongst all the
 		// traders and finally commit the finalized bach to disk.
 		case newBatch := <-b.newBatches:
-			// TODO(guggero): Use timeout and/or cancel?
-			batchCtx := context.Background()
-
-			// The batch ID is always the currently stored ID. We
-			// can try to match the same batch multiple times with
-			// traders bailing out and us trying again. But we
-			// always need to use the same ID. Only after clearing
-			// the batch, the ID is increased and stored as the ID
-			// to use for the next batch.
-			batchKey, err := b.cfg.Store.BatchKey(batchCtx)
-			if err != nil {
-				log.Errorf("Nope, couldn't get batch key!")
-
-				newBatch.Result <- &ExecutionResult{
-					Err: err,
-				}
-
-				continue
-			}
-
 			log.Infof("New OrderBatch(id=%x)",
-				batchKey.SerializeCompressed())
+				newBatch.exeCtx.BatchID)
 
 			exeState = NoActiveBatch
 
 			msgTimers := newMsgTimers(b.cfg.TraderMsgTimeout)
-			env = newEnvironment(
-				newBatch, batchKey, msgTimers,
-			)
+			env = newEnvironment(newBatch, msgTimers)
 
 			// With a fresh environment constructed, we'll now send
 			// ourselves a new trigger to kick off the batch
@@ -1200,7 +1146,7 @@ func (b *BatchExecutor) executor() {
 				// TODO(roasbeef): carry the env along with it?
 				select {
 				case b.venueEvents <- &newBatchEvent{
-					batch: newBatch.OrderBatch,
+					batch: newBatch.exeCtx.OrderBatch,
 				}:
 				case <-b.quit:
 					return
@@ -1216,15 +1162,12 @@ func (b *BatchExecutor) executor() {
 }
 
 // Submit submits a new batch for execution to the main state machine.
-func (b *BatchExecutor) Submit(batch *matching.OrderBatch,
-	feeSchedule terms.FeeSchedule,
-	batchFeeRate chainfee.SatPerKWeight) (chan *ExecutionResult, error) {
+func (b *BatchExecutor) Submit(exeCtx *batchtx.ExecutionContext) (
+	chan *ExecutionResult, error) {
 
 	exeReq := &executionReq{
-		OrderBatch:   batch,
-		feeSchedule:  feeSchedule,
-		batchFeeRate: batchFeeRate,
-		Result:       make(chan *ExecutionResult, 1),
+		exeCtx: exeCtx,
+		Result: make(chan *ExecutionResult, 1),
 	}
 
 	select {

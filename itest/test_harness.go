@@ -1228,7 +1228,7 @@ func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
 	// Before we check anything else, let's first wait for the auctioneer
 	// to do its job and then return back to its "waiting" state where new
 	// orders are accepted.
-	assertAuctionState(t, subasta.OrderSubmitState)
+	assertAuctionState(t, subasta.OrderSubmitState{})
 
 	// At this point, the batch should now attempt to be cleared, and find
 	// that we're able to make a market. Eventually the batch execution

@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -189,16 +190,21 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	priorAccountPoint := wire.OutPoint{}
 	auctPubKey := auctioneerKey.PubKey().SerializeCompressed()
 	copy(priorAccountPoint.Hash[:], auctPubKey)
-	mad := &MasterAccountState{
-		PriorPoint:     priorAccountPoint,
-		AccountBalance: btcutil.Amount(acctValue * 10),
+	masterAcct := &account.Auctioneer{
+		OutPoint: priorAccountPoint,
+		Balance:  btcutil.Amount(acctValue * 10),
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: auctioneerKey.PubKey(),
+		},
 	}
-	copy(mad.BatchKey[:], auctPubKey)
-	copy(mad.AuctioneerKey[:], auctPubKey)
+	batchKey := auctioneerKey.PubKey()
 
 	// Now we can being the real meat of our tests: ensuring the batch
 	// transaction and all the relevant indexes ere constructed properly.
-	batchTxCtx, err := New(orderBatch, mad, chainfee.SatPerKWeight(200))
+	feeRate := chainfee.SatPerKWeight(200)
+	batchTxCtx, err := NewExecutionContext(
+		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
 	}
@@ -465,17 +471,21 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	priorAccountPoint := wire.OutPoint{}
 	auctPubKey := auctioneerKey.PubKey().SerializeCompressed()
 	copy(priorAccountPoint.Hash[:], auctPubKey)
-	mad := &MasterAccountState{
-		PriorPoint:     priorAccountPoint,
-		AccountBalance: acctValue * 10,
+	masterAcct := &account.Auctioneer{
+		OutPoint: priorAccountPoint,
+		Balance:  acctValue * 10,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: auctioneerKey.PubKey(),
+		},
 	}
-	copy(mad.BatchKey[:], auctPubKey)
-	copy(mad.AuctioneerKey[:], auctPubKey)
+	batchKey := auctioneerKey.PubKey()
 
 	// Now we can being the real meat of our tests: ensuring the batch
 	// transaction and all the relevant indexes ere constructed properly.
 	feeRate := chainfee.SatPerKWeight(200)
-	batchTxCtx, err := New(orderBatch, mad, feeRate)
+	batchTxCtx, err := NewExecutionContext(
+		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
 	}
