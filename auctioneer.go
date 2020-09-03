@@ -132,14 +132,6 @@ type OrderFeed interface {
 // contact all the traders to obtain signatures for a valid batch execution
 // transaction.
 type BatchExecutor interface {
-	// NewExecutionContext creates a new ExecutionContext which contains
-	// all the information needed to execute the passed OrderBatch. The
-	// execution context should later be submitted to the BatchExecutor to
-	// start the execution process.
-	NewExecutionContext(*btcec.PublicKey, *matching.OrderBatch,
-		*account.Auctioneer, chainfee.SatPerKWeight,
-		terms.FeeSchedule) (*batchtx.ExecutionContext, error)
-
 	// Submit submits the target batch for execution. If the batch is
 	// invalid, then an error should be returned.
 	Submit(*batchtx.ExecutionContext) (chan *venue.ExecutionResult, error)
@@ -1330,7 +1322,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
-		exeCtx, err := a.cfg.BatchExecutor.NewExecutionContext(
+		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, feeRate,
 			a.cfg.FeeSchedule,
 		)
@@ -1648,5 +1640,32 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 				reporter, matchedOrder, rejectedOrder, reject,
 			)
 		}
+	}
+}
+
+// AllowAccountUpdate determines whether the auctioneer should honor a trader's
+// request for an account update based on the current state of the auctionn.
+func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
+	auctionState, err := a.cfg.DB.AuctionState()
+	if err != nil {
+		log.Errorf("Unable to fetch auction state: %v", err)
+		return false
+	}
+
+	switch s := auctionState.(type) {
+	// We don't want to allow any account updates throughout the matchmaking
+	// state, as the account may be selected for a batch.
+	case MatchMakingState:
+		return false
+
+	// We'll only allow account updates for those which are not found within
+	// the current batch being executed.
+	case BatchExecutionState:
+		_, acctInBatch := s.exeCtx.AcctInputForTrader(acct)
+		return !acctInBatch
+
+	// Account updates are allowed within any other auction state.
+	default:
+		return true
 	}
 }

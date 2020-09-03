@@ -126,6 +126,8 @@ type rpcServer struct {
 
 	batchExecutor *venue.BatchExecutor
 
+	auctioneer *Auctioneer
+
 	lnd *lndclient.GrpcLndServices
 
 	bestHeight func() uint32
@@ -146,8 +148,8 @@ type rpcServer struct {
 func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
-	terms *terms.AuctioneerTerms, listener net.Listener,
-	serverOpts []grpc.ServerOption,
+	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
+	listener net.Listener, serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
 	return &rpcServer{
@@ -159,6 +161,7 @@ func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 		orderBook:        orderBook,
 		store:            store,
 		batchExecutor:    batchExecutor,
+		auctioneer:       auctioneer,
 		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
@@ -352,6 +355,13 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 
 	var rawTraderKey [33]byte
 	copy(rawTraderKey[:], req.TraderKey)
+
+	// Consult with the auctioneer whether an account update should be
+	// allowed at the moment as it may interfere with an ongoing batch.
+	if !s.auctioneer.AllowAccountUpdate(matching.NewAccountID(traderKey)) {
+		return nil, errors.New("account modification not allowed " +
+			"during batch execution")
+	}
 
 	// Get the value locked up in orders for this account.
 	lockedValue, err := s.orderBook.LockedValue(

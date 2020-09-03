@@ -472,7 +472,7 @@ func newServer(store subastadb.Store) *rpcServer {
 	})
 
 	return newRPCServer(
-		store, lndServices, nil, nil, nil, batchExecutor,
+		store, lndServices, nil, nil, nil, batchExecutor, nil,
 		&terms.AuctioneerTerms{
 			OrderExecBaseFee: 1,
 			OrderExecFeeRate: 100,
