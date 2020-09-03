@@ -517,16 +517,6 @@ func newMockBatchExecutor() *mockBatchExecutor {
 	}
 }
 
-func (m *mockBatchExecutor) NewExecutionContext(batchKey *btcec.PublicKey,
-	batch *matching.OrderBatch, masterAcct *account.Auctioneer,
-	batchFeeRate chainfee.SatPerKWeight, feeSchedule terms.FeeSchedule) (
-	*batchtx.ExecutionContext, error) {
-
-	return batchtx.NewExecutionContext(
-		batchKey, batch, masterAcct, batchFeeRate, feeSchedule,
-	)
-}
-
 func (m *mockBatchExecutor) Submit(exeCtx *batchtx.ExecutionContext) (
 	chan *venue.ExecutionResult, error) {
 

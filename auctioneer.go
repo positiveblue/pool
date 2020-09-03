@@ -132,14 +132,6 @@ type OrderFeed interface {
 // contact all the traders to obtain signatures for a valid batch execution
 // transaction.
 type BatchExecutor interface {
-	// NewExecutionContext creates a new ExecutionContext which contains
-	// all the information needed to execute the passed OrderBatch. The
-	// execution context should later be submitted to the BatchExecutor to
-	// start the execution process.
-	NewExecutionContext(*btcec.PublicKey, *matching.OrderBatch,
-		*account.Auctioneer, chainfee.SatPerKWeight,
-		terms.FeeSchedule) (*batchtx.ExecutionContext, error)
-
 	// Submit submits the target batch for execution. If the batch is
 	// invalid, then an error should be returned.
 	Submit(*batchtx.ExecutionContext) (chan *venue.ExecutionResult, error)
@@ -1330,7 +1322,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
-		exeCtx, err := a.cfg.BatchExecutor.NewExecutionContext(
+		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, feeRate,
 			a.cfg.FeeSchedule,
 		)
