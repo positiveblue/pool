@@ -347,7 +347,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		}
 	}
 	auctioneerServer := newRPCServer(
-		store, lnd, accountManager, server.auctioneer.BestHeight,
+		store, lnd.Signer, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, server.auctioneer,
 		auctionTerms, grpcListener, serverOpts, cfg.SubscribeTimeout,
 	)
