@@ -17,9 +17,8 @@ import (
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/loop/test"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -77,7 +76,7 @@ var (
 		TraderKeyRaw:    toRawKey(testTraderKey2),
 		HeightHint:      100,
 	}
-	mockLnd               = test.NewMockLnd()
+	mockSigner            = test.NewMockSigner()
 	defaultTimeout        = 100 * time.Millisecond
 	errGenericStreamError = errors.New("an expected error")
 )
@@ -132,8 +131,8 @@ func TestRPCServerBatchAuction(t *testing.T) {
 		streamErr = make(chan error)
 		streamWg  sync.WaitGroup
 	)
-	mockLnd.Signature = testSignature
-	mockLnd.NodePubkey = testTraderKeyStr
+	mockSigner.Signature = testSignature
+	mockSigner.NodePubkey = testTraderKeyStr
 
 	// Start the stream. This will block until either the client disconnects
 	// or an error happens, so we'll run it in a goroutine.
@@ -242,8 +241,8 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 		streamErr = make(chan error)
 		streamWg  sync.WaitGroup
 	)
-	mockLnd.Signature = testSignature
-	mockLnd.NodePubkey = testTraderKeyStr
+	mockSigner.Signature = testSignature
+	mockSigner.NodePubkey = testTraderKeyStr
 
 	// Start the stream. This will block until either the client disconnects
 	// or an error happens, so we'll run it in a goroutine.
@@ -450,29 +449,17 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 }
 
 func newServer(store subastadb.Store) *rpcServer {
-	lndServices := &lndclient.GrpcLndServices{
-		LndServices: lndclient.LndServices{
-			Client:        mockLnd.Client,
-			WalletKit:     mockLnd.WalletKit,
-			ChainNotifier: mockLnd.ChainNotifier,
-			Signer:        mockLnd.Signer,
-			Invoices:      mockLnd.LndServices.Invoices,
-			Router:        mockLnd.Router,
-			ChainParams:   mockLnd.ChainParams,
-		},
-	}
-
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
 		Store: &executorStore{
 			Store: store,
 		},
-		Signer:           lndServices.Signer,
+		Signer:           mockSigner,
 		BatchStorer:      venue.NewExeBatchStorer(store),
 		TraderMsgTimeout: time.Second * 15,
 	})
 
 	return newRPCServer(
-		store, lndServices.Signer, nil, nil, nil, batchExecutor, nil,
+		store, mockSigner, nil, nil, nil, batchExecutor, nil,
 		&terms.AuctioneerTerms{
 			OrderExecBaseFee: 1,
 			OrderExecFeeRate: 100,
@@ -511,7 +498,7 @@ func testHandshake(t *testing.T, traderKey [33]byte,
 
 	// Step 3 of 3 is the trader sending their signature over the auth hash.
 	authHash := accountT.AuthHash(testCommitHash, challenge)
-	mockLnd.SignatureMsg = string(authHash[:])
+	mockSigner.SignatureMsg = string(authHash[:])
 	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
 		Msg: &clmrpc.ClientAuctionMessage_Subscribe{
 			Subscribe: &clmrpc.AccountSubscription{

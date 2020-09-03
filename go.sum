@@ -236,8 +236,6 @@ github.com/lightninglabs/lndclient v0.11.0-0 h1:tCvhlN/NNC/PeCjifONq/f8vU/6ZJS1i
 github.com/lightninglabs/lndclient v0.11.0-0/go.mod h1:8/cTKNwgL87NX123gmlv3Xh6p1a7pvzu+40Un3PhHiI=
 github.com/lightninglabs/lndclient v0.11.0-1 h1:UHIAu6eRmXpL84War0a1OvdmG7rXW+NkJEdSruo+jWE=
 github.com/lightninglabs/lndclient v0.11.0-1/go.mod h1:8/cTKNwgL87NX123gmlv3Xh6p1a7pvzu+40Un3PhHiI=
-github.com/lightninglabs/loop v0.8.1-beta.0.20200831113239-d4d9aa102455 h1:RWIxymisZYA02aqEAIunvZxNgcSu+hS3LG4KAxvk2SU=
-github.com/lightninglabs/loop v0.8.1-beta.0.20200831113239-d4d9aa102455/go.mod h1:b1cG1mLbPUjWEN5ZQi6pfNeNWCYm5H48NdjkycyifS8=
 github.com/lightninglabs/neutrino v0.11.0 h1:lPpYFCtsfJX2W5zI4pWycPmbbBdr7zU+BafYdLoD6k0=
 github.com/lightninglabs/neutrino v0.11.0/go.mod h1:CuhF0iuzg9Sp2HO6ZgXgayviFTn1QHdSTJlMncK80wg=
 github.com/lightninglabs/neutrino v0.11.1-0.20200316235139-bffc52e8f200 h1:j4iZ1XlUAPQmW6oSzMcJGILYsRHNs+4O3Gk+2Ms5Dww=
