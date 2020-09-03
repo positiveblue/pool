@@ -54,8 +54,15 @@ const (
 	// each of the published batch transactions.
 	batchTxFees = "batch_tx_fees"
 
+	// conflictCount is the number of funding conflicts recorder per peer.
+	conflictCount = "conflict_count"
+
 	labelBatchID   = "batch_id"
 	labelOrderPair = "order_pair"
+
+	labelReporterID = "reporter_id"
+	labelSubjectID  = "subject_id"
+	labelReason     = "reason"
 )
 
 // batchCollector is a collector that keeps track of our accounts.
@@ -68,6 +75,7 @@ type batchCollector struct {
 // newBatchCollector makes a new batchCollector instance.
 func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 	baseLabels := []string{labelBatchID}
+	conflictLabels := []string{labelReporterID, labelSubjectID, labelReason}
 	g := make(gauges)
 	g.addGauge(batchCount, "number of batches", nil)
 	g.addGauge(
@@ -77,24 +85,15 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 		batchUnitsMatched, "number of matched units per order pair",
 		append(baseLabels, labelOrderPair),
 	)
-	g.addGauge(
-		batchNumAccounts, "number of involved accounts", baseLabels,
-	)
-	g.addGauge(
-		batchClearingPrice, "batch clearing rate/price", baseLabels,
-	)
-	g.addGauge(
-		batchAuctionFees, "fees received by auctioneer", baseLabels,
-	)
-	g.addGauge(
-		batchTxNumInputs, "number of on-chain tx inputs", baseLabels,
-	)
+	g.addGauge(batchNumAccounts, "number of involved accounts", baseLabels)
+	g.addGauge(batchClearingPrice, "batch clearing rate/price", baseLabels)
+	g.addGauge(batchAuctionFees, "fees received by auctioneer", baseLabels)
+	g.addGauge(batchTxNumInputs, "number of on-chain tx inputs", baseLabels)
 	g.addGauge(
 		batchTxNumOutputs, "number of on-chain tx outputs", baseLabels,
 	)
-	g.addGauge(
-		batchTxFees, "on-chain tx fees in satoshis", baseLabels,
-	)
+	g.addGauge(batchTxFees, "on-chain tx fees in satoshis", baseLabels)
+	g.addGauge(conflictCount, "number of funding conflicts", conflictLabels)
 	return &batchCollector{
 		cfg: cfg,
 		g:   g,
@@ -135,9 +134,35 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 
+	// Record all metrics for the currently tracked funding conflicts.
+	conflicts := c.cfg.FundingConflicts.Export()
+	for reporter, subjectMap := range conflicts {
+		reporterID := hex.EncodeToString(reporter[:])
+		for subject, conflictList := range subjectMap {
+			subjectID := hex.EncodeToString(subject[:])
+			for _, conflict := range conflictList {
+				// This label combination together with Inc()
+				// has the effect of counting the number of
+				// different problems between two nodes. So we
+				// can easily track if a node gets flagged over
+				// and over for the same reason.
+				labels := prometheus.Labels{
+					labelReporterID: reporterID,
+					labelSubjectID:  subjectID,
+					labelReason:     conflict.Reason,
+				}
+
+				c.g[conflictCount].With(labels).Inc()
+			}
+		}
+	}
+
 	// The "current" batch key is always the one that is not yet completed.
 	// We need to roll back by one, unless we're still at the beginning.
 	if currentBatchKey.IsEqual(subastadb.InitialBatchKey) {
+		// Let's still collect the conflicts but then bail as there are
+		// no batches to collect metrics for.
+		c.g.collect(ch)
 		return
 	}
 	batchKey := clmscript.DecrementKey(currentBatchKey)

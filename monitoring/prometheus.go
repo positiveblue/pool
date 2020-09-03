@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/loop/lndclient"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
@@ -74,6 +75,10 @@ type PrometheusConfig struct {
 	// LightningNode is the connection to the backing Lightning node
 	// for the subasta server. Only read-only permissions are required.
 	Lnd lndclient.LndServices
+
+	// FundingConflicts is a conflict tracker that keeps track of funding
+	// conflicts (problems during channel funding) between nodes.
+	FundingConflicts matching.NodeConflictTracker
 }
 
 // PrometheusExporter is a metric exporter that uses Prometheus directly. The
