@@ -8,10 +8,12 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/llm/chaninfo"
 	"github.com/lightninglabs/llm/clmscript"
@@ -21,6 +23,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -241,6 +244,10 @@ type ExecutionResult struct {
 
 	// BatchTx is the finalized, fully signed batch transaction.
 	BatchTx *wire.MsgTx
+
+	// FeeInfo is the fee information for the fully signed batch
+	// transaction.
+	FeeInfo *feebump.TxFeeInfo
 
 	// LifetimePackages contains the service level enforcement package for
 	// each channel created as a result of the batch.
@@ -931,6 +938,20 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		}
 		batchTx.TxIn[auctioneerInputIndex].Witness = auctioneerWitness
 
+		// We have the fully signed transaction, and can find its final
+		// weight.
+		finalTxWeight := blockchain.GetTransactionWeight(
+			btcutil.NewTx(batchTx),
+		)
+
+		// The fee paid won't change from the unsigned batch tx, so use
+		// the fee from the fee info estimate, together with the final
+		// tx weight for the final fee info.
+		feeInfo := &feebump.TxFeeInfo{
+			Fee:    exeCtx.FeeInfoEstimate.Fee,
+			Weight: finalTxWeight,
+		}
+
 		// With the batch now finalized, we'll commit the batch to
 		// disk, as we're now able to broadcast a valid multi-funding
 		// transaction.
@@ -939,6 +960,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			Batch:             exeCtx.OrderBatch,
 			MasterAccountDiff: exeCtx.MasterAccountDiff,
 			BatchTx:           batchTx,
+			FeeInfo:           feeInfo,
 			LifetimePackages:  env.lifetimePkgs,
 		}
 		if err := b.cfg.BatchStorer.Store(ctxb, env.result); err != nil {
