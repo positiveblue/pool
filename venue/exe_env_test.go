@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/stretchr/testify/require"
 )
 
 // TestEnvironmentMessageMultiplex tests that messages from the venue are
@@ -126,4 +127,39 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 			t.Fatalf("unknown message received: %#v", m)
 		}
 	})
+}
+
+// TestEnvironmentBatchIsolation tests that a trader that isn't part of a batch
+// can't actually causae any messages to be processed.
+func TestEnvironmentBatchIsolation(t *testing.T) {
+	// Create a set of test traders that'll be added to the batch.
+	traders := make(map[matching.AccountID]*ActiveTrader)
+	traders[bigTrader.AccountKey] = &ActiveTrader{
+		Trader:  &bigTrader,
+		TokenID: lsat.TokenID{1, 2},
+	}
+	traders[smallTrader.AccountKey] = &ActiveTrader{
+		Trader:  &smallTrader,
+		TokenID: lsat.TokenID{1, 2},
+	}
+
+	env := &environment{
+		exeCtx: &batchtx.ExecutionContext{
+			ExeTx: batchTx,
+		},
+		traders: traders,
+	}
+
+	// Both the traders above should be seen as part of the batch.
+	require.True(t, env.traderPartOfBatch(smallTrader.AccountKey))
+	require.True(t, env.traderPartOfBatch(bigTrader.AccountKey))
+
+	// If we modify the small trader key, it should no longer show as being
+	// part of the batch.
+	var newKey matching.AccountID
+	copy(newKey[:], smallTrader.AccountKey[:])
+
+	newKey[0] ^= 1
+
+	require.False(t, env.traderPartOfBatch(newKey))
 }

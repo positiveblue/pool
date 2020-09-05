@@ -416,3 +416,10 @@ func (e *environment) validateChanInfo(trader matching.AccountID,
 
 	return nil
 }
+
+// traderPartOfBatch returns true if the passed pubkey belongs to a trader
+// that's a part of the batch.
+func (e *environment) traderPartOfBatch(trader matching.AccountID) bool {
+	_, ok := e.traders[trader]
+	return ok
+}
