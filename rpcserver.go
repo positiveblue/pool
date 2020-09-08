@@ -1540,24 +1540,13 @@ func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error
 	default:
 		return nil, fmt.Errorf("unknown account state")
 	}
-	
-	// Workaround until #167 fixes this correctly.
-	// TODO(wpaulino): Remove this in #167!
-	if acct.State != account.StatePendingOpen {
-		tx := acct.CloseTx
-		if tx == nil {
-			tx = &wire.MsgTx{
-				Version: 2,
-				TxIn: []*wire.TxIn{{}},
-			}
-		}
-		
-		var buf bytes.Buffer
-		err := tx.Serialize(&buf)
-		if err != nil {
+
+	if acct.LatestTx != nil {
+		var txBuf bytes.Buffer
+		if err := acct.LatestTx.Serialize(&txBuf); err != nil {
 			return nil, err
 		}
-		rpcAcct.LatestTx = buf.Bytes()
+		rpcAcct.LatestTx = txBuf.Bytes()
 	}
 
 	return rpcAcct, nil

@@ -67,6 +67,7 @@ var (
 		OutPoint:      wire.OutPoint{Index: 1},
 		TraderKeyRaw:  toRawKey(testTraderKey),
 		BatchKey:      initialBatchKey,
+		LatestTx:      wire.NewMsgTx(2),
 	}
 	testTraderNonce = [32]byte{9, 8, 7, 6}
 	testSignature   = []byte{33, 77, 33}

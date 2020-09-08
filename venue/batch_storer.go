@@ -151,7 +151,6 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 			modifiers = append(
 				modifiers,
 				account.StateModifier(account.StateClosed),
-				account.CloseTxModifier(result.BatchTx),
 			)
 
 		default:
@@ -159,9 +158,10 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 				account.EndingState(diff.EndingBalance))
 		}
 
-		// Finally update the account value and expiry.
+		// Finally update the account value and its latest transaction.
 		accountModifiers[accountIndex] = append(
-			modifiers, account.ValueModifier(diff.EndingBalance),
+			modifiers, account.LatestTxModifier(result.BatchTx),
+			account.ValueModifier(diff.EndingBalance),
 		)
 		accountIndex++
 	}

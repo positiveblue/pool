@@ -50,6 +50,7 @@ var (
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{0x01, 0x01},
 		},
+		LatestTx: wire.NewMsgTx(2),
 	}
 
 	bigTrader = matching.NewTraderFromAccount(bigAcct)
@@ -63,6 +64,7 @@ var (
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{0x01, 0x09},
 		},
+		LatestTx: wire.NewMsgTx(2),
 	}
 
 	smallTrader = matching.NewTraderFromAccount(smallAcct)
