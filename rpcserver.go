@@ -37,6 +37,7 @@ import (
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/tor"
 	"google.golang.org/grpc"
 )
 
@@ -1657,11 +1658,28 @@ func parseRPCServerOrder(version uint32, details *clmrpc.ServerOrder,
 			fmt.Errorf("invalid node addresses")
 	}
 	for _, rpcAddr := range details.NodeAddr {
-		addr, err := net.ResolveTCPAddr(rpcAddr.Network, rpcAddr.Addr)
-		if err != nil {
-			return nil, nodeKey, nodeAddrs, multiSigKey,
-				fmt.Errorf("unable to parse node ddr: %v", err)
+		var addr net.Addr
+
+		switch {
+		case tor.IsOnionHost(rpcAddr.Addr):
+			addr, err = parseOnionAddr(rpcAddr.Addr)
+			if err != nil {
+				return nil, nodeKey, nodeAddrs, multiSigKey,
+					fmt.Errorf("unable to parse node "+
+						"addr: %v", err)
+			}
+
+		default:
+			addr, err = net.ResolveTCPAddr(
+				rpcAddr.Network, rpcAddr.Addr,
+			)
+			if err != nil {
+				return nil, nodeKey, nodeAddrs, multiSigKey,
+					fmt.Errorf("unable to parse node "+
+						"addr: %v", err)
+			}
 		}
+
 		nodeAddrs = append(nodeAddrs, addr)
 	}
 
@@ -1951,4 +1969,25 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	resp.BatchTxId = batchTx.TxHash().String()
 
 	return resp, nil
+}
+
+// parseOnionAddr parses an onion address specified in host:port format.
+func parseOnionAddr(onionAddr string) (net.Addr, error) {
+	addrHost, addrPort, err := net.SplitHostPort(onionAddr)
+	if err != nil {
+		// If the port wasn't specified, then we'll assume the
+		// default p2p port.
+		addrHost = onionAddr
+		addrPort = "9735" // TODO(roasbeef): constant somewhere?
+	}
+
+	portNum, err := strconv.Atoi(addrPort)
+	if err != nil {
+		return nil, err
+	}
+
+	return &tor.OnionAddr{
+		OnionService: addrHost,
+		Port:         portNum,
+	}, nil
 }
