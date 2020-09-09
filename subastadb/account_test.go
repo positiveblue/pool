@@ -50,6 +50,23 @@ var (
 		Secret:        [32]byte{0x73, 0x65, 0x63, 0x72, 0x65, 0x74},
 		HeightHint:    100,
 		OutPoint:      wire.OutPoint{Index: 1},
+		LatestTx: &wire.MsgTx{
+			Version: 2,
+			TxIn: []*wire.TxIn{
+				{
+					PreviousOutPoint: wire.OutPoint{
+						Index: 1,
+					},
+					SignatureScript: []byte{0x40},
+				},
+			},
+			TxOut: []*wire.TxOut{
+				{
+					PkScript: []byte{0x40},
+					Value:    1_000,
+				},
+			},
+		},
 	}
 )
 
@@ -230,7 +247,7 @@ func TestAccounts(t *testing.T) {
 	}
 	err = store.UpdateAccount(
 		ctx, &a, account.StateModifier(account.StateClosed),
-		account.CloseTxModifier(closeTx),
+		account.LatestTxModifier(closeTx),
 	)
 	if err != nil {
 		t.Fatalf("could not update account to be closed: %v", err)
@@ -239,9 +256,9 @@ func TestAccounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("could not read closed account: %v", err)
 	}
-	if !reflect.DeepEqual(closedAcct.CloseTx, closeTx) {
+	if !reflect.DeepEqual(closedAcct.LatestTx, closeTx) {
 		t.Fatalf("expected close TX: %v\ngot: %v",
-			spew.Sdump(closeTx), spew.Sdump(closedAcct.CloseTx))
+			spew.Sdump(closeTx), spew.Sdump(closedAcct.LatestTx))
 	}
 }
 

@@ -110,7 +110,7 @@ func TestPersistBatchResult(t *testing.T) {
 	}
 	accountModifiers := [][]account.Modifier{{
 		account.StateModifier(account.StateClosed),
-		account.CloseTxModifier(&wire.MsgTx{
+		account.LatestTxModifier(&wire.MsgTx{
 			TxIn: []*wire.TxIn{{
 				Witness: wire.TxWitness{
 					nil,
@@ -275,7 +275,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	}
 	accountModifiers := [][]account.Modifier{{
 		account.StateModifier(account.StateClosed),
-		account.CloseTxModifier(batchTx),
+		account.LatestTxModifier(batchTx),
 	}}
 	ma1.Balance = 500_000
 

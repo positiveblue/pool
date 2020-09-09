@@ -17,9 +17,8 @@ import (
 	accountT "github.com/lightninglabs/llm/account"
 	"github.com/lightninglabs/llm/account/watcher"
 	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
-	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -460,8 +459,14 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	log.Infof("Account %x is now confirmed at height %v!",
 		traderKey.SerializeCompressed(), confDetails.BlockHeight)
 
-	err = m.cfg.Store.UpdateAccount(ctx, account, StateModifier(StateOpen))
-	if err != nil {
+	// If this is the account's first confirmation (i.e., the confirmation
+	// of the account's funding transaction), then we'll tack on the
+	// additional LatestTx modifier as required.
+	mods := []Modifier{StateModifier(StateOpen)}
+	if account.State == StatePendingOpen {
+		mods = append(mods, LatestTxModifier(confDetails.Tx))
+	}
+	if err := m.cfg.Store.UpdateAccount(ctx, account, mods...); err != nil {
 		return err
 	}
 
@@ -562,7 +567,7 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 
 	return m.cfg.Store.UpdateAccount(
 		ctx, account, ValueModifier(0), StateModifier(StateClosed),
-		CloseTxModifier(spendTx),
+		LatestTxModifier(spendTx),
 	)
 }
 
@@ -699,7 +704,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 			return nil, newErrAccountLockedValue(lockedValue)
 		}
 
-		sig, _, err := m.signAccountSpend(
+		sig, _, _, err := m.signAccountSpend(
 			ctx, account, lockedValue, newInputs, newOutputs, nil,
 		)
 		if err != nil {
@@ -719,7 +724,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	// Create the spending transaction for the account including any
 	// additional inputs and outputs provided by the trader, along with any
 	// account modifications.
-	sig, newAccountPoint, err := m.signAccountSpend(
+	sig, tx, newAccountPoint, err := m.signAccountSpend(
 		ctx, account, lockedValue, newInputs, newOutputs, modifiers,
 	)
 	if err != nil {
@@ -733,6 +738,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	modifiers = append(modifiers, StateModifier(StatePendingUpdate))
 	modifiers = append(modifiers, OutPointModifier(*newAccountPoint))
 	modifiers = append(modifiers, IncrementBatchKey())
+	modifiers = append(modifiers, LatestTxModifier(tx))
 	err = m.cfg.Store.StoreAccountDiff(ctx, traderKey, modifiers)
 	if err != nil {
 		return nil, err
@@ -746,7 +752,7 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 // a newly created account output if newAccountValue is not zero.
 func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	lockedValue btcutil.Amount, inputs []*wire.TxIn, outputs []*wire.TxOut,
-	modifiers []Modifier) ([]byte, *wire.OutPoint, error) {
+	modifiers []Modifier) ([]byte, *wire.MsgTx, *wire.OutPoint, error) {
 
 	// Construct the spending transaction that we'll sign.
 	tx := wire.NewMsgTx(2)
@@ -766,7 +772,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		modifiedAccount = account.Copy(modifiers...)
 		nextAccountScript, err := modifiedAccount.NextOutputScript()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		// To ensure the account's locked value is enforced, we'll make
@@ -774,7 +780,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		// equal to the locked value.
 		isWithdrawal := account.Value > modifiedAccount.Value
 		if isWithdrawal && modifiedAccount.Value < lockedValue {
-			return nil, nil,
+			return nil, nil, nil,
 				newErrAccountLockedValue(lockedValue)
 		}
 
@@ -791,7 +797,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	// Ensure the crafted transaction passes some basic sanity checks.
 	err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// Locate the outpoint of the new account output if it was recreated.
@@ -799,13 +805,13 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	if modifiedAccount != nil {
 		nextAccountScript, err := modifiedAccount.NextOutputScript()
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		outputIndex, ok := clmscript.LocateOutputScript(
 			tx, nextAccountScript,
 		)
 		if !ok {
-			return nil, nil, errors.New("account output not found")
+			return nil, nil, nil, errors.New("account output not found")
 		}
 
 		// Verify that the new account value is sane.
@@ -813,7 +819,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 			btcutil.Amount(tx.TxOut[outputIndex].Value),
 		)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 
 		newAccountPoint = &wire.OutPoint{
@@ -826,7 +832,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	// the auctioneer's point-of-view and sign it.
 	traderKey, err := account.TraderKey()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
 		traderKey, account.AuctioneerKey.PubKey,
@@ -838,12 +844,12 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		account.BatchKey, account.Secret,
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	accountOutput, err := account.Output()
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	accountInputIdx := -1
@@ -853,10 +859,10 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		}
 	}
 	if accountInputIdx == -1 {
-		return nil, nil, errors.New("account input not found")
+		return nil, nil, nil, errors.New("account input not found")
 	}
 
-	signDesc := &input.SignDescriptor{
+	signDesc := &lndclient.SignDescriptor{
 		// The Signer API expects key locators _only_ when deriving keys
 		// that are not within the wallet's default scopes.
 		KeyDesc: keychain.KeyDescriptor{
@@ -867,7 +873,6 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		Output:        accountOutput,
 		HashType:      txscript.SigHashAll,
 		InputIndex:    accountInputIdx,
-		SigHashes:     txscript.NewTxSigHashes(tx),
 	}
 
 	if len(modifiers) == 0 {
@@ -887,15 +892,15 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	}
 
 	sigs, err := m.cfg.Signer.SignOutputRaw(
-		ctx, tx, []*input.SignDescriptor{signDesc},
+		ctx, tx, []*lndclient.SignDescriptor{signDesc},
 	)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 
 	// We'll need to re-append the sighash flag since SignOutputRaw strips
 	// it.
-	return append(sigs[0], byte(signDesc.HashType)), newAccountPoint, nil
+	return append(sigs[0], byte(signDesc.HashType)), tx, newAccountPoint, nil
 }
 
 // validateAccountValue ensures that a trader has requested a valid account

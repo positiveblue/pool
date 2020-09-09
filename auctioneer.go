@@ -15,7 +15,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
@@ -107,7 +107,8 @@ type Wallet interface {
 
 	// ListTransactions returns the set of confirmed transactions in the
 	// wallet.
-	ListTransactions(context.Context) ([]*wire.MsgTx, error)
+	ListTransactions(ctx context.Context, startHeight,
+		endHeight int32) ([]lndclient.Transaction, error)
 
 	// DeriveNextKey derives the next key specified of the given family.
 	DeriveNextKey(context.Context, int32) (*keychain.KeyDescriptor, error)
@@ -1513,18 +1514,19 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 func (a *Auctioneer) locateTxByOutput(ctx context.Context,
 	output *wire.TxOut) (*wire.MsgTx, error) {
 
-	txs, err := a.cfg.Wallet.ListTransactions(ctx)
+	// List all transactions from the beginning, including unconfirmed ones.
+	txs, err := a.cfg.Wallet.ListTransactions(ctx, 0, -1)
 	if err != nil {
 		return nil, err
 	}
 
 	for _, tx := range txs {
-		idx, ok := clmscript.LocateOutputScript(tx, output.PkScript)
+		idx, ok := clmscript.LocateOutputScript(tx.Tx, output.PkScript)
 		if !ok {
 			continue
 		}
-		if tx.TxOut[idx].Value == output.Value {
-			return tx, nil
+		if tx.Tx.TxOut[idx].Value == output.Value {
+			return tx.Tx, nil
 		}
 	}
 

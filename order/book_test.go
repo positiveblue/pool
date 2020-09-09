@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -62,13 +63,13 @@ type mockSigner struct {
 }
 
 func (s *mockSigner) SignOutputRaw(context.Context, *wire.MsgTx,
-	[]*input.SignDescriptor) ([][]byte, error) {
+	[]*lndclient.SignDescriptor) ([][]byte, error) {
 
 	return [][]byte{{1, 2, 3}}, nil
 }
 
 func (s *mockSigner) ComputeInputScript(context.Context, *wire.MsgTx,
-	[]*input.SignDescriptor) ([]*input.Script, error) {
+	[]*lndclient.SignDescriptor) ([]*input.Script, error) {
 
 	return nil, fmt.Errorf("unimplemented")
 }

@@ -15,7 +15,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/llm/clmrpc"
 	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
@@ -155,7 +155,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	// to the backing lnd instance.
 	lnd, err := lndclient.NewLndServices(&lndclient.LndServicesConfig{
 		LndAddress:  cfg.Lnd.Host,
-		Network:     cfg.Network,
+		Network:     lndclient.Network(cfg.Network),
 		MacaroonDir: cfg.Lnd.MacaroonDir,
 		TLSPath:     cfg.Lnd.TLSPath,
 	})
@@ -347,7 +347,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		}
 	}
 	auctioneerServer := newRPCServer(
-		store, lnd, accountManager, server.auctioneer.BestHeight,
+		store, lnd.Signer, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, server.auctioneer,
 		auctionTerms, grpcListener, serverOpts, cfg.SubscribeTimeout,
 	)

@@ -150,6 +150,18 @@ func testAccountWithdrawal(t *harnessTest) {
 		withdrawValue, validTestAddr,
 	)
 
+	// We'll attempt to bump the fee rate of the withdrawal from 1 sat/vbyte
+	// to 10 sat/vbyte. The withdrawal transaction doesn't contain an output
+	// under the backing lnd node's control, so the call should fail.
+	_, err = t.trader.BumpAccountFee(ctx, &clmrpc.BumpAccountFeeRequest{
+		TraderKey:       account.TraderKey,
+		FeeRateSatPerKw: withdrawReq.FeeRateSatPerKw * 250 * 10,
+	})
+	if err == nil || !strings.Contains(err.Error(), "eligible outputs") {
+		t.Fatalf("expected BumpAccountFee to fail on account "+
+			"transaction without eligible outputs, got err=%v", err)
+	}
+
 	// Confirm the withdrawal, and once again assert that the account state
 	// is reflected correctly.
 	block := mineBlocks(t, t.lndHarness, 6, 1)[0]
@@ -222,9 +234,27 @@ func testAccountDeposit(t *harnessTest) {
 		auctioneerAccount.StatePendingUpdate,
 	)
 
+	// We'll assume the fee rate wasn't enough for the deposit to confirm,
+	// so we'll attempt to bump it from 1 sat/vbyte to 10 sat/vbyte. We
+	// should then see two transactions in the mempool.
+	_, err = t.trader.BumpAccountFee(ctx, &clmrpc.BumpAccountFeeRequest{
+		TraderKey:       account.TraderKey,
+		FeeRateSatPerKw: depositReq.FeeRateSatPerKw * 250 * 10,
+	})
+	if err != nil {
+		t.Fatalf("unable to bump account fee: %v", err)
+	}
+	_, err = waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 2, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("deposit and bump transaction not found in mempool: %v",
+			err)
+	}
+
 	// Confirm the deposit, and once again assert that the account state
 	// is reflected correctly.
-	block := mineBlocks(t, t.lndHarness, 6, 1)[0]
+	block := mineBlocks(t, t.lndHarness, 6, 2)[0]
 	_ = assertTxInBlock(t, block, depositTxid)
 	assertTraderAccount(
 		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,

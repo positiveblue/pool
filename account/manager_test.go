@@ -211,6 +211,7 @@ func (h *testHarness) confirmAccount(a *Account, valid bool,
 
 	if valid {
 		a.State = StateOpen
+		a.LatestTx = confDetails.Tx
 	}
 
 	h.assertAccountExists(a, false)
@@ -547,7 +548,7 @@ func TestAccountExpirySpend(t *testing.T) {
 	mods := []Modifier{
 		ValueModifier(0),
 		StateModifier(StateClosed),
-		CloseTxModifier(closeTx),
+		LatestTxModifier(closeTx),
 	}
 	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx:        closeTx,
@@ -597,7 +598,7 @@ func TestAccountMultiSigClose(t *testing.T) {
 	mods := []Modifier{
 		ValueModifier(0),
 		StateModifier(StateClosed),
-		CloseTxModifier(spendTx),
+		LatestTxModifier(spendTx),
 	}
 	h.spendAccount(account, mods, &chainntnfs.SpendDetail{
 		SpendingTx:        spendTx,
@@ -879,6 +880,7 @@ func TestModifyAccountWithdrawal(t *testing.T) {
 			Index: 0,
 		}),
 		IncrementBatchKey(),
+		LatestTxModifier(spendTx),
 	}
 	expectedMods = append(expectedMods, mods...)
 	accountAfterWithdrawal := accountBeforeWithdrawal.Copy(expectedMods...)
@@ -888,21 +890,19 @@ func TestModifyAccountWithdrawal(t *testing.T) {
 	// staged modifications to the main account state. We'll populate the
 	// spend transaction with a dummy witness to ensure the multi-sig path
 	// is detected.
-	spendTx.TxIn[0].Witness = [][]byte{
+	signedSpendTx := spendTx.Copy()
+	signedSpendTx.TxIn[0].Witness = [][]byte{
 		sig, []byte("trader sig"), []byte("witness script"),
 	}
 	h.spendAccount(
 		accountAfterWithdrawal, nil,
-		&chainntnfs.SpendDetail{SpendingTx: spendTx},
+		&chainntnfs.SpendDetail{SpendingTx: signedSpendTx},
 	)
 
 	// Finally, confirming the account should allow it to transition back to
 	// StateOpen.
 	h.confirmAccount(accountAfterWithdrawal, true, &chainntnfs.TxConfirmation{
-		Tx: &wire.MsgTx{
-			Version: 2,
-			TxOut:   []*wire.TxOut{newAccountOutput},
-		},
+		Tx: spendTx,
 	})
 }
 
@@ -963,6 +963,7 @@ func TestAccountConsecutiveBatches(t *testing.T) {
 				Index: 0,
 			}),
 			IncrementBatchKey(),
+			LatestTxModifier(batchTx),
 		}
 		err = h.store.UpdateAccount(
 			context.Background(), account, mods...,

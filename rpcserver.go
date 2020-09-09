@@ -28,7 +28,7 @@ import (
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -129,7 +129,7 @@ type rpcServer struct {
 
 	auctioneer *Auctioneer
 
-	lnd *lndclient.GrpcLndServices
+	signer lndclient.SignerClient
 
 	bestHeight func() uint32
 
@@ -146,7 +146,7 @@ type rpcServer struct {
 }
 
 // newRPCServer creates a new rpcServer.
-func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
+func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
@@ -157,7 +157,7 @@ func newRPCServer(store subastadb.Store, lnd *lndclient.GrpcLndServices,
 		grpcServer:       grpc.NewServer(serverOpts...),
 		listener:         listener,
 		bestHeight:       bestHeight,
-		lnd:              lnd,
+		signer:           signer,
 		accountManager:   accountManager,
 		orderBook:        orderBook,
 		store:            store,
@@ -857,7 +857,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *clmrpc.ClientAuctionMessage,
 		)
 		authHash := accountT.AuthHash(commitHash, challenge)
 		sig := msg.Subscribe.AuthSig
-		sigValid, err := s.lnd.Signer.VerifyMessage(
+		sigValid, err := s.signer.VerifyMessage(
 			stream.Context(), authHash[:], sig, acctKey,
 		)
 		if err != nil {
@@ -1532,13 +1532,6 @@ func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error
 	case account.StateClosed:
 		rpcAcct.State = clmrpc.AuctionAccountState_STATE_CLOSED
 
-		var buf bytes.Buffer
-		err := acct.CloseTx.Serialize(&buf)
-		if err != nil {
-			return nil, err
-		}
-		rpcAcct.CloseTx = buf.Bytes()
-
 	case account.StatePendingUpdate:
 		rpcAcct.State = clmrpc.AuctionAccountState_STATE_PENDING_UPDATE
 
@@ -1547,6 +1540,14 @@ func marshallServerAccount(acct *account.Account) (*clmrpc.AuctionAccount, error
 
 	default:
 		return nil, fmt.Errorf("unknown account state")
+	}
+
+	if acct.LatestTx != nil {
+		var txBuf bytes.Buffer
+		if err := acct.LatestTx.Serialize(&txBuf); err != nil {
+			return nil, err
+		}
+		rpcAcct.LatestTx = txBuf.Bytes()
 	}
 
 	return rpcAcct, nil

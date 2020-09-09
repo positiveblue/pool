@@ -106,10 +106,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 // start spins up the trader server listening for gRPC connections on a bufconn.
 func (hs *traderHarness) start() error {
 	var err error
-	hs.server, err = llm.NewServer(hs.clientCfg)
-	if err != nil {
-		return fmt.Errorf("could not create trader server %v", err)
-	}
+	hs.server = llm.NewServer(hs.clientCfg)
 	err = hs.server.Start()
 	if err != nil {
 		return fmt.Errorf("could not start trader server %v", err)

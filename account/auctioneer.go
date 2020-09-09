@@ -8,7 +8,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/loop/lndclient"
+	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -104,7 +104,7 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 
 	// Now that we have all the required items, we'll query the Signer for
 	// a valid signature for our account output.
-	signDesc := &input.SignDescriptor{
+	signDesc := &lndclient.SignDescriptor{
 		// The Signer API expects key locators _only_ when deriving keys
 		// that are not within the wallet's default scopes.
 		KeyDesc: keychain.KeyDescriptor{
@@ -118,11 +118,10 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 		},
 		HashType:   txscript.SigHashAll,
 		InputIndex: inputIndex,
-		SigHashes:  txscript.NewTxSigHashes(tx),
 	}
 	ctx := context.Background()
 	sigs, err := signer.SignOutputRaw(
-		ctx, tx, []*input.SignDescriptor{signDesc},
+		ctx, tx, []*lndclient.SignDescriptor{signDesc},
 	)
 	if err != nil {
 		return nil, err

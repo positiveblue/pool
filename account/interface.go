@@ -214,11 +214,12 @@ type Account struct {
 	// OutPoint the outpoint of the current account output.
 	OutPoint wire.OutPoint
 
-	// CloseTx is the closing transaction of an account. This will only be
-	// populated if the account is in any of the following states:
+	// LatestTx is the latest transaction of an account.
 	//
-	//	- StateClosed
-	CloseTx *wire.MsgTx
+	// NOTE: This is nil within the StatePendingOpen phase as the auctioneer
+	// does not know of the transaction beforehand. There are also no
+	// guarantees to the transaction having its witness populated.
+	LatestTx *wire.MsgTx
 }
 
 // Output returns the current on-chain output associated with the account.
@@ -294,6 +295,10 @@ func (a *Account) Copy(modifiers ...Modifier) *Account {
 		OutPoint:   a.OutPoint,
 	}
 
+	if a.State != StatePendingOpen {
+		accountCopy.LatestTx = a.LatestTx.Copy()
+	}
+
 	for _, modifier := range modifiers {
 		modifier(accountCopy)
 	}
@@ -341,11 +346,11 @@ func OutPointModifier(outPoint wire.OutPoint) Modifier {
 	}
 }
 
-// CloseTxModifier is a functional option that modifies the closing transaction
+// LatestTxModifier is a functional option that modifies the latest transaction
 // of an account.
-func CloseTxModifier(tx *wire.MsgTx) Modifier {
+func LatestTxModifier(tx *wire.MsgTx) Modifier {
 	return func(account *Account) {
-		account.CloseTx = tx
+		account.LatestTx = tx
 	}
 }
 
