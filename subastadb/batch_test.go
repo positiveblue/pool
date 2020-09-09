@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/llm/clmscript"
 	orderT "github.com/lightninglabs/llm/order"
@@ -28,6 +29,13 @@ var (
 				PreviousOutPoint: wire.OutPoint{
 					Index: 5,
 				},
+				SignatureScript: []byte("aaa"),
+			},
+		},
+		TxOut: []*wire.TxOut{
+			{
+				Value:    4444,
+				PkScript: []byte("ddd"),
 			},
 		},
 	}
@@ -59,14 +67,14 @@ func TestPersistBatchResult(t *testing.T) {
 	// First test the basic sanity tests that are performed.
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{{}}, nil, nil, nil, nil, batchID, nil, nil,
-		nil, nil,
+		nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "order modifier") {
 		t.Fatalf("expected order modifier length mismatch, got %v", err)
 	}
 	err = store.PersistBatchResult(
 		ctx, nil, nil, []*btcec.PublicKey{{}}, nil, nil, batchID, nil,
-		nil, nil, nil,
+		nil, nil,
 	)
 	if err == nil || !strings.Contains(err.Error(), "account modifier") {
 		t.Fatalf("expected account modifier length mismatch, got %v",
@@ -144,8 +152,8 @@ func TestPersistBatchResult(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{testTraderKey}, accountModifiers,
-		ma1, batchID, &matching.OrderBatch{}, nextBatchKey,
-		batchTx, lifetimePkgs,
+		ma1, batchID, &BatchSnapshot{batchTx, 0, &matching.OrderBatch{}},
+		nextBatchKey, lifetimePkgs,
 	)
 	if err != nil {
 		t.Fatalf("error persisting batch result: %v", err)
@@ -286,8 +294,8 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{invalidAccountKey}, accountModifiers,
-		ma1, batchID, &matching.OrderBatch{}, testTraderKey, batchTx,
-		nil,
+		ma1, batchID, &BatchSnapshot{batchTx, 0, &matching.OrderBatch{}},
+		testTraderKey, nil,
 	)
 	if err == nil {
 		t.Fatal("expected error persisting batch result, got nil")
@@ -429,17 +437,43 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		ClearingPrice: 123,
 	}
 
-	// Store the snapshot and then read it back again immediately.
+	txFee := btcutil.Amount(911)
+	batchSnapshot := &BatchSnapshot{
+		BatchTx:    batchTx,
+		BatchTxFee: txFee,
+		OrderBatch: batch,
+	}
+
 	var batchID orderT.BatchID
 	copy(batchID[:], initialBatchKeyBytes)
-	err := store.PersistBatchSnapshot(ctx, batchID, batch, batchTx)
-	if err != nil {
-		t.Fatalf("could not store batch snapshot: %v", err)
+
+	nextBatchKey := clmscript.IncrementKey(InitialBatchKey)
+	ma1 := &account.Auctioneer{
+		OutPoint: wire.OutPoint{
+			Index: 5,
+		},
+		Balance:       1_000_000,
+		AuctioneerKey: testAuctioneerKeyDesc,
 	}
-	dbBatch, dbBatchTx, err := store.GetBatchSnapshot(ctx, batchID)
+	copy(ma1.BatchKey[:], nextBatchKey.SerializeCompressed())
+
+	// Store the batch and then read the snapshot back again immediately.
+	err := store.PersistBatchResult(
+		ctx, nil, nil, nil, nil, ma1, batchID, batchSnapshot,
+		nextBatchKey, nil,
+	)
+	if err != nil {
+		t.Fatalf("error persisting batch result: %v", err)
+	}
+
+	snapshot, err := store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		t.Fatalf("could not read batch snapshot: %v", err)
 	}
+
+	dbBatch := snapshot.OrderBatch
+	dbBatchTx := snapshot.BatchTx
+	dbFee := snapshot.BatchTxFee
 
 	// Both snapshots must be identical. We use the special assert function
 	// here because our batch contains orders which have net.Addr fields
@@ -448,9 +482,14 @@ func TestPersistBatchSnapshot(t *testing.T) {
 
 	// We'll also ensure that we get the exact same batch transaction as
 	// well.
-	if reflect.DeepEqual(dbBatchTx, batchTx) {
+	if !reflect.DeepEqual(dbBatchTx, batchTx) {
 		t.Fatalf("batch tx mismatch: expected %v, got %v",
-			spew.Sdump(dbBatchTx), spew.Sdump(batchTx))
+			spew.Sdump(batchTx), spew.Sdump(dbBatchTx))
+	}
+
+	if dbFee != txFee {
+		t.Fatalf("batch tx fee mismatch: expected %v, got %v",
+			txFee, dbFee)
 	}
 }
 

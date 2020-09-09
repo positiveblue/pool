@@ -83,8 +83,8 @@ type AuctioneerDatabase interface {
 
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
-	GetBatchSnapshot(context.Context,
-		orderT.BatchID) (*matching.OrderBatch, *wire.MsgTx, error)
+	GetBatchSnapshot(context.Context, orderT.BatchID) (
+		*subastadb.BatchSnapshot, error)
 
 	// BanAccount attempts to ban the account associated with a trader
 	// starting from the current height of the chain. The duration of the
@@ -548,15 +548,13 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 
 		// Now that we know this batch isn't finalized, we'll fetch the
 		// batch transaction from disk so we can rebroadcast it.
-		var priorBatchID orderT.BatchID
-		copy(priorBatchID[:], currentBatchKey.SerializeCompressed())
-		_, batchTx, err := a.cfg.DB.GetBatchSnapshot(ctxb, priorBatchID)
+		batchSnapshot, err := a.cfg.DB.GetBatchSnapshot(ctxb, batchID)
 		if err != nil {
 			return err
 		}
 
 		batches = append(batches, batch{
-			tx: batchTx,
+			tx: batchSnapshot.BatchTx,
 			id: batchID,
 		})
 	}

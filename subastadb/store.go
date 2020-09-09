@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
@@ -71,18 +72,24 @@ type Store interface {
 	// back.
 	PersistBatchResult(context.Context, []orderT.Nonce, [][]order.Modifier,
 		[]*btcec.PublicKey, [][]account.Modifier, *account.Auctioneer,
-		orderT.BatchID, *matching.OrderBatch, *btcec.PublicKey,
-		*wire.MsgTx, []*chanenforcement.LifetimePackage) error
-
-	// PersistBatchSnapshot persists a self-contained snapshot of a batch
-	// including all involved orders and accounts.
-	PersistBatchSnapshot(context.Context, orderT.BatchID,
-		*matching.OrderBatch, *wire.MsgTx) error
+		orderT.BatchID, *BatchSnapshot, *btcec.PublicKey,
+		[]*chanenforcement.LifetimePackage) error
 
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
-	GetBatchSnapshot(context.Context, orderT.BatchID) (
-		*matching.OrderBatch, *wire.MsgTx, error)
+	GetBatchSnapshot(context.Context, orderT.BatchID) (*BatchSnapshot, error)
+}
+
+// BatchSnapshot holds a self-contained snapshot of a batch.
+type BatchSnapshot struct {
+	// BatchTx is the final, signed batch transaction for this batch.
+	BatchTx *wire.MsgTx
+
+	// BatchTxFee is the chain fee paid by the above batch tx.
+	BatchTxFee btcutil.Amount
+
+	// OrderBatch is the matched orders part of this batch.
+	OrderBatch *matching.OrderBatch
 }
 
 // nonceMutex is a simple wrapper around a multimutex that casts 32-byte nonces

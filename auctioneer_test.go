@@ -71,7 +71,7 @@ type mockAuctioneerState struct {
 	// batch is confirmed.
 	batchStates map[orderT.BatchID]bool
 
-	snapshots map[orderT.BatchID]*wire.MsgTx
+	snapshots map[orderT.BatchID]*subastadb.BatchSnapshot
 
 	bannedAccounts map[matching.AccountID]struct{}
 }
@@ -90,7 +90,7 @@ func newMockAuctioneerState(batchKey *btcec.PublicKey,
 		stateTransitions: make(chan AuctionState, stateTransitionsBuffer),
 		orders:           make(map[orderT.Nonce]order.ServerOrder),
 		batchStates:      make(map[orderT.BatchID]bool),
-		snapshots:        make(map[orderT.BatchID]*wire.MsgTx),
+		snapshots:        make(map[orderT.BatchID]*subastadb.BatchSnapshot),
 		bannedAccounts:   make(map[matching.AccountID]struct{}),
 	}
 }
@@ -169,17 +169,17 @@ func (m *mockAuctioneerState) BatchConfirmed(ctx context.Context,
 }
 
 func (m *mockAuctioneerState) GetBatchSnapshot(ctx context.Context,
-	bid orderT.BatchID) (*matching.OrderBatch, *wire.MsgTx, error) {
+	bid orderT.BatchID) (*subastadb.BatchSnapshot, error) {
 
 	m.Lock()
 	defer m.Unlock()
 
-	tx, ok := m.snapshots[bid]
+	s, ok := m.snapshots[bid]
 	if !ok {
-		return nil, nil, fmt.Errorf("unable to find snapshot")
+		return nil, fmt.Errorf("unable to find snapshot")
 	}
 
-	return nil, tx, nil
+	return s, nil
 }
 
 func (m *mockAuctioneerState) GetOrder(ctx context.Context,
@@ -1003,7 +1003,9 @@ func (a *auctioneerTestHarness) MarkBatchUnconfirmed(batchKey *btcec.PublicKey,
 	bid := orderT.NewBatchID(batchKey)
 
 	a.db.batchStates[bid] = false
-	a.db.snapshots[bid] = tx
+	a.db.snapshots[bid] = &subastadb.BatchSnapshot{
+		BatchTx: tx,
+	}
 }
 
 func (a *auctioneerTestHarness) AssertBatchConfirmed(batchKey *btcec.PublicKey) {

@@ -6,13 +6,11 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
-	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // StoreMock is a type to hold mocked orders.
@@ -23,9 +21,8 @@ type StoreMock struct {
 	Orders           map[orderT.Nonce]order.ServerOrder
 	BatchPubkey      *btcec.PublicKey
 	MasterAcct       *account.Auctioneer
-	Snapshots        map[orderT.BatchID]*matching.OrderBatch
+	Snapshots        map[orderT.BatchID]*BatchSnapshot
 	LifetimePackages []*chanenforcement.LifetimePackage
-	BatchTx          *wire.MsgTx
 	t                *testing.T
 }
 
@@ -37,7 +34,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		BannedAccs:  make(map[[33]byte][2]uint32),
 		Orders:      make(map[orderT.Nonce]order.ServerOrder),
 		BatchPubkey: InitialBatchKey,
-		Snapshots:   make(map[orderT.BatchID]*matching.OrderBatch),
+		Snapshots:   make(map[orderT.BatchID]*BatchSnapshot),
 		t:           t,
 	}
 }
@@ -291,8 +288,8 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAcct *account.Auctioneer, batchID orderT.BatchID,
-	batch *matching.OrderBatch, nextBatchKey *btcec.PublicKey,
-	tx *wire.MsgTx, lifetimePkgs []*chanenforcement.LifetimePackage) error {
+	batchSnapshot *BatchSnapshot, nextBatchKey *btcec.PublicKey,
+	lifetimePkgs []*chanenforcement.LifetimePackage) error {
 
 	err := s.UpdateOrders(ctx, orders, orderModifiers)
 	if err != nil {
@@ -311,8 +308,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	}
 
 	s.MasterAcct = masterAcct
-	s.BatchTx = tx
-	s.Snapshots[batchID] = batch
+	s.Snapshots[batchID] = batchSnapshot
 	s.LifetimePackages = lifetimePkgs
 
 	var batchKey [33]byte
@@ -322,30 +318,18 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	return nil
 }
 
-// PersistBatchSnapshot persists a self-contained snapshot of a batch
-// including all involved orders and accounts.
-//
-// NOTE: This is part of the Store interface.
-func (s *StoreMock) PersistBatchSnapshot(_ context.Context, id orderT.BatchID,
-	batch *matching.OrderBatch, tx *wire.MsgTx) error {
-
-	s.Snapshots[id] = batch
-	s.BatchTx = tx
-	return nil
-}
-
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) GetBatchSnapshot(_ context.Context, id orderT.BatchID) (
-	*matching.OrderBatch, *wire.MsgTx, error) {
+	*BatchSnapshot, error) {
 
 	snapshot, ok := s.Snapshots[id]
 	if !ok {
-		return nil, nil, errBatchSnapshotNotFound
+		return nil, errBatchSnapshotNotFound
 	}
-	return snapshot, s.BatchTx, nil
+	return snapshot, nil
 }
 
 // BanAccount attempts to ban the account associated with a trader starting from

@@ -369,25 +369,26 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	}
 
 	// Next, we'll fetch the targeted batch snapshot.
-	batchSnapshot, batchTx, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := s.store.GetBatchSnapshot(ctx, batchID)
 	if err != nil {
 		return nil, err
 	}
+	batch := batchSnapshot.OrderBatch
 
 	resp := &adminrpc.AdminBatchSnapshotResponse{
 		Version:           uint32(orderT.CurrentVersion),
 		BatchId:           batchID[:],
 		PrevBatchId:       prevBatchID,
-		ClearingPriceRate: uint32(batchSnapshot.ClearingPrice),
+		ClearingPriceRate: uint32(batch.ClearingPrice),
 	}
 
 	// The response for this call is a bit simpler than the
 	// RelevantBatchSnapshot call, in that we only need to return the set
 	// of orders, and not also the accounts diffs.
 	resp.MatchedOrders = make(
-		[]*adminrpc.AdminMatchedOrderSnapshot, len(batchSnapshot.Orders),
+		[]*adminrpc.AdminMatchedOrderSnapshot, len(batch.Orders),
 	)
-	for i, o := range batchSnapshot.Orders {
+	for i, o := range batch.Orders {
 		ask := o.Details.Ask
 		bid := o.Details.Bid
 		quote := o.Details.Quote
@@ -412,12 +413,12 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	// Finally, we'll serialize the batch transaction, which completes our
 	// response.
 	var txBuf bytes.Buffer
-	if err := batchTx.Serialize(&txBuf); err != nil {
+	if err := batchSnapshot.BatchTx.Serialize(&txBuf); err != nil {
 		return nil, err
 	}
 
 	resp.BatchTx = txBuf.Bytes()
-	resp.BatchTxId = batchTx.TxHash().String()
+	resp.BatchTxId = batchSnapshot.BatchTx.TxHash().String()
 
 	return resp, nil
 }
