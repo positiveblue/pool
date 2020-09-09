@@ -13,6 +13,7 @@ import (
 	orderT "github.com/lightninglabs/llm/order"
 	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -129,6 +130,10 @@ type ExecutionContext struct {
 
 	// ExeTx is the unsigned execution transaction.
 	ExeTx *wire.MsgTx
+
+	// FeeInfoEstimate holds a fee info estimate for the unsigned execution
+	// transacion.
+	FeeInfoEstimate *feebump.TxFeeInfo
 
 	// MasterAccountDiff is a diff that describes the prior and current
 	// state of the auctioneer's master account output.
@@ -446,11 +451,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	finalAccountBalance += int64(
 		orderBatch.FeeReport.AuctioneerFeesAccrued,
 	)
-	finalAccountBalance -= int64(
-		txFeeEstimator.AuctioneerFee(
-			totalTraderFees, traderOuts,
-		),
+
+	auctioneerFee := txFeeEstimator.AuctioneerFee(
+		totalTraderFees, traderOuts,
 	)
+	finalAccountBalance -= int64(auctioneerFee)
 
 	log.Infof("Master Auctioneer Output balance delta: prev_bal=%v, "+
 		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,
@@ -484,6 +489,17 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	err = blockchain.CheckTransactionSanity(btcutil.NewTx(e.ExeTx))
 	if err != nil {
 		return err
+	}
+
+	// We'll take note of the fee paid by the transaction and the final
+	// weight estimate. We will use this to determine if we need to
+	// recreate the batch transaction with a higher fee before executing
+	// it.
+	txFee := totalTraderFees + auctioneerFee
+	txWeight := txFeeEstimator.EstimateBatchWeight(traderOuts)
+	e.FeeInfoEstimate = &feebump.TxFeeInfo{
+		Fee:    txFee,
+		Weight: txWeight,
 	}
 
 	// Finally, we'll construct a new account diff to be used for the
