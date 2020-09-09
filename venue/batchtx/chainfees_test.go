@@ -403,3 +403,76 @@ func TestChainFeeEstimatorDustAccounts(t *testing.T) {
 
 	t.Logf("Total number of scenarios run: %v", n)
 }
+
+type singleSet struct {
+	orderSet []matching.MatchedOrder
+	feeRate  chainfee.SatPerKWeight
+}
+
+// TestChainFeeEstimatorMeetFeeRate checks that the fees calculated for the
+// batch transaction (trader + auctioneer fees) makes the tx meet our target
+// fee rate.
+func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
+	t.Parallel()
+
+	scenario := func(singleSet singleSet) bool {
+		feeRate := singleSet.feeRate
+		orderSet := singleSet.orderSet
+
+		estimator := newChainFeeEstimator(orderSet, feeRate)
+
+		// Get estimated fees paid by the traders.
+		var traders btcutil.Amount
+		var numOuts int
+		for trader, cnt := range estimator.traderChanCount {
+			traders += estimator.EstimateTraderFee(trader)
+			numOuts += int(cnt)
+		}
+
+		// Given what the traders paid, return total tx fee.
+		totalFee := traders + estimator.AuctioneerFee(
+			traders, numOuts,
+		)
+
+		// Total fee must always be enough to pay for the tx at the
+		// wanted fee rate.
+		w := estimator.EstimateBatchWeight(numOuts)
+		finalFeeRate := chainfee.SatPerKWeight(int64(totalFee) * 1000 / w)
+		if finalFeeRate < feeRate {
+			t.Logf("final fee rate %v not able to satisfy "+
+				"targeted test fee rate %v", finalFeeRate,
+				feeRate)
+			return false
+		}
+
+		// For transactions with a weight above 1000 wu, we can check
+		// that the final fee rate matches exactly.  The reason this is
+		// not always true for smaller transactions is that if we have
+		// to add an extra sat to satisfy the target fee rate, it might
+		// bump the fee rate with more than 1 sat/kw
+		if w >= 1000 {
+			if finalFeeRate != feeRate {
+				t.Logf("final fee rate %v not equal to test "+
+					"fee rate %v", finalFeeRate, feeRate)
+				return false
+			}
+		}
+
+		return true
+	}
+	quickCfg := quick.Config{
+		Values: func(v []reflect.Value, r *rand.Rand) {
+
+			totalSize := int32(uint8(r.Int31()))
+			set := genRandMatchedOrders(r, totalSize, totalSize)
+
+			v[0] = reflect.ValueOf(singleSet{
+				orderSet: set,
+				feeRate:  chainfee.SatPerKWeight(uint16(r.Int31())),
+			})
+		},
+	}
+	if err := quick.Check(scenario, &quickCfg); err != nil {
+		t.Fatalf("batch tx fee rate property violated: %v", err)
+	}
+}

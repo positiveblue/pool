@@ -209,6 +209,11 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 		t.Fatalf("unable to construct batch tx: %v", err)
 	}
 
+	if batchTxCtx.FeeInfoEstimate.FeeRate() != feeRate {
+		t.Fatalf("assembled tx had wrong feerate %v, wanted %v",
+			batchTxCtx.FeeInfoEstimate.FeeRate(), feeRate)
+	}
+
 	batchTx := batchTxCtx.ExeTx
 
 	// Every trader should be able to find their account output in the
@@ -488,6 +493,11 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
+	}
+
+	if batchTxCtx.FeeInfoEstimate.FeeRate() != feeRate {
+		t.Fatalf("assembled tx had wrong feerate %v, wanted %v",
+			batchTxCtx.FeeInfoEstimate.FeeRate(), feeRate)
 	}
 
 	// Check that the batch tx has the expected outputs and inputs.

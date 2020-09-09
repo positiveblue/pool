@@ -5,6 +5,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -111,11 +112,22 @@ func (c *chainFeeEstimator) AuctioneerFee(
 	// auctioneer, we'll first compute the weight of a completed exeTx.
 	totalTxWeight := c.EstimateBatchWeight(numTraderOuts)
 
+	// Get the total tx fee to pay for this weight at our fee rate.
+	txFee := c.feeRate.FeeForWeight(totalTxWeight)
+
+	// Since the BOLT#3 standard is to round the final fee down, we might
+	// actually end up being one sat short to meet our fee rate. If that
+	// happens we add one more sat to the fee, which will be paid by the
+	// auctioneer.
+	if feebump.FeeRate(txFee, totalTxWeight) < c.feeRate {
+		txFee++
+	}
+
 	// Finally, the fee that we (the auctioneer) need to pay is the
 	// difference between the fee needed for the entire transaction, and
 	// what the trader pays. We compute the surplus like this, as it means
 	// that we pay for all signalling data in the serialized transaction,
 	// while the traders pay only for the inputs/outputs they add to the
 	// transaction.
-	return c.feeRate.FeeForWeight(totalTxWeight) - traderChainFeesPaid
+	return txFee - traderChainFeesPaid
 }
