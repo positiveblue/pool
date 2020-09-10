@@ -14,10 +14,10 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/lndclient"
 	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/account/watcher"
 	"github.com/lightninglabs/pool/poolscript"
-	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
 )

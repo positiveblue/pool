@@ -9,8 +9,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/pool/poolscript"
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 

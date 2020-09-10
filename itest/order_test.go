@@ -3,8 +3,8 @@ package itest
 import (
 	"context"
 
-	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolrpc"
 )
 
 const (

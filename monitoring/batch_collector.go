@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/pool/poolscript"
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/prometheus/client_golang/prometheus"

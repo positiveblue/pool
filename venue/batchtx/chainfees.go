@@ -2,8 +2,8 @@ package batchtx
 
 import (
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/pool/poolscript"
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
