@@ -9,9 +9,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/lndclient"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"

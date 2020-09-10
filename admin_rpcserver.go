@@ -12,9 +12,9 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -198,18 +198,18 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 		return nil, err
 	}
 
-	rpcAsks := make([]*clmrpc.ServerAsk, 0, len(dbOrders)/2)
-	rpcBids := make([]*clmrpc.ServerBid, 0, len(dbOrders)/2)
+	rpcAsks := make([]*poolrpc.ServerAsk, 0, len(dbOrders)/2)
+	rpcBids := make([]*poolrpc.ServerBid, 0, len(dbOrders)/2)
 	for _, dbOrder := range dbOrders {
 		switch o := dbOrder.(type) {
 		case *order.Ask:
-			rpcAsks = append(rpcAsks, &clmrpc.ServerAsk{
+			rpcAsks = append(rpcAsks, &poolrpc.ServerAsk{
 				Details:           marshallServerOrder(o),
 				MaxDurationBlocks: o.MaxDuration(),
 				Version:           uint32(o.Version),
 			})
 		case *order.Bid:
-			rpcBids = append(rpcBids, &clmrpc.ServerBid{
+			rpcBids = append(rpcBids, &poolrpc.ServerBid{
 				Details:           marshallServerOrder(o),
 				MinDurationBlocks: o.MinDuration(),
 				Version:           uint32(o.Version),
@@ -233,7 +233,7 @@ func (s *adminRPCServer) ListAccounts(ctx context.Context,
 		return nil, err
 	}
 
-	rpcAccounts := make([]*clmrpc.AuctionAccount, 0, len(dbAccounts))
+	rpcAccounts := make([]*poolrpc.AuctionAccount, 0, len(dbAccounts))
 	for _, dbAccount := range dbAccounts {
 		rpcAccount, err := marshallServerAccount(dbAccount)
 		if err != nil {
@@ -276,7 +276,7 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	// Don't calculate the last key if the current one is the initial one as
 	// that would result in a value that is never used anywhere.
 	if !currentBatchKey.IsEqual(subastadb.InitialBatchKey) {
-		lastBatchKey := clmscript.DecrementKey(currentBatchKey)
+		lastBatchKey := poolscript.DecrementKey(currentBatchKey)
 		result.LastBatchId = lastBatchKey.SerializeCompressed()
 	}
 
@@ -305,7 +305,7 @@ func (s *adminRPCServer) ListBatches(ctx context.Context,
 		}
 
 		// Walk back by decrementing the key.
-		currentBatchKey = clmscript.DecrementKey(currentBatchKey)
+		currentBatchKey = poolscript.DecrementKey(currentBatchKey)
 	}
 
 	// Reverse the list to put the oldest/initial batch first to get a more
@@ -322,7 +322,7 @@ func (s *adminRPCServer) ListBatches(ctx context.Context,
 // BatchSnapshot returns the stored snapshot information of one batch specified
 // by its ID.
 func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
-	req *clmrpc.BatchSnapshotRequest) (*adminrpc.AdminBatchSnapshotResponse,
+	req *poolrpc.BatchSnapshotRequest) (*adminrpc.AdminBatchSnapshotResponse,
 	error) {
 
 	log.Tracef("[BatchSnapshot] batch_id=%x", req.BatchId)
@@ -348,7 +348,7 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 				"batch key: %v", err)
 		}
 
-		batchKey = clmscript.DecrementKey(currentBatchKey)
+		batchKey = poolscript.DecrementKey(currentBatchKey)
 		batchID = orderT.NewBatchID(batchKey)
 	} else {
 		copy(batchID[:], req.BatchId)
@@ -364,7 +364,7 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	// key so the client can use this as a sort of linked list to navigate
 	// the batch chain. Unless of course we reached the initial batch key.
 	if !batchKey.IsEqual(subastadb.InitialBatchKey) {
-		prevBatchKey := clmscript.DecrementKey(batchKey)
+		prevBatchKey := poolscript.DecrementKey(batchKey)
 		prevBatchID = prevBatchKey.SerializeCompressed()
 	}
 
@@ -394,12 +394,12 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 		quote := o.Details.Quote
 
 		resp.MatchedOrders[i] = &adminrpc.AdminMatchedOrderSnapshot{
-			Ask: &clmrpc.ServerAsk{
+			Ask: &poolrpc.ServerAsk{
 				Details:           marshallServerOrder(ask),
 				MaxDurationBlocks: ask.MaxDuration(),
 				Version:           uint32(ask.Version),
 			},
-			Bid: &clmrpc.ServerBid{
+			Bid: &poolrpc.ServerBid{
 				Details:           marshallServerOrder(bid),
 				MinDurationBlocks: bid.MinDuration(),
 				Version:           uint32(bid.Version),

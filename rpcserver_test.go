@@ -14,9 +14,9 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
-	accountT "github.com/lightninglabs/llm/account"
-	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/terms"
+	accountT "github.com/lightninglabs/pool/account"
+	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -85,8 +85,8 @@ var (
 type mockStream struct {
 	grpc.ServerStream
 	ctx      context.Context
-	toClient chan *clmrpc.ServerAuctionMessage
-	toServer chan *clmrpc.ClientAuctionMessage
+	toClient chan *poolrpc.ServerAuctionMessage
+	toServer chan *poolrpc.ClientAuctionMessage
 	recErr   chan error
 }
 
@@ -94,12 +94,12 @@ func (s *mockStream) Context() context.Context {
 	return s.ctx
 }
 
-func (s *mockStream) Send(msg *clmrpc.ServerAuctionMessage) error {
+func (s *mockStream) Send(msg *poolrpc.ServerAuctionMessage) error {
 	s.toClient <- msg
 	return nil
 }
 
-func (s *mockStream) Recv() (*clmrpc.ClientAuctionMessage, error) {
+func (s *mockStream) Recv() (*poolrpc.ClientAuctionMessage, error) {
 	// Send an error (e.g. abort signal) or a message? Either way, we need
 	// to block until there's something to send.
 	select {
@@ -111,7 +111,7 @@ func (s *mockStream) Recv() (*clmrpc.ClientAuctionMessage, error) {
 	}
 }
 
-var _ clmrpc.ChannelAuctioneer_SubscribeBatchAuctionServer = (*mockStream)(nil)
+var _ poolrpc.ChannelAuctioneer_SubscribeBatchAuctionServer = (*mockStream)(nil)
 
 // TestRPCServerBatchAuction tests the normal happy flow of a client connecting,
 // opening a stream, registering a notification for an account, reading messages
@@ -125,8 +125,8 @@ func TestRPCServerBatchAuction(t *testing.T) {
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
-			toClient: make(chan *clmrpc.ServerAuctionMessage),
-			toServer: make(chan *clmrpc.ClientAuctionMessage),
+			toClient: make(chan *poolrpc.ServerAuctionMessage),
+			toServer: make(chan *poolrpc.ClientAuctionMessage),
 			recErr:   make(chan error, 1),
 		}
 		streamErr = make(chan error)
@@ -156,7 +156,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	// Make sure we can normally complete the subscription handshake for our
 	// normal, completed account.
 	resp := testHandshake(t, toRawKey(testTraderKey), mockStream)
-	if _, ok := resp.Msg.(*clmrpc.ServerAuctionMessage_Success); !ok {
+	if _, ok := resp.Msg.(*poolrpc.ServerAuctionMessage_Success); !ok {
 		t.Fatalf("server didn't send expected success message")
 	}
 
@@ -189,7 +189,7 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	select {
 	case rpcMsg := <-mockStream.toClient:
 		switch typedMsg := rpcMsg.Msg.(type) {
-		case *clmrpc.ServerAuctionMessage_Prepare:
+		case *poolrpc.ServerAuctionMessage_Prepare:
 			// This is what we expected.
 
 		default:
@@ -235,8 +235,8 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
-			toClient: make(chan *clmrpc.ServerAuctionMessage),
-			toServer: make(chan *clmrpc.ClientAuctionMessage),
+			toClient: make(chan *poolrpc.ServerAuctionMessage),
+			toServer: make(chan *poolrpc.ClientAuctionMessage),
 			recErr:   make(chan error, 1),
 		}
 		streamErr = make(chan error)
@@ -268,10 +268,10 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 		t.Fatalf("server didn't send expected error: %v", resp)
 	}
 	errCode := resp.GetError().ErrorCode
-	if errCode != clmrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION {
+	if errCode != poolrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION {
 		t.Fatalf("server didn't send expected error code, got %v "+
 			"wanted %v", errCode,
-			clmrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION)
+			poolrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION)
 	}
 
 	// Let's add an account to our store and register for updates on that
@@ -307,9 +307,9 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 	comms := rpcServer.connectedStreams[testTokenID].comms
 
 	// Simulate a recovery message from the trader now.
-	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
-		Msg: &clmrpc.ClientAuctionMessage_Recover{
-			Recover: &clmrpc.AccountRecovery{
+	mockStream.toServer <- &poolrpc.ClientAuctionMessage{
+		Msg: &poolrpc.ClientAuctionMessage_Recover{
+			Recover: &poolrpc.AccountRecovery{
 				TraderKey: testRawTraderKey,
 			},
 		},
@@ -361,8 +361,8 @@ func TestRPCServerBatchAuctionStreamError(t *testing.T) {
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
-			toClient: make(chan *clmrpc.ServerAuctionMessage),
-			toServer: make(chan *clmrpc.ClientAuctionMessage),
+			toClient: make(chan *poolrpc.ServerAuctionMessage),
+			toServer: make(chan *poolrpc.ClientAuctionMessage),
 			recErr:   make(chan error),
 		}
 		streamErr = make(chan error, 1)
@@ -412,8 +412,8 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 		rpcServer  = newServer(mockStore)
 		mockStream = &mockStream{
 			ctx:      authCtx,
-			toClient: make(chan *clmrpc.ServerAuctionMessage),
-			toServer: make(chan *clmrpc.ClientAuctionMessage),
+			toClient: make(chan *poolrpc.ServerAuctionMessage),
+			toServer: make(chan *poolrpc.ClientAuctionMessage),
 			recErr:   make(chan error),
 		}
 		streamErr = make(chan error, 1)
@@ -471,14 +471,14 @@ func newServer(store subastadb.Store) *rpcServer {
 // testHandshake completes the default 3-way-handshake and returns the final
 // message sent by the auctioneer.
 func testHandshake(t *testing.T, traderKey [33]byte,
-	mockStream *mockStream) *clmrpc.ServerAuctionMessage {
+	mockStream *mockStream) *poolrpc.ServerAuctionMessage {
 
 	// The 3-way handshake begins. The trader sends its commitment.
 	var challenge [32]byte
 	testCommitHash := accountT.CommitAccount(traderKey, testTraderNonce)
-	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
-		Msg: &clmrpc.ClientAuctionMessage_Commit{
-			Commit: &clmrpc.AccountCommitment{
+	mockStream.toServer <- &poolrpc.ClientAuctionMessage{
+		Msg: &poolrpc.ClientAuctionMessage_Commit{
+			Commit: &poolrpc.AccountCommitment{
 				CommitHash: testCommitHash[:],
 			},
 		},
@@ -487,7 +487,7 @@ func testHandshake(t *testing.T, traderKey [33]byte,
 	// The server sends the challenge next.
 	select {
 	case msg := <-mockStream.toClient:
-		challengeMsg, ok := msg.Msg.(*clmrpc.ServerAuctionMessage_Challenge)
+		challengeMsg, ok := msg.Msg.(*poolrpc.ServerAuctionMessage_Challenge)
 		if !ok {
 			t.Fatalf("unexpected first message from server: %v", msg)
 		}
@@ -500,9 +500,9 @@ func testHandshake(t *testing.T, traderKey [33]byte,
 	// Step 3 of 3 is the trader sending their signature over the auth hash.
 	authHash := accountT.AuthHash(testCommitHash, challenge)
 	mockSigner.SignatureMsg = string(authHash[:])
-	mockStream.toServer <- &clmrpc.ClientAuctionMessage{
-		Msg: &clmrpc.ClientAuctionMessage_Subscribe{
-			Subscribe: &clmrpc.AccountSubscription{
+	mockStream.toServer <- &poolrpc.ClientAuctionMessage{
+		Msg: &poolrpc.ClientAuctionMessage_Subscribe{
+			Subscribe: &poolrpc.AccountSubscription{
 				TraderKey:   traderKey[:],
 				CommitNonce: testTraderNonce[:],
 				AuthSig:     testSignature,

@@ -3,8 +3,8 @@ package itest
 import (
 	"context"
 
-	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolrpc"
 )
 
 const (
@@ -18,9 +18,9 @@ func testOrderSubmission(t *harnessTest) {
 
 	// Start by creating an account over 2M sats that is valid for the next
 	// 1000 blocks.
-	acct := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	acct := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
 	})
@@ -28,8 +28,8 @@ func testOrderSubmission(t *harnessTest) {
 	// Now that the account is confirmed, submit an order over part of the
 	// account balance. First, try with an invalid duration to check it is
 	// enforced. The order shouldn't be stored.
-	rpcAsk := &clmrpc.Ask{
-		Details: &clmrpc.Order{
+	rpcAsk := &poolrpc.Ask{
+		Details: &poolrpc.Order{
 			TraderKey:               acct.TraderKey,
 			RateFixed:               100,
 			Amt:                     1500000,
@@ -38,8 +38,8 @@ func testOrderSubmission(t *harnessTest) {
 		MaxDurationBlocks: 365*144 + 1,
 		Version:           uint32(order.CurrentVersion),
 	}
-	_, err := t.trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
-		Details: &clmrpc.SubmitOrderRequest_Ask{
+	_, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
+		Details: &poolrpc.SubmitOrderRequest_Ask{
 			Ask: rpcAsk,
 		},
 	})
@@ -49,8 +49,8 @@ func testOrderSubmission(t *harnessTest) {
 
 	// Now try a correct one.
 	rpcAsk.MaxDurationBlocks = 2 * dayInBlocks
-	ask, err := t.trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
-		Details: &clmrpc.SubmitOrderRequest_Ask{
+	ask, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
+		Details: &poolrpc.SubmitOrderRequest_Ask{
 			Ask: rpcAsk,
 		},
 	})
@@ -62,7 +62,7 @@ func testOrderSubmission(t *harnessTest) {
 	}
 
 	// Now list all orders and validate order status.
-	list, err := t.trader.ListOrders(ctx, &clmrpc.ListOrdersRequest{})
+	list, err := t.trader.ListOrders(ctx, &poolrpc.ListOrdersRequest{})
 	if err != nil {
 		t.Fatalf("could not list orders: %v", err)
 	}
@@ -70,9 +70,9 @@ func testOrderSubmission(t *harnessTest) {
 		t.Fatalf("unexpected number of asks. got %d, expected %d",
 			len(list.Asks), 1)
 	}
-	if list.Asks[0].Details.State != clmrpc.OrderState_ORDER_SUBMITTED {
+	if list.Asks[0].Details.State != poolrpc.OrderState_ORDER_SUBMITTED {
 		t.Fatalf("unexpected account state. got %v, expected %v",
 			list.Asks[0].Details.State,
-			clmrpc.OrderState_ORDER_SUBMITTED)
+			poolrpc.OrderState_ORDER_SUBMITTED)
 	}
 }

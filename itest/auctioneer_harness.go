@@ -12,7 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
@@ -41,7 +41,7 @@ type auctioneerHarness struct {
 	etcd  *embed.Etcd
 	store subastadb.Store
 
-	clmrpc.ChannelAuctioneerClient
+	poolrpc.ChannelAuctioneerClient
 	adminrpc.AuctionAdminClient
 }
 
@@ -144,7 +144,7 @@ func (hs *auctioneerHarness) runServer() error {
 	if err != nil {
 		return err
 	}
-	hs.ChannelAuctioneerClient = clmrpc.NewChannelAuctioneerClient(
+	hs.ChannelAuctioneerClient = poolrpc.NewChannelAuctioneerClient(
 		rpcConn,
 	)
 

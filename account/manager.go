@@ -14,10 +14,10 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
 	"github.com/lightninglabs/aperture/lsat"
-	accountT "github.com/lightninglabs/llm/account"
-	"github.com/lightninglabs/llm/account/watcher"
-	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/lndclient"
+	accountT "github.com/lightninglabs/pool/account"
+	"github.com/lightninglabs/pool/account/watcher"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -321,7 +321,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 	if err != nil {
 		return err
 	}
-	derivedScript, err := clmscript.AccountScript(
+	derivedScript, err := poolscript.AccountScript(
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		secret,
@@ -519,14 +519,14 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	// If the witness is for a spend of the account expiration path, then
 	// we'll mark the account as closed as the account has expired and all
 	// the funds have been withdrawn.
-	case clmscript.IsExpirySpend(spendWitness):
+	case poolscript.IsExpirySpend(spendWitness):
 		break
 
 	// If the witness is for a multi-sig spend, then either an order by the
 	// trader was matched, the trader has made an account modification, or
 	// the account was closed. If it was closed, then the account output
 	// shouldn't have been recreated.
-	case clmscript.IsMultiSigSpend(spendWitness):
+	case poolscript.IsMultiSigSpend(spendWitness):
 		// An account cannot be spent without our knowledge, so we'll
 		// assume we always persist account updates before a broadcast
 		// of the spending transaction. Therefore, since we should
@@ -536,7 +536,7 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 		if err != nil {
 			return err
 		}
-		_, ok := clmscript.LocateOutputScript(
+		_, ok := poolscript.LocateOutputScript(
 			spendTx, accountOutput.PkScript,
 		)
 		if !ok {
@@ -807,7 +807,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		if err != nil {
 			return nil, nil, nil, err
 		}
-		outputIndex, ok := clmscript.LocateOutputScript(
+		outputIndex, ok := poolscript.LocateOutputScript(
 			tx, nextAccountScript,
 		)
 		if !ok {
@@ -834,12 +834,12 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
+	auctioneerKeyTweak := poolscript.AuctioneerKeyTweak(
 		traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
 	)
 
-	witnessScript, err := clmscript.AccountWitnessScript(
+	witnessScript, err := poolscript.AccountWitnessScript(
 		account.Expiry, traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
 	)

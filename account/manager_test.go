@@ -15,8 +15,8 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/aperture/lsat"
-	accountT "github.com/lightninglabs/llm/account"
-	"github.com/lightninglabs/llm/clmscript"
+	accountT "github.com/lightninglabs/pool/account"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -160,7 +160,7 @@ func (h *testHarness) initAccount() *Account {
 	}
 
 	params.OutPoint = zeroOutPoint
-	script, err := clmscript.AccountScript(
+	script, err := poolscript.AccountScript(
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		sharedSecret,
@@ -259,7 +259,7 @@ func (h *testHarness) obtainExpectedSig(account *Account,
 	if err != nil {
 		h.t.Fatal(err)
 	}
-	witnessScript, err := clmscript.AccountWitnessScript(
+	witnessScript, err := poolscript.AccountWitnessScript(
 		account.Expiry, traderKey, account.AuctioneerKey.PubKey,
 		account.BatchKey, account.Secret,
 	)
@@ -268,7 +268,7 @@ func (h *testHarness) obtainExpectedSig(account *Account,
 	}
 
 	privKey := h.wallet.signer.PrivKey
-	tweak := clmscript.AuctioneerKeyTweak(
+	tweak := poolscript.AuctioneerKeyTweak(
 		traderKey, account.AuctioneerKey.PubKey, account.BatchKey,
 		account.Secret,
 	)
@@ -406,7 +406,7 @@ func TestAccountDifferentTraderKey(t *testing.T) {
 
 	heightHint := uint32(1)
 	params.OutPoint = zeroOutPoint
-	script, err := clmscript.AccountScript(
+	script, err := poolscript.AccountScript(
 		params.Expiry, testAuctioneerKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		sharedSecret,

@@ -12,8 +12,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
@@ -146,7 +146,7 @@ func TestPersistBatchResult(t *testing.T) {
 	}
 	lifetimePkgs := []*chanenforcement.LifetimePackage{lifetimePkg}
 
-	nextBatchKey := clmscript.IncrementKey(batchKey)
+	nextBatchKey := poolscript.IncrementKey(batchKey)
 
 	// Then call the actual persist method on the store.
 	err = store.PersistBatchResult(
@@ -344,7 +344,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		},
 		BatchKey: toRawKey(testAuctioneerKey),
 		NextBatchKey: toRawKey(
-			clmscript.IncrementKey(testAuctioneerKey),
+			poolscript.IncrementKey(testAuctioneerKey),
 		),
 		VenueSecret:   [32]byte{88, 99},
 		AccountExpiry: 10,
@@ -362,7 +362,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		},
 		BatchKey: toRawKey(testTraderKey),
 		NextBatchKey: toRawKey(
-			clmscript.IncrementKey(testTraderKey),
+			poolscript.IncrementKey(testTraderKey),
 		),
 		VenueSecret:   [32]byte{99, 10},
 		AccountExpiry: 11,
@@ -447,7 +447,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	var batchID orderT.BatchID
 	copy(batchID[:], initialBatchKeyBytes)
 
-	nextBatchKey := clmscript.IncrementKey(InitialBatchKey)
+	nextBatchKey := poolscript.IncrementKey(InitialBatchKey)
 	ma1 := &account.Auctioneer{
 		OutPoint: wire.OutPoint{
 			Index: 5,

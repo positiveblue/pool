@@ -12,8 +12,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/clmscript"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -28,7 +28,7 @@ var (
 
 	testAuctioneerKeyDesc = &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
-			Family: clmscript.AccountKeyFamily,
+			Family: poolscript.AccountKeyFamily,
 			Index:  0,
 		},
 		PubKey: testAuctioneerKey,
@@ -252,7 +252,7 @@ func (w *mockWallet) DeriveKey(ctx context.Context,
 
 	return &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
-			Family: clmscript.AccountKeyFamily,
+			Family: poolscript.AccountKeyFamily,
 			Index:  0,
 		},
 		PubKey: w.signer.PrivKey.PubKey(),

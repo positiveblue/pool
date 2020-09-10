@@ -15,12 +15,12 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/llm/chaninfo"
-	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/llm/order"
-	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/pool/chaninfo"
+	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
@@ -469,11 +469,11 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	// With the keys obtained, we'll now derive the tweak we need to obtain
 	// our private key, as well as the full witness script of the trader's
 	// account output.
-	auctioneerKeyTweak := clmscript.AuctioneerKeyTweak(
+	auctioneerKeyTweak := poolscript.AuctioneerKeyTweak(
 		traderKey, masterAcct.AuctioneerKey.PubKey,
 		batchKey, trader.VenueSecret,
 	)
-	witnessScript, err := clmscript.AccountWitnessScript(
+	witnessScript, err := poolscript.AccountWitnessScript(
 		trader.AccountExpiry, traderKey,
 		masterAcct.AuctioneerKey.PubKey, batchKey, trader.VenueSecret,
 	)

@@ -2,15 +2,15 @@
 
 set -e
 
-# Find out what version of llm to use for the imported auctioneer.proto by
+# Find out what version of pool to use for the imported auctioneer.proto by
 # parsing the go.mod file.
-LAST_LINE=$(grep "lightninglabs/llm" ../go.mod | tail -n 1)
+LAST_LINE=$(grep "lightninglabs/pool" ../go.mod | tail -n 1)
 PKG_PATH=""
 if [[ $LAST_LINE =~ "replace" ]]
 then
   # There is a replace directive. Use awk to split by spaces then extract field
   # 4 and 5 and stitch them together with an @ which will resolve into
-  # github.com/lightninglabs/llm@v0.x.x-yyyymmddhhmiss-shortcommit.
+  # github.com/lightninglabs/pool@v0.x.x-yyyymmddhhmiss-shortcommit.
   PKG_PATH=$(echo $LAST_LINE | awk -F " " '{ print $4"@"$5 }')
 else
   # This is a normal directive, just combine field 1 and 2 with an @.

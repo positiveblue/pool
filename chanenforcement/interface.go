@@ -5,7 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/llm/chaninfo"
+	"github.com/lightninglabs/pool/chaninfo"
 	"github.com/lightningnetwork/lnd/chanbackup"
 )
 

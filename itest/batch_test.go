@@ -12,9 +12,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -52,25 +52,25 @@ func testBatchExecution(t *harnessTest) {
 	// for both traders. To test the message multi-plexing between token IDs
 	// and accounts, we add a secondary account to the second trader.
 	account1 := openAccountAndAssert(
-		t, t.trader, &clmrpc.InitAccountRequest{
+		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
 	)
 	account2 := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
 	)
 	account3 := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -92,9 +92,9 @@ func testBatchExecution(t *harnessTest) {
 	}
 
 	account4 := openAccountAndAssert(
-		t, thirdTrader, &clmrpc.InitAccountRequest{
+		t, thirdTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -152,7 +152,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// To ensure the venue is aware of account deposits/withdrawals, we'll
 	// process a deposit for the account behind the ask.
-	depositResp, err := t.trader.DepositAccount(ctx, &clmrpc.DepositAccountRequest{
+	depositResp, err := t.trader.DepositAccount(ctx, &poolrpc.DepositAccountRequest{
 		TraderKey:       account1.TraderKey,
 		AmountSat:       100_000,
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
@@ -356,7 +356,7 @@ func testBatchExecution(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("unable to decode first batch key: %v", err)
 	}
-	secondBatchKey := clmscript.IncrementKey(firstBatchKey)
+	secondBatchKey := poolscript.IncrementKey(firstBatchKey)
 	secondBatchID := secondBatchKey.SerializeCompressed()
 	assertBatchSnapshot(
 		t, secondBatchID, secondTrader, []uint64{uint64(bidAmt3)},
@@ -446,8 +446,8 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 	}
 
 	type accountPair struct {
-		account1 *clmrpc.Account
-		account2 *clmrpc.Account
+		account1 *poolrpc.Account
+		account2 *poolrpc.Account
 	}
 
 	var accounts []accountPair
@@ -457,17 +457,17 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 	// be involved in one match in each batch.
 	for i := 0; i < unconfirmedBatches; i++ {
 		account1 := openAccountAndAssert(
-			t, t.trader, &clmrpc.InitAccountRequest{
+			t, t.trader, &poolrpc.InitAccountRequest{
 				AccountValue: defaultAccountValue,
-				AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 					RelativeHeight: 1_000,
 				},
 			},
 		)
 		account2 := openAccountAndAssert(
-			t, secondTrader, &clmrpc.InitAccountRequest{
+			t, secondTrader, &poolrpc.InitAccountRequest{
 				AccountValue: defaultAccountValue,
-				AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+				AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 					RelativeHeight: 1_000,
 				},
 			},
@@ -599,7 +599,7 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	ctxb := context.Background()
 	batchSnapshot, err := trader.BatchSnapshot(
 		ctxb,
-		&clmrpc.BatchSnapshotRequest{
+		&poolrpc.BatchSnapshotRequest{
 			BatchId: batchID,
 		},
 	)
@@ -657,17 +657,17 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
 	account1 := openAccountAndAssert(
-		t, t.trader, &clmrpc.InitAccountRequest{
+		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
 	)
 	account2 := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -761,7 +761,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	if err == nil || !strings.Contains(err.Error(), "banned") {
 		t.Fatalf("expected order submission to fail due to account ban")
 	}
-	_, err = t.trader.DepositAccount(ctx, &clmrpc.DepositAccountRequest{
+	_, err = t.trader.DepositAccount(ctx, &poolrpc.DepositAccountRequest{
 		TraderKey:       account1.TraderKey,
 		AmountSat:       1000,
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
@@ -802,9 +802,9 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 
 	// Create an account for the maker with plenty of sats.
 	account1 := openAccountAndAssert(
-		t, t.trader, &clmrpc.InitAccountRequest{
+		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -813,9 +813,9 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// We'll open a minimum sized account we'll use for bidding.
 	accountAmt := btcutil.Amount(100_000)
 	account2 := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: uint64(accountAmt),
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -889,10 +889,10 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// Now the first account should still have money left and be open,
 	// while the second account only have dust left and should be closed.
 	assertTraderAccountState(
-		t.t, t.trader, account1.TraderKey, clmrpc.AccountState_OPEN,
+		t.t, t.trader, account1.TraderKey, poolrpc.AccountState_OPEN,
 	)
 	assertTraderAccountState(
-		t.t, secondTrader, account2.TraderKey, clmrpc.AccountState_CLOSED,
+		t.t, secondTrader, account2.TraderKey, poolrpc.AccountState_CLOSED,
 	)
 
 	// Now that we're done here, we'll close these channels to ensure that
@@ -919,9 +919,9 @@ func testConsecutiveBatches(t *harnessTest) {
 
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
-		t, t.trader, &clmrpc.InitAccountRequest{
+		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -929,9 +929,9 @@ func testConsecutiveBatches(t *harnessTest) {
 
 	// We'll also create accounts for the bidder as well.
 	bidAccount := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -994,7 +994,7 @@ func testConsecutiveBatches(t *harnessTest) {
 	_ = mineBlocks(t, t.lndHarness, 6, 2)
 	assertTraderAccountState(
 		t.t, secondTrader, bidAccount.TraderKey,
-		clmrpc.AccountState_OPEN,
+		poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccountState(
 		t, bidAccount.TraderKey, auctioneerAccount.StateOpen,
@@ -1053,9 +1053,9 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
-		t, t.trader, &clmrpc.InitAccountRequest{
+		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -1063,17 +1063,17 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 
 	// We'll also create accounts for both bidders as well.
 	bidAccountCharlie := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
 	)
 	bidAccountDave := openAccountAndAssert(
-		t, thirdTrader, &clmrpc.InitAccountRequest{
+		t, thirdTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
@@ -1137,11 +1137,11 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// and Dave's accounts are confirmed again.
 	_ = mineBlocks(t, t.lndHarness, 3, 2)
 	assertTraderAccountState(
-		t.t, t.trader, askAccount.TraderKey, clmrpc.AccountState_OPEN,
+		t.t, t.trader, askAccount.TraderKey, poolrpc.AccountState_OPEN,
 	)
 	assertTraderAccountState(
 		t.t, thirdTrader, bidAccountDave.TraderKey,
-		clmrpc.AccountState_OPEN,
+		poolrpc.AccountState_OPEN,
 	)
 }
 
@@ -1177,25 +1177,25 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 
 	// Create an account for the maker and taker with plenty of sats.
 	askAccount := openAccountAndAssert(
-		t, t.trader, &clmrpc.InitAccountRequest{
+		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
 	)
 	bidAccountCharlie := openAccountAndAssert(
-		t, secondTrader, &clmrpc.InitAccountRequest{
+		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},
 	)
 	bidAccountDave := openAccountAndAssert(
-		t, thirdTrader, &clmrpc.InitAccountRequest{
+		t, thirdTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
-			AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
 		},

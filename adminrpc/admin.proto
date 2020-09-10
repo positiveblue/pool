@@ -1,6 +1,6 @@
 syntax = "proto3";
 
-import "clmrpc/auctioneer.proto";
+import "poolrpc/auctioneer.proto";
 
 package adminrpc;
 
@@ -14,7 +14,7 @@ service AuctionAdmin {
     rpc ListAccounts (EmptyRequest) returns (ListAccountsResponse);
     rpc AuctionStatus (EmptyRequest) returns (AuctionStatusResponse);
     rpc ListBatches (EmptyRequest) returns (ListBatchesResponse);
-    rpc BatchSnapshot (clmrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
+    rpc BatchSnapshot (poolrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
     rpc ListBans (EmptyRequest) returns (ListBansResponse);
     rpc RemoveBan (RemoveBanRequest) returns (EmptyResponse);
     rpc RemoveReservation (RemoveReservationRequest) returns (EmptyResponse);
@@ -110,12 +110,12 @@ message ListOrdersRequest {
 }
 
 message ListOrdersResponse {
-    repeated clmrpc.ServerAsk asks = 1;
-    repeated clmrpc.ServerBid bids = 2;
+    repeated poolrpc.ServerAsk asks = 1;
+    repeated poolrpc.ServerBid bids = 2;
 }
 
 message ListAccountsResponse {
-    repeated clmrpc.AuctionAccount accounts = 1;
+    repeated poolrpc.AuctionAccount accounts = 1;
 }
 
 message AuctionStatusResponse {
@@ -237,10 +237,10 @@ message RemoveBanRequest {
 
 message AdminMatchedOrderSnapshot {
     // The full ask order that was matched.
-    clmrpc.ServerAsk ask = 1;
+    poolrpc.ServerAsk ask = 1;
 
     // The full bid order that was matched.
-    clmrpc.ServerBid bid = 2;
+    poolrpc.ServerBid bid = 2;
 
     // The fixed rate premium that was matched, expressed in parts-ber-billion.
     uint32 matching_rate = 3;

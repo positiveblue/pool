@@ -5,7 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
