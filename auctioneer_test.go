@@ -1858,17 +1858,26 @@ func TestAuctioneerAllowAccountUpdate(t *testing.T) {
 	// FeeEstimationState.
 	testHarness.ForceBatchTick()
 	testHarness.AssertStateTransitions(FeeEstimationState{})
-	testHarness.AssertStateTransitions(MatchMakingState{})
+
+	fakeAcct := matching.AccountID(toRawKey(randomPubKey(t)))
+	askAcct := matching.AccountID(ask.Details().AcctKey)
+	bidAcct := matching.AccountID(bid.Details().AcctKey)
+	checkNoAcctUpdate := func() {
+		require.False(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
+		require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
+		require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
+	}
 
 	// At this point, no account updates should be allowed for any account.
-	fakeAcct := matching.AccountID(toRawKey(randomPubKey(t)))
-	require.False(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
-	askAcct := matching.AccountID(ask.Details().AcctKey)
-	require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
-	bidAcct := matching.AccountID(bid.Details().AcctKey)
-	require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
+	checkNoAcctUpdate()
+
+	// Neither should any update be allowed in MatchMaking or FeeCheck
+	// states.
+	testHarness.AssertStateTransitions(MatchMakingState{})
+	checkNoAcctUpdate()
 
 	testHarness.AssertStateTransitions(FeeCheckState{})
+	checkNoAcctUpdate()
 
 	// There should be no further state transitions at this point.
 	testHarness.AssertStateTransitions(BatchExecutionState{})

@@ -1932,7 +1932,7 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 }
 
 // AllowAccountUpdate determines whether the auctioneer should honor a trader's
-// request for an account update based on the current state of the auctionn.
+// request for an account update based on the current state of the auction.
 func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
 	auctionState, err := a.cfg.DB.AuctionState()
 	if err != nil {
@@ -1941,9 +1941,15 @@ func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
 	}
 
 	switch s := auctionState.(type) {
-	// We don't want to allow any account updates throughout the matchmaking
-	// state, as the account may be selected for a batch.
+
+	// We don't want to allow any account updates throughout the fee
+	// estimation-> matchmaking-> fee check states, as the account may be
+	// selected for a batch.
+	case FeeEstimationState:
+		return false
 	case MatchMakingState:
+		return false
+	case FeeCheckState:
 		return false
 
 	// We'll only allow account updates for those which are not found within
