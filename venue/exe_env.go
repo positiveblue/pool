@@ -10,9 +10,9 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/chaninfo"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/chaninfo"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -331,7 +331,7 @@ func (e *environment) validateAccountWitness(witnessScript []byte,
 
 	inputIndex := int(traderAcctInput.InputIndex)
 
-	accountWitness := clmscript.SpendMultiSig(
+	accountWitness := poolscript.SpendMultiSig(
 		witnessScript,
 		append(traderSig.Serialize(), byte(txscript.SigHashAll)),
 		append(auctioneerSig.Serialize(), byte(txscript.SigHashAll)),

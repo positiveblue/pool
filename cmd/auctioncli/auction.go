@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 
-	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/urfave/cli"
@@ -184,7 +184,7 @@ var batchSnapshotCommand = cli.Command{
 			return nil, err
 		}
 
-		return client.BatchSnapshot(ctx, &clmrpc.BatchSnapshotRequest{
+		return client.BatchSnapshot(ctx, &poolrpc.BatchSnapshotRequest{
 			BatchId: batchID,
 		})
 	}),

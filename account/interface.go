@@ -9,8 +9,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightningnetwork/lnd/keychain"
 )
 
@@ -229,7 +229,7 @@ func (a *Account) Output() (*wire.TxOut, error) {
 		return nil, err
 	}
 
-	script, err := clmscript.AccountScript(
+	script, err := poolscript.AccountScript(
 		a.Expiry, traderKey, a.AuctioneerKey.PubKey, a.BatchKey,
 		a.Secret,
 	)
@@ -262,8 +262,8 @@ func (a *Account) NextOutputScript() ([]byte, error) {
 		return nil, err
 	}
 
-	nextBatchKey := clmscript.IncrementKey(a.BatchKey)
-	return clmscript.AccountScript(
+	nextBatchKey := poolscript.IncrementKey(a.BatchKey)
+	return poolscript.AccountScript(
 		a.Expiry, traderKey, a.AuctioneerKey.PubKey, nextBatchKey,
 		a.Secret,
 	)
@@ -334,7 +334,7 @@ func ExpiryModifier(expiry uint32) Modifier {
 // account by adding the curve's base point.
 func IncrementBatchKey() Modifier {
 	return func(account *Account) {
-		account.BatchKey = clmscript.IncrementKey(account.BatchKey)
+		account.BatchKey = poolscript.IncrementKey(account.BatchKey)
 	}
 }
 

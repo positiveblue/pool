@@ -13,10 +13,10 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/chaninfo"
-	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/pool/chaninfo"
+	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -405,10 +405,10 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 		}
 	}
 
-	traderKeyTweak := clmscript.TraderKeyTweak(
+	traderKeyTweak := poolscript.TraderKeyTweak(
 		batchKey, sender.VenueSecret, traderKey,
 	)
-	witnessScript, err := clmscript.AccountWitnessScript(
+	witnessScript, err := poolscript.AccountWitnessScript(
 		sender.AccountExpiry, traderKey, startBatchKey,
 		batchKey, sender.VenueSecret,
 	)

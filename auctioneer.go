@@ -12,9 +12,9 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
@@ -529,7 +529,7 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 	for {
 		// Now that we have the current batch key, we'll walk
 		// "backwards" by decrementing the batch key by -G each time.
-		currentBatchKey = clmscript.DecrementKey(currentBatchKey)
+		currentBatchKey = poolscript.DecrementKey(currentBatchKey)
 
 		// Now for this batch key, we'll check to see if the batch has
 		// been marked as finalized on disk or not.
@@ -884,7 +884,7 @@ func (a *Auctioneer) accountConfNotifier(expectedOutput *wire.TxOut,
 	// MasterAcctConfirmed state so we can commit this to disk, and open up
 	// the auction venue!
 	case confEvent := <-confChan:
-		outputIndex, _ := clmscript.LocateOutputScript(
+		outputIndex, _ := poolscript.LocateOutputScript(
 			confEvent.Tx, expectedOutput.PkScript,
 		)
 		acctOutPoint := wire.OutPoint{
@@ -1519,7 +1519,7 @@ func (a *Auctioneer) locateTxByOutput(ctx context.Context,
 	}
 
 	for _, tx := range txs {
-		idx, ok := clmscript.LocateOutputScript(tx.Tx, output.PkScript)
+		idx, ok := poolscript.LocateOutputScript(tx.Tx, output.PkScript)
 		if !ok {
 			continue
 		}

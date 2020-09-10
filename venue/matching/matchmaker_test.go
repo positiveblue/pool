@@ -9,7 +9,7 @@ import (
 	"testing/quick"
 	"time"
 
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )

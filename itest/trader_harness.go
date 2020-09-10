@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/lightninglabs/llm"
-	"github.com/lightninglabs/llm/clmrpc"
+	"github.com/lightninglabs/pool"
+	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
@@ -21,11 +21,11 @@ import (
 // start an instance of the trader server.
 type traderHarness struct {
 	cfg       *traderConfig
-	server    *llm.Server
-	clientCfg *llm.Config
+	server    *pool.Server
+	clientCfg *pool.Config
 	listener  *bufconn.Listener
 
-	clmrpc.TraderClient
+	poolrpc.TraderClient
 }
 
 // traderConfig holds all configuration items that are required to start an
@@ -41,10 +41,10 @@ type traderConfig struct {
 
 // traderCfgOpt is a function type that can manipulate the trader's config
 // options.
-type traderCfgOpt func(*llm.Config)
+type traderCfgOpt func(*pool.Config)
 
 func newNodesOnlyOpt() traderCfgOpt {
-	return func(cfg *llm.Config) {
+	return func(cfg *pool.Config) {
 		cfg.NewNodesOnly = true
 	}
 }
@@ -56,14 +56,14 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 
 	if cfg.BaseDir == "" {
 		var err error
-		cfg.BaseDir, err = ioutil.TempDir("", "itest-llmd")
+		cfg.BaseDir, err = ioutil.TempDir("", "itest-poold")
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	// Create new in-memory listener that we are going to use to communicate
-	// with the llmd.
+	// with the poold.
 	listener := bufconn.Listen(100)
 
 	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
@@ -73,7 +73,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
 	)
 
-	traderCfg := &llm.Config{
+	traderCfg := &pool.Config{
 		LogDir:         ".",
 		MaxLogFiles:    99,
 		MaxLogFileSize: 999,
@@ -86,7 +86,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 		MaxBackoff:     500 * time.Millisecond,
 		RPCListener:    listener,
 		NewNodesOnly:   false,
-		Lnd: &llm.LndConfig{
+		Lnd: &pool.LndConfig{
 			Host:        cfg.LndNode.Cfg.RPCAddr(),
 			MacaroonDir: rpcMacaroonDir,
 			TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
@@ -106,7 +106,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 // start spins up the trader server listening for gRPC connections on a bufconn.
 func (hs *traderHarness) start() error {
 	var err error
-	hs.server = llm.NewServer(hs.clientCfg)
+	hs.server = pool.NewServer(hs.clientCfg)
 	err = hs.server.Start()
 	if err != nil {
 		return fmt.Errorf("could not start trader server %v", err)
@@ -122,7 +122,7 @@ func (hs *traderHarness) start() error {
 	if err != nil {
 		return err
 	}
-	hs.TraderClient = clmrpc.NewTraderClient(rpcConn)
+	hs.TraderClient = poolrpc.NewTraderClient(rpcConn)
 	return nil
 }
 

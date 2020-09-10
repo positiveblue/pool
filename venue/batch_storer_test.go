@@ -8,8 +8,8 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/order"
@@ -269,7 +269,7 @@ func TestBatchStorer(t *testing.T) {
 		t.Fatalf("invalid master account balance, got %d wanted %d",
 			oldMasterAccount.Balance, 999)
 	}
-	newBatchKey := clmscript.IncrementKey(startBatchKey)
+	newBatchKey := poolscript.IncrementKey(startBatchKey)
 	keysEqual := bytes.Equal(
 		oldMasterAccount.BatchKey[:], newBatchKey.SerializeCompressed(),
 	)

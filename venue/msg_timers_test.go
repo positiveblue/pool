@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 

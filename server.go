@@ -13,8 +13,8 @@ import (
 	"github.com/btcsuite/btcutil"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -353,7 +353,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	)
 	server.rpcServer = auctioneerServer
 
-	clmrpc.RegisterChannelAuctioneerServer(
+	poolrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,
 	)
 

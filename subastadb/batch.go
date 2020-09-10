@@ -12,8 +12,8 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
@@ -485,7 +485,7 @@ func deserializeTrader(r io.Reader) (*matching.Trader, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error parsing batch key: %v", err)
 	}
-	nextKey := clmscript.IncrementKey(batchKey)
+	nextKey := poolscript.IncrementKey(batchKey)
 	copy(t.NextBatchKey[:], nextKey.SerializeCompressed())
 	return t, nil
 }

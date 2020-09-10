@@ -20,8 +20,8 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/clmrpc"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolrpc"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -397,12 +397,12 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 // assertTraderAccount asserts that the account with the corresponding trader
 // key is found in the given state.
 func assertTraderAccount(t *harnessTest, trader *traderHarness,
-	traderKey []byte, value btcutil.Amount, state clmrpc.AccountState) {
+	traderKey []byte, value btcutil.Amount, state poolrpc.AccountState) {
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
 		list, err := trader.ListAccounts(
-			ctx, &clmrpc.ListAccountsRequest{},
+			ctx, &poolrpc.ListAccountsRequest{},
 		)
 		if err != nil {
 			return fmt.Errorf("unable to retrieve accounts: %v", err)
@@ -434,14 +434,14 @@ func assertTraderAccount(t *harnessTest, trader *traderHarness,
 // assertTraderAccountState asserts that the account with the corresponding
 // trader key is found in the given state from the PoV of the trader.
 func assertTraderAccountState(t *testing.T, trader *traderHarness,
-	traderKey []byte, state clmrpc.AccountState) {
+	traderKey []byte, state poolrpc.AccountState) {
 
 	t.Helper()
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
 		list, err := trader.ListAccounts(
-			ctx, &clmrpc.ListAccountsRequest{},
+			ctx, &poolrpc.ListAccountsRequest{},
 		)
 		if err != nil {
 			return fmt.Errorf("unable to retrieve accounts: %v", err)
@@ -554,13 +554,13 @@ func assertAuctionState(t *harnessTest, state subasta.AuctionState) {
 // openAccountAndAssert creates a new trader account, mines its funding TX and
 // waits for it to be confirmed.
 func openAccountAndAssert(t *harnessTest, trader *traderHarness,
-	req *clmrpc.InitAccountRequest) *clmrpc.Account {
+	req *poolrpc.InitAccountRequest) *poolrpc.Account {
 
 	// Add the default conf target of the CLI to the request if it wasn't
 	// set. This removes the need for every test to specify the value
 	// explicitly.
 	if req.Fees == nil {
-		req.Fees = &clmrpc.InitAccountRequest_ConfTarget{ConfTarget: 6}
+		req.Fees = &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6}
 	}
 
 	acct, err := trader.InitAccount(context.Background(), req)
@@ -570,9 +570,9 @@ func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 
 	// At this point the account should be funded but the status should be
 	// pending until the TX is confirmed.
-	if acct.State != clmrpc.AccountState_PENDING_OPEN {
+	if acct.State != poolrpc.AccountState_PENDING_OPEN {
 		t.Fatalf("unexpected account state. got %d, expected %d",
-			acct.State, clmrpc.AccountState_PENDING_OPEN)
+			acct.State, poolrpc.AccountState_PENDING_OPEN)
 	}
 	assertAuctioneerAccountState(
 		t, acct.TraderKey, auctioneerAccount.StatePendingOpen,
@@ -588,7 +588,7 @@ func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 	_ = assertTxInBlock(t, block, txHash)
 
 	assertTraderAccountState(
-		t.t, trader, acct.TraderKey, clmrpc.AccountState_OPEN,
+		t.t, trader, acct.TraderKey, poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccountState(
 		t, acct.TraderKey, auctioneerAccount.StateOpen,
@@ -603,16 +603,16 @@ func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 // already expired. Once the spending transaction confirms, we assert that the
 // account is marked as closed.
 func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
-	req *clmrpc.CloseAccountRequest) *wire.MsgTx {
+	req *poolrpc.CloseAccountRequest) *wire.MsgTx {
 
 	t.t.Helper()
 
 	// If a destination for the funds was not provided in the request, we'll
 	// use the default.
 	if req.FundsDestination == nil {
-		req.FundsDestination = &clmrpc.CloseAccountRequest_OutputWithFee{
-			OutputWithFee: &clmrpc.OutputWithFee{
-				Fees: &clmrpc.OutputWithFee_FeeRateSatPerKw{
+		req.FundsDestination = &poolrpc.CloseAccountRequest_OutputWithFee{
+			OutputWithFee: &poolrpc.OutputWithFee{
+				Fees: &poolrpc.OutputWithFee_FeeRateSatPerKw{
 					FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 				},
 			},
@@ -635,7 +635,7 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 	}
 
 	assertTraderAccountState(
-		t.t, trader, req.TraderKey, clmrpc.AccountState_PENDING_CLOSED,
+		t.t, trader, req.TraderKey, poolrpc.AccountState_PENDING_CLOSED,
 	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateOpen,
@@ -652,7 +652,7 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 
 	// The account should now be found in a StateClosed state.
 	assertTraderAccountState(
-		t.t, trader, req.TraderKey, clmrpc.AccountState_CLOSED,
+		t.t, trader, req.TraderKey, poolrpc.AccountState_CLOSED,
 	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateClosed,
@@ -664,7 +664,7 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 // assertTraderSubscribed makes sure the trader with the given token is
 // connected to the auction server and has an active account subscription.
 func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
-	acct *clmrpc.Account) {
+	acct *poolrpc.Account) {
 
 	// Make sure the trader stream was registered.
 	err := wait.NoError(func() error {
@@ -973,10 +973,10 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 	var nonce orderT.Nonce
 
 	ctx := context.Background()
-	resp, err := trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
-		Details: &clmrpc.SubmitOrderRequest_Bid{
-			Bid: &clmrpc.Bid{
-				Details: &clmrpc.Order{
+	resp, err := trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
+		Details: &poolrpc.SubmitOrderRequest_Bid{
+			Bid: &poolrpc.Bid{
+				Details: &poolrpc.Order{
 					TraderKey:               subKey,
 					RateFixed:               rate,
 					Amt:                     uint64(amt),
@@ -1008,10 +1008,10 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 	var nonce orderT.Nonce
 
 	ctx := context.Background()
-	resp, err := trader.SubmitOrder(ctx, &clmrpc.SubmitOrderRequest{
-		Details: &clmrpc.SubmitOrderRequest_Ask{
-			Ask: &clmrpc.Ask{
-				Details: &clmrpc.Order{
+	resp, err := trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
+		Details: &poolrpc.SubmitOrderRequest_Ask{
+			Ask: &poolrpc.Ask{
+				Details: &poolrpc.Order{
 					TraderKey:               subKey,
 					RateFixed:               rate,
 					Amt:                     uint64(amt),
@@ -1038,14 +1038,14 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 
 func assertNoOrders(t *harnessTest, trader *traderHarness) {
 	err := wait.NoError(func() error {
-		req := &clmrpc.ListOrdersRequest{}
+		req := &poolrpc.ListOrdersRequest{}
 		resp, err := trader.ListOrders(context.Background(), req)
 		if err != nil {
 			return err
 		}
 
 		for _, ask := range resp.Asks {
-			if ask.Details.State != clmrpc.OrderState_ORDER_EXECUTED {
+			if ask.Details.State != poolrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					ask.Details.State)
@@ -1053,7 +1053,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, bid := range resp.Bids {
-			if bid.Details.State != clmrpc.OrderState_ORDER_EXECUTED {
+			if bid.Details.State != poolrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					bid.Details.State)
@@ -1072,7 +1072,7 @@ func assertAskOrderState(t *harnessTest, trader *traderHarness,
 
 	// TODO(roasbeef): add LookupORder method for client RPC
 	err := wait.NoError(func() error {
-		req := &clmrpc.ListOrdersRequest{}
+		req := &poolrpc.ListOrdersRequest{}
 		resp, err := trader.ListOrders(context.Background(), req)
 		if err != nil {
 			return err
@@ -1260,9 +1260,9 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 
 	t.t.Helper()
 
-	withdrawReq := &clmrpc.WithdrawAccountRequest{
+	withdrawReq := &poolrpc.WithdrawAccountRequest{
 		TraderKey: accountKey,
-		Outputs: []*clmrpc.Output{{
+		Outputs: []*poolrpc.Output{{
 			ValueSat: withdrawValue,
 			Address:  address,
 		}},
@@ -1287,7 +1287,7 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 	if startValue == -1 {
 		assertTraderAccountState(
 			t.t, trader, withdrawResp.Account.TraderKey,
-			clmrpc.AccountState_PENDING_UPDATE,
+			poolrpc.AccountState_PENDING_UPDATE,
 		)
 		assertAuctioneerAccountState(
 			t, withdrawResp.Account.TraderKey,
@@ -1303,7 +1303,7 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 		btcutil.Amount(withdrawValue) - withdrawalFee
 	assertTraderAccount(
 		t, trader, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
-		clmrpc.AccountState_PENDING_UPDATE,
+		poolrpc.AccountState_PENDING_UPDATE,
 	)
 	assertAuctioneerAccount(
 		t, withdrawResp.Account.TraderKey, valueAfterWithdrawal,

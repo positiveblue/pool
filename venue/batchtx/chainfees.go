@@ -2,8 +2,8 @@ package batchtx
 
 import (
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
@@ -57,7 +57,7 @@ func (c *chainFeeEstimator) EstimateBatchWeight(
 	// spend.
 	for range c.traderChanCount {
 		weightEstimator.AddWitnessInput(
-			clmscript.MultiSigWitnessSize,
+			poolscript.MultiSigWitnessSize,
 		)
 	}
 

@@ -12,9 +12,9 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/clmrpc"
-	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/pool/order"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
@@ -36,9 +36,9 @@ func testAccountCreation(t *harnessTest) {
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
-	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	account := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
 	})
@@ -55,11 +55,11 @@ func testAccountCreation(t *harnessTest) {
 		t.Fatalf("could not create new address: %v", err)
 	}
 	closeAddr := resp.Address
-	closeTx := closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	closeTx := closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
-		FundsDestination: &clmrpc.CloseAccountRequest_Outputs{
-			Outputs: &clmrpc.OutputsWithImplicitFee{
-				Outputs: []*clmrpc.Output{
+		FundsDestination: &poolrpc.CloseAccountRequest_Outputs{
+			Outputs: &poolrpc.OutputsWithImplicitFee{
+				Outputs: []*poolrpc.Output{
 					{
 						ValueSat: outputValue,
 						Address:  closeAddr,
@@ -93,12 +93,12 @@ func testAccountCreation(t *harnessTest) {
 
 	// Make sure the default account limit is enforced on the auctioneer
 	// side.
-	_, err = t.trader.InitAccount(ctx, &clmrpc.InitAccountRequest{
+	_, err = t.trader.InitAccount(ctx, &poolrpc.InitAccountRequest{
 		AccountValue: uint64(btcutil.SatoshiPerBitcoin + 1),
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
-		Fees: &clmrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
+		Fees: &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
 	if err == nil {
 		t.Fatalf("expected error when exceeding account value limit")
@@ -116,9 +116,9 @@ func testAccountWithdrawal(t *harnessTest) {
 
 	// Create an account for 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
-	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	account := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
 	})
@@ -127,9 +127,9 @@ func testAccountWithdrawal(t *harnessTest) {
 	// funds we committed to a P2WPKH address. We'll first try an address
 	// that does not belong to the current network, which should fail.
 	withdrawValue := account.Value / 2
-	withdrawReq := &clmrpc.WithdrawAccountRequest{
+	withdrawReq := &poolrpc.WithdrawAccountRequest{
 		TraderKey: account.TraderKey,
-		Outputs: []*clmrpc.Output{
+		Outputs: []*poolrpc.Output{
 			{
 				ValueSat: withdrawValue,
 				Address:  "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
@@ -153,7 +153,7 @@ func testAccountWithdrawal(t *harnessTest) {
 	// We'll attempt to bump the fee rate of the withdrawal from 1 sat/vbyte
 	// to 10 sat/vbyte. The withdrawal transaction doesn't contain an output
 	// under the backing lnd node's control, so the call should fail.
-	_, err = t.trader.BumpAccountFee(ctx, &clmrpc.BumpAccountFeeRequest{
+	_, err = t.trader.BumpAccountFee(ctx, &poolrpc.BumpAccountFeeRequest{
 		TraderKey:       account.TraderKey,
 		FeeRateSatPerKw: withdrawReq.FeeRateSatPerKw * 250 * 10,
 	})
@@ -168,7 +168,7 @@ func testAccountWithdrawal(t *harnessTest) {
 	_ = assertTxInBlock(t, block, withdrawTxid)
 	assertTraderAccount(
 		t, t.trader, account.TraderKey, valueAfterWithdrawal,
-		clmrpc.AccountState_OPEN,
+		poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
 		t, account.TraderKey, valueAfterWithdrawal,
@@ -176,7 +176,7 @@ func testAccountWithdrawal(t *harnessTest) {
 	)
 
 	// Finally, end the test by closing the account.
-	_ = closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	_ = closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
 	})
 }
@@ -189,9 +189,9 @@ func testAccountDeposit(t *harnessTest) {
 	// Create an account for 500K sats that is valid for the next 1000
 	// blocks and validate its confirmation on-chain.
 	const initialAccountValue = 500_000
-	account := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	account := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: initialAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
 	})
@@ -200,7 +200,7 @@ func testAccountDeposit(t *harnessTest) {
 	// we initially funded the account with. The new value of the account
 	// should therefore be twice that its initial value.
 	const valueAfterDeposit = initialAccountValue * 2
-	depositReq := &clmrpc.DepositAccountRequest{
+	depositReq := &poolrpc.DepositAccountRequest{
 		TraderKey:       account.TraderKey,
 		AmountSat:       initialAccountValue,
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
@@ -227,7 +227,7 @@ func testAccountDeposit(t *harnessTest) {
 	// trader and auctioneer while the deposit hasn't confirmed.
 	assertTraderAccount(
 		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
-		clmrpc.AccountState_PENDING_UPDATE,
+		poolrpc.AccountState_PENDING_UPDATE,
 	)
 	assertAuctioneerAccount(
 		t, depositResp.Account.TraderKey, valueAfterDeposit,
@@ -237,7 +237,7 @@ func testAccountDeposit(t *harnessTest) {
 	// We'll assume the fee rate wasn't enough for the deposit to confirm,
 	// so we'll attempt to bump it from 1 sat/vbyte to 10 sat/vbyte. We
 	// should then see two transactions in the mempool.
-	_, err = t.trader.BumpAccountFee(ctx, &clmrpc.BumpAccountFeeRequest{
+	_, err = t.trader.BumpAccountFee(ctx, &poolrpc.BumpAccountFeeRequest{
 		TraderKey:       account.TraderKey,
 		FeeRateSatPerKw: depositReq.FeeRateSatPerKw * 250 * 10,
 	})
@@ -258,7 +258,7 @@ func testAccountDeposit(t *harnessTest) {
 	_ = assertTxInBlock(t, block, depositTxid)
 	assertTraderAccount(
 		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
-		clmrpc.AccountState_OPEN,
+		poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
 		t, depositResp.Account.TraderKey, valueAfterDeposit,
@@ -266,7 +266,7 @@ func testAccountDeposit(t *harnessTest) {
 	)
 
 	// Finally, end the test by closing the account.
-	_ = closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	_ = closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
 	})
 }
@@ -277,9 +277,9 @@ func testAccountDeposit(t *harnessTest) {
 func testAccountSubscription(t *harnessTest) {
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
-	acct := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	acct := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: 2000000,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
 	})
@@ -313,27 +313,27 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// We create three full accounts. One that is closed again, one
 	// that remains open and one that is pending open, waiting for on-chain
 	// confirmation.
-	closed := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	closed := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultExpiration,
 		},
 	})
-	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: closed.TraderKey,
 	})
-	open := openAccountAndAssert(t, t.trader, &clmrpc.InitAccountRequest{
+	open := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultExpiration,
 		},
 	})
-	pending, err := t.trader.InitAccount(ctxb, &clmrpc.InitAccountRequest{
+	pending, err := t.trader.InitAccount(ctxb, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
-		AccountExpiry: &clmrpc.InitAccountRequest_RelativeHeight{
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultExpiration,
 		},
-		Fees: &clmrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
+		Fees: &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
 	if err != nil {
 		t.Fatalf("could not create account: %v", err)
@@ -348,10 +348,10 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// Also create an order for the open account so we can make sure it'll
 	// be canceled on recovery. We need to fetch the nonce of it so we can
 	// query it directly.
-	_, err = t.trader.SubmitOrder(ctxb, &clmrpc.SubmitOrderRequest{
-		Details: &clmrpc.SubmitOrderRequest_Ask{
-			Ask: &clmrpc.Ask{
-				Details: &clmrpc.Order{
+	_, err = t.trader.SubmitOrder(ctxb, &poolrpc.SubmitOrderRequest{
+		Details: &poolrpc.SubmitOrderRequest_Ask{
+			Ask: &poolrpc.Ask{
+				Details: &poolrpc.Order{
 					TraderKey:               open.TraderKey,
 					RateFixed:               100,
 					Amt:                     1500000,
@@ -365,7 +365,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("could not submit order: %v", err)
 	}
-	list, err := t.trader.ListOrders(ctxb, &clmrpc.ListOrdersRequest{})
+	list, err := t.trader.ListOrders(ctxb, &poolrpc.ListOrdersRequest{})
 	if err != nil {
 		t.Fatalf("could not list orders: %v", err)
 	}
@@ -402,7 +402,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 
 	// Make sure the trader doesn't remember any accounts anymore.
 	accounts, err := t.trader.ListAccounts(
-		ctxb, &clmrpc.ListAccountsRequest{},
+		ctxb, &poolrpc.ListAccountsRequest{},
 	)
 	if err != nil {
 		t.Fatalf("could not query accounts: %v", err)
@@ -417,7 +417,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// it should be in the database marked with the state of recovery
 	// failure.
 	recovery, err := t.trader.RecoverAccounts(
-		ctxb, &clmrpc.RecoverAccountsRequest{},
+		ctxb, &poolrpc.RecoverAccountsRequest{},
 	)
 	if err != nil {
 		t.Fatalf("could not recover accounts: %v", err)
@@ -429,7 +429,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 
 	// Now make sure the accounts are all in the correct state.
 	accounts, err = t.trader.ListAccounts(
-		ctxb, &clmrpc.ListAccountsRequest{},
+		ctxb, &poolrpc.ListAccountsRequest{},
 	)
 	if err != nil {
 		t.Fatalf("could not query accounts: %v", err)
@@ -440,57 +440,57 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	}
 	assertTraderAccountState(
 		t.t, t.trader, resRecoveryFailed,
-		clmrpc.AccountState_RECOVERY_FAILED,
+		poolrpc.AccountState_RECOVERY_FAILED,
 	)
 	assertTraderAccountState(
-		t.t, t.trader, resRecoveryOk, clmrpc.AccountState_PENDING_OPEN,
+		t.t, t.trader, resRecoveryOk, poolrpc.AccountState_PENDING_OPEN,
 	)
 	assertTraderAccountState(
-		t.t, t.trader, closed.TraderKey, clmrpc.AccountState_CLOSED,
+		t.t, t.trader, closed.TraderKey, poolrpc.AccountState_CLOSED,
 	)
 	assertTraderAccountState(
-		t.t, t.trader, closed.TraderKey, clmrpc.AccountState_CLOSED,
+		t.t, t.trader, closed.TraderKey, poolrpc.AccountState_CLOSED,
 	)
 	assertTraderAccountState(
-		t.t, t.trader, open.TraderKey, clmrpc.AccountState_OPEN,
+		t.t, t.trader, open.TraderKey, poolrpc.AccountState_OPEN,
 	)
 	assertTraderAccountState(
 		t.t, t.trader, pending.TraderKey,
-		clmrpc.AccountState_PENDING_OPEN,
+		poolrpc.AccountState_PENDING_OPEN,
 	)
 
 	// Mine the rest of the blocks to make the pending accounts fully
 	// confirmed. Then check their state again.
 	_ = mineBlocks(t, t.lndHarness, 5, 0)
 	assertTraderAccountState(
-		t.t, t.trader, pending.TraderKey, clmrpc.AccountState_OPEN,
+		t.t, t.trader, pending.TraderKey, poolrpc.AccountState_OPEN,
 	)
 	assertTraderAccountState(
-		t.t, t.trader, resRecoveryOk, clmrpc.AccountState_OPEN,
+		t.t, t.trader, resRecoveryOk, poolrpc.AccountState_OPEN,
 	)
 
 	// Finally, make sure we can close out all open accounts.
-	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: open.TraderKey,
 	})
-	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: pending.TraderKey,
 	})
-	closeAccountAndAssert(t, t.trader, &clmrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: resRecoveryOk,
 	})
 
 	// Query the auctioneer directly about the status of the ask we
 	// submitted earlier.
 	resp, err := t.auctioneer.OrderState(
-		idCtx, &clmrpc.ServerOrderStateRequest{OrderNonce: askNonce},
+		idCtx, &poolrpc.ServerOrderStateRequest{OrderNonce: askNonce},
 	)
 	if err != nil {
 		t.Fatalf("could not query order status: %v", err)
 	}
-	if resp.State != clmrpc.OrderState_ORDER_CANCELED {
+	if resp.State != poolrpc.OrderState_ORDER_CANCELED {
 		t.Fatalf("unexpected order state, got %d wanted %d",
-			resp.State, clmrpc.OrderState_ORDER_CANCELED)
+			resp.State, poolrpc.OrderState_ORDER_CANCELED)
 	}
 }
 
@@ -504,7 +504,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 	// recover with it.
 	keyDesc, err := node.WalletKitClient.DeriveNextKey(
 		ctxb, &walletrpc.KeyReq{
-			KeyFamily: int32(clmscript.AccountKeyFamily),
+			KeyFamily: int32(poolscript.AccountKeyFamily),
 		},
 	)
 	if err != nil {
@@ -514,7 +514,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 	// Reserve the account with the auctioneer now and parse the returned
 	// keys so we can derive the account script later.
 	res, err := t.auctioneer.ReserveAccount(
-		lsatCtx, &clmrpc.ReserveAccountRequest{
+		lsatCtx, &poolrpc.ReserveAccountRequest{
 			AccountValue:  value,
 			TraderKey:     keyDesc.RawKeyBytes,
 			AccountExpiry: expiry,
@@ -556,7 +556,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 
 	var sharedKey [32]byte
 	copy(sharedKey[:], keyRes.SharedKey)
-	script, err := clmscript.AccountScript(
+	script, err := poolscript.AccountScript(
 		expiry, traderKey, auctioneerKey, batchKey, sharedKey,
 	)
 	if err != nil {

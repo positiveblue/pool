@@ -6,7 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/llm/clmscript"
+	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 )
 
@@ -73,7 +73,7 @@ func NewTraderFromAccount(acct *account.Account) Trader {
 	if acct.BatchKey != nil {
 		copy(t.BatchKey[:], acct.BatchKey.SerializeCompressed())
 
-		nextBatchKey := clmscript.IncrementKey(acct.BatchKey)
+		nextBatchKey := poolscript.IncrementKey(acct.BatchKey)
 		copy(t.NextBatchKey[:], nextBatchKey.SerializeCompressed())
 	}
 

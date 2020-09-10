@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/lightninglabs/llm/clientdb"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/clientdb"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )

@@ -6,8 +6,8 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/prometheus/client_golang/prometheus"
@@ -165,7 +165,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 		c.g.collect(ch)
 		return
 	}
-	batchKey := clmscript.DecrementKey(currentBatchKey)
+	batchKey := poolscript.DecrementKey(currentBatchKey)
 	batchID := orderT.NewBatchID(batchKey)
 
 	// Count the number of batches that happened so far by "counting down"
@@ -175,7 +175,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	tempBatchKey := batchKey
 	for !tempBatchKey.IsEqual(subastadb.InitialBatchKey) {
 		numBatches++
-		tempBatchKey = clmscript.DecrementKey(tempBatchKey)
+		tempBatchKey = poolscript.DecrementKey(tempBatchKey)
 
 		// Unlikely to happen but in case we start from an invalid value
 		// we want to avoid an endless loop. Can't image we'd ever do

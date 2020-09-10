@@ -3,7 +3,7 @@ package monitoring
 import (
 	"context"
 
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/prometheus/client_golang/prometheus"
 )

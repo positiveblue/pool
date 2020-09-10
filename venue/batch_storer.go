@@ -7,8 +7,8 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -181,7 +181,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	if err != nil {
 		return fmt.Errorf("error parsing batch ID: %v", err)
 	}
-	nextBatchKey := clmscript.IncrementKey(batchKey)
+	nextBatchKey := poolscript.IncrementKey(batchKey)
 
 	// Also create a snapshot we'll store to the DB, useful if we later
 	// need to look up this batch.

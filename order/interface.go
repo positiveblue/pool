@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/llm/order"
+	"github.com/lightninglabs/pool/order"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 

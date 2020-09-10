@@ -8,10 +8,10 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
-	"github.com/lightninglabs/llm/clmscript"
-	"github.com/lightninglabs/llm/order"
-	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -293,7 +293,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		if err != nil {
 			return err
 		}
-		accountScript, err := clmscript.AccountScript(
+		accountScript, err := poolscript.AccountScript(
 			acctPreBatch.AccountExpiry, acctKey, auctioneerKey,
 			batchKey, acctPreBatch.VenueSecret,
 		)
@@ -364,7 +364,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			if err != nil {
 				return err
 			}
-			accountScript, err := clmscript.AccountScript(
+			accountScript, err := poolscript.AccountScript(
 				acctParams.AccountExpiry, acctKey,
 				auctioneerKey, batchKey, acctParams.VenueSecret,
 			)
@@ -542,7 +542,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 		masterAcctState.AuctioneerKey[:],
 		masterAcct.AuctioneerKey.PubKey.SerializeCompressed(),
 	)
-	nextBatchKey := clmscript.IncrementKey(batchKey)
+	nextBatchKey := poolscript.IncrementKey(batchKey)
 	copy(
 		masterAcctState.BatchKey[:],
 		nextBatchKey.SerializeCompressed(),

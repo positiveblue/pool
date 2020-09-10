@@ -12,9 +12,9 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/llm/clmscript"
-	orderT "github.com/lightninglabs/llm/order"
-	"github.com/lightninglabs/llm/terms"
+	"github.com/lightninglabs/pool/poolscript"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
@@ -351,7 +351,7 @@ func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
 				},
 				BatchKey: toRawKey(pubKey),
 				NextBatchKey: toRawKey(
-					clmscript.IncrementKey(pubKey),
+					poolscript.IncrementKey(pubKey),
 				),
 				AccountBalance: btcutil.SatoshiPerBitcoin,
 			},
@@ -362,7 +362,7 @@ func (m *mockCallMarket) MaybeClear(_ chainfee.SatPerKWeight,
 				},
 				BatchKey: toRawKey(pubKey),
 				NextBatchKey: toRawKey(
-					clmscript.IncrementKey(pubKey),
+					poolscript.IncrementKey(pubKey),
 				),
 				AccountBalance: btcutil.SatoshiPerBitcoin,
 			},
@@ -1329,7 +1329,7 @@ func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 		// increment the current batch key by one. The new batch key
 		// will be the current batch key from the PoV of the
 		// auctioneer.
-		currentBatchKey = clmscript.IncrementKey(currentBatchKey)
+		currentBatchKey = poolscript.IncrementKey(currentBatchKey)
 		testHarness.db.batchKey = currentBatchKey
 	}
 

@@ -3,7 +3,7 @@ package matching
 import (
 	"testing"
 
-	orderT "github.com/lightninglabs/llm/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/stretchr/testify/assert"
 )
