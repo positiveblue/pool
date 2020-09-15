@@ -1260,13 +1260,13 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 		t, dave, bidSize2, false, t.trader.cfg.LndNode.PubKey,
 	)
 
-	// Because the first round never happened, Dave now has two pending
-	// channels. One that's eventually going to confirm with the most recent
-	// batch transaction and one that's going to stay pending forever.
-	//
-	// TODO(guggero): Clean up this state by calling abandonchannel or
-	// similar on new BatchPrepare message.
-	assertNumPendingChannels(t, dave, 2)
+	// Because the first round never happened, Dave did create a channel
+	// that will never confirm because it was replaced with a channel of the
+	// second matched batch. That first version should have been cleaned up
+	// by the trader daemon by abandoning it in lnd. We check that the
+	// abandon mechanism worked by making sure there's only one pending
+	// channel present now.
+	assertNumPendingChannels(t, dave, 1)
 
 	// Make sure we have a conflict reported from both sides.
 	conflicts, err := t.auctioneer.FundingConflicts(
