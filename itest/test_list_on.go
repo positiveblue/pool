@@ -60,4 +60,8 @@ var testCases = []*testCase{
 		name: "batch partial reject funding failure",
 		test: testTraderPartialRejectFundingFailure,
 	},
+	{
+		name: "manual batch fee bump",
+		test: testManualFeeBump,
+	},
 }
