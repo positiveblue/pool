@@ -563,6 +563,13 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 		b.Unlock()
 
+		// If there are no traders part of this batch, it means the
+		// batch is empty and there is nothing to execute. In this case
+		// we skip straight ahead to the finalization stage.
+		if len(env.traders) == 0 {
+			return BatchFinalize, env, nil
+		}
+
 		// With the execution context created, we'll now craft a
 		// PrepareMsg to send to each trader to kick off the batch. If
 		// we can't send a message to any of these traders, then we'll
