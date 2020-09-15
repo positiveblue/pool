@@ -1058,18 +1058,14 @@ func (a *auctioneerTestHarness) AssertLifetimesEnforced() {
 	require.NotEmpty(a.t, a.channelEnforcer.lifetimePkgs)
 }
 
-func (a *auctioneerTestHarness) MarkBatchUnconfirmed(batchKey *btcec.PublicKey,
-	tx *wire.MsgTx) {
+func (a *auctioneerTestHarness) MarkBatchUnconfirmed(bid orderT.BatchID,
+	snapshot *subastadb.BatchSnapshot) {
 
 	a.db.Lock()
 	defer a.db.Unlock()
 
-	bid := orderT.NewBatchID(batchKey)
-
 	a.db.batchStates[bid] = false
-	a.db.snapshots[bid] = &subastadb.BatchSnapshot{
-		BatchTx: tx,
-	}
+	a.db.snapshots[bid] = snapshot
 }
 
 func (a *auctioneerTestHarness) AssertBatchConfirmed(batchKey *btcec.PublicKey) {
@@ -1177,6 +1173,20 @@ func (a *auctioneerTestHarness) ReportExecutionSuccess() {
 	a.executor.Lock()
 	exeCtx := a.executor.submittedBatch
 	a.executor.Unlock()
+
+	snapshot := &subastadb.BatchSnapshot{
+		BatchTx:    exeCtx.ExeTx,
+		BatchTxFee: exeCtx.FeeInfoEstimate.Fee,
+		OrderBatch: exeCtx.OrderBatch,
+	}
+
+	// On reported execution success, the batch will be found as
+	// unconfirmed in the DB.
+	a.MarkBatchUnconfirmed(exeCtx.BatchID, snapshot)
+
+	a.db.Lock()
+	a.db.batchKey = poolscript.IncrementKey(a.db.batchKey)
+	a.db.Unlock()
 
 	a.executor.resChan <- &venue.ExecutionResult{
 		Batch: exeCtx.OrderBatch,
@@ -1419,7 +1429,10 @@ func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 
 		// We'll now insert a pending batch snapshot and transaction,
 		// marking it as unconfirmed.
-		testHarness.MarkBatchUnconfirmed(currentBatchKey, batchTx)
+		bid := orderT.NewBatchID(currentBatchKey)
+		testHarness.MarkBatchUnconfirmed(bid, &subastadb.BatchSnapshot{
+			BatchTx: batchTx,
+		})
 		batchKeys = append(batchKeys, currentBatchKey)
 
 		// Now that the new batch has been marked unconfirmed, we
@@ -1712,6 +1725,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// At long last, we're now ready to trigger a successful batch
 	// execution.
+	startingBatchKey := testHarness.db.batchKey
 	testHarness.ReportExecutionSuccess()
 
 	// Now that the batch was successful, we should transition to the
@@ -1729,7 +1743,6 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// Now we trigger a confirmation, the batch should be marked as being
 	// confirmed on disk.
-	startingBatchKey := testHarness.db.batchKey
 	testHarness.SendConf(broadcastTx)
 	testHarness.AssertBatchConfirmed(startingBatchKey)
 
