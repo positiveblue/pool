@@ -1073,12 +1073,19 @@ func (a *auctioneerTestHarness) MarkBatchUnconfirmed(batchKey *btcec.PublicKey,
 }
 
 func (a *auctioneerTestHarness) AssertBatchConfirmed(batchKey *btcec.PublicKey) {
+	a.t.Helper()
+
 	err := wait.NoError(func() error {
 		a.db.Lock()
 		defer a.db.Unlock()
 
 		bid := orderT.NewBatchID(batchKey)
-		if _, ok := a.db.batchStates[bid]; !ok {
+		confirmed, ok := a.db.batchStates[bid]
+		if !ok {
+			return fmt.Errorf("batch %x not found: ", bid[:])
+		}
+
+		if !confirmed {
 			return fmt.Errorf("batch %x still unconfirmed: ", bid[:])
 		}
 
