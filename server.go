@@ -340,10 +340,10 @@ func NewServer(cfg *Config) (*Server, error) {
 	log.Infof("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
 	if grpcListener == nil {
-		grpcListener, err = net.Listen("tcp", defaultAuctioneerAddr)
+		grpcListener, err = net.Listen("tcp", cfg.RPCListen)
 		if err != nil {
 			return nil, fmt.Errorf("RPC server unable to listen "+
-				"on %s", defaultAuctioneerAddr)
+				"on %s", cfg.RPCListen)
 		}
 	}
 	auctioneerServer := newRPCServer(
@@ -362,10 +362,10 @@ func NewServer(cfg *Config) (*Server, error) {
 	log.Infof("Starting admin gRPC listener")
 	adminListener := cfg.AdminRPCListener
 	if adminListener == nil {
-		adminListener, err = net.Listen("tcp", defaultAdminAddr)
+		adminListener, err = net.Listen("tcp", cfg.AdminRPCListen)
 		if err != nil {
 			return nil, fmt.Errorf("admin RPC server unable to "+
-				"listen on %s", defaultAdminAddr)
+				"listen on %s", cfg.AdminRPCListen)
 		}
 	}
 	server.adminServer = newAdminRPCServer(
