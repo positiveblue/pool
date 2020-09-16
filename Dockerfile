@@ -1,4 +1,4 @@
-FROM golang:1.14.5-alpine as builder
+FROM golang:1.14.9-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightninglabs/subasta
