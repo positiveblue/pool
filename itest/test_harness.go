@@ -5,8 +5,10 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -36,11 +38,22 @@ import (
 
 var (
 	harnessNetParams = &chaincfg.RegressionNetParams
+
+	// lastPort is the last port determined to be free for use by a new
+	// node. It should be used atomically.
+	lastPort uint32 = defaultNodePort
 )
 
 const (
 	minerMempoolTimeout = lntest.MinerMempoolTimeout
 	defaultWaitTimeout  = lntest.DefaultTimeout
+
+	// defaultNodePort is the start of the range for listening ports of
+	// harness nodes. Ports are monotonically increasing starting from this
+	// number and are determined by the results of nextAvailablePort(). The
+	// start port should be distinct from lntest's one to not get a conflict
+	// with the lnd nodes that are also started.
+	defaultNodePort = 19655
 )
 
 // testCase is a struct that holds a single test case.
@@ -219,6 +232,34 @@ func connectServerClient(ah *auctioneerHarness, th *traderHarness,
 		}
 	}
 	return nil
+}
+
+// nextAvailablePort returns the first port that is available for listening by
+// a new node. It panics if no port is found and the maximum available TCP port
+// is reached.
+func nextAvailablePort() int {
+	port := atomic.AddUint32(&lastPort, 1)
+	for port < 65535 {
+		// If there are no errors while attempting to listen on this
+		// port, close the socket and return it as available. While it
+		// could be the case that some other process picks up this port
+		// between the time the socket is closed and it's reopened in
+		// the harness node, in practice in CI servers this seems much
+		// less likely than simply some other process already being
+		// bound at the start of the tests.
+		addr := fmt.Sprintf("127.0.0.1:%d", port)
+		l, err := net.Listen("tcp4", addr)
+		if err == nil {
+			err := l.Close()
+			if err == nil {
+				return int(port)
+			}
+		}
+		port = atomic.AddUint32(&lastPort, 1)
+	}
+
+	// No ports available? Must be a mistake.
+	panic("no ports available for listening")
 }
 
 // setupHarnesses creates new server and client harnesses that are connected
