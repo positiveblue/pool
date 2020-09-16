@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -18,16 +17,17 @@ import (
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lntest/wait"
 	"go.etcd.io/etcd/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 var (
-	etcdListenAddr = "127.0.0.1:9125"
+	etcdListenAddr = fmt.Sprintf("127.0.0.1:%d", nextAvailablePort())
 )
 
 // auctioneerHarness is a test harness that holds everything that is needed to
@@ -48,12 +48,10 @@ type auctioneerHarness struct {
 // auctioneerConfig holds all configuration items that are required to start an
 // auctioneer server.
 type auctioneerConfig struct {
-	RPCListener      *bufconn.Listener
-	AdminRPCListener *bufconn.Listener
-	BackendCfg       lntest.BackendConfig
-	LndNode          *lntest.HarnessNode
-	NetParams        *chaincfg.Params
-	BaseDir          string
+	BackendCfg lntest.BackendConfig
+	LndNode    *lntest.HarnessNode
+	NetParams  *chaincfg.Params
+	BaseDir    string
 }
 
 // newAuctioneerHarness creates a new auctioneer server harness with the given
@@ -97,20 +95,22 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				User:     "",
 				Password: "",
 			},
-			Prometheus:       &monitoring.PrometheusConfig{},
-			Bitcoin:          &chain.BitcoinConfig{},
-			MaxLogFiles:      99,
-			MaxLogFileSize:   999,
-			DebugLevel:       "debug",
-			LogDir:           ".",
-			RPCListener:      cfg.RPCListener,
-			AdminRPCListener: cfg.AdminRPCListener,
+			Prometheus:     &monitoring.PrometheusConfig{},
+			Bitcoin:        &chain.BitcoinConfig{},
+			MaxLogFiles:    99,
+			MaxLogFileSize: 999,
+			DebugLevel:     "debug",
+			LogDir:         ".",
+			RPCListen: fmt.Sprintf("127.0.0.1:%d",
+				nextAvailablePort()),
+			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
+				nextAvailablePort()),
 		},
 	}, nil
 }
 
 // start spins up an in-memory etcd server and the auctioneer server listening
-// for gRPC connections on a bufconn.
+// for gRPC connections.
 func (hs *auctioneerHarness) start() error {
 	// Start the embedded etcd server.
 	err := hs.initEtcdServer()
@@ -136,11 +136,9 @@ func (hs *auctioneerHarness) runServer() error {
 
 	// Connect our internal client to the main RPC server so we can interact
 	// with it during the test.
-	netConn, err := hs.cfg.RPCListener.Dial()
-	if err != nil {
-		return fmt.Errorf("could not listen on bufconn: %v", err)
-	}
-	rpcConn, err := ConnectAuctioneerRPC(netConn, hs.serverCfg.TLSCertPath)
+	rpcConn, err := dialServer(
+		hs.serverCfg.RPCListen, hs.serverCfg.TLSCertPath,
+	)
 	if err != nil {
 		return err
 	}
@@ -150,11 +148,7 @@ func (hs *auctioneerHarness) runServer() error {
 
 	// Also connect our internal admin client to the main RPC server so we
 	// can interact with it during the test.
-	netConn, err = hs.cfg.AdminRPCListener.Dial()
-	if err != nil {
-		return fmt.Errorf("could not listen on bufconn: %v", err)
-	}
-	rpcConn, err = ConnectAuctioneerRPC(netConn, "")
+	rpcConn, err = dialServer(hs.serverCfg.AdminRPCListen, "")
 	if err != nil {
 		return err
 	}
@@ -228,26 +222,30 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 	return nil
 }
 
-// ConnectAuctioneerRPC uses the in-memory buffer connection to dial to the
-// auction server.
-func ConnectAuctioneerRPC(conn net.Conn, serverCertPath string) (
-	*grpc.ClientConn, error) {
-
-	dialer := func(ctx context.Context, target string) (net.Conn, error) {
-		return conn, nil
-	}
-	defaultOpts, err := defaultDialOptions(serverCertPath)
+// dialServer creates a gRPC client connection to the given host using a default
+// timeout context.
+func dialServer(rpcHost, tlsCertPath string) (*grpc.ClientConn, error) {
+	defaultOpts, err := defaultDialOptions(tlsCertPath)
 	if err != nil {
 		return nil, err
 	}
-	opts := append(defaultOpts, grpc.WithContextDialer(dialer))
-	return grpc.DialContext(context.Background(), "", opts...)
+
+	ctx, cancel := context.WithTimeout(context.Background(), defaultTimeout)
+	defer cancel()
+	return grpc.DialContext(ctx, rpcHost, defaultOpts...)
 }
 
 // defaultDialOptions returns the default RPC dial options.
 func defaultDialOptions(serverCertPath string) ([]grpc.DialOption, error) {
 	transportOpts := grpc.WithInsecure()
 	if serverCertPath != "" {
+		err := wait.Predicate(func() bool {
+			return lnrpc.FileExists(serverCertPath)
+		}, defaultTimeout)
+		if err != nil {
+			return nil, err
+		}
+
 		creds, err := credentials.NewClientTLSFromFile(
 			serverCertPath, "",
 		)

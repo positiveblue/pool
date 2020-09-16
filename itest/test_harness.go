@@ -33,7 +33,6 @@ import (
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 var (
@@ -54,6 +53,10 @@ const (
 	// start port should be distinct from lntest's one to not get a conflict
 	// with the lnd nodes that are also started.
 	defaultNodePort = 19655
+
+	// defaultTimeout is a timeout that will be used for various wait
+	// scenarios where no custom timeout value is defined.
+	defaultTimeout = time.Second * 5
 )
 
 // testCase is a struct that holds a single test case.
@@ -144,12 +147,6 @@ func (h *harnessTest) Log(args ...interface{}) {
 
 // shutdown stops both the auction and trader server.
 func (h *harnessTest) shutdown() error {
-	// First close the direct connection to the auctioneer we opened
-	// manually for the itest.
-	if h.trader.cfg.AuctioneerConn != nil {
-		_ = h.trader.cfg.AuctioneerConn.Close()
-	}
-
 	// Allow both server and client to stop but only return the first error
 	// that occurs.
 	err := h.trader.stop()
@@ -176,62 +173,16 @@ func (h *harnessTest) restartServer() {
 	if err != nil {
 		h.t.Fatalf("could not recreate server connection: %v", err)
 	}
-	err = connectServerClient(h.auctioneer, h.trader, true)
-	if err != nil {
-		h.t.Fatalf("could not reconnect server and client: %v", err)
-	}
 }
 
-// prepareServerConnection creates a new bufconn connection in the auctioneer
-// server that clients can connect to. This should only be called once after
-// any (re)start of the auctioneer.
+// prepareServerConnection creates a new connection in the auctioneer server
+// that clients can connect to. This should only be called once after any
+// (re)start of the auctioneer.
 func prepareServerConnection(ah *auctioneerHarness, isRestart bool) error {
-
-	// Create new in-memory listeners that we are going to use to
-	// communicate with the auction and admin server.
-	auctioneerRPCListener := bufconn.Listen(100)
-	adminRPCListener := bufconn.Listen(100)
-
-	// Inject the listener into server and start it.
-	ah.cfg.RPCListener = auctioneerRPCListener
-	ah.cfg.AdminRPCListener = adminRPCListener
-	ah.serverCfg.RPCListener = auctioneerRPCListener
-	ah.serverCfg.AdminRPCListener = adminRPCListener
-
 	if isRestart {
 		return ah.runServer()
 	}
 	return ah.start()
-}
-
-// connectServerClient creates a new in-memory bufconn connection and connects
-// the client to the server through it. The server will be started in the
-// process, otherwise the client wouldn't be able to connect.
-func connectServerClient(ah *auctioneerHarness, th *traderHarness,
-	isRestart bool) error {
-
-	// Connect the main client and inject the connection into the harness.
-	auctioneerConn, err := ah.cfg.RPCListener.Dial()
-	if err != nil {
-		return err
-	}
-	th.cfg.AuctioneerConn = auctioneerConn
-	th.clientCfg.AuctioneerDialOpts, err = th.auctionServerDialOpts(
-		ah.serverCfg.TLSCertPath,
-	)
-	if err != nil {
-		return err
-	}
-
-	// After a restart, the bufconn is changed out and we need to reconnect
-	// the client.
-	if isRestart {
-		err := th.server.AuctioneerClient.Start()
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // nextAvailablePort returns the first port that is available for listening by
@@ -268,7 +219,7 @@ func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
 	*traderHarness, *auctioneerHarness) {
 
 	// Create the two harnesses but don't start them yet, they need to be
-	// connected through the bufconn first.
+	// connected first.
 	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
 		BackendCfg: lndHarness.BackendCfg,
 		NetParams:  harnessNetParams,
@@ -278,7 +229,7 @@ func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
 		t.Fatalf("could not create auction server: %v", err)
 	}
 
-	// Create a new internal bufconn connection in the autioneer server.
+	// Create a new internal connection in the auctioneer server.
 	err = prepareServerConnection(auctioneerHarness, false)
 	if err != nil {
 		t.Fatalf("could not create auctioneer connection: %v", err)
@@ -298,20 +249,16 @@ func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
 	opts ...traderCfgOpt) *traderHarness {
 
 	traderHarness, err := newTraderHarness(traderConfig{
-		BackendCfg: backend,
-		NetParams:  harnessNetParams,
-		LndNode:    node,
+		AuctionServer: auctioneer.serverCfg.RPCListen,
+		BackendCfg:    backend,
+		NetParams:     harnessNetParams,
+		LndNode:       node,
 	}, opts)
 	if err != nil {
 		t.Fatalf("could not create trader server: %v", err)
 	}
 
-	// Connect them together through the in-memory connection and then start
-	// them.
-	err = connectServerClient(auctioneer, traderHarness, false)
-	if err != nil {
-		t.Fatalf("could not connect client to server: %v", err)
-	}
+	// Start the trader harness now.
 	err = traderHarness.start()
 	if err != nil {
 		t.Fatalf("could not start trader server: %v", err)
