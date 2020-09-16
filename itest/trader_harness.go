@@ -66,6 +66,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 
 	tlsCertPath := filepath.Join(cfg.BaseDir, pool.DefaultTLSCertFilename)
 	tlsKeyPath := filepath.Join(cfg.BaseDir, pool.DefaultTLSKeyFilename)
+	macaroonPath := filepath.Join(cfg.BaseDir, pool.DefaultMacaroonFilename)
 
 	traderCfg := &pool.Config{
 		LogDir:         ".",
@@ -80,6 +81,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 		MaxBackoff:     500 * time.Millisecond,
 		TLSCertPath:    tlsCertPath,
 		TLSKeyPath:     tlsKeyPath,
+		MacaroonPath:   macaroonPath,
 		AuctionServer:  cfg.AuctionServer,
 		RPCListen:      fmt.Sprintf("127.0.0.1:%d", nextAvailablePort()),
 		NewNodesOnly:   false,
@@ -111,6 +113,7 @@ func (hs *traderHarness) start() error {
 	// Create our client to interact with the trader RPC server directly.
 	rpcConn, err := dialServer(
 		hs.clientCfg.RPCListen, hs.clientCfg.TLSCertPath,
+		hs.clientCfg.MacaroonPath,
 	)
 	if err != nil {
 		return fmt.Errorf("could not connect to %v: %v",

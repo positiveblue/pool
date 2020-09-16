@@ -20,10 +20,12 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/lightningnetwork/lnd/macaroons"
 	"go.etcd.io/etcd/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/credentials"
+	"gopkg.in/macaroon.v2"
 )
 
 var (
@@ -137,7 +139,7 @@ func (hs *auctioneerHarness) runServer() error {
 	// Connect our internal client to the main RPC server so we can interact
 	// with it during the test.
 	rpcConn, err := dialServer(
-		hs.serverCfg.RPCListen, hs.serverCfg.TLSCertPath,
+		hs.serverCfg.RPCListen, hs.serverCfg.TLSCertPath, "",
 	)
 	if err != nil {
 		return err
@@ -148,7 +150,7 @@ func (hs *auctioneerHarness) runServer() error {
 
 	// Also connect our internal admin client to the main RPC server so we
 	// can interact with it during the test.
-	rpcConn, err = dialServer(hs.serverCfg.AdminRPCListen, "")
+	rpcConn, err = dialServer(hs.serverCfg.AdminRPCListen, "", "")
 	if err != nil {
 		return err
 	}
@@ -224,8 +226,10 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 
 // dialServer creates a gRPC client connection to the given host using a default
 // timeout context.
-func dialServer(rpcHost, tlsCertPath string) (*grpc.ClientConn, error) {
-	defaultOpts, err := defaultDialOptions(tlsCertPath)
+func dialServer(rpcHost, tlsCertPath, macaroonPath string) (*grpc.ClientConn,
+	error) {
+
+	defaultOpts, err := defaultDialOptions(tlsCertPath, macaroonPath)
 	if err != nil {
 		return nil, err
 	}
@@ -236,8 +240,17 @@ func dialServer(rpcHost, tlsCertPath string) (*grpc.ClientConn, error) {
 }
 
 // defaultDialOptions returns the default RPC dial options.
-func defaultDialOptions(serverCertPath string) ([]grpc.DialOption, error) {
-	transportOpts := grpc.WithInsecure()
+func defaultDialOptions(serverCertPath, macaroonPath string) ([]grpc.DialOption,
+	error) {
+
+	baseOpts := []grpc.DialOption{
+		grpc.WithBlock(),
+		grpc.WithConnectParams(grpc.ConnectParams{
+			Backoff:           backoff.DefaultConfig,
+			MinConnectTimeout: 10 * time.Second,
+		}),
+	}
+
 	if serverCertPath != "" {
 		err := wait.Predicate(func() bool {
 			return lnrpc.FileExists(serverCertPath)
@@ -252,14 +265,38 @@ func defaultDialOptions(serverCertPath string) ([]grpc.DialOption, error) {
 		if err != nil {
 			return nil, err
 		}
-		transportOpts = grpc.WithTransportCredentials(creds)
+		baseOpts = append(baseOpts, grpc.WithTransportCredentials(creds))
+	} else {
+		baseOpts = append(baseOpts, grpc.WithInsecure())
 	}
-	return []grpc.DialOption{
-		grpc.WithBlock(),
-		transportOpts,
-		grpc.WithConnectParams(grpc.ConnectParams{
-			Backoff:           backoff.DefaultConfig,
-			MinConnectTimeout: 10 * time.Second,
-		}),
-	}, nil
+
+	if macaroonPath != "" {
+		macaroonOptions, err := readMacaroon(macaroonPath)
+		if err != nil {
+			return nil, fmt.Errorf("unable to load macaroon %s: %v",
+				macaroonPath, err)
+		}
+		baseOpts = append(baseOpts, macaroonOptions)
+	}
+
+	return baseOpts, nil
+}
+
+// readMacaroon tries to read the macaroon file at the specified path and create
+// gRPC dial options from it.
+func readMacaroon(macaroonPath string) (grpc.DialOption, error) {
+	// Load the specified macaroon file.
+	macBytes, err := ioutil.ReadFile(macaroonPath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read macaroon path : %v", err)
+	}
+
+	mac := &macaroon.Macaroon{}
+	if err = mac.UnmarshalBinary(macBytes); err != nil {
+		return nil, fmt.Errorf("unable to decode macaroon: %v", err)
+	}
+
+	// Now we append the macaroon credentials to the dial options.
+	cred := macaroons.NewMacaroonCredential(mac)
+	return grpc.WithPerRPCCredentials(cred), nil
 }
