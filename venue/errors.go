@@ -109,6 +109,11 @@ type Reject struct {
 	Reason string
 }
 
+// String returns a human-readable string representation of the Reject.
+func (r Reject) String() string {
+	return fmt.Sprintf("Reject(code: %v, reason: %v)", r.Type, r.Reason)
+}
+
 // OrderRejectMap is a composite type that tracks multiple rejected orders and
 // their reject reasons.
 type OrderRejectMap = map[orderT.Nonce]*Reject

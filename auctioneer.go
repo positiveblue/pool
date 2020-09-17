@@ -1569,8 +1569,9 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 			venue.FullRejectServerMisbehavior,
 			venue.FullRejectUnknown:
 
-			log.Warnf("Trader %x rejected the full batch, order=%v",
-				reporter[:], reporterOrder.Nonce())
+			log.Warnf("Trader %x rejected the full batch, "+
+				"order=%v, reject=%v", reporter[:],
+				reporterOrder.Nonce(), reject)
 			a.removeIneligibleOrders([]orderT.Nonce{
 				reporterOrder.Nonce(),
 			})
@@ -1579,7 +1580,7 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 			// TODO(guggero): The trader sent an invalid reject.
 			// This needs to be rate limited very aggressively.
 			log.Warnf("Trader %x sent invalid reject type %v",
-				reporter[:], reject.Type)
+				reporter[:], reject)
 		}
 	}
 
