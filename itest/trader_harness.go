@@ -1,10 +1,8 @@
 package itest
 
 import (
-	"context"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"os"
 	"path/filepath"
 	"time"
@@ -13,8 +11,6 @@ import (
 	"github.com/lightninglabs/pool"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/lntest"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/test/bufconn"
 )
 
 // traderHarness is a test harness that holds everything that is needed to
@@ -23,7 +19,6 @@ type traderHarness struct {
 	cfg       *traderConfig
 	server    *pool.Server
 	clientCfg *pool.Config
-	listener  *bufconn.Listener
 
 	poolrpc.TraderClient
 }
@@ -31,12 +26,12 @@ type traderHarness struct {
 // traderConfig holds all configuration items that are required to start an
 // trader server.
 type traderConfig struct {
-	AuctioneerConn net.Conn
-	BackendCfg     lntest.BackendConfig
-	ServerTLSPath  string
-	LndNode        *lntest.HarnessNode
-	NetParams      *chaincfg.Params
-	BaseDir        string
+	AuctionServer string
+	BackendCfg    lntest.BackendConfig
+	ServerTLSPath string
+	LndNode       *lntest.HarnessNode
+	NetParams     *chaincfg.Params
+	BaseDir       string
 }
 
 // traderCfgOpt is a function type that can manipulate the trader's config
@@ -62,16 +57,15 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 		}
 	}
 
-	// Create new in-memory listener that we are going to use to communicate
-	// with the poold.
-	listener := bufconn.Listen(100)
-
 	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
 		return nil, fmt.Errorf("lnd node configuration cannot be nil")
 	}
 	rpcMacaroonDir := filepath.Join(
 		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
 	)
+
+	tlsCertPath := filepath.Join(cfg.BaseDir, pool.DefaultTLSCertFilename)
+	tlsKeyPath := filepath.Join(cfg.BaseDir, pool.DefaultTLSKeyFilename)
 
 	traderCfg := &pool.Config{
 		LogDir:         ".",
@@ -84,7 +78,10 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 		DebugLevel:     "debug",
 		MinBackoff:     100 * time.Millisecond,
 		MaxBackoff:     500 * time.Millisecond,
-		RPCListener:    listener,
+		TLSCertPath:    tlsCertPath,
+		TLSKeyPath:     tlsKeyPath,
+		AuctionServer:  cfg.AuctionServer,
+		RPCListen:      fmt.Sprintf("127.0.0.1:%d", nextAvailablePort()),
 		NewNodesOnly:   false,
 		Lnd: &pool.LndConfig{
 			Host:        cfg.LndNode.Cfg.RPCAddr(),
@@ -98,29 +95,26 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 
 	return &traderHarness{
 		cfg:       &cfg,
-		listener:  listener,
 		clientCfg: traderCfg,
 	}, nil
 }
 
-// start spins up the trader server listening for gRPC connections on a bufconn.
+// start spins up the trader server listening for gRPC connections.
 func (hs *traderHarness) start() error {
 	var err error
 	hs.server = pool.NewServer(hs.clientCfg)
 	err = hs.server.Start()
 	if err != nil {
-		return fmt.Errorf("could not start trader server %v", err)
+		return fmt.Errorf("could not start trader server: %v", err)
 	}
 
-	// Since Stop uses the LightningClient to stop the node, if we fail to
-	// get a connected client, we have to kill the process.
-	netConn, err := hs.listener.Dial()
+	// Create our client to interact with the trader RPC server directly.
+	rpcConn, err := dialServer(
+		hs.clientCfg.RPCListen, hs.clientCfg.TLSCertPath,
+	)
 	if err != nil {
-		return fmt.Errorf("could not listen on bufconn: %v", err)
-	}
-	rpcConn, err := ConnectAuctioneerRPC(netConn, hs.cfg.ServerTLSPath)
-	if err != nil {
-		return err
+		return fmt.Errorf("could not connect to %v: %v",
+			hs.clientCfg.RPCListen, err)
 	}
 	hs.TraderClient = poolrpc.NewTraderClient(rpcConn)
 	return nil
@@ -134,19 +128,4 @@ func (hs *traderHarness) stop() error {
 	_ = os.RemoveAll(hs.cfg.BaseDir)
 
 	return err
-}
-
-// auctionServerDialOpts creates the dial options that are needed to connect
-// over the harness' connection to the auction server.
-func (hs *traderHarness) auctionServerDialOpts(serverCertPath string) (
-	[]grpc.DialOption, error) {
-
-	dialer := func(ctx context.Context, target string) (net.Conn, error) {
-		return hs.cfg.AuctioneerConn, nil
-	}
-	defaultOpts, err := defaultDialOptions(serverCertPath)
-	if err != nil {
-		return nil, err
-	}
-	return append(defaultOpts, grpc.WithContextDialer(dialer)), nil
 }

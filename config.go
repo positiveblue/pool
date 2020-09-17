@@ -129,8 +129,10 @@ type EtcdConfig struct {
 }
 
 type Config struct {
-	Network string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
-	BaseDir string `long:"basedir" description:"The base directory where auctionserver stores all its data"`
+	Network        string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
+	BaseDir        string `long:"basedir" description:"The base directory where auctionserver stores all its data"`
+	RPCListen      string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	AdminRPCListen string `long:"adminrpclisten" description:"Address to listen on for gRPC admin clients"`
 
 	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
 
@@ -178,6 +180,8 @@ type Config struct {
 var DefaultConfig = &Config{
 	Network:          "mainnet",
 	BaseDir:          DefaultBaseDir,
+	RPCListen:        defaultAuctioneerAddr,
+	AdminRPCListen:   defaultAdminAddr,
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
 	BatchConfTarget:  defaultBatchConfTarget,
