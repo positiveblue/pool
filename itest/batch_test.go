@@ -196,7 +196,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// Let's kick the auctioneer once again to try and create a batch.
 	_, batchTXIDs := executeBatch(t, 1)
-	batchTXID := batchTXIDs[0]
+	firstBatchTXID := batchTXIDs[0]
 
 	// At this point, the lnd nodes backed by each trader should have a
 	// single pending channel, which matches the amount of the order
@@ -228,7 +228,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// The block above should contain the batch transaction found in the
 	// mempool above.
-	assertTxInBlock(t, blocks[0], batchTXID)
+	assertTxInBlock(t, blocks[0], firstBatchTXID)
 
 	// The master account from the server's PoV should have the same txid
 	// hash as this mined block.
@@ -240,9 +240,9 @@ func testBatchExecution(t *harnessTest) {
 		t.Fatalf("unable to read master acct: %v", err)
 	}
 	acctOutPoint := masterAcct.Outpoint
-	if !bytes.Equal(acctOutPoint.Txid, batchTXID[:]) {
+	if !bytes.Equal(acctOutPoint.Txid, firstBatchTXID[:]) {
 		t.Fatalf("master account mismatch: expected %v, got %x",
-			batchTXID, acctOutPoint.Txid)
+			firstBatchTXID, acctOutPoint.Txid)
 	}
 
 	// We'll now mine another 3 blocks to ensure the channel itself is
@@ -253,19 +253,19 @@ func testBatchExecution(t *harnessTest) {
 	// we should be able to make a payment between this new channel
 	// established.
 	assertActiveChannel(
-		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
+		t, t.trader.cfg.LndNode, int64(bidAmt), *firstBatchTXID,
 		charlie.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
-		t, t.trader.cfg.LndNode, int64(bidAmt2), *batchTXID,
+		t, t.trader.cfg.LndNode, int64(bidAmt2), *firstBatchTXID,
 		charlie.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
-		t, charlie, int64(bidAmt), *batchTXID,
+		t, charlie, int64(bidAmt), *firstBatchTXID,
 		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
 	assertActiveChannel(
-		t, charlie, int64(bidAmt2), *batchTXID,
+		t, charlie, int64(bidAmt2), *firstBatchTXID,
 		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
 
@@ -310,6 +310,8 @@ func testBatchExecution(t *harnessTest) {
 		t, nil, secondTrader,
 		[]uint64{uint64(bidAmt), uint64(bidAmt2)}, orderFixedRate,
 	)
+	assertTraderAssets(t, t.trader, 2, []*chainhash.Hash{firstBatchTXID})
+	assertTraderAssets(t, secondTrader, 2, []*chainhash.Hash{firstBatchTXID})
 
 	// We'll now do an additional round to ensure that we're able to
 	// fulfill back to back batches. In this round, Charlie will submit
@@ -328,7 +330,7 @@ func testBatchExecution(t *harnessTest) {
 	// the market, to produce another channel which Charlie has just
 	// purchased. Let's kick the auctioneer now to try and create a batch.
 	_, batchTXIDs = executeBatch(t, 1)
-	batchTXID = batchTXIDs[0]
+	secondBatchTXID := batchTXIDs[0]
 
 	// Both parties should once again have a pending channel.
 	assertPendingChannel(
@@ -338,7 +340,7 @@ func testBatchExecution(t *harnessTest) {
 		t, charlie, bidAmt3, false, t.trader.cfg.LndNode.PubKey,
 	)
 	blocks = mineBlocks(t, t.lndHarness, 1, 1)
-	assertTxInBlock(t, blocks[0], batchTXID)
+	assertTxInBlock(t, blocks[0], secondBatchTXID)
 
 	// We'll conclude by mining enough blocks to have the channels be
 	// confirmed.
@@ -362,6 +364,9 @@ func testBatchExecution(t *harnessTest) {
 		t, secondBatchID, secondTrader, []uint64{uint64(bidAmt3)},
 		orderFixedRate,
 	)
+	batchTXIDs = []*chainhash.Hash{firstBatchTXID, secondBatchTXID}
+	assertTraderAssets(t, t.trader, 3, batchTXIDs)
+	assertTraderAssets(t, secondTrader, 3, batchTXIDs)
 
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
@@ -633,6 +638,27 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	copy(serverbatchID[:], batchSnapshot.BatchId)
 
 	return serverbatchID
+}
+
+// assertTraderAssets ensures that the given trader has the expected number of
+// assets with any of the given transaction hashes.
+func assertTraderAssets(t *harnessTest, trader *traderHarness, numAssets int,
+	txids []*chainhash.Hash) {
+
+	resp, err := trader.Leases(context.Background(), &poolrpc.LeasesRequest{})
+	require.NoErrorf(t.t, err, "unable to retrieve assets")
+	require.Equalf(t.t, numAssets, len(resp.Leases), "num assets mismatch")
+
+	txidSet := make(map[chainhash.Hash]struct{}, len(resp.Leases))
+	for _, txid := range txids {
+		txidSet[*txid] = struct{}{}
+	}
+
+	for _, asset := range resp.Leases {
+		assetTxid, err := chainhash.NewHash(asset.ChannelPoint.Txid)
+		require.NoError(t.t, err)
+		require.Contains(t.t, txidSet, *assetTxid)
+	}
 }
 
 // testServiceLevelEnforcement ensures that the auctioneer correctly enforces
