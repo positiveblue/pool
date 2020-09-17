@@ -104,13 +104,13 @@ type environment struct {
 	// NOTE: This will only be set after the BatchSigning state.
 	lifetimePkgs []*chanenforcement.LifetimePackage
 
-	// rejectingTraders is a map of all traders that sent a partial reject
-	// message during the batch execution and the orders they reject. One or
-	// more entries in this list means we have to start at matchmaking
-	// again, which can be expensive in resources. That's why we also report
-	// this map back to the auctioneer so it can track the number of
-	// rejects.
-	rejectingTraders map[matching.AccountID]OrderRejectMap
+	// rejectingTraders is a map of all traders that sent a partial or full
+	// reject message during the batch execution and the orders they
+	// reject. One or more entries in this list means we have to start at
+	// matchmaking again, which can be expensive in resources. That's why
+	// we also report this map back to the auctioneer so it can track the
+	// number of rejects.
+	rejectingTraders map[matching.AccountID]*OrderRejectMap
 
 	// msgTimers is the set of messages timers we'll expose to the main
 	// state machine to ensure traders send messages in time.
@@ -131,7 +131,7 @@ func newEnvironment(newBatch *executionReq,
 		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
 		acctWitnesses:      make(map[int]wire.TxWitness),
 		matchingChanTrader: make(map[wire.OutPoint]traderChannelInfo),
-		rejectingTraders:   make(map[matching.AccountID]OrderRejectMap),
+		rejectingTraders:   make(map[matching.AccountID]*OrderRejectMap),
 		msgTimers:          stallTimers,
 		quit:               make(chan struct{}),
 	}

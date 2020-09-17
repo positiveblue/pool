@@ -1531,70 +1531,100 @@ func (a *Auctioneer) locateTxByOutput(ctx context.Context,
 	return nil, errTxNotFound
 }
 
+// reportPartialReject handles a partial reject sent by a trader by making sure
+// the order pair won't be matched again.
+func (a *Auctioneer) reportPartialReject(reporter matching.AccountID,
+	reporterOrder, subjectOrder order.ServerOrder, reject *venue.Reject) {
+
+	switch reject.Type {
+	// The reporter node already has channels with the subject node
+	// so we make sure we match them with another trader for this
+	// batch (this preference will be cleared for the next batch).
+	case venue.PartialRejectDuplicatePeer:
+		a.cfg.TraderRejected.ReportConflict(
+			reporterOrder.ServerDetails().NodeKey,
+			subjectOrder.ServerDetails().NodeKey,
+			reject.Reason,
+		)
+
+	// The reporter node couldn't complete the channel funding
+	// negotiation with the subject node. We won't match the two
+	// nodes anymore in the future (this conflict will be tracked
+	// across multiple batches but not across server restarts).
+	case venue.PartialRejectFundingFailed:
+		a.cfg.FundingConflicts.ReportConflict(
+			reporterOrder.ServerDetails().NodeKey,
+			subjectOrder.ServerDetails().NodeKey,
+			reject.Reason,
+		)
+
+	default:
+		// TODO(guggero): The trader sent an invalid reject.
+		// This needs to be rate limited very aggressively.
+		log.Warnf("Trader %x sent invalid reject type %v",
+			reporter[:], reject)
+	}
+}
+
+// reportFullReject handles a full reject reported by a trader by removing the
+// order from consideration.
+func (a *Auctioneer) reportFullReject(reporter matching.AccountID,
+	reporterOrder orderT.Nonce, reject *venue.Reject) {
+
+	switch reject.Type {
+	// The trader rejected the full batch because of a more serious
+	// problem. We can't really do more than log the error and
+	// remove their orders.
+	case venue.FullRejectBatchVersionMismatch,
+		venue.FullRejectServerMisbehavior,
+		venue.FullRejectUnknown:
+
+		log.Warnf("Trader %x rejected the full batch, order=%v, "+
+			"reject=%v", reporter[:], reporterOrder, reject)
+		a.removeIneligibleOrders([]orderT.Nonce{
+			reporterOrder,
+		})
+
+	default:
+		// TODO(guggero): The trader sent an invalid reject.
+		// This needs to be rate limited very aggressively.
+		log.Warnf("Trader %x sent invalid reject type %v",
+			reporter[:], reject)
+	}
+}
+
 // handleReject inspects all order rejects returned from the batch executor and
 // creates the appropriate conflict reports or punishes traders if they exceeded
-// their reject limit.
+// their reject limit. Note that it is expected that if the reject map of a
+// trader points to its own orders, it means it rejected the whole batch.
 func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
-	rejectingTrader map[matching.AccountID]venue.OrderRejectMap) {
-
-	reportConflict := func(reporter matching.AccountID, reporterOrder,
-		subjectOrder order.ServerOrder, reject *venue.Reject) {
-
-		switch reject.Type {
-		// The reporter node already has channels with the subject node
-		// so we make sure we match them with another trader for this
-		// batch (this preference will be cleared for the next batch).
-		case venue.PartialRejectDuplicatePeer:
-			a.cfg.TraderRejected.ReportConflict(
-				reporterOrder.ServerDetails().NodeKey,
-				subjectOrder.ServerDetails().NodeKey,
-				reject.Reason,
-			)
-
-		// The reporter node couldn't complete the channel funding
-		// negotiation with the subject node. We won't match the two
-		// nodes anymore in the future (this conflict will be tracked
-		// across multiple batches but not across server restarts).
-		case venue.PartialRejectFundingFailed:
-			a.cfg.FundingConflicts.ReportConflict(
-				reporterOrder.ServerDetails().NodeKey,
-				subjectOrder.ServerDetails().NodeKey,
-				reject.Reason,
-			)
-
-		// The trader rejected the full batch because of a more serious
-		// problem. We can't really do more than log the error and
-		// remove their orders.
-		case venue.FullRejectBatchVersionMismatch,
-			venue.FullRejectServerMisbehavior,
-			venue.FullRejectUnknown:
-
-			log.Warnf("Trader %x rejected the full batch, "+
-				"order=%v, reject=%v", reporter[:],
-				reporterOrder.Nonce(), reject)
-			a.removeIneligibleOrders([]orderT.Nonce{
-				reporterOrder.Nonce(),
-			})
-
-		default:
-			// TODO(guggero): The trader sent an invalid reject.
-			// This needs to be rate limited very aggressively.
-			log.Warnf("Trader %x sent invalid reject type %v",
-				reporter[:], reject)
-		}
-	}
+	rejectingTrader map[matching.AccountID]*venue.OrderRejectMap) {
 
 	// Let's inspect the list of traders that rejected. We need to be aware
 	// that messages are de-multiplexed for the venue and that we might have
 	// entries that aren't valid. We make sure we only look at entries where
-	// the reporting trader is on the other side of the reported order.
+	// the reporting trader is part of the match with the rejected order.
 	for reporter, rejectMap := range rejectingTrader {
 		// TODO(guggero): Also punish/rate limit a trader that partially
 		// rejected without specifying any orders they reject.
+		rejectMap := rejectMap
+		reporter := reporter
+		removeAllOrders := func(rej *venue.Reject) {
+			for _, reporterNonce := range rejectMap.OwnOrders {
+				a.reportFullReject(
+					reporter, reporterNonce, rej,
+				)
+			}
+		}
 
-		for rejectNonce, reject := range rejectMap {
-			// Find the rejected order in the batch and find out
-			// which order it was matched to.
+		// Remove the trader's own orders in case of a full reject.
+		if rejectMap.FullReject != nil {
+			removeAllOrders(rejectMap.FullReject)
+		}
+
+		// For each partial reject, find the rejected order in the
+		// batch and find out which order it was matched to.
+		for rejectNonce, reject := range rejectMap.PartialRejects {
 			var rejectedOrder, matchedOrder order.ServerOrder
 			for _, orderPair := range batch.Orders {
 				ask := orderPair.Details.Ask
@@ -1637,7 +1667,7 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 
 			// Report the conflicts now as we know both the
 			// reporting trader's order and the subject's order.
-			reportConflict(
+			a.reportPartialReject(
 				reporter, matchedOrder, rejectedOrder, reject,
 			)
 		}

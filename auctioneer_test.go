@@ -1629,18 +1629,20 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	require.Equal(t, nonces[11], rejectNonce2)
 	testHarness.executor.Unlock()
 	testHarness.ReportExecutionFailure(&venue.ErrReject{
-		RejectingTraders: map[matching.AccountID]venue.OrderRejectMap{
+		RejectingTraders: map[matching.AccountID]*venue.OrderRejectMap{
 			rejectedPair.Bidder.AccountKey: {
-				rejectNonce1: &venue.Reject{
+				FullReject: &venue.Reject{
 					Type:   venue.FullRejectUnknown,
 					Reason: "mismatch",
 				},
+				OwnOrders: []orderT.Nonce{rejectNonce1},
 			},
 			rejectedPair.Asker.AccountKey: {
-				rejectNonce2: &venue.Reject{
+				FullReject: &venue.Reject{
 					Type:   venue.FullRejectUnknown,
 					Reason: "mismatch",
 				},
+				OwnOrders: []orderT.Nonce{rejectNonce2},
 			},
 		},
 	})

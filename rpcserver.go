@@ -1784,7 +1784,7 @@ func parseRPCReject(msg *poolrpc.ClientAuctionMessage_Reject,
 	switch msg.Reject.ReasonCode {
 	// Only some of the orders are rejected.
 	case poolrpc.OrderMatchReject_PARTIAL_REJECT:
-		orders := make(venue.OrderRejectMap)
+		orders := make(map[orderT.Nonce]*venue.Reject)
 		for nonceStr, reason := range msg.Reject.RejectedOrders {
 			// Parse the nonce of the rejected order first.
 			nonceBytes, err := hex.DecodeString(nonceStr)
