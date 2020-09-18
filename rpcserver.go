@@ -1661,10 +1661,15 @@ func parseRPCServerOrder(version uint32, details *poolrpc.ServerOrder,
 			fmt.Errorf("invalid node addresses")
 	}
 	for _, rpcAddr := range details.NodeAddr {
-		var addr net.Addr
+		// Obtain the host to determine if this is a Tor address.
+		host, _, err := net.SplitHostPort(rpcAddr.Addr)
+		if err != nil {
+			host = rpcAddr.Addr
+		}
 
+		var addr net.Addr
 		switch {
-		case tor.IsOnionHost(rpcAddr.Addr):
+		case tor.IsOnionHost(host):
 			addr, err = parseOnionAddr(rpcAddr.Addr)
 			if err != nil {
 				return nil, nodeKey, nodeAddrs, multiSigKey,
