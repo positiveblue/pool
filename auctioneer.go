@@ -1560,9 +1560,14 @@ func (a *Auctioneer) reportPartialReject(reporter matching.AccountID,
 
 	default:
 		// TODO(guggero): The trader sent an invalid reject.
-		// This needs to be rate limited very aggressively.
+		// This needs to be rate limited very aggressively. For
+		// now we just remove the order to avoid getting stuck
+		// in an execution loop.
 		log.Warnf("Trader %x sent invalid reject type %v",
 			reporter[:], reject)
+		a.removeIneligibleOrders([]orderT.Nonce{
+			reporterOrder.Nonce(),
+		})
 	}
 }
 
@@ -1587,9 +1592,14 @@ func (a *Auctioneer) reportFullReject(reporter matching.AccountID,
 
 	default:
 		// TODO(guggero): The trader sent an invalid reject.
-		// This needs to be rate limited very aggressively.
+		// This needs to be rate limited very aggressively. For
+		// now we just remove the order to avoid getting stuck
+		// in an execution loop.
 		log.Warnf("Trader %x sent invalid reject type %v",
 			reporter[:], reject)
+		a.removeIneligibleOrders([]orderT.Nonce{
+			reporterOrder,
+		})
 	}
 }
 
@@ -1605,16 +1615,18 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 	// entries that aren't valid. We make sure we only look at entries where
 	// the reporting trader is part of the match with the rejected order.
 	for reporter, rejectMap := range rejectingTrader {
-		// TODO(guggero): Also punish/rate limit a trader that partially
-		// rejected without specifying any orders they reject.
 		rejectMap := rejectMap
 		reporter := reporter
+
+		rejected := false
 		removeAllOrders := func(rej *venue.Reject) {
 			for _, reporterNonce := range rejectMap.OwnOrders {
 				a.reportFullReject(
 					reporter, reporterNonce, rej,
 				)
 			}
+
+			rejected = true
 		}
 
 		// Remove the trader's own orders in case of a full reject.
@@ -1652,6 +1664,12 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 				log.Warnf("Trader %x sent invalid order in "+
 					"reject: %v", reporter[:], rejectNonce)
 
+				// Remove all orders for the trader.
+				rej := &venue.Reject{
+					Type:   venue.FullRejectUnknown,
+					Reason: "invalid partial reject",
+				}
+				removeAllOrders(rej)
 				continue
 			}
 
@@ -1661,6 +1679,10 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 			// found the order that was rejected (it was a valid
 			// nonce), it is very unlikely that this is a deliberate
 			// attempt to interfere, so we can safely skip this.
+			// TODO(halseth): get rid of the RPC de-multiplexing to
+			// avoid malicious nodes sending rejects for orders
+			// they are not part of, since that can stall batch
+			// execution.
 			if matchedOrder.Details().AcctKey != reporter {
 				continue
 			}
@@ -1670,6 +1692,18 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 			a.reportPartialReject(
 				reporter, matchedOrder, rejectedOrder, reject,
 			)
+			rejected = true
+		}
+
+		// If the trader sent a reject message with nothing we could
+		// act on, remove all its orders to ensure we converge on the
+		// order book.
+		if !rejected {
+			rej := &venue.Reject{
+				Type:   venue.FullRejectUnknown,
+				Reason: "invalid reject msg",
+			}
+			removeAllOrders(rej)
 		}
 	}
 }
