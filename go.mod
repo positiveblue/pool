@@ -12,9 +12,9 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.1-beta.0.20200901205500-5237b07a6ef5
 	github.com/lightninglabs/lndclient v0.11.0-1
-	github.com/lightninglabs/pool v0.2.1-alpha.0.20200917181723-1979dbbe406d
+	github.com/lightninglabs/pool v0.2.2-alpha
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.11.0-beta.rc4.0.20200907194312-751b02361e53
+	github.com/lightningnetwork/lnd v0.11.0-beta.rc4.0.20200911014924-bc6e52888763
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/prometheus/client_golang v1.5.1
@@ -23,6 +23,7 @@ require (
 	go.etcd.io/etcd v3.3.22+incompatible
 	golang.org/x/crypto v0.0.0-20200709230013-948cd5f35899
 	google.golang.org/grpc v1.29.1
+	gopkg.in/macaroon.v2 v2.1.0
 )
 
 go 1.13
