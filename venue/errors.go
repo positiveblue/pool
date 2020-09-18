@@ -109,9 +109,27 @@ type Reject struct {
 	Reason string
 }
 
+// String returns a human-readable string representation of the Reject.
+func (r Reject) String() string {
+	return fmt.Sprintf("Reject(code: %v, reason: %v)", r.Type, r.Reason)
+}
+
 // OrderRejectMap is a composite type that tracks multiple rejected orders and
 // their reject reasons.
-type OrderRejectMap = map[orderT.Nonce]*Reject
+type OrderRejectMap struct {
+	// PartialRejects are reasons a trader rejected a order it was matched
+	// with.
+	PartialRejects map[orderT.Nonce]*Reject
+
+	// FullReject is set if the trader rejected the full batch. Otherwise
+	// it is nil.
+	FullReject *Reject
+
+	// OwnOrders tracks a trader's own orders that were part of the batch.
+	// We use it to remove the trader's orders from match making in case of
+	// full reject or misbehavior.
+	OwnOrders []orderT.Nonce
+}
 
 // ErrReject is returned if a trader sends an message to reject some orders or
 // the full batch. Either way, a new match making process should be attempted
@@ -123,7 +141,7 @@ type ErrReject struct {
 	// reject message during the batch execution and the orders they reject.
 	// One or more entries in this list means we have to start at
 	// matchmaking again.
-	RejectingTraders map[matching.AccountID]OrderRejectMap
+	RejectingTraders map[matching.AccountID]*OrderRejectMap
 }
 
 // Error implements the error interface.

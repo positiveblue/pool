@@ -187,7 +187,7 @@ type TraderPartialRejectMsg struct {
 
 	// Orders is the map of orders they wish to reject and the reasons for
 	// rejecting them.
-	Orders OrderRejectMap
+	Orders map[orderT.Nonce]*Reject
 }
 
 // Src returns the trader that sent us this message.
@@ -1017,20 +1017,16 @@ func (b *BatchExecutor) handleFullReject(msg *TraderRejectMsg,
 	// potential DoS attacks from too many rejects.
 	env.cancelTimerForTrader(reporter)
 
-	// Add the appropriate entries to the reject report map now for all the
-	// trader's order involved in this batch.
-	rejectMap := make(OrderRejectMap)
-	for _, rejectedOrder := range env.traderToOrders[reporter] {
-		rejectMap[rejectedOrder] = &Reject{
+	// We simply store all orders for this trader and the reject reason.
+	// The auctioneer will do the more detailed check and remove the orders
+	// from matchmaking.
+	env.rejectingTraders[reporter] = &OrderRejectMap{
+		FullReject: &Reject{
 			Type:   msg.Type,
 			Reason: msg.Reason,
-		}
+		},
+		OwnOrders: env.traderToOrders[reporter],
 	}
-
-	// We simply store the rejected orders with the reasons. The auctioneer
-	// will do the more detailed check and rate limiting of the actual
-	// reject messages.
-	env.rejectingTraders[reporter] = rejectMap
 }
 
 // handlePartialReject processes the partial reject message of a trader. The
@@ -1068,7 +1064,9 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 	// If the reporter was involved, we simply store the rejected orders
 	// with the reasons. The auctioneer will do the more detailed check and
 	// rate limiting of the actual reject messages.
-	env.rejectingTraders[reporter] = msg.Orders
+	env.rejectingTraders[reporter] = &OrderRejectMap{
+		PartialRejects: msg.Orders,
+	}
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new
