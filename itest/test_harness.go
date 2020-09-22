@@ -149,7 +149,7 @@ func (h *harnessTest) Log(args ...interface{}) {
 func (h *harnessTest) shutdown() error {
 	// Allow both server and client to stop but only return the first error
 	// that occurs.
-	err := h.trader.stop()
+	err := h.trader.stop(true)
 	err2 := h.auctioneer.stop()
 	if err != nil {
 		return err
@@ -1307,7 +1307,7 @@ func shutdownAndAssert(t *harnessTest, node *lntest.HarnessNode,
 	trader *traderHarness) {
 
 	if trader != nil {
-		if err := trader.stop(); err != nil {
+		if err := trader.stop(true); err != nil {
 			t.Fatalf("unable to shutdown trader: %v", err)
 		}
 	}

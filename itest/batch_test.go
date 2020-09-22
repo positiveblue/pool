@@ -146,7 +146,7 @@ func testBatchExecution(t *harnessTest) {
 		t.Fatalf("could not submit bid order: %v", err)
 	}
 
-	if err := thirdTrader.stop(); err != nil {
+	if err := thirdTrader.stop(false); err != nil {
 		t.Fatalf("unable to stop trader %v", err)
 	}
 
@@ -1003,6 +1003,18 @@ func testConsecutiveBatches(t *harnessTest) {
 		secondTrader, bidAccount.TraderKey, askRate, bid2Size,
 		durationBlocks, uint32(order.CurrentVersion),
 	)
+	require.NoError(t.t, err)
+
+	// We'll now restart Charlie's trader daemon.
+	err = secondTrader.stop(false)
+	require.NoError(t.t, err)
+
+	// Before restarting, we'll attempt a batch while Charlie is offline.
+	// Since the batch depends on their order, no batch should occur.
+	_, _ = executeBatch(t, 1)
+
+	// Restart Charlie to ensure they can participate in the next batch.
+	err = secondTrader.start()
 	require.NoError(t.t, err)
 
 	// Execute the batch and make sure there's a second channel between Bob
