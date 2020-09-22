@@ -477,7 +477,7 @@ func (a *Auctioneer) publishBatchTx(ctx context.Context, batchTx *wire.MsgTx,
 
 	a.wg.Add(1)
 	go func() {
-		a.wg.Done()
+		defer a.wg.Done()
 
 		select {
 		case <-a.quit:
@@ -660,7 +660,6 @@ func (a *Auctioneer) pauseOrderFeeder() {
 // orderFeeder is a dedicated goroutine that we'll listen to all changes to the
 // primary order book, to dispatch an update to the main state machine loop.
 func (a *Auctioneer) orderFeeder(orderSubscription *subscribe.Client) {
-
 	defer a.wg.Done()
 
 	// dispatchUpdate is a helper function that will apply a new
