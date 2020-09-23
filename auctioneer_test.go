@@ -83,6 +83,8 @@ type mockAuctioneerState struct {
 	snapshots map[orderT.BatchID]*subastadb.BatchSnapshot
 
 	bannedAccounts map[matching.AccountID]struct{}
+
+	quit chan struct{}
 }
 
 func newMockAuctioneerState(batchKey *btcec.PublicKey,
@@ -107,6 +109,7 @@ func newMockAuctioneerState(batchKey *btcec.PublicKey,
 		batchStates:      make(map[orderT.BatchID]bool),
 		snapshots:        make(map[orderT.BatchID]*subastadb.BatchSnapshot),
 		bannedAccounts:   make(map[matching.AccountID]struct{}),
+		quit:             make(chan struct{}),
 	}
 }
 
@@ -144,7 +147,11 @@ func (m *mockAuctioneerState) BatchKey(context.Context) (*btcec.PublicKey, error
 func (m *mockAuctioneerState) UpdateAuctionState(state AuctionState) error {
 	// To update the auction state, we must obtain the exclusive state
 	// access semaphore.
-	<-m.stateSem
+	select {
+	case <-m.stateSem:
+	case <-m.quit:
+		return fmt.Errorf("mockAuctioneerState exiting")
+	}
 	defer func() {
 		m.stateSem <- struct{}{}
 	}()
@@ -162,9 +169,11 @@ func (m *mockAuctioneerState) UpdateAuctionState(state AuctionState) error {
 		// yet.
 		case req := <-m.fetchStateChan:
 			req.resp <- m.state
+
+		case <-m.quit:
+			return fmt.Errorf("mockAuctioneerState exiting")
 		}
 	}
-
 }
 
 func (m *mockAuctioneerState) AuctionState() (AuctionState, error) {
@@ -186,6 +195,9 @@ func (m *mockAuctioneerState) AuctionState() (AuctionState, error) {
 	// return the state to us.
 	case m.fetchStateChan <- req:
 		return <-req.resp, nil
+
+	case <-m.quit:
+		return nil, fmt.Errorf("mockAuctioneerState exiting")
 	}
 }
 
@@ -680,6 +692,10 @@ func (a *auctioneerTestHarness) StartAuctioneer() {
 func (a *auctioneerTestHarness) StopAuctioneer() {
 	a.t.Helper()
 
+	// We must first "quit" the underlying mock DB to allow any DB writes
+	// by the auctioneer to return.
+	close(a.db.quit)
+
 	if err := a.auctioneer.Stop(); err != nil {
 		a.t.Fatalf("unable to stop auctioneer: %v", err)
 	}
@@ -776,6 +792,7 @@ func (a *auctioneerTestHarness) RestartAuctioneer() {
 
 	a.db.state = DefaultState{}
 	a.db.stateTransitions = make(chan AuctionState, 100)
+	a.db.quit = make(chan struct{})
 
 	a.auctioneer = NewAuctioneer(AuctioneerConfig{
 		DB:                a.db,
@@ -1203,6 +1220,7 @@ func TestAuctioneerStateMachineMasterAcctInit(t *testing.T) {
 	// First, we'll start up the auctioneer as normal.
 	testHarness := newAuctioneerTestHarness(t, true)
 	testHarness.StartAuctioneer()
+	defer testHarness.StopAuctioneer()
 
 	// As we don't have an account on disk, we expect the state machine to
 	// transition to the NoMasterAcctState. It should end in this state, as
@@ -1271,6 +1289,7 @@ func TestAuctioneerOrderFeederStates(t *testing.T) {
 	// First, we'll start up the auctioneer as normal.
 	testHarness := newAuctioneerTestHarness(t, true)
 	testHarness.StartAuctioneer()
+	defer testHarness.StopAuctioneer()
 
 	// At this point, if add a new order, then we should see it reflected
 	// in the call market, as the orders should be applied directly.
@@ -1331,6 +1350,7 @@ func TestAuctioneerLoadDiskOrders(t *testing.T) {
 
 	// We'll now start up the auctioneer itself.
 	testHarness.StartAuctioneer()
+	defer testHarness.StopAuctioneer()
 
 	// At this point, we should find that all the orders we added above
 	// have been loaded into the call market.
@@ -1383,6 +1403,8 @@ func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 	// auctioneer. It should recognize this batch is still unconfirmed, and
 	// publish the unconfirmed batch transactions again.
 	testHarness.StartAuctioneer()
+	defer testHarness.StopAuctioneer()
+
 	broadcastTxs := testHarness.AssertNTxsBroadcast(numPending)
 
 	if len(broadcastTxs) != numPending {
