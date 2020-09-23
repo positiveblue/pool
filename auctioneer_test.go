@@ -1640,16 +1640,18 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.AssertBannedTrader(bannedTrader1)
 	testHarness.AssertBannedTrader(bannedTrader2)
 	testHarness.AssertOrdersRemoved(nonces[8:10])
+	testHarness.AssertSubmittedBatch(2)
 
 	// In this last scenario, we'll return an error that a sub-set of the
 	// traders rejected the orders.
 	testHarness.executor.Lock()
 	rejectedPair := testHarness.executor.submittedBatch.Orders[0]
+	testHarness.executor.Unlock()
+
 	rejectNonce1 := rejectedPair.Details.Ask.Nonce()
 	rejectNonce2 := rejectedPair.Details.Bid.Nonce()
 	require.Equal(t, nonces[10], rejectNonce1)
 	require.Equal(t, nonces[11], rejectNonce2)
-	testHarness.executor.Unlock()
 	testHarness.ReportExecutionFailure(&venue.ErrReject{
 		RejectingTraders: map[matching.AccountID]*venue.OrderRejectMap{
 			rejectedPair.Bidder.AccountKey: {
