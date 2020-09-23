@@ -1640,6 +1640,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.AssertBannedTrader(bannedTrader1)
 	testHarness.AssertBannedTrader(bannedTrader2)
 	testHarness.AssertOrdersRemoved(nonces[8:10])
+	testHarness.AssertSubmittedBatch(2)
 
 	// In this last scenario, we'll return an error that a sub-set of the
 	// traders rejected the orders.
