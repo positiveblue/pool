@@ -390,7 +390,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 
 	// Now we simulate data loss by shutting down the trader and removing
 	// its data directory completely.
-	err = t.trader.stop()
+	err = t.trader.stop(true)
 	if err != nil {
 		t.Fatalf("could not stop trader: %v", err)
 	}

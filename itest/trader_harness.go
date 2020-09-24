@@ -124,11 +124,13 @@ func (hs *traderHarness) start() error {
 }
 
 // stop shuts down the trader server and deletes its temporary data directory.
-func (hs *traderHarness) stop() error {
+func (hs *traderHarness) stop(deleteData bool) error {
 	// Don't return the error immediately if stopping goes wrong, always
 	// remove the temp directory.
 	err := hs.server.Stop()
-	_ = os.RemoveAll(hs.cfg.BaseDir)
+	if deleteData {
+		_ = os.RemoveAll(hs.cfg.BaseDir)
+	}
 
 	return err
 }
