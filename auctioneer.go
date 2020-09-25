@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
@@ -18,6 +19,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -26,6 +28,7 @@ import (
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
+	"github.com/lightningnetwork/lnd/sweep"
 )
 
 var (
@@ -258,6 +261,16 @@ type Auctioneer struct {
 	// (externally triggered) will be sent over.
 	auctionEvents chan EventTrigger
 
+	// feeBumpRequests is a channel where we will receive request for fee
+	// rates to use for the next batch. This is used for fee bumping any
+	// unconfirmed batches.
+	feeBumpRequests chan sweep.FeePreference
+
+	// feeBumpPreference holds a fee preference if a fee bump request has
+	// been made. If this is set we will create a new batch no matter what,
+	// even if it is empty.
+	feeBumpPreference *sweep.FeePreference
+
 	// watchAccountConfOnce is used to watch for the confirmation of the
 	// master account. This is only ever really used when the system is
 	// first initialized.
@@ -312,6 +325,7 @@ func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
 	return &Auctioneer{
 		cfg:                cfg,
 		auctionEvents:      make(chan EventTrigger),
+		feeBumpRequests:    make(chan sweep.FeePreference),
 		quit:               make(chan struct{}),
 		orderFeederSignals: make(chan orderFeederState),
 		removedOrders:      make(map[orderT.Nonce]struct{}),
@@ -445,6 +459,22 @@ func (a *Auctioneer) Stop() error {
 // auctioneer.
 func (a *Auctioneer) BestHeight() uint32 {
 	return atomic.LoadUint32(&a.bestHeight)
+}
+
+// RequestBatchFeeBump sets the effective fee rate to target for the next batch
+// transaction, in order to bump the fee rate of any unconfirmed batches.
+func (a *Auctioneer) RequestBatchFeeBump(pref sweep.FeePreference) error {
+	if pref.FeeRate <= 0 && pref.ConfTarget <= 0 {
+		return fmt.Errorf("either fee rate or conf target must be " +
+			"specified")
+	}
+
+	select {
+	case a.feeBumpRequests <- pref:
+		return nil
+	case <-a.quit:
+		return fmt.Errorf("shutting down")
+	}
 }
 
 // publishBatchTx attempts to publish (or re-publish) the batch execution
@@ -791,6 +821,11 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 				}
 			}()
 
+		// A fee bump request have arrived, set it so we'll use it for
+		// the next batch.
+		case feeReq := <-a.feeBumpRequests:
+			a.feeBumpPreference = &feeReq
+
 		// A new internally/externally initiated auction event has
 		// arrived. We'll process this event, advancing our state
 		// machine until no new state transitions are possible.
@@ -992,6 +1027,59 @@ func (a *Auctioneer) restoreIneligibleOrders() error {
 	a.removedOrders = make(map[orderT.Nonce]struct{})
 
 	return nil
+}
+
+// UnconfirmedBatches fetches the fee info for our current unconfirmed batches.
+func (a *Auctioneer) UnconfirmedBatches(ctx context.Context) (
+	[]*feebump.TxFeeInfo, error) {
+
+	batchKey, err := a.cfg.DB.BatchKey(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Walk backwards until we find a confirmed batch.
+	var unconfirmedBatches []*feebump.TxFeeInfo
+	for {
+		batchKey = poolscript.DecrementKey(batchKey)
+
+		var batchID orderT.BatchID
+		copy(batchID[:], batchKey.SerializeCompressed())
+		batchConfirmed, err := a.cfg.DB.BatchConfirmed(ctx, batchID)
+		if err != nil && err != subastadb.ErrNoBatchExists {
+			return nil, err
+		}
+
+		// If this batch is confirmed (or a batch has never existed),
+		// then we can exit early.
+		if batchConfirmed || err == subastadb.ErrNoBatchExists {
+			break
+		}
+
+		// Fetch the unconfirmed batch snapshot from the DB.
+		batchSnapshot, err := a.cfg.DB.GetBatchSnapshot(ctx, batchID)
+		if err != nil {
+			return nil, err
+		}
+
+		// Now we've got everything we need to record this among our
+		// unconfirmed batches.
+		txWeight := blockchain.GetTransactionWeight(
+			btcutil.NewTx(batchSnapshot.BatchTx),
+		)
+		feeInfo := &feebump.TxFeeInfo{
+			Fee:    batchSnapshot.BatchTxFee,
+			Weight: txWeight,
+		}
+
+		// Add it first in the slice, since we are walking backwards,
+		// but want them in the correct order.
+		unconfirmedBatches = append(
+			[]*feebump.TxFeeInfo{feeInfo}, unconfirmedBatches...,
+		)
+	}
+
+	return unconfirmedBatches, nil
 }
 
 // stateStep attempts to step forward the auction given a single base trigger.
@@ -1232,7 +1320,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.pauseOrderFeeder()
 			a.pauseBatchTicker()
 			a.cfg.TraderRejected.Clear()
-			return MatchMakingState{}, nil
+
+			// Before we start match making, we get a fee estimate.
+			return FeeEstimationState{}, nil
 		}
 
 		// We can clear our retry flag now as we're terminating at this
@@ -1243,35 +1333,74 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// accepting orders.
 		return OrderSubmitState{}, nil
 
-	// In the match making state, we'll attempt to make a market if
-	// possible. If we can't then we'll go back to accepting orders.
-	case MatchMakingState:
-		// Before we attempt to clear the market, we need to obtain the
-		// current batch key.
-		batchKey, err := a.cfg.DB.BatchKey(context.Background())
-		if err != nil {
-			return nil, err
-		}
-
+	// In the fee estimation state we have decided to attempt a new batch,
+	// so we get a fee estimate to use during match making.
+	case FeeEstimationState:
 		// To avoid an infinite loop, we'll set the retry flag to
 		// ensure we don't go back to this state, thereby avoiding an
 		// infinite loop.
 		a.batchRetry = true
 
-		var batchID matching.BatchID
-		copy(batchID[:], batchKey.SerializeCompressed())
-
-		// Get a fee estimate for our batch. We'll use this to only
+		// Get a up to date fee rate estimate. We'll use this to only
 		// include orders with a max fee rate below this value during
 		// matchmaking.
-		feeRate, err := a.cfg.Wallet.EstimateFee(
-			ctxb, a.cfg.ConfTarget,
+		var (
+			feeRate    chainfee.SatPerKWeight
+			confTarget = a.cfg.ConfTarget
+			bump       bool
 		)
+
+		// If we have requested a fee preference for the next batch,
+		// use that.
+		if a.feeBumpPreference != nil {
+			// Since the bumped fee preference was set, we take
+			// note of this, since we will allow empty batches to
+			// be created in order to bump any unconfirmed batches.
+			bump = true
+
+			// We'll use the specified fee rate, or if not set
+			// we'll use the given conf target.
+			feeRate = a.feeBumpPreference.FeeRate
+			if feeRate == 0 {
+				confTarget = int32(
+					a.feeBumpPreference.ConfTarget,
+				)
+			}
+
+			log.Infof("Using bumped fee preference for match "+
+				"making (feerate=%v, conf_target=%v)", feeRate,
+				confTarget)
+		}
+
+		// If fee rate wasn't specified, use the conf target to get an
+		// estimate.
+		if feeRate == 0 {
+			var err error
+			feeRate, err = a.cfg.Wallet.EstimateFee(
+				ctxb, confTarget,
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return MatchMakingState{
+			batchFeeRate:  feeRate,
+			targetFeeRate: feeRate,
+			feeBumping:    bump,
+		}, nil
+
+	// In the match making state, we'll attempt to make a market if
+	// possible. If we can't then we'll go back to accepting orders.
+	case MatchMakingState:
+		// First get the current set of unconfirmed batches. The
+		// pending batches will be used in the calculation to ensure
+		// the effective fee rate of the final batch transaction is
+		// sufficient.
+		pendingBatches, err := a.UnconfirmedBatches(ctxb)
 		if err != nil {
 			return nil, err
 		}
-
-		log.Debugf("Using fee rate %v for batch transaction", feeRate)
 
 		// Create our basic chain of predicates each order pair has to
 		// pass to be considered a potential match. Most predicates are
@@ -1291,21 +1420,35 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			predicateChain, matching.DefaultPredicateChain...,
 		)
 
-		// Now that we have the batch key, we'll attempt to make this
-		// market.
-		orderBatch, err := a.cfg.CallMarket.MaybeClear(
-			feeRate, accountPredicate, predicateChain,
-		)
-		switch {
-		// If we can't make a market at this instance, then we'll
-		// go back to the OrderSubmitState to wait for more orders.
-		case err == matching.ErrNoMarketPossible:
-			a.resumeBatchTicker()
-			a.resumeOrderFeeder()
+		log.Debugf("Using fee rate %v for match making", s.batchFeeRate)
 
+		// We'll attempt to make this market.
+		orderBatch, err := a.cfg.CallMarket.MaybeClear(
+			s.batchFeeRate, accountPredicate, predicateChain,
+		)
+
+		switch {
+
+		// If we can't make a market at this instance, then we'll
+		// go back to the OrderSubmitState to wait for more orders, or
+		// attempt an empty batch if we have pending batches that need
+		// fee bumping.
+		case err == matching.ErrNoMarketPossible:
 			log.Infof("No market possible at this time")
 
-			return OrderSubmitState{}, nil
+			// If we have pending batches, we might want to make an
+			// empty batch in order to bump the fee of the pending
+			// one.
+			if len(pendingBatches) == 0 || !s.feeBumping {
+				a.resumeBatchTicker()
+				a.resumeOrderFeeder()
+
+				return OrderSubmitState{}, nil
+			}
+
+			log.Infof("Have pending batches, attempting " +
+				"empty batch")
+			orderBatch = &matching.OrderBatch{}
 
 		case err != nil:
 			return nil, err
@@ -1320,26 +1463,103 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
+		batchKey, err := a.cfg.DB.BatchKey(context.Background())
+		if err != nil {
+			return nil, err
+		}
+
 		exeCtx, err := batchtx.NewExecutionContext(
-			batchKey, orderBatch, masterAcct, feeRate,
+			batchKey, orderBatch, masterAcct, s.batchFeeRate,
 			a.cfg.FeeSchedule,
 		)
 		if err != nil {
 			return nil, err
 		}
 
+		// Add the new (either normal or empty) batch to our list of
+		// pending batches, so we can check in the next state whether
+		// the effective fee rate meets our target.
+		pendingBatches = append(pendingBatches, exeCtx.FeeInfoEstimate)
+
+		// We'll move the the fee check state to ensure the final
+		// effective fee rate of the batch transaction is sufficient.
+		return FeeCheckState{
+			exeCtx:         exeCtx,
+			targetFeeRate:  s.targetFeeRate,
+			feeBumping:     s.feeBumping,
+			pendingBatches: pendingBatches,
+		}, nil
+
+	// In this state we check that the fee rate of the eligible batch and
+	// all other pending batches is sufficient.
+	case FeeCheckState:
+		// If the existing pending batches already meet the target fee
+		// rate without getting bumped, no need to create empty batch.
+		emptyBatch := len(s.exeCtx.OrderBatch.Orders) == 0
+		if emptyBatch && len(s.pendingBatches) > 1 {
+			// We get the effective fee rates up to but excluding
+			// the last pending batch, as that is our proposed
+			// empty batch to fee bump the rest.
+			curFeeRates := feebump.CalcEffectiveFeeRates(
+				s.pendingBatches[:len(s.pendingBatches)-1],
+			)
+
+			// Go Back to OrderSubmitState as there was no need to
+			// fee bump.
+			feeRate := curFeeRates[len(curFeeRates)-1]
+			if feeRate >= s.targetFeeRate {
+				log.Debugf("Attempted to fee bump pending "+
+					"batches to %v, but already had "+
+					"effective fee rate %v",
+					s.targetFeeRate, feeRate)
+				return OrderSubmitState{}, nil
+			}
+		}
+
+		// Calculate the effective fee rates of all our unconfirmed
+		// batches, including the new one.
+		// TODO(halseth): if we try to bump an existing empty batch
+		// with a new empty batch we should do RBF instead.
+		effFeeRates := feebump.CalcEffectiveFeeRates(s.pendingBatches)
+		effRate := effFeeRates[len(effFeeRates)-1]
+		log.Debugf("Effective fee rate of proposed batch is %v, for a "+
+			"total of %v unconfirmed batches", effRate,
+			len(s.pendingBatches))
+
+		// If the effective fee rate doesn't meet our target, go back
+		// to match making using a bumped fee rate in order to try to
+		// meet it.
+		if effRate < s.targetFeeRate {
+			// We bump conservatively by 1 sat/vbyte (250 sat/kw),
+			// since we will retry if that is still not enough.
+			newFeeRate := s.exeCtx.BatchFeeRate +
+				chainfee.SatPerKWeight(250)
+
+			log.Infof("Batches (%d) do not meet target fee "+
+				"rate of %v, had effective fee rate %v. "+
+				"Bumping to %v", len(s.pendingBatches),
+				s.targetFeeRate, effRate, newFeeRate)
+			return MatchMakingState{
+				batchFeeRate:  newFeeRate,
+				targetFeeRate: s.targetFeeRate,
+				feeBumping:    s.feeBumping,
+			}, nil
+		}
+
 		// At this point we have a batch that we can now go to execute,
 		// so we'll add it to the current environment of the state
 		// machine.
+		batchID := s.exeCtx.BatchID
 		a.updatePendingBatchID(batchID)
 
-		log.Infof("Market has been made for Batch(%x)", batchID[:])
+		log.Infof("Market has been made (matches=%d) for Batch(%x)",
+			len(s.exeCtx.OrderBatch.Orders), batchID[:])
 
 		// With the batch stored, we'll now transition to the
 		// BatchExecutionState where we'll actually kick off the
 		// signing protocol needed to make this batch valid.
 		return BatchExecutionState{
-			exeCtx: exeCtx,
+			exeCtx: s.exeCtx,
 		}, nil
 
 	// In this phase, we'll attempt to execute the order by entering into a
@@ -1416,13 +1636,17 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 						"execution error: %v", result.Err)
 				}
 
-				return MatchMakingState{}, nil
+				return FeeEstimationState{}, nil
 			}
 
-			log.Infof("Batch(%v) successfully executed!!!",
-				a.getPendingBatchID())
+			log.Infof("Batch(%v) successfully executed!!! Fee=%v, "+
+				"weight=%v (feerate=%v)", a.getPendingBatchID(),
+				result.FeeInfo.Fee, result.FeeInfo.Weight,
+				result.FeeInfo.FeeRate())
 
 			a.finalizedBatch = result
+			a.feeBumpPreference = nil
+
 			return BatchCommitState{}, nil
 
 		case <-a.quit:
@@ -1708,7 +1932,7 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 }
 
 // AllowAccountUpdate determines whether the auctioneer should honor a trader's
-// request for an account update based on the current state of the auctionn.
+// request for an account update based on the current state of the auction.
 func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
 	auctionState, err := a.cfg.DB.AuctionState()
 	if err != nil {
@@ -1717,9 +1941,15 @@ func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
 	}
 
 	switch s := auctionState.(type) {
-	// We don't want to allow any account updates throughout the matchmaking
-	// state, as the account may be selected for a batch.
+
+	// We don't want to allow any account updates throughout the fee
+	// estimation-> matchmaking-> fee check states, as the account may be
+	// selected for a batch.
+	case FeeEstimationState:
+		return false
 	case MatchMakingState:
+		return false
+	case FeeCheckState:
 		return false
 
 	// We'll only allow account updates for those which are not found within

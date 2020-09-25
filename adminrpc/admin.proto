@@ -20,6 +20,7 @@ service AuctionAdmin {
     rpc RemoveReservation (RemoveReservationRequest) returns (EmptyResponse);
     rpc FundingConflicts (EmptyRequest) returns (FundingConflictsResponse);
     rpc ClearConflicts (EmptyRequest) returns (EmptyResponse);
+    rpc BumpBatchFeeRate (BumpBatchFeeRateRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -310,4 +311,14 @@ message Conflict {
     
     // The unix timestamp in seconds of the time the conflict was reported.
     int64 report_timestamp = 3;
+}
+
+message BumpBatchFeeRateRequest{
+    // Request the next batch transaction to bump the effective fee rate of all
+    // unconfirmed batches to a fee estimate for this confirmation target.
+    uint32 conf_target = 1;
+
+    // Request the next batch transaction to bump the effective fee rate of all
+    // unconfirmed batches to this exact fee rate.
+    uint32 fee_rate_sat_per_kw = 2;
 }

@@ -18,6 +18,8 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/sweep"
 	"google.golang.org/grpc"
 )
 
@@ -571,6 +573,20 @@ func (s *adminRPCServer) ClearConflicts(context.Context,
 	*adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
 	s.auctioneer.cfg.FundingConflicts.Clear()
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
+func (s *adminRPCServer) BumpBatchFeeRate(ctx context.Context,
+	req *adminrpc.BumpBatchFeeRateRequest) (*adminrpc.EmptyResponse, error) {
+
+	feePref := sweep.FeePreference{
+		ConfTarget: req.ConfTarget,
+		FeeRate:    chainfee.SatPerKWeight(req.FeeRateSatPerKw),
+	}
+	if err := s.auctioneer.RequestBatchFeeBump(feePref); err != nil {
+		return nil, err
+	}
 
 	return &adminrpc.EmptyResponse{}, nil
 }

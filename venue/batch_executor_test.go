@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/chaninfo"
@@ -332,6 +333,36 @@ func (e *executorTestHarness) ExpectFinalizeMsgForAll() {
 
 		case <-time.After(testTimeout):
 			e.t.Fatalf("no finalize msg sent")
+		}
+	}
+}
+
+func (e *executorTestHarness) ExpectNoMsgs() {
+	errChan := make(chan error, len(e.outgoingChans))
+	for _, traderOutChan := range e.outgoingChans {
+		traderOutChan := traderOutChan
+
+		go func() {
+			select {
+			case msg := <-traderOutChan:
+				errChan <- fmt.Errorf(
+					"got unexpected msg: %T", msg)
+
+			case <-time.After(100 * time.Millisecond):
+				errChan <- nil
+			}
+		}()
+	}
+
+	for range e.outgoingChans {
+		select {
+		case err := <-errChan:
+			if err != nil {
+				e.t.Fatal(err)
+			}
+
+		case <-time.After(testTimeout):
+			e.t.Fatalf("no result received")
 		}
 	}
 }
@@ -1045,4 +1076,49 @@ func randomTokenID() lsat.TokenID {
 	var token lsat.TokenID
 	_, _ = rand.Read(token[:])
 	return token
+}
+
+// TestBatchExecutorEmptyBatch checks that we can execute an empty order batch
+// by going straight to batch finalization.
+func TestBatchExecutorEmptyBatch(t *testing.T) {
+	// First, we'll create our test harness which includes all the
+	// functionality we need to carry out our tests.
+	msgTimeout := time.Millisecond * 200
+	testCtx := newExecutorTestHarness(t, msgTimeout)
+	testCtx.Start()
+	defer testCtx.Stop()
+
+	// Before we start, we'll also insert some initial master account state
+	// that we'll need in order to proceed.
+	masterAcct := oldMasterAccount
+	testCtx.store.MasterAcct = masterAcct
+	testCtx.store.Accs = map[[33]byte]*account.Account{
+		bigAcct.TraderKeyRaw:   bigAcct,
+		smallAcct.TraderKeyRaw: smallAcct,
+	}
+
+	// We'll register two traders as online. We won't actually include
+	// their orders in the batch, but we use them to make sure we are not
+	// sending messages unintentionally.
+	testCtx.RegisterTrader(smallAcct)
+	testCtx.RegisterTrader(bigAcct)
+
+	// Next, we'll kick things off by submitting the empty batch.
+	batch := matching.OrderBatch{}
+	batchFeeRate := chainfee.FeePerKwFloor
+	respChan := testCtx.SubmitBatch(&batch, batchFeeRate)
+
+	// We expect no messages to be sent, since no trader is part of the
+	// batch.
+	testCtx.ExpectNoMsgs()
+
+	// Instead we should go straight to BatchFinalize, then BatchComplete.
+	testCtx.AssertStateTransitions(BatchFinalize, BatchComplete)
+	exeRes := testCtx.ExpectExecutionSuccess(respChan)
+
+	// Final transaction should have one input, one output.
+	if len(exeRes.BatchTx.TxIn) != 1 || len(exeRes.BatchTx.TxOut) != 1 {
+		t.Fatalf("expected batch tx to be 1 in 1 out: %v",
+			spew.Sdump(exeRes.BatchTx))
+	}
 }

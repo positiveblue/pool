@@ -2,7 +2,9 @@ package subasta
 
 import (
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // AuctionState is an enum-like interface that describes the current phase of
@@ -62,8 +64,7 @@ func (s MasterAcctConfirmed) String() string {
 // modify any existing orders.
 //
 // The possible transitions from this state are:
-//     * OrderSubmitState -> OrderSubmitState (tick but no market)
-//     * OrderSubmitState -> MatchMakingState (tick and market)
+//     * OrderSubmitState -> FeeEstimationState (on tick)
 type OrderSubmitState struct{}
 
 // String returns the string representation of the OrderSubmitState.
@@ -71,15 +72,78 @@ func (s OrderSubmitState) String() string {
 	return "OrderSubmitState"
 }
 
+// FeeEstimationState is the state we'll go to after we have decided to
+// assemble a new batch, and start by getting a fee estimate to use during
+// match making.
+//
+// The possible transitions from this state are:
+//     * FeeEstimationState -> MatchMakingState
+type FeeEstimationState struct {
+}
+
+// String returns the string representation of the FeeEstimationState.
+func (s FeeEstimationState) String() string {
+	return "FeeEstimationState"
+}
+
 // MatchMakingState is the state we enter into when we're attempting to make
-// anew market. From this state, we'll either go to execute the market, or
+// a new market. From this state, we'll either go to execute the market, or
 // possibly go back to the OrderSubmitState if there're no orders that actually
 // make a market.
 //
 // The possible transitions from this state are:
 //     * MatchMakingState -> OrderSubmitState (fail to make market)
-//     * MatchMakingState -> BatchExecutionState (market made)
+//     * MatchMakingState -> FeeCheckState (market made)
 type MatchMakingState struct {
+	// batchFeeRate is the fee rate we will use when assembling the batch
+	// transaction. This will impact which orders can participate in match
+	// making, decided by their MaxBatchFeeRate.
+	batchFeeRate chainfee.SatPerKWeight
+
+	// targetFeeRate is the effective fee rate we want the final batch tx
+	// to have in order to confirm within a reasonable time. This might
+	// differ from the batchFeeRate when we have unonfirmed batches
+	// lingering, since it might decrease the effective fee rate of the new
+	// batch. In such scenarios we might have to use an increased
+	// batchFeeRate in order to meet our effective targetFeeRate.
+	targetFeeRate chainfee.SatPerKWeight
+
+	// feeBumping is a boolean that indicates whether we are attempting to
+	// fee bump unconfirmed batches with this new batch. If this is true we
+	// allow the created batch to be empty, as it still serves the purpose
+	// of bumping the fee of the prior batches.
+	feeBumping bool
+}
+
+// FeeCheckState is a state where we'll check the fee rate of the assembled
+// batch together with any still unconfirmed batches.
+//
+// The possible transitions from this state are:
+//     * FeeCheckState -> MatchMakingState (fee had to be bumped)
+//     * FeeCheckState -> BatchExecutionState (fee was sufficient)
+type FeeCheckState struct {
+	// exeCtx is the execution context for the batch to execute, including
+	// the assembled batch transaction.
+	exeCtx *batchtx.ExecutionContext
+
+	// targetFeeRate is the effective fee rate we want the final batch tx
+	// to have in order to confirm within a reasonable time.
+	targetFeeRate chainfee.SatPerKWeight
+
+	// feeBumping is a boolean that indicates whether we are attempting to
+	// fee bump unconfirmed batches with this new batch. If this is true we
+	// allow the created batch to be empty, as it still serves the purpose
+	// of bumping the fee rate of prior batches.
+	feeBumping bool
+
+	// pendingBatches is the fee info for all our unconfirmed batches,
+	// including the new one we haven't yet finalized.
+	pendingBatches []*feebump.TxFeeInfo
+}
+
+// String returns the string representation of the FeeCheckState.
+func (s FeeCheckState) String() string {
+	return "FeeCheckState"
 }
 
 // String returns the string representation of the MatchMakingState.
@@ -95,8 +159,8 @@ func (s MatchMakingState) String() string {
 // process so they receive valid commitment transactions.
 //
 // The possible transitions from this state are:
-//     * BatchClearingState -> MatchMakingState (execution fail)
-//     * BatchClearingState -> BatchClearingState
+//     * BatchExecutionState -> FeeEstimationState (execution fail)
+//     * BatchExecutionState -> BatchCommitState
 type BatchExecutionState struct {
 	// exeCtx is the execution context for the batch to execute, including
 	// the assembled batch transaction.

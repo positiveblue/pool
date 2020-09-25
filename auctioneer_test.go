@@ -18,6 +18,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -28,6 +29,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
+	"github.com/lightningnetwork/lnd/sweep"
 	"github.com/stretchr/testify/require"
 )
 
@@ -570,7 +572,7 @@ func (m *mockCallMarket) removeAsk(nonce orderT.Nonce) {
 var _ matching.BatchAuctioneer = (*mockCallMarket)(nil)
 
 type mockBatchExecutor struct {
-	submittedBatch *matching.OrderBatch
+	submittedBatch *batchtx.ExecutionContext
 	resChan        chan *venue.ExecutionResult
 
 	sync.Mutex
@@ -588,7 +590,7 @@ func (m *mockBatchExecutor) Submit(exeCtx *batchtx.ExecutionContext) (
 	m.Lock()
 	defer m.Unlock()
 
-	m.submittedBatch = exeCtx.OrderBatch
+	m.submittedBatch = exeCtx
 
 	return m.resChan, nil
 }
@@ -701,12 +703,14 @@ func (a *auctioneerTestHarness) StopAuctioneer() {
 	}
 }
 
-func (a *auctioneerTestHarness) AssertStateTransitions(states ...AuctionState) {
+func (a *auctioneerTestHarness) AssertStateTransitions(
+	states ...AuctionState) AuctionState {
+
 	a.t.Helper()
 
 	// TODO(roasbeef): assert starting state?
+	var nextState AuctionState
 	for _, state := range states {
-		var nextState AuctionState
 		select {
 		case nextState = <-a.db.stateTransitions:
 		case <-time.After(5 * time.Second):
@@ -718,6 +722,8 @@ func (a *auctioneerTestHarness) AssertStateTransitions(states ...AuctionState) {
 				"instead went to state=%v", state, nextState)
 		}
 	}
+
+	return nextState
 }
 
 func (a *auctioneerTestHarness) AssertNoStateTransitions() {
@@ -1057,27 +1063,30 @@ func (a *auctioneerTestHarness) AssertLifetimesEnforced() {
 	require.NotEmpty(a.t, a.channelEnforcer.lifetimePkgs)
 }
 
-func (a *auctioneerTestHarness) MarkBatchUnconfirmed(batchKey *btcec.PublicKey,
-	tx *wire.MsgTx) {
+func (a *auctioneerTestHarness) MarkBatchUnconfirmed(bid orderT.BatchID,
+	snapshot *subastadb.BatchSnapshot) {
 
 	a.db.Lock()
 	defer a.db.Unlock()
 
-	bid := orderT.NewBatchID(batchKey)
-
 	a.db.batchStates[bid] = false
-	a.db.snapshots[bid] = &subastadb.BatchSnapshot{
-		BatchTx: tx,
-	}
+	a.db.snapshots[bid] = snapshot
 }
 
 func (a *auctioneerTestHarness) AssertBatchConfirmed(batchKey *btcec.PublicKey) {
+	a.t.Helper()
+
 	err := wait.NoError(func() error {
 		a.db.Lock()
 		defer a.db.Unlock()
 
 		bid := orderT.NewBatchID(batchKey)
-		if _, ok := a.db.batchStates[bid]; !ok {
+		confirmed, ok := a.db.batchStates[bid]
+		if !ok {
+			return fmt.Errorf("batch %x not found: ", bid[:])
+		}
+
+		if !confirmed {
 			return fmt.Errorf("batch %x still unconfirmed: ", bid[:])
 		}
 
@@ -1117,11 +1126,34 @@ func (a *auctioneerTestHarness) AssertSubmittedBatch(numOrders int) {
 		a.executor.Lock()
 		defer a.executor.Unlock()
 
-		n := len(a.executor.submittedBatch.Orders)
+		n := len(a.executor.submittedBatch.OrderBatch.Orders)
 		if numOrders != n {
 			return fmt.Errorf("submitted batch didn't have "+
 				"the expected(%d) number of orders: %d",
 				numOrders, n)
+		}
+
+		return nil
+	}, time.Second*5)
+	if err != nil {
+		a.t.Fatal(err)
+	}
+}
+
+func (a *auctioneerTestHarness) AssertSubmittedBatchFeeRate(
+	feeRate chainfee.SatPerKWeight) {
+
+	a.t.Helper()
+
+	err := wait.NoError(func() error {
+		a.executor.Lock()
+		defer a.executor.Unlock()
+
+		f := a.executor.submittedBatch.BatchFeeRate
+		if f != feeRate {
+			return fmt.Errorf("submitted batch didn't have "+
+				"the expected(%v) targeted fee rate: %v",
+				feeRate, f)
 		}
 
 		return nil
@@ -1144,18 +1176,27 @@ func (a *auctioneerTestHarness) AssertFinalizedBatch(numOrders int) {
 
 func (a *auctioneerTestHarness) ReportExecutionSuccess() {
 	a.executor.Lock()
-	batch := a.executor.submittedBatch
+	exeCtx := a.executor.submittedBatch
 	a.executor.Unlock()
 
+	snapshot := &subastadb.BatchSnapshot{
+		BatchTx:    exeCtx.ExeTx,
+		BatchTxFee: exeCtx.FeeInfoEstimate.Fee,
+		OrderBatch: exeCtx.OrderBatch,
+	}
+
+	// On reported execution success, the batch will be found as
+	// unconfirmed in the DB.
+	a.MarkBatchUnconfirmed(exeCtx.BatchID, snapshot)
+
+	a.db.Lock()
+	a.db.batchKey = poolscript.IncrementKey(a.db.batchKey)
+	a.db.Unlock()
+
 	a.executor.resChan <- &venue.ExecutionResult{
-		Batch: batch,
-		BatchTx: &wire.MsgTx{
-			TxOut: []*wire.TxOut{
-				{
-					PkScript: key[:],
-				},
-			},
-		},
+		Batch:   exeCtx.OrderBatch,
+		BatchTx: exeCtx.ExeTx,
+		FeeInfo: exeCtx.FeeInfoEstimate,
 		LifetimePackages: []*chanenforcement.LifetimePackage{
 			{ChannelPoint: wire.OutPoint{Index: 1}},
 		},
@@ -1388,7 +1429,10 @@ func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 
 		// We'll now insert a pending batch snapshot and transaction,
 		// marking it as unconfirmed.
-		testHarness.MarkBatchUnconfirmed(currentBatchKey, batchTx)
+		bid := orderT.NewBatchID(currentBatchKey)
+		testHarness.MarkBatchUnconfirmed(bid, &subastadb.BatchSnapshot{
+			BatchTx: batchTx,
+		})
 		batchKeys = append(batchKeys, currentBatchKey)
 
 		// Now that the new batch has been marked unconfirmed, we
@@ -1469,9 +1513,11 @@ func TestAuctioneerBatchTickNoop(t *testing.T) {
 	// Next, we'll force a batch tick so the main state machine wakes up.
 	testHarness.ForceBatchTick()
 
-	// We should now go to the MatchMakingState, then back to the
-	// OrderSubmitState as there's no market to be cleared.
-	testHarness.AssertStateTransitions(MatchMakingState{}, OrderSubmitState{})
+	// We should now go to FeeEstimationState, the MatchMakingState, then
+	// back to the OrderSubmitState as there's no market to be cleared.
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, OrderSubmitState{},
+	)
 
 	// There should be no further state transitions at this point.
 	testHarness.AssertNoStateTransitions()
@@ -1542,11 +1588,12 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.QueueMarketClear()
 
 	// Now that the call market is set up, we'll trigger a batch force tick
-	// to kick off this cycle. We should go from the MatchMakingState to
-	// the BatchExecutionState.
+	// to kick off this cycle. We should go from the FeeEstimationState, to
+	// the MatchMakingState, via FeeCheckState, to the BatchExecutionState.
 	testHarness.ForceBatchTick()
 	testHarness.AssertStateTransitions(
-		MatchMakingState{}, BatchExecutionState{},
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
 	)
 
 	// At this point, the order feeder should be stopped, we'll simulate a
@@ -1577,9 +1624,12 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		},
 	)
 
-	// We should now transition back to the match making state, then
-	// finally execution to give things another go.
-	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
+	// We should now transition back to fee estimation, match making, and
+	// fee check state, then finally execution to give things another go.
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
+	)
 
 	// Since two orders failed on the previous execution, there should be 6
 	// matches left.
@@ -1597,7 +1647,10 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// Once again, the set of orders should be removed, and we should step
 	// again until we retry execution.
-	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
+	)
 	testHarness.AssertOrdersRemoved(nonces[2:4])
 
 	// Now only eight orders are left, resulting in 5 matches.
@@ -1608,7 +1661,10 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.ReportExecutionFailure(&venue.ErrMsgTimeout{
 		OrderNonces: nonces[4:6],
 	})
-	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
+	)
 	testHarness.AssertOrdersRemoved(nonces[4:6])
 
 	// Now only six orders are left, resulting in 4 matches.
@@ -1621,7 +1677,10 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		ChannelPoint: wire.OutPoint{Index: 1},
 		OrderNonces:  nonces[6:8],
 	})
-	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
+	)
 	testHarness.AssertOrdersRemoved(nonces[6:8])
 	testHarness.AssertSubmittedBatch(3)
 
@@ -1636,7 +1695,10 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		OrderNonces:  nonces[8:10],
 	})
 
-	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
+	)
 	testHarness.AssertBannedTrader(bannedTrader1)
 	testHarness.AssertBannedTrader(bannedTrader2)
 	testHarness.AssertOrdersRemoved(nonces[8:10])
@@ -1645,7 +1707,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// In this last scenario, we'll return an error that a sub-set of the
 	// traders rejected the orders.
 	testHarness.executor.Lock()
-	rejectedPair := testHarness.executor.submittedBatch.Orders[0]
+	rejectedPair := testHarness.executor.submittedBatch.OrderBatch.Orders[0]
 	testHarness.executor.Unlock()
 
 	rejectNonce1 := rejectedPair.Details.Ask.Nonce()
@@ -1671,9 +1733,13 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 		},
 	})
 
-	// We should now transition back to the match making state, then
-	// finally execution to give things another go.
-	testHarness.AssertStateTransitions(MatchMakingState{}, BatchExecutionState{})
+	// We should now transition back to the fee estimation state, match
+	// making state, fee check state, then finally execution to give things
+	// another go.
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, FeeCheckState{},
+		BatchExecutionState{},
+	)
 	testHarness.AssertOrdersRemoved(nonces[10:12])
 
 	// Only one possible match is left.
@@ -1681,6 +1747,7 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// At long last, we're now ready to trigger a successful batch
 	// execution.
+	startingBatchKey := testHarness.db.batchKey
 	testHarness.ReportExecutionSuccess()
 
 	// Now that the batch was successful, we should transition to the
@@ -1698,7 +1765,6 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 
 	// Now we trigger a confirmation, the batch should be marked as being
 	// confirmed on disk.
-	startingBatchKey := testHarness.db.batchKey
 	testHarness.SendConf(broadcastTx)
 	testHarness.AssertBatchConfirmed(startingBatchKey)
 
@@ -1720,10 +1786,12 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	testHarness.QueueNoMarketClear()
 	testHarness.ForceBatchTick()
 
-	// We should go to the match making state, then back to the order
-	// submit state as we can't make a market with things as is, then make
-	// no further state transitions.
-	testHarness.AssertStateTransitions(MatchMakingState{}, OrderSubmitState{})
+	// We should go to the fee estimation state, the match making state,
+	// then back to the order submit state as we can't make a market with
+	// things as is, then make no further state transitions.
+	testHarness.AssertStateTransitions(
+		FeeEstimationState{}, MatchMakingState{}, OrderSubmitState{},
+	)
 
 	// Also all the orders that we removed earlier, should now also be once
 	// again part of the call market. Note that also the last ask should
@@ -1792,17 +1860,29 @@ func TestAuctioneerAllowAccountUpdate(t *testing.T) {
 
 	// Now that the call market is set up, we'll trigger a batch force tick
 	// to kick off this cycle. We should immediately go to the
-	// MatchMakingState.
+	// FeeEstimationState.
 	testHarness.ForceBatchTick()
-	testHarness.AssertStateTransitions(MatchMakingState{})
+	testHarness.AssertStateTransitions(FeeEstimationState{})
+
+	fakeAcct := matching.AccountID(toRawKey(randomPubKey(t)))
+	askAcct := matching.AccountID(ask.Details().AcctKey)
+	bidAcct := matching.AccountID(bid.Details().AcctKey)
+	checkNoAcctUpdate := func() {
+		require.False(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
+		require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
+		require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
+	}
 
 	// At this point, no account updates should be allowed for any account.
-	fakeAcct := matching.AccountID(toRawKey(randomPubKey(t)))
-	require.False(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
-	askAcct := matching.AccountID(ask.Details().AcctKey)
-	require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
-	bidAcct := matching.AccountID(bid.Details().AcctKey)
-	require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
+	checkNoAcctUpdate()
+
+	// Neither should any update be allowed in MatchMaking or FeeCheck
+	// states.
+	testHarness.AssertStateTransitions(MatchMakingState{})
+	checkNoAcctUpdate()
+
+	testHarness.AssertStateTransitions(FeeCheckState{})
+	checkNoAcctUpdate()
 
 	// There should be no further state transitions at this point.
 	testHarness.AssertStateTransitions(BatchExecutionState{})
@@ -1813,4 +1893,183 @@ func TestAuctioneerAllowAccountUpdate(t *testing.T) {
 	require.True(t, testHarness.auctioneer.AllowAccountUpdate(fakeAcct))
 	require.False(t, testHarness.auctioneer.AllowAccountUpdate(askAcct))
 	require.False(t, testHarness.auctioneer.AllowAccountUpdate(bidAcct))
+}
+
+// TestAuctioneerRequestBatchFeeBump tests that we can request the fee rate to
+// be used for the next batch, and that the batch will be submittd with this
+// fee rate. It also checks that if a fee bump is requested, but no market can
+// be made, an empty batch is created to bump the fee of the unconfirmed
+// batches.
+func TestAuctioneerRequestBatchFeeBump(t *testing.T) {
+	t.Parallel()
+
+	// First, we'll start up the auctioneer as normal.
+	testHarness := newAuctioneerTestHarness(t, false)
+
+	// Before we start things, we'll insert a master account so we can skip
+	// creating the master account and go straight to the order matching
+	// phase.
+	err := testHarness.db.UpdateAuctioneerAccount(
+		context.Background(), &account.Auctioneer{
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: pubKey,
+			},
+			BatchKey: toRawKey(pubKey),
+			Balance:  10_000_000,
+		},
+	)
+	require.NoErrorf(t, err, "unable to update auctioneer account: %v", err)
+
+	go testHarness.StartAuctioneer() // nolint:staticcheck
+	defer testHarness.StopAuctioneer()
+
+	// We should now transition to the order submit state.
+	testHarness.AssertStateTransitions(OrderSubmitState{})
+
+	// Helper method to clear market and check the following state
+	// transitions.
+	clearMarket := func(emptyBatch, expectExecution bool,
+		targetEffRate chainfee.SatPerKWeight) {
+
+		t.Helper()
+
+		// If we are clearing an empty batch, the number of matches
+		// will be 0 obviously. We'll queue a no market clear.
+		numExpectedMatches := 0
+		testHarness.QueueNoMarketClear()
+
+		// If this is not an empty batch, we'll submit two orders (an
+		// ask and bid pair) and queue a market clear.
+		if !emptyBatch {
+			const fixedRate = 10
+			const duration = 10
+			ask := testHarness.AddDiskOrder(true, fixedRate, duration)
+			err = testHarness.callMarket.ConsiderAsks(ask.(*order.Ask))
+			require.NoErrorf(t, err, "unable to consider ask: %v", err)
+			bid := testHarness.AddDiskOrder(false, fixedRate, duration)
+			err = testHarness.callMarket.ConsiderBids(bid.(*order.Bid))
+			require.NoErrorf(t, err, "unable to consider bid: %v", err)
+
+			numExpectedMatches = 1
+			testHarness.QueueMarketClear()
+		}
+
+		// Now that the call market is set up, we'll trigger a batch
+		// force tick to kick off this cycle. We should immediately go
+		// to the FeeEstimationState.
+		testHarness.ForceBatchTick()
+		testHarness.AssertStateTransitions(FeeEstimationState{})
+
+		// If we didn't expect the batch to be executed, the state
+		// machine should go to MatchMaking->FeeCheck and then back to
+		// OrderSubmit.
+		if !expectExecution {
+			testHarness.AssertStateTransitions(
+				MatchMakingState{}, FeeCheckState{},
+				OrderSubmitState{},
+			)
+			return
+		}
+
+		// Otherwise we should cycle through the states MatchMaking ->
+		// FeeCheck until the target fee rate for the match is met.
+		timeout := time.After(10 * time.Second)
+		for {
+			state := testHarness.AssertStateTransitions(
+				MatchMakingState{}, FeeCheckState{},
+			)
+
+			feeCheck := state.(FeeCheckState)
+			effFeeRates := feebump.CalcEffectiveFeeRates(
+				feeCheck.pendingBatches,
+			)
+
+			// When the batches meet the target fee rate we expect
+			// execution to start.
+			effRate := effFeeRates[len(effFeeRates)-1]
+			if effRate >= targetEffRate {
+				break
+			}
+
+			select {
+			case <-timeout:
+				t.Fatalf("effective fee rate %v never met, "+
+					"last rate %v", targetEffRate, effRate)
+			default:
+			}
+		}
+
+		testHarness.AssertStateTransitions(BatchExecutionState{})
+		testHarness.AssertSubmittedBatch(numExpectedMatches)
+
+		// Resport execution success, which should eventually take us
+		// back to OrderSubmitState.
+		testHarness.ReportExecutionSuccess()
+		testHarness.AssertStateTransitions(
+			BatchCommitState{}, OrderSubmitState{},
+		)
+	}
+
+	// We'll request the next batch to have a custom fee rate.
+	customFeeRate := chainfee.SatPerKWeight(12345)
+	err = testHarness.auctioneer.RequestBatchFeeBump(sweep.FeePreference{
+		FeeRate: customFeeRate,
+	})
+	require.NoError(t, err, "unable to request fee bump")
+
+	// Clear the market and expect the submitted batch to have our custom
+	// fee rate.
+	clearMarket(false, true, customFeeRate)
+
+	// The submitted batch should have the exact fee rate we requested
+	// earlier.
+	testHarness.AssertSubmittedBatchFeeRate(customFeeRate)
+
+	// Confirm this batch, so it won't impact the next fee estimate.
+	broadcastTx := testHarness.AssertTxBroadcast()
+	testHarness.SendConf(broadcastTx)
+
+	// Clear a new market, and make sure this batch won't have our custom
+	// fee rate, as it should only apply for a single batch.
+	clearMarket(false, true, chainfee.FeePerKwFloor)
+	testHarness.AssertSubmittedBatchFeeRate(chainfee.FeePerKwFloor)
+
+	// At this point a single batch should be unconfirmed.
+	ub, err := testHarness.auctioneer.UnconfirmedBatches(
+		context.Background(),
+	)
+	require.NoError(t, err, "unable to get unconfirmed batches")
+	if len(ub) != 1 {
+		t.Fatalf("expected single unconfirmed batch, found %d", len(ub))
+	}
+
+	// We request a fee bump and clear the market again.
+	err = testHarness.auctioneer.RequestBatchFeeBump(sweep.FeePreference{
+		FeeRate: customFeeRate,
+	})
+	require.NoError(t, err, "unable to request fee bump")
+	clearMarket(false, true, customFeeRate)
+
+	// Since the last submitted batch is bumping the fee of the other
+	// unconfirmed batche, it will have a batch fee rate that is higher
+	// than its effective fee rate.
+	// TODO(halseth): do the calculation instead of hardcoding this?
+	testHarness.AssertSubmittedBatchFeeRate(20595)
+
+	// Now we request a fee bump even though there is no market to clear.
+	// This should result in an empty batch.
+	err = testHarness.auctioneer.RequestBatchFeeBump(sweep.FeePreference{
+		FeeRate: 4 * customFeeRate,
+	})
+	require.NoError(t, err, "unable to request fee bump")
+	clearMarket(true, true, 4*customFeeRate)
+
+	// Finally we try to bump the fee again, but the fee we request is less
+	// than the current effective feerate of the unconfirmed batches. Since
+	// there is no market to be made, no batch should be created.
+	err = testHarness.auctioneer.RequestBatchFeeBump(sweep.FeePreference{
+		FeeRate: customFeeRate,
+	})
+	require.NoError(t, err, "unable to request fee bump")
+	clearMarket(true, false, customFeeRate)
 }
