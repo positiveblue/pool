@@ -2007,10 +2007,30 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	return resp, nil
 }
 
+// NodeRating returns node rating for a set of nodes on LN.
 func (s *rpcServer) NodeRating(ctx context.Context,
 	req *poolrpc.ServerNodeRatingRequest) (*poolrpc.ServerNodeRatingResponse, error) {
 
-	return nil, nil
+	nodeRatings := make([]*poolrpc.NodeRating, 0, len(req.NodePubkeys))
+	for _, nodePub := range req.NodePubkeys {
+		var pub [33]byte
+		copy(pub[:], nodePub)
+
+		nodeTier := s.ratingAgency.RateNode(pub)
+		rpcNodeTier, err := marshallNodeTier(nodeTier)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeRatings = append(nodeRatings, &poolrpc.NodeRating{
+			NodePubkey: nodePub,
+			NodeTier:   rpcNodeTier,
+		})
+	}
+
+	return &poolrpc.ServerNodeRatingResponse{
+		NodeRatings: nodeRatings,
+	}, nil
 }
 
 // parseOnionAddr parses an onion address specified in host:port format.
