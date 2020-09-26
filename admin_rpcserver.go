@@ -590,3 +590,35 @@ func (s *adminRPCServer) BumpBatchFeeRate(ctx context.Context,
 
 	return &adminrpc.EmptyResponse{}, nil
 }
+
+// QueryNodeRating returns the current rating for a given node.
+func (s *adminRPCServer) QueryNodeRating(ctx context.Context,
+	req *adminrpc.RatingQueryRequest) (*adminrpc.RatingQueryResponse, error) {
+
+	var pub [33]byte
+	copy(pub[:], req.NodeKey)
+
+	nodeRating := s.mainRPCServer.ratingAgency.RateNode(pub)
+
+	return &adminrpc.RatingQueryResponse{
+		NodeKey:  pub[:],
+		NodeTier: uint32(nodeRating),
+	}, nil
+}
+
+// ModifyRatingResponse attempts to modify the rating of a given node.
+func (s *adminRPCServer) ModifyNodeRatings(ctx context.Context,
+	req *adminrpc.ModifyRatingRequest) (*adminrpc.ModifyRatingResponse, error) {
+
+	var pub [33]byte
+	copy(pub[:], req.NodeKey)
+
+	err := s.mainRPCServer.ratingsDB.ModifyNodeRating(
+		pub, orderT.NodeTier(req.NewNodeTier),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &adminrpc.ModifyRatingResponse{}, nil
+}

@@ -21,6 +21,8 @@ service AuctionAdmin {
     rpc FundingConflicts (EmptyRequest) returns (FundingConflictsResponse);
     rpc ClearConflicts (EmptyRequest) returns (EmptyResponse);
     rpc BumpBatchFeeRate (BumpBatchFeeRateRequest) returns (EmptyResponse);
+    rpc QueryNodeRating(RatingQueryRequest) returns (RatingQueryResponse); 
+    rpc ModifyNodeRatings(ModifyRatingRequest) returns (ModifyRatingResponse);
 }
 
 message EmptyRequest {
@@ -311,6 +313,29 @@ message Conflict {
     
     // The unix timestamp in seconds of the time the conflict was reported.
     int64 report_timestamp = 3;
+    }
+
+message RatingQueryRequest {
+        // The node to query a rating for.
+        bytes node_key = 1;
+}
+message RatingQueryResponse {
+        // The node this rating belongs to.
+        bytes node_key = 1;
+
+        // The ratings tier this node belongs to. zero means they aren't ranked.
+        uint32 node_tier = 2;
+}
+
+message ModifyRatingRequest {
+        // The node this rating belongs to.
+        bytes node_key = 1;
+
+        // The new node tier this node should be placed in.
+        uint32 new_node_tier = 2;
+}
+
+message ModifyRatingResponse {
 }
 
 message BumpBatchFeeRateRequest{
