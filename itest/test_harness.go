@@ -1306,6 +1306,43 @@ func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
 	return msgTxs, txids
 }
 
+func expectNoPossibleMarket(t *harnessTest) {
+	ctx := context.Background()
+
+	// First, grab the current master account to obtain a snapshot of the
+	// current state.
+	masterAcct, err := t.auctioneer.MasterAccount(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	if err != nil {
+		t.Fatalf("unable to fetch master acct")
+	}
+
+	// Let's kick the auctioneer now to try and create a batch.
+	_, err = t.auctioneer.AuctionAdminClient.BatchTick(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	require.NoError(t.t, err)
+
+	// Before we check anything else, let's first wait for the auctioneer
+	// to do its job and then return back to its "waiting" state where new
+	// orders are accepted.
+	assertAuctionState(t, subasta.OrderSubmitState{})
+
+	// At this point, there should be no new batch, we'll assert this by
+	// ensuring the master account still has the same batch key.
+	masterAcct2, err := t.auctioneer.MasterAccount(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	if err != nil {
+		t.Fatalf("unable to fetch master acct")
+	}
+
+	if !bytes.Equal(masterAcct.BatchKey, masterAcct2.BatchKey) {
+		t.Fatalf("a batch occurred but shouldn't have")
+	}
+}
+
 func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 	accountKey []byte, startValue int64, withdrawValue uint64,
 	address string) (*chainhash.Hash, btcutil.Amount) {

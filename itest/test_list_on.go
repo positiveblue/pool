@@ -64,4 +64,8 @@ var testCases = []*testCase{
 		name: "manual batch fee bump",
 		test: testManualFeeBump,
 	},
+	{
+		name: "node rating agency and matching",
+		test: testNodeRatingAgencyAndMatching,
+	},
 }
