@@ -498,11 +498,11 @@ func deserializeOrderPair(r io.Reader) (*matching.OrderPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	ask, err := deserializeOrder(r, askNonce)
+	ask, err := deserializeOrder(r, nil, askNonce)
 	if err != nil {
 		return nil, err
 	}
-	bid, err := deserializeOrder(r, bidNonce)
+	bid, err := deserializeOrder(r, nil, bidNonce)
 	if err != nil {
 		return nil, err
 	}

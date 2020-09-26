@@ -32,7 +32,8 @@ func TestSubmitOrder(t *testing.T) {
 	addDummyAccount(t, store)
 	bid := &order.Bid{
 		Bid: orderT.Bid{
-			Kit: *dummyClientOrder(t, 500000, 1337),
+			Kit:         *dummyClientOrder(t, 500000, 1337),
+			MinNodeTier: 9,
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -82,6 +83,13 @@ func TestSubmitOrder(t *testing.T) {
 		t.Fatalf("unexpected error. got %v expected %v", err,
 			ErrOrderExists)
 	}
+
+	// Finally, ensure that if we need to, we're able to properly re-fill
+	// the order cache. This essentially simulates a server restart with
+	// the same state as inserted above.
+	if err := store.fillActiveOrdersCache(ctxb); err != nil {
+		t.Fatalf("unable to re fresh cache: %v", err)
+	}
 }
 
 // TestUpdateOrders tests that orders can be updated correctly.
@@ -96,7 +104,8 @@ func TestUpdateOrders(t *testing.T) {
 	addDummyAccount(t, store)
 	o1 := &order.Bid{
 		Bid: orderT.Bid{
-			Kit: *dummyClientOrder(t, 500000, 1337),
+			Kit:         *dummyClientOrder(t, 500000, 1337),
+			MinNodeTier: 99,
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -220,7 +229,8 @@ func TestUpdateOrders(t *testing.T) {
 	// Finally make sure we can't update an order that does not exist.
 	o3 := &order.Bid{
 		Bid: orderT.Bid{
-			Kit: *dummyClientOrder(t, 12345, 1337),
+			Kit:         *dummyClientOrder(t, 12345, 1337),
+			MinNodeTier: 9,
 		},
 		Kit: *dummyOrder(t),
 	}
