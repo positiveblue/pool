@@ -1994,6 +1994,12 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	return resp, nil
 }
 
+func (s *rpcServer) NodeRating(ctx context.Context,
+	req *poolrpc.ServerNodeRatingRequest) (*poolrpc.ServerNodeRatingResponse, error) {
+
+	return nil, nil
+}
+
 // parseOnionAddr parses an onion address specified in host:port format.
 func parseOnionAddr(onionAddr string) (net.Addr, error) {
 	addrHost, addrPort, err := net.SplitHostPort(onionAddr)
@@ -2013,4 +2019,42 @@ func parseOnionAddr(onionAddr string) (net.Addr, error) {
 		OnionService: addrHost,
 		Port:         portNum,
 	}, nil
+}
+
+// unmarshallNodeTier maps the RPC node tier enum to the node tier used in
+// memory.
+func unmarshallNodeTier(nodeTier poolrpc.NodeTier) (orderT.NodeTier, error) {
+	switch nodeTier {
+	// This is the boundary where we enforce our interpretation of the min
+	// node tier: clients that specify the default on the RPC layer will be
+	// mapped to our current in-memory default.
+	case poolrpc.NodeTier_TIER_DEFAULT:
+		// TODO(roasbeef): base off order version?
+		return orderT.DefaultMinNodeTier, nil
+
+	case poolrpc.NodeTier_TIER_1:
+		return orderT.NodeTier1, nil
+
+	case poolrpc.NodeTier_TIER_0:
+		return orderT.NodeTier0, nil
+
+	default:
+		return 0, fmt.Errorf("unknown node tier: %v", nodeTier)
+	}
+}
+
+// marshallNodeTier maps the node tier integer into the enum used on the RPC
+// interface.
+func marshallNodeTier(nodeTier orderT.NodeTier) (poolrpc.NodeTier, error) {
+	switch nodeTier {
+
+	case orderT.NodeTier1:
+		return poolrpc.NodeTier_TIER_1, nil
+
+	case orderT.NodeTier0:
+		return poolrpc.NodeTier_TIER_0, nil
+
+	default:
+		return 0, fmt.Errorf("unknown node tier: %v", nodeTier)
+	}
 }
