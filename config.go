@@ -97,6 +97,16 @@ const (
 	// to confirm, then a race condition can happen if the account was
 	// involved in a prior batch.
 	defaultAccountExpiryOffset = 144
+
+	// defaultNodeRatingsRefreshInterval is the interval that we'll use to
+	// continually refresh the node ratings to cache locally so we don't
+	// hammer the end point.
+	defaultNodeRatingsRefreshInterval = time.Minute * 20
+
+	// defaultBosScoreURL is the default mainnet bos score URL. It exists
+	// on testnet as well, but isn't as reliable since that's essentially a
+	// zombie network.
+	defaultBosScoreURL = "https://nodes.lightning.computer/availability/v1/btc.json"
 )
 
 var (
@@ -174,6 +184,10 @@ type Config struct {
 
 	DurationBuckets map[uint32]uint8 `long:"durationbuckets" description:"maps a duration the market observes to the current state of said duration"`
 
+	NodeRatingsActive          bool          `long:"noderatingsactive" description:"if true node ratings will be used in order matching"`
+	NodeRatingsRefreshInterval time.Duration `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
+	BosScoreWebURL             string        `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
+
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
@@ -214,14 +228,16 @@ var DefaultConfig = &Config{
 	Bitcoin: &chain.BitcoinConfig{
 		Host: "localhost:8332",
 	},
-	TLSCertPath:         defaultTLSCertPath,
-	TLSKeyPath:          defaultTLSKeyPath,
-	MaxLogFiles:         defaultMaxLogFiles,
-	MaxLogFileSize:      defaultMaxLogFileSize,
-	DebugLevel:          defaultLogLevel,
-	LogDir:              defaultLogDir,
-	AccountExpiryOffset: defaultAccountExpiryOffset,
-	DurationBuckets:     defaultDurationBuckets,
+	TLSCertPath:                defaultTLSCertPath,
+	TLSKeyPath:                 defaultTLSKeyPath,
+	MaxLogFiles:                defaultMaxLogFiles,
+	MaxLogFileSize:             defaultMaxLogFileSize,
+	DebugLevel:                 defaultLogLevel,
+	LogDir:                     defaultLogDir,
+	AccountExpiryOffset:        defaultAccountExpiryOffset,
+	DurationBuckets:            defaultDurationBuckets,
+	NodeRatingsRefreshInterval: defaultNodeRatingsRefreshInterval,
+	BosScoreWebURL:             defaultBosScoreURL,
 }
 
 // extractCertOpt examines the main configuration to create a grpc.ServerOption
