@@ -1035,6 +1035,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 				},
 				LeaseDurationBlocks: duration,
 				Version:             version,
+				MinNodeTier:         poolrpc.NodeTier_TIER_0,
 			},
 		},
 	})

@@ -90,7 +90,7 @@ func testManualFeeBump(t *harnessTest) {
 	askAmt := btcutil.Amount(1_500_000)
 	_, err = submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
-		defaultOrderDuration, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
@@ -101,7 +101,7 @@ func testManualFeeBump(t *harnessTest) {
 	bidAmt := btcutil.Amount(800_000)
 	_, err = submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
-		defaultOrderDuration, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
