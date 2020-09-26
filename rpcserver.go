@@ -31,6 +31,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -131,6 +132,10 @@ type rpcServer struct {
 
 	signer lndclient.SignerClient
 
+	ratingAgency ratings.Agency
+
+	ratingsDB ratings.NodeRatingsDatabase
+
 	bestHeight func() uint32
 
 	terms *terms.AuctioneerTerms
@@ -150,6 +155,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
+	ratingAgency ratings.Agency, ratingsDB ratings.NodeRatingsDatabase,
 	listener net.Listener, serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
@@ -167,6 +173,8 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
 		subscribeTimeout: subscribeTimeout,
+		ratingAgency:     ratingAgency,
+		ratingsDB:        ratingsDB,
 	}
 }
 
@@ -428,8 +436,13 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		}
 		clientKit.LeaseDuration = b.LeaseDurationBlocks
 
+		nodeTier, err := unmarshallNodeTier(b.MinNodeTier)
+		if err != nil {
+			return nil, err
+		}
 		clientBid := &orderT.Bid{
-			Kit: *clientKit,
+			Kit:         *clientKit,
+			MinNodeTier: nodeTier,
 		}
 		o = &order.Bid{
 			Bid: *clientBid,
