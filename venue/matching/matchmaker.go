@@ -148,19 +148,62 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 		return nil, err
 	}
 
+	// To ensure clearing price consistency within the batch, we filter out
+	// any anomalies. There should always be at least a single match left,
+	// otherwise something is off with how we extract the clearing price.
+	matches := filterAnomalies(matchSet.MatchedOrders, clearingPrice)
+	if len(matches) == 0 {
+		return nil, fmt.Errorf("filtering match set of %d resulted "+
+			"in empty set", len(matchSet.MatchedOrders))
+	}
+
 	// As a final step, we'll compute the diff for each trader's account.
 	// With this final piece of information, the caller will be able to
 	// easily update all the order/account state in a single atomic
 	// transaction.
-	feeReport := NewTradingFeeReport(
-		matchSet.MatchedOrders, u.feeSchedule, clearingPrice,
-	)
-
+	feeReport := NewTradingFeeReport(matches, u.feeSchedule, clearingPrice)
 	return &OrderBatch{
-		Orders:        matchSet.MatchedOrders,
+		Orders:        matches,
 		FeeReport:     feeReport,
 		ClearingPrice: clearingPrice,
 	}, nil
+}
+
+// filterAnomalies filters our any order among the matched orders for which the
+// clearing price doesn't satisfy its fixed rate. This can happen in cases
+// where the orders are "skewed" because of incompatibilities, and we filter
+// the batch to ensure all traders are happy. The orders that get filtered out
+// will most likely be included in the next batch.
+//
+// TODO(halseth): we risk skewed matches never to be included if they always
+// get kicked to the next batch. Could immediately follow up with a new batch.
+func filterAnomalies(matches []MatchedOrder,
+	clearingPrice orderT.FixedRatePremium) []MatchedOrder {
+
+	filtered := make([]MatchedOrder, 0, len(matches))
+	for _, m := range matches {
+		ask := m.Details.Ask
+		bid := m.Details.Bid
+		if ask.FixedRate > uint32(clearingPrice) {
+			log.Debugf("Filtered out ask %v (and matched bid %v) "+
+				"with fixed rate %v for clearing price %v",
+				ask.Nonce, bid.Nonce, ask.FixedRate,
+				clearingPrice)
+			continue
+		}
+
+		if bid.FixedRate < uint32(clearingPrice) {
+			log.Debugf("Filtered out bid %v (and matched ask %v) "+
+				"with fixed rate %v for clearing price %v",
+				bid.Nonce, ask.Nonce, bid.FixedRate,
+				clearingPrice)
+			continue
+		}
+
+		filtered = append(filtered, m)
+	}
+
+	return filtered
 }
 
 // RemoveMatches updates the order book by subtracting the given matches filled
