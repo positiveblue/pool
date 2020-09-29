@@ -693,6 +693,69 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 	}
 }
 
+// assertOrderEvents makes sure the order with the given nonce has the correct
+// approximate creation timestamp and number of other events given.
+func assertOrderEvents(t *harnessTest, trader *traderHarness, nonce []byte,
+	creationTs time.Time, numUpdated, numMatched int,
+	rejectReasons ...poolrpc.MatchRejectReason) {
+
+	t.t.Helper()
+
+	ctx := context.Background()
+	orderList, err := trader.ListOrders(ctx, &poolrpc.ListOrdersRequest{
+		Verbose: true,
+	})
+	require.NoError(t.t, err)
+
+	var rpcOrder *poolrpc.Order
+	for _, ask := range orderList.Asks {
+		if bytes.Equal(ask.Details.OrderNonce, nonce) {
+			rpcOrder = ask.Details
+			break
+		}
+	}
+	for _, bid := range orderList.Bids {
+		if bytes.Equal(bid.Details.OrderNonce, nonce) {
+			rpcOrder = bid.Details
+			break
+		}
+	}
+	require.NotNil(t.t, rpcOrder)
+
+	// Make sure the creation timestamp is within 100 milliseconds of the
+	// time that was passed in.
+	expectedTs := uint64(creationTs.UnixNano())
+	maxDelta := float64(100 * time.Millisecond)
+	require.InDelta(t.t, expectedTs, rpcOrder.CreationTimestampNs, maxDelta)
+
+	// Assert we have the right number of events in verbose mode.
+	actualCreated, actualUpdated, actualMatched := 0, 0, 0
+	for _, rpcEvent := range rpcOrder.Events {
+		switch {
+		case rpcEvent.EventStr == "OrderCreated":
+			actualCreated++
+
+		case rpcEvent.GetStateChange() != nil:
+			actualUpdated++
+
+		case rpcEvent.GetMatched() != nil:
+			actualMatched++
+
+			m := rpcEvent.GetMatched()
+			if len(rejectReasons) > 0 &&
+				m.RejectReason != poolrpc.MatchRejectReason_NONE {
+
+				require.Contains(
+					t.t, rejectReasons, m.RejectReason,
+				)
+			}
+		}
+	}
+	require.Equal(t.t, 1, actualCreated)
+	require.Equal(t.t, numUpdated, actualUpdated)
+	require.Equal(t.t, numMatched, actualMatched)
+}
+
 // traderOutputScript creates a P2WPKH output script that pays to the trader's
 // lnd wallet.
 func traderOutputScript(t *harnessTest, traderNode *lntest.HarnessNode) []byte {

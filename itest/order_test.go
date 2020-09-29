@@ -2,6 +2,7 @@ package itest
 
 import (
 	"context"
+	"time"
 
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -55,7 +56,10 @@ func testOrderSubmission(t *harnessTest) {
 	})
 	require.NoError(t.t, err)
 	require.NotNil(t.t, ask.GetAcceptedOrderNonce())
-	require.NotNil(t.t, ask.GetInvalidOrder())
+	require.Nil(t.t, ask.GetInvalidOrder())
+	assertOrderEvents(
+		t, t.trader, ask.GetAcceptedOrderNonce(), time.Now(), 0, 0,
+	)
 
 	// Now list all orders and validate order status.
 	list, err := t.trader.ListOrders(ctx, &poolrpc.ListOrdersRequest{})

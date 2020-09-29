@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -111,30 +112,33 @@ func testBatchExecution(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
 	}
+	ask1Created := time.Now()
 
 	// Our second trader, connected to Charlie, wants to buy 8 units of
 	// liquidity. So let's submit an order for that.
 	bidAmt := btcutil.Amount(800_000)
-	_, err = submitBidOrder(
+	bid1Nonce, err := submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
 		dayInBlocks, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
 	}
+	bid1Created := time.Now()
 
 	// From the secondary account of the second trader, we also create an
 	// order to buy some units. The order should also make it into the same
 	// batch and the second trader should sign a message for both orders at
 	// the same time.
 	bidAmt2 := btcutil.Amount(400_000)
-	_, err = submitBidOrder(
+	bid2Nonce, err := submitBidOrder(
 		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
 		dayInBlocks, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
 	}
+	bid2Created := time.Now()
 
 	// Make the third account submit a bid that will get matched, but shut
 	// down the trader immediately after.
@@ -268,6 +272,13 @@ func testBatchExecution(t *harnessTest) {
 		t, charlie, int64(bidAmt2), *firstBatchTXID,
 		t.trader.cfg.LndNode.PubKey, dayInBlocks,
 	)
+
+	// All executed orders should now have several events recorded. The ask
+	// was matched twice so it should have two sets of prepare->accepted->
+	// signed->finalized events plus one DB update.
+	assertOrderEvents(t, t.trader, ask1Nonce[:], ask1Created, 1, 8)
+	assertOrderEvents(t, secondTrader, bid1Nonce[:], bid1Created, 1, 4)
+	assertOrderEvents(t, secondTrader, bid2Nonce[:], bid2Created, 1, 4)
 
 	// To make sure the channels works as expected, we'll send a payment
 	// from Bob (the maker) to Charlie (the taker).
@@ -1249,11 +1260,12 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 
 	// Submit an ask order that is large enough to be matched multiple
 	// times.
-	_, err = submitAskOrder(
+	ask1Nonce, err := submitAskOrder(
 		t.trader, askAccount.TraderKey, askRate, askSize,
 		durationBlocks, uint32(order.CurrentVersion),
 	)
 	require.NoError(t.t, err)
+	ask1Created := time.Now()
 
 	// We manually open a channel between Bob and Charlie now to saturate
 	// the maxpendingchannels setting.
@@ -1269,21 +1281,23 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// channels. That is, the asker, Bob, will open the channel and Charlie
 	// will reject the channel funding. That leads to both trader daemons
 	// rejecting the batch because of a failed funding attempt.
-	_, err = submitBidOrder(
+	bid1Nonce, err := submitBidOrder(
 		secondTrader, bidAccountCharlie.TraderKey, askRate, bidSize1,
 		durationBlocks, uint32(order.CurrentVersion),
 	)
 	require.NoError(t.t, err)
+	bid1Created := time.Now()
 
 	// Dave also participates. He should be matched twice with a pending
 	// channel already initiated during the first try. We need to make sure
 	// the same matched order can still result in a channel the second time
 	// around.
-	_, err = submitBidOrder(
+	bid2Nonce, err := submitBidOrder(
 		thirdTrader, bidAccountDave.TraderKey, askRate, bidSize2,
 		durationBlocks, uint32(order.CurrentVersion),
 	)
 	require.NoError(t.t, err)
+	bid2Created := time.Now()
 
 	// Try to execute the batch now. It should fail in the first round
 	// because both Bob and Charlie reject the orders. A conflict should
@@ -1297,6 +1311,23 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	assertPendingChannel(
 		t, dave, bidSize2, false, t.trader.cfg.LndNode.PubKey,
 	)
+
+	// All executed orders should now have several events recorded. The ask
+	// should have 2 prepare, 2 accept, 2 rejected events, then prepare,
+	// update, accept, signed and finalized events for only one order,
+	// giving a total of 10. Charlie just prepared, accepted then rejected.
+	// Dave prepared, accepted, updated and signed, then had to start over,
+	// going through prepare, accept, update, sign and finalize again.
+	assertOrderEvents(
+		t, t.trader, ask1Nonce[:], ask1Created, 1, 10,
+		poolrpc.MatchRejectReason_PARTIAL_REJECT_COLLATERAL,
+		poolrpc.MatchRejectReason_PARTIAL_REJECT_CHANNEL_FUNDING_FAILED,
+	)
+	assertOrderEvents(
+		t, secondTrader, bid1Nonce[:], bid1Created, 0, 3,
+		poolrpc.MatchRejectReason_PARTIAL_REJECT_CHANNEL_FUNDING_FAILED,
+	)
+	assertOrderEvents(t, thirdTrader, bid2Nonce[:], bid2Created, 2, 7)
 
 	// Because the first round never happened, Dave did create a channel
 	// that will never confirm because it was replaced with a channel of the
