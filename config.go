@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
+	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -99,6 +100,14 @@ const (
 )
 
 var (
+	// defaultDurationBuckets is the current default set of active duration
+	// markets, along with the status for each market.
+	defaultDurationBuckets = map[uint32]uint8{
+		2016: order.BucketStateClearingMarket,
+	}
+)
+
+var (
 	// DefaultBaseDir is the default root data directory where auctionserver
 	// will store all its data. On UNIX like systems this will resolve to
 	// ~/.auctionserver. Below this directory the logs and network directory
@@ -163,6 +172,8 @@ type Config struct {
 
 	AccountExpiryOffset uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
 
+	DurationBuckets map[uint32]uint8 `long:"durationbuckets" description:"maps a duration the market observes to the current state of said duration"`
+
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
@@ -210,6 +221,7 @@ var DefaultConfig = &Config{
 	DebugLevel:          defaultLogLevel,
 	LogDir:              defaultLogDir,
 	AccountExpiryOffset: defaultAccountExpiryOffset,
+	DurationBuckets:     defaultDurationBuckets,
 }
 
 // extractCertOpt examines the main configuration to create a grpc.ServerOption
