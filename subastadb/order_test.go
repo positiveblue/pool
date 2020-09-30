@@ -32,8 +32,7 @@ func TestSubmitOrder(t *testing.T) {
 	addDummyAccount(t, store)
 	bid := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *dummyClientOrder(t, 500000),
-			MinDuration: 1337,
+			Kit: *dummyClientOrder(t, 500000, 1337),
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -97,8 +96,7 @@ func TestUpdateOrders(t *testing.T) {
 	addDummyAccount(t, store)
 	o1 := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *dummyClientOrder(t, 500000),
-			MinDuration: 1337,
+			Kit: *dummyClientOrder(t, 500000, 1337),
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -108,8 +106,7 @@ func TestUpdateOrders(t *testing.T) {
 	}
 	o2 := &order.Ask{
 		Ask: orderT.Ask{
-			Kit:         *dummyClientOrder(t, 500000),
-			MaxDuration: 1337,
+			Kit: *dummyClientOrder(t, 500000, 1337),
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -223,8 +220,7 @@ func TestUpdateOrders(t *testing.T) {
 	// Finally make sure we can't update an order that does not exist.
 	o3 := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *dummyClientOrder(t, 12345),
-			MinDuration: 1337,
+			Kit: *dummyClientOrder(t, 12345, 1337),
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -255,7 +251,9 @@ func assertJSONDeepEqual(t *testing.T, o1, o2 interface{}) {
 	}
 }
 
-func dummyClientOrder(t *testing.T, amt btcutil.Amount) *orderT.Kit {
+func dummyClientOrder(t *testing.T, amt btcutil.Amount,
+	leaseDuration uint32) *orderT.Kit {
+
 	var testPreimage lntypes.Preimage
 	if _, err := rand.Read(testPreimage[:]); err != nil {
 		t.Fatalf("could not create private key: %v", err)
@@ -268,6 +266,7 @@ func dummyClientOrder(t *testing.T, amt btcutil.Amount) *orderT.Kit {
 	kit.UnitsUnfulfilled = kit.Units
 	kit.MultiSigKeyLocator = keychain.KeyLocator{Index: 1, Family: 2}
 	kit.MaxBatchFeeRate = chainfee.FeePerKwFloor
+	kit.LeaseDuration = leaseDuration
 	copy(kit.AcctKey[:], testTraderKey.SerializeCompressed())
 	return kit
 }

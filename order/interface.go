@@ -81,10 +81,10 @@ type Ask struct {
 	Kit
 }
 
-// MaxDuration is the maximum number of blocks the liquidity provider is
+// LeaseDuration is the maximum number of blocks the liquidity provider is
 // willing to provide the channel funds for.
-func (a *Ask) MaxDuration() uint32 {
-	return a.Ask.MaxDuration
+func (a *Ask) LeaseDuration() uint32 {
+	return a.Ask.LeaseDuration
 }
 
 // Bid is the specific order type representing the willingness of an auction
@@ -98,10 +98,10 @@ type Bid struct {
 	Kit
 }
 
-// MinDuration is the minimal duration the channel resulting from this
-// bid should be kept open, expressed in blocks.
-func (b *Bid) MinDuration() uint32 {
-	return b.Bid.MinDuration
+// LeaseDuration is the minimal duration the channel resulting from this bid
+// should be kept open, expressed in blocks.
+func (b *Bid) LeaseDuration() uint32 {
+	return b.Bid.LeaseDuration
 }
 
 // This is a compile time check to make certain that both Ask and Bid implement

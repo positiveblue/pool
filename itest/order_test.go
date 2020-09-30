@@ -37,8 +37,8 @@ func testOrderSubmission(t *harnessTest) {
 			Amt:                     1500000,
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
-		MaxDurationBlocks: 365*144 + 1,
-		Version:           uint32(order.CurrentVersion),
+		LeaseDurationBlocks: 365*144 + 1,
+		Version:             uint32(order.CurrentVersion),
 	}
 	_, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
@@ -48,7 +48,7 @@ func testOrderSubmission(t *harnessTest) {
 	require.Error(t.t, err)
 
 	// Now try a correct one.
-	rpcAsk.MaxDurationBlocks = 2 * dayInBlocks
+	rpcAsk.LeaseDurationBlocks = 2 * dayInBlocks
 	ask, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
 			Ask: rpcAsk,

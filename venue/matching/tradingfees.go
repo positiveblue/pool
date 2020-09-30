@@ -86,11 +86,11 @@ func NewTradingFeeReport(orders []MatchedOrder, feeSchedule terms.FeeSchedule,
 		// TODO(roasbeef): need market wide clamp on duration?
 		totalFeesAccrued += makerDiff.CalcMakerDelta(
 			feeSchedule, clearingPrice, totalSats,
-			order.Details.Bid.MinDuration(),
+			order.Details.Bid.LeaseDuration(),
 		)
 		totalFeesAccrued += takerDiff.CalcTakerDelta(
 			feeSchedule, clearingPrice, totalSats,
-			order.Details.Bid.MinDuration(),
+			order.Details.Bid.LeaseDuration(),
 		)
 
 		accountDiffs[taker.AccountKey] = takerDiff

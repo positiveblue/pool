@@ -829,6 +829,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 	kit := orderT.NewKit(nonce)
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
+	kit.LeaseDuration = duration
 
 	var acctPrivKey [32]byte
 	if _, err := rand.Read(acctPrivKey[:]); err != nil {
@@ -839,8 +840,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 
 	return &order.Ask{
 		Ask: orderT.Ask{
-			Kit:         *kit,
-			MaxDuration: duration,
+			Kit: *kit,
 		},
 		Kit: order.Kit{
 			MultiSigKey: kit.AcctKey,
@@ -857,6 +857,7 @@ func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
 	kit := orderT.NewKit(nonce)
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
+	kit.LeaseDuration = duration
 
 	var acctPrivKey [32]byte
 	if _, err := rand.Read(acctPrivKey[:]); err != nil {
@@ -867,8 +868,7 @@ func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
 
 	return &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *kit,
-			MinDuration: duration,
+			Kit: *kit,
 		},
 		Kit: order.Kit{
 			MultiSigKey: kit.AcctKey,

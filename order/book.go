@@ -315,21 +315,21 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	// account has enough balance for the requested order.
 	switch o := srvOrder.(type) {
 	case *Ask:
-		if o.MaxDuration() < order.MinimumOrderDurationBlocks {
+		if o.LeaseDuration() < order.MinimumOrderDurationBlocks {
 			return fmt.Errorf("invalid max duration, must be at "+
 				"least %d", order.MinimumOrderDurationBlocks)
 		}
-		if o.MaxDuration() > b.cfg.MaxDuration {
+		if o.LeaseDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for max "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
 
 	case *Bid:
-		if o.MinDuration() < order.MinimumOrderDurationBlocks {
+		if o.LeaseDuration() < order.MinimumOrderDurationBlocks {
 			return fmt.Errorf("invalid min duration, must be at "+
 				"least %d", order.MinimumOrderDurationBlocks)
 		}
-		if o.MinDuration() > b.cfg.MaxDuration {
+		if o.LeaseDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for min "+
 				"duration is %d", b.cfg.MaxDuration)
 		}

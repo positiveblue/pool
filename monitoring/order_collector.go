@@ -206,10 +206,10 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 
 	switch t := o.(type) {
 	case *order.Ask:
-		c.g[orderDuration].With(labels).Set(float64(t.MaxDuration()))
+		c.g[orderDuration].With(labels).Set(float64(t.LeaseDuration()))
 
 	case *order.Bid:
-		c.g[orderDuration].With(labels).Set(float64(t.MinDuration()))
+		c.g[orderDuration].With(labels).Set(float64(t.LeaseDuration()))
 	}
 }
 
