@@ -214,10 +214,17 @@ func NewServer(cfg *Config) (*Server, error) {
 		TraderMsgTimeout: defaultMsgTimeout,
 	})
 
+	durationBuckets := order.NewDurationBuckets()
+	for duration, marketState := range cfg.DurationBuckets {
+		durationBuckets.AddNewMarket(
+			duration, order.DurationBucketState(marketState),
+		)
+	}
 	orderBook := order.NewBook(&order.BookConfig{
-		Store:       store,
-		Signer:      lnd.Signer,
-		MaxDuration: cfg.MaxDuration,
+		Store:           store,
+		Signer:          lnd.Signer,
+		MaxDuration:     cfg.MaxDuration,
+		DurationBuckets: durationBuckets,
 	})
 
 	channelEnforcer := chanenforcement.New(&chanenforcement.Config{

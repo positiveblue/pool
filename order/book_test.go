@@ -321,6 +321,24 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
+		name:        "invalid duration for order",
+		expectedErr: "bucket for duration 145 is in state: BucketStateNoMarket",
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+						LeaseDuration:    145,
+					},
+				},
+			}
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
 		name:        "maker cannot pay fees",
 		expectedErr: order.ErrInvalidAmt.Error(),
 		run: func() error {
