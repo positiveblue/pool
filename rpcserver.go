@@ -1300,7 +1300,18 @@ func (s *rpcServer) Terms(_ context.Context, _ *poolrpc.TermsRequest) (
 			BaseFee: uint64(s.terms.OrderExecBaseFee),
 			FeeRate: uint64(s.terms.OrderExecFeeRate),
 		},
-	}, nil
+		LeaseDurations: make(map[uint32]bool),
+	}
+
+	durationBuckets := s.orderBook.DurationBuckets()
+	durationBuckets.IterBuckets(func(d uint32, s order.DurationBucketState) {
+		marketOpen := (s != order.BucketStateMarketClosed &&
+			s != order.BucketStateNoMarket)
+
+		resp.LeaseDurations[d] = marketOpen
+	})
+
+	return resp, nil
 }
 
 // RelevantBatchSnapshot returns a slimmed-down snapshot of the requested batch
