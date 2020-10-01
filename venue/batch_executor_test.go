@@ -805,6 +805,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 				testCtx.AssertMsgRejectErr(
 					exeErr, rejectingTrader.AccountKey,
 				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
 
 				return
 			}
@@ -830,6 +831,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			// send the message in time.
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertMsgTimeoutErr(exeErr, *slowTrader)
+			testCtx.AssertStateTransitions(NoActiveBatch)
 		}
 	}
 
@@ -916,6 +918,87 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			if action == noAction {
 				testCtx.AssertStateTransitions(BatchSigning)
 			}
+
+			firstTrader := i == 0
+			secondTrader := i == 1
+
+			switch {
+			// On the other hand, if we sent an invalid sig above, then we
+			// expect that we go to the error state, but emit a distinct
+			// error.
+			case action == invalidSig:
+				// We'll reset everything after the first
+				// invalid signature is found, leaving the
+				// second to still be processed. As a result,
+				// we expect to transition again to
+				// NoActiveBatch as we ignore all messages in
+				// the default state.
+				if !firstTrader {
+					testCtx.AssertStateTransitions(NoActiveBatch)
+					continue
+				}
+
+				testCtx.AssertStateTransitions(BatchTempError)
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertInvalidWitnessErr(
+					exeErr, fastTraders[0].AccountKey,
+				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
+
+			// If we did not provide the required channel info above, then
+			// we expect that we go to the error state, but emit a distinct
+			// error.
+			case action == missingChanInfo:
+				// We'll reset everything after the first
+				// missing chan info, leaving the second to
+				// still be processed. As a result, we expect
+				// to transition again to NoActiveBatch as we
+				// ignore all messages in the default state.
+				if !firstTrader {
+					testCtx.AssertStateTransitions(NoActiveBatch)
+					continue
+				}
+
+				testCtx.AssertStateTransitions(BatchTempError)
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertMissingChannelInfoErr(
+					exeErr, fastTraders[0].AccountKey,
+				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
+
+			// If we did not provide the correct channel info above, then we
+			// expect that we go to the error state, but emit a distinct
+			// error.
+			case action == invalidChanInfo:
+				// If this is the first trader, we have no chan
+				// info to match with, so we'll stay in the
+				// batch siging state.
+				if firstTrader {
+					testCtx.AssertStateTransitions(BatchSigning)
+					continue
+				}
+
+				// For other traders than the first and second
+				// one we expect the batch to have already
+				// failed, so we'll stay in NoActiveBatch
+				// state, ignoring all messages.
+				if !secondTrader {
+					testCtx.AssertStateTransitions(NoActiveBatch)
+					continue
+				}
+
+				// For the second trader we'll notice the
+				// invalid chan info and the batch will fail.
+				testCtx.AssertStateTransitions(BatchTempError)
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertNonMatchingChannelInfoErr(
+					exeErr, [2]matching.AccountID{
+						fastTraders[0].AccountKey,
+						fastTraders[1].AccountKey,
+					},
+				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
+			}
 		}
 
 		switch {
@@ -926,6 +1009,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			testCtx.AssertStateTransitions(BatchTempError)
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertMsgTimeoutErr(exeErr, *slowTrader)
+			testCtx.AssertStateTransitions(NoActiveBatch)
 
 		// If we had a rejecting trader, then we'll ensure that we go
 		// to the expected error state, and also that the rejecting
@@ -936,39 +1020,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			testCtx.AssertMsgTimeoutErr(
 				exeErr, rejectingTrader.AccountKey,
 			)
-
-		// On the other hand, if we sent an invalid sig above, then we
-		// expect that we go to the error state, but emit a distinct
-		// error.
-		case action == invalidSig:
-			testCtx.AssertStateTransitions(BatchTempError)
-			exeErr := testCtx.ExpectExecutionError(respChan)
-			testCtx.AssertInvalidWitnessErr(
-				exeErr, fastTraders[0].AccountKey,
-			)
-
-		// If we did not provide the required channel info above, then
-		// we expect that we go to the error state, but emit a distinct
-		// error.
-		case action == missingChanInfo:
-			testCtx.AssertStateTransitions(BatchTempError)
-			exeErr := testCtx.ExpectExecutionError(respChan)
-			testCtx.AssertMissingChannelInfoErr(
-				exeErr, fastTraders[0].AccountKey,
-			)
-
-		// If we did not provide the correct channel info above, then we
-		// expect that we go to the error state, but emit a distinct
-		// error.
-		case action == invalidChanInfo:
-			testCtx.AssertStateTransitions(BatchSigning, BatchTempError)
-			exeErr := testCtx.ExpectExecutionError(respChan)
-			testCtx.AssertNonMatchingChannelInfoErr(
-				exeErr, [2]matching.AccountID{
-					fastTraders[0].AccountKey,
-					fastTraders[1].AccountKey,
-				},
-			)
+			testCtx.AssertStateTransitions(NoActiveBatch)
 		}
 	}
 
@@ -1004,12 +1056,6 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		invalidSig, nil, nil, activeSmallTrader, activeBigTrader,
 	)
 
-	// Both signatures will be invalid, but we'll reset everything after
-	// the first invalid signature is found, leaving the second to still be
-	// processed. As a result, we expect to transition again to
-	// NoActiveBatch as we ignore all messages in the default state.
-	testCtx.AssertStateTransitions(NoActiveBatch)
-
 	// Next we'll execute again (from the top), but one of the traders will
 	// send non matching channel info, this should cause us to again bail
 	// out as we can't proceed.
@@ -1019,12 +1065,6 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	stepSignToFinalize(
 		missingChanInfo, nil, nil, activeSmallTrader, activeBigTrader,
 	)
-
-	// Both signatures will be invalid, but we'll reset everything after
-	// the first invalid signature is found, leaving the second to still be
-	// processed. As a result, we expect to transition again to
-	// NoActiveBatch as we ignore all messages in the default state.
-	testCtx.AssertStateTransitions(NoActiveBatch)
 
 	// Next we'll execute again (from the top), but one of the traders will
 	// send non matching channel info, this should cause us to again bail
@@ -1055,6 +1095,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// result to be received.
 	testCtx.AssertStateTransitions(BatchComplete)
 	exeRes := testCtx.ExpectExecutionSuccess(respChan)
+	testCtx.AssertStateTransitions(NoActiveBatch)
 
 	// We'll assert that a lifetime package was created for each matched
 	// order.
