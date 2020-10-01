@@ -23,16 +23,19 @@ var (
 	batchPriv, startBatchKey    = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x01})
 	acctBigPriv, acctKeyBig     = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x02})
 	acctSmallPriv, acctKeySmall = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x03})
+	acctMedPriv, acctKeyMed     = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x04})
 	oldMasterOutHash            = chainhash.Hash{0x01}
 	newMasterOutHash            = chainhash.Hash{0x02}
 
 	batchID     = orderT.NewBatchID(startBatchKey)
 	acctIDBig   = matching.NewAccountID(acctKeyBig)
 	acctIDSmall = matching.NewAccountID(acctKeySmall)
+	acctIDMed   = matching.NewAccountID(acctKeyMed)
 
 	acctIDToPriv = map[matching.AccountID]*btcec.PrivateKey{
 		acctIDBig:   acctBigPriv,
 		acctIDSmall: acctSmallPriv,
+		acctIDMed:   acctMedPriv,
 	}
 )
 
@@ -75,6 +78,23 @@ var (
 	}
 
 	smallTrader = matching.NewTraderFromAccount(smallAcct)
+
+	medAcct = &account.Account{
+		TraderKeyRaw: acctIDMed,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: startBatchKey,
+		},
+		Value:    700_000,
+		Expiry:   144,
+		State:    account.StateOpen,
+		BatchKey: startBatchKey,
+		OutPoint: wire.OutPoint{
+			Hash: chainhash.Hash{0x01, 0x07},
+		},
+		LatestTx: wire.NewMsgTx(2),
+	}
+
+	medTrader = matching.NewTraderFromAccount(medAcct)
 
 	ask = &order.Ask{
 		Ask: orderT.Ask{

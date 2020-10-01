@@ -1182,3 +1182,155 @@ func TestBatchExecutorEmptyBatch(t *testing.T) {
 			spew.Sdump(exeRes.BatchTx))
 	}
 }
+
+// TestBatchExecutorIgnoreUnknownTraders runs through a normal, succesfull
+// batch execution scenario with two involved traders, while a third
+// non-participating trader is sending messages to the executor that should not
+// be impacting our state.
+func TestBatchExecutorIgnoreUnknownTraders(t *testing.T) {
+	// First, we'll create our test harness which includes all the
+	// functionality we need to carry out our tests.
+	msgTimeout := time.Millisecond * 200
+	testCtx := newExecutorTestHarness(t, msgTimeout)
+	testCtx.Start()
+	defer testCtx.Stop()
+
+	// Before we start, we'll also insert some initial master account state
+	// that we'll need in order to proceed, and also the on-disk state of
+	// the orders.
+	masterAcct := oldMasterAccount
+	testCtx.store.MasterAcct = masterAcct
+	testCtx.store.Accs = map[[33]byte]*account.Account{
+		bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+		smallAcct.TraderKeyRaw: smallAcct.Copy(),
+	}
+	for _, orderPair := range orderBatch.Orders {
+		ask := orderPair.Details.Ask
+		bid := orderPair.Details.Bid
+		testCtx.store.Orders[ask.Nonce()] = ask
+		testCtx.store.Orders[bid.Nonce()] = bid
+	}
+
+	// We'll now register both traders as online so we're able to proceed
+	// as expected.
+	testCtx.RegisterTrader(smallAcct)
+	testCtx.RegisterTrader(bigAcct)
+
+	activeSmallTrader := &ActiveTrader{
+		Trader: &smallTrader,
+	}
+	activeBigTrader := &ActiveTrader{
+		Trader: &bigTrader,
+	}
+	acceptingTraders := []*ActiveTrader{activeSmallTrader, activeBigTrader}
+
+	// We create a third trader we'll just use to send random messages that
+	// should be ignored.
+	randomTrader := &ActiveTrader{
+		Trader: &medTrader,
+	}
+
+	// We start by sending a message to the executor, which should be
+	// ignored since there is no active batch.
+	testCtx.SendAcceptMsg(randomTrader)
+	testCtx.AssertNoStateTransition(NoActiveBatch)
+
+	// Next, we'll kick things off by submitting our canned batch.
+	batch := orderBatch.Copy()
+	batchFeeRate := 2 * chainfee.FeePerKwFloor
+	respChan := testCtx.SubmitBatch(&batch, batchFeeRate)
+
+	// At this point, both of our active traders should have the
+	// prepare message sent to them.
+	testCtx.ExpectPrepareMsgForAll()
+
+	// With the prepare message sent, our message timer should
+	// start, and we should now transition to the PrepareSent
+	// stage. The first transition is for when we first go to the
+	// state, and the second will be a no-op as the state machine
+	// won't progress further.
+	testCtx.AssertStateTransitions(PrepareSent)
+	testCtx.AssertStateTransitions(PrepareSent)
+
+	// Next, we'll send the accept messages.
+	for i, fastTrader := range acceptingTraders {
+		// Before sending messages from the participating trader, send
+		// a message from the random trader that should be ignored.
+		testCtx.SendAcceptMsg(randomTrader)
+		testCtx.AssertNoStateTransition(PrepareSent)
+
+		testCtx.SendAcceptMsg(fastTrader)
+		lastTrader := i == len(acceptingTraders)-1
+
+		// If this is the last trader, and we don't have any
+		// interrupting traders, then we'll transition to
+		// BatchSigning and can exit here.
+		if lastTrader {
+			testCtx.AssertStateTransitions(BatchSigning)
+			continue
+		}
+
+		// If this isn't the last responding trader, we expect
+		// no change in the auction state.
+		testCtx.AssertStateTransitions(PrepareSent)
+	}
+
+	// Now that we're entering the BatchSigning phase, we expect
+	// that the auctioneer sends the SignBeginMsg to all active
+	// traders.
+	testCtx.ExpectSignBeginMsgForAll()
+
+	// Similar to the prior state, we expect another finalize no-op
+	// as we self-loop waiting for responses.
+	testCtx.AssertStateTransitions(BatchSigning)
+
+	// We'll now send all sig messages for all the traders.
+	batchCopy := orderBatch.Copy()
+	batchCtx := testCtx.newTestExecutionContext(
+		&batchCopy, batchFeeRate,
+	)
+	for i, fastTrader := range acceptingTraders {
+		// Check that the random trader cannot influence our state.
+		signMsg := &TraderSignMsg{
+			Trader: randomTrader,
+		}
+		if err := testCtx.executor.HandleTraderMsg(signMsg); err != nil {
+			testCtx.t.Fatalf("unable to handle msg: %v", err)
+		}
+		testCtx.AssertNoStateTransition(BatchSigning)
+
+		// Send a signature from the paricipating trader.
+		testCtx.SendSignMsg(
+			batchCtx, fastTrader, noAction,
+		)
+
+		lastTrader := i == len(acceptingTraders)-1
+
+		// If this is the last trader, then we should transition to the
+		// finalize phase.
+		if lastTrader {
+			testCtx.AssertStateTransitions(BatchFinalize)
+			continue
+		}
+
+		// Otherwise, we expect a self-loop as we wait in this
+		// state until we have all the signatures we need.
+		testCtx.AssertStateTransitions(BatchSigning)
+	}
+
+	// At this point, all parties should now receive a finalize message,
+	// which signals the completion of this batch execution.
+	testCtx.ExpectFinalizeMsgForAll()
+
+	// Once the finalize message has been sent, we expect the state machine
+	// to terminate at the BatchComplete state and a successful execution
+	// result to be received.
+	testCtx.AssertStateTransitions(BatchComplete)
+	_ = testCtx.ExpectExecutionSuccess(respChan)
+	testCtx.AssertStateTransitions(NoActiveBatch)
+
+	// Now we're back to square one. The random trader is still not
+	// welcome.
+	testCtx.SendAcceptMsg(randomTrader)
+	testCtx.AssertNoStateTransition(NoActiveBatch)
+}
