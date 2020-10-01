@@ -498,3 +498,89 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 		t.Fatalf("expected 3 matches, got %v", len(matches))
 	}
 }
+
+// TestMaybeClearClearingPriceInvariant checks that the set of matched orders
+// returned from MaybeClear all satisfy the clearing price extracted.
+func TestMaybeClearClearingPriceInvariant(t *testing.T) {
+	t.Parallel()
+
+	acctDB, acctCacher, predicates := newAcctCacher()
+
+	n, y := 0, 0
+	scenario := func(orders orderSet) bool {
+		// LastAcceptedBid is the clearing price model used.
+		callMarket := NewUniformPriceCallMarket(
+			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		)
+
+		// Add all orders from the scenario to the call market, and
+		// clear the batch.
+		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
+			t.Fatalf("unable to add bids: %v", err)
+		}
+		if err := callMarket.ConsiderAsks(orders.Asks...); err != nil {
+			t.Fatalf("unable to add asks: %v", err)
+		}
+
+		orderBatch, err := callMarket.MaybeClear(
+			chainfee.FeePerKwFloor, acctCacher, predicates,
+		)
+		switch {
+		case err == ErrNoMarketPossible:
+			n++
+			return true
+
+		case err != nil:
+			t.Logf("unable to match batch: %v", err)
+			return false
+		}
+
+		matchedOrders := orderBatch.Orders
+		clearingPrice := orderBatch.ClearingPrice
+
+		// If there's no match, ErrNoMarketPossible should have been
+		// returned, so we consider this a failure.
+		if len(matchedOrders) == 0 {
+			t.Logf("matched order set empty")
+			return false
+		}
+
+		// Check that all orders had their fixed rate satisfied by the
+		// clearing price.
+		for _, orderPair := range matchedOrders {
+			ask := orderPair.Details.Ask
+			bid := orderPair.Details.Bid
+
+			if ask.FixedRate > uint32(clearingPrice) {
+				t.Logf("clearing price of %v not "+
+					"satisfying ask rate of %v",
+					clearingPrice, ask.FixedRate)
+				return false
+			}
+
+			if bid.FixedRate < uint32(clearingPrice) {
+				t.Logf("clearing price of %v not "+
+					"satisfying bid rate of %v",
+					clearingPrice, bid.FixedRate)
+				return false
+			}
+		}
+		y++
+		return true
+	}
+	quickCfg := quick.Config{
+		Values: func(v []reflect.Value, r *rand.Rand) {
+			// When generating the random set below, we'll cap the
+			// number of orders on both sides to ensure the test
+			// completes in a timely manner.
+			randOrderSet := genRandOrderSet(r, acctDB, 1000)
+
+			v[0] = reflect.ValueOf(randOrderSet)
+		},
+	}
+	if err := quick.Check(scenario, &quickCfg); err != nil {
+		t.Fatalf("MaybeClear scenario failed: %v", err)
+	}
+
+	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
+}

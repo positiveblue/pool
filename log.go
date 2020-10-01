@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
@@ -42,6 +43,7 @@ func init() {
 	addSubLogger(order.Subsystem, order.UseLogger)
 	addSubLogger(batchtx.Subsystem, batchtx.UseLogger)
 	addSubLogger(venue.Subsystem, venue.UseLogger)
+	addSubLogger(matching.Subsystem, matching.UseLogger)
 	addSubLogger(auth.Subsystem, auth.UseLogger)
 	addSubLogger(chanenforcement.Subsystem, chanenforcement.UseLogger)
 	addSubLogger(monitoring.Subsystem, monitoring.UseLogger)
