@@ -1094,6 +1094,18 @@ func (b *BatchExecutor) executor() {
 		// state machine until either we finish the batch, or end up at
 		// the same start as before.
 		case event := <-b.venueEvents:
+			// If this is a message from a trader that's not part
+			// of this current batch (or there is no current
+			// batch), then we'll ignore it.
+			if m, ok := event.(*msgRecvEvent); ok {
+				src := m.msg.Src()
+				if !env.traderPartOfBatch(src) {
+					log.Warnf("Ignoring message from "+
+						"trader=%x, not part of batch",
+						src)
+					continue
+				}
+			}
 
 			var err error
 		out:

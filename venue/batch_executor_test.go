@@ -241,6 +241,26 @@ func (e *executorTestHarness) AssertStateTransitions(states ...ExecutionState) {
 	}
 }
 
+func (e *executorTestHarness) AssertNoStateTransition(state ExecutionState) {
+	e.t.Helper()
+
+	select {
+	case newState := <-e.store.stateTransitions:
+		e.t.Fatalf("unexpected transition to %v", newState)
+
+	case <-time.After(5 * time.Millisecond):
+	}
+
+	s, err := e.store.ExecutionState()
+	if err != nil {
+		e.t.Fatal(err)
+	}
+
+	if s != state {
+		e.t.Fatalf("in unexpected state %v", s)
+	}
+}
+
 func (e *executorTestHarness) ExpectExecutionSuccess(respChan chan *ExecutionResult) *ExecutionResult {
 	e.t.Helper()
 
@@ -928,13 +948,12 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			// error.
 			case action == invalidSig:
 				// We'll reset everything after the first
-				// invalid signature is found, leaving the
-				// second to still be processed. As a result,
-				// we expect to transition again to
-				// NoActiveBatch as we ignore all messages in
-				// the default state.
+				// invalid signature is found, going back to
+				// the NoActiveBatch state. As a result, we
+				// expect the message to be ignored, since
+				// there are no longer any active batch.
 				if !firstTrader {
-					testCtx.AssertStateTransitions(NoActiveBatch)
+					testCtx.AssertNoStateTransition(NoActiveBatch)
 					continue
 				}
 
@@ -950,12 +969,12 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			// error.
 			case action == missingChanInfo:
 				// We'll reset everything after the first
-				// missing chan info, leaving the second to
-				// still be processed. As a result, we expect
-				// to transition again to NoActiveBatch as we
-				// ignore all messages in the default state.
+				// missing chan info, going back to the
+				// NoActiveBatch state. As a result, we expect
+				// the message to be ignored, since there are
+				// no longer any active batch.
 				if !firstTrader {
-					testCtx.AssertStateTransitions(NoActiveBatch)
+					testCtx.AssertNoStateTransition(NoActiveBatch)
 					continue
 				}
 
@@ -980,10 +999,10 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 
 				// For other traders than the first and second
 				// one we expect the batch to have already
-				// failed, so we'll stay in NoActiveBatch
-				// state, ignoring all messages.
+				// failed, so we'll ignore all messages,
+				// staying in NoActiveBatch.
 				if !secondTrader {
-					testCtx.AssertStateTransitions(NoActiveBatch)
+					testCtx.AssertNoStateTransition(NoActiveBatch)
 					continue
 				}
 
