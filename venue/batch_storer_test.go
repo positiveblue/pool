@@ -44,10 +44,13 @@ var (
 var (
 	bigAcct = &account.Account{
 		TraderKeyRaw: acctIDBig,
-		Value:        1_000_000,
-		Expiry:       144,
-		State:        account.StateOpen,
-		BatchKey:     startBatchKey,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: startBatchKey,
+		},
+		Value:    1_000_000,
+		Expiry:   144,
+		State:    account.StateOpen,
+		BatchKey: startBatchKey,
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{0x01, 0x01},
 		},
@@ -58,10 +61,13 @@ var (
 
 	smallAcct = &account.Account{
 		TraderKeyRaw: acctIDSmall,
-		Value:        400_000,
-		Expiry:       144,
-		State:        account.StateOpen,
-		BatchKey:     startBatchKey,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: startBatchKey,
+		},
+		Value:    400_000,
+		Expiry:   144,
+		State:    account.StateOpen,
+		BatchKey: startBatchKey,
 		OutPoint: wire.OutPoint{
 			Hash: chainhash.Hash{0x01, 0x09},
 		},

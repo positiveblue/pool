@@ -647,8 +647,8 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 
 		testCtx.store.MasterAcct = oldMasterAccount
 		testCtx.store.Accs = map[[33]byte]*account.Account{
-			bigAcct.TraderKeyRaw:   bigAcct,
-			smallAcct.TraderKeyRaw: smallAcct,
+			bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+			smallAcct.TraderKeyRaw: smallAcct.Copy(),
 		}
 
 		// In this test, we'll have two traders which will be a part of
@@ -701,8 +701,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	masterAcct := oldMasterAccount
 	testCtx.store.MasterAcct = masterAcct
 	testCtx.store.Accs = map[[33]byte]*account.Account{
-		bigAcct.TraderKeyRaw:   bigAcct,
-		smallAcct.TraderKeyRaw: smallAcct,
+		bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+		smallAcct.TraderKeyRaw: smallAcct.Copy(),
 	}
 	for _, orderPair := range orderBatch.Orders {
 		ask := orderPair.Details.Ask
@@ -1134,8 +1134,8 @@ func TestBatchExecutorEmptyBatch(t *testing.T) {
 	masterAcct := oldMasterAccount
 	testCtx.store.MasterAcct = masterAcct
 	testCtx.store.Accs = map[[33]byte]*account.Account{
-		bigAcct.TraderKeyRaw:   bigAcct,
-		smallAcct.TraderKeyRaw: smallAcct,
+		bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+		smallAcct.TraderKeyRaw: smallAcct.Copy(),
 	}
 
 	// We'll register two traders as online. We won't actually include
