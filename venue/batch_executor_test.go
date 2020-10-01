@@ -588,7 +588,7 @@ func (e *executorTestHarness) AssertNonMatchingChannelInfoErr(exeErr error,
 	err, ok := exeErr.(*ErrNonMatchingChannelInfo)
 	if !ok {
 		e.t.Fatalf("expected ErrNonMatchingChannelInfo instead got: %T",
-			err)
+			exeErr)
 	}
 
 	if rougeTraders[0] != err.Trader1 && rougeTraders[0] != err.Trader2 {
@@ -606,8 +606,8 @@ func (e *executorTestHarness) AssertMissingChannelInfoErr(exeErr error,
 
 	err, ok := exeErr.(*ErrMissingChannelInfo)
 	if !ok {
-		e.t.Fatalf("expected ErrNonMatchingChannelInfo instead got: %T",
-			err)
+		e.t.Fatalf("expected ErrMissingChannelInfo instead got: %T",
+			exeErr)
 	}
 
 	if err.Trader != rougeTrader {
