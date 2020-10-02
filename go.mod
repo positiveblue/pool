@@ -12,7 +12,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.1-beta.0.20200901205500-5237b07a6ef5
 	github.com/lightninglabs/lndclient v0.11.0-1
-	github.com/lightninglabs/pool v0.2.3-alpha.0.20200923225837-d1294269f1f1
+	github.com/lightninglabs/pool v0.2.3-alpha.0.20201002001022-e2cd055c3085
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.11.1-beta.rc3
 	github.com/lightningnetwork/lnd/cert v1.0.3

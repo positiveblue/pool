@@ -2,9 +2,11 @@ package itest
 
 import (
 	"context"
+	"time"
 
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/stretchr/testify/require"
 )
 
 const (
@@ -43,9 +45,7 @@ func testOrderSubmission(t *harnessTest) {
 			Ask: rpcAsk,
 		},
 	})
-	if err == nil {
-		t.Fatalf("expected invalid order to fail but err was nil")
-	}
+	require.Error(t.t, err)
 
 	// Now try a correct one.
 	rpcAsk.MaxDurationBlocks = 2 * dayInBlocks
@@ -54,25 +54,19 @@ func testOrderSubmission(t *harnessTest) {
 			Ask: rpcAsk,
 		},
 	})
-	if err != nil {
-		t.Fatalf("could not submit order: %v", err)
-	}
-	if ask.GetAcceptedOrderNonce() == nil || ask.GetInvalidOrder() != nil {
-		t.Fatalf("order submission failed: %v", ask)
-	}
+	require.NoError(t.t, err)
+	require.NotNil(t.t, ask.GetAcceptedOrderNonce())
+	require.Nil(t.t, ask.GetInvalidOrder())
+	assertOrderEvents(
+		t, t.trader, ask.GetAcceptedOrderNonce(), time.Now(), 0, 0,
+	)
 
 	// Now list all orders and validate order status.
 	list, err := t.trader.ListOrders(ctx, &poolrpc.ListOrdersRequest{})
-	if err != nil {
-		t.Fatalf("could not list orders: %v", err)
-	}
-	if len(list.Asks) != 1 {
-		t.Fatalf("unexpected number of asks. got %d, expected %d",
-			len(list.Asks), 1)
-	}
-	if list.Asks[0].Details.State != poolrpc.OrderState_ORDER_SUBMITTED {
-		t.Fatalf("unexpected account state. got %v, expected %v",
-			list.Asks[0].Details.State,
-			poolrpc.OrderState_ORDER_SUBMITTED)
-	}
+	require.NoError(t.t, err)
+	require.Len(t.t, list.Asks, 1)
+	require.Equal(
+		t.t, poolrpc.OrderState_ORDER_SUBMITTED,
+		list.Asks[0].Details.State,
+	)
 }
