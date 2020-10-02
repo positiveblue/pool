@@ -1083,7 +1083,7 @@ func (b *BatchExecutor) executor() {
 	defer b.wg.Done()
 
 	var (
-		exeState ExecutionState
+		exeState = NoActiveBatch
 		env      environment
 	)
 
@@ -1094,6 +1094,18 @@ func (b *BatchExecutor) executor() {
 		// state machine until either we finish the batch, or end up at
 		// the same start as before.
 		case event := <-b.venueEvents:
+			// If this is a message from a trader that's not part
+			// of this current batch (or there is no current
+			// batch), then we'll ignore it.
+			if m, ok := event.(*msgRecvEvent); ok {
+				src := m.msg.Src()
+				if !env.traderPartOfBatch(src) {
+					log.Warnf("Ignoring message from "+
+						"trader=%x, not part of batch",
+						src)
+					continue
+				}
+			}
 
 			var err error
 		out:
@@ -1112,7 +1124,26 @@ func (b *BatchExecutor) executor() {
 
 					env.cancel()
 					env = environment{}
+
+					// Error was encountered during batch
+					// execution, go back to NoActiveBatch
+					// state.
 					exeState = NoActiveBatch
+					log.Infof("Error during batch "+
+						"execution: %v. State "+
+						"transition: %v -> %v", err,
+						priorState, exeState)
+
+					err := b.cfg.Store.UpdateExecutionState(
+						exeState,
+					)
+					if err != nil {
+						log.Errorf("unable to update "+
+							"execution state: %v",
+							err)
+						break out
+					}
+
 					break out
 				}
 
@@ -1144,8 +1175,24 @@ func (b *BatchExecutor) executor() {
 
 					env.cancel()
 					env = environment{}
-					exeState = NoActiveBatch
 
+					// Now that the batch was completed, we
+					// reset the state machine by
+					// transitioning back to NoActiveState.
+					exeState = NoActiveBatch
+					log.Infof("Batch execution completed. "+
+						"State transition: %v -> %v",
+						BatchComplete, exeState)
+
+					err := b.cfg.Store.UpdateExecutionState(
+						exeState,
+					)
+					if err != nil {
+						log.Errorf("unable to update "+
+							"execution state: %v",
+							err)
+						break out
+					}
 					break out
 				}
 			}
@@ -1156,8 +1203,6 @@ func (b *BatchExecutor) executor() {
 		case newBatch := <-b.newBatches:
 			log.Infof("New OrderBatch(id=%x)",
 				newBatch.exeCtx.BatchID)
-
-			exeState = NoActiveBatch
 
 			msgTimers := newMsgTimers(b.cfg.TraderMsgTimeout)
 			env = newEnvironment(newBatch, msgTimers)

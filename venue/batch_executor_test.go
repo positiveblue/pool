@@ -241,6 +241,26 @@ func (e *executorTestHarness) AssertStateTransitions(states ...ExecutionState) {
 	}
 }
 
+func (e *executorTestHarness) AssertNoStateTransition(state ExecutionState) {
+	e.t.Helper()
+
+	select {
+	case newState := <-e.store.stateTransitions:
+		e.t.Fatalf("unexpected transition to %v", newState)
+
+	case <-time.After(5 * time.Millisecond):
+	}
+
+	s, err := e.store.ExecutionState()
+	if err != nil {
+		e.t.Fatal(err)
+	}
+
+	if s != state {
+		e.t.Fatalf("in unexpected state %v", s)
+	}
+}
+
 func (e *executorTestHarness) ExpectExecutionSuccess(respChan chan *ExecutionResult) *ExecutionResult {
 	e.t.Helper()
 
@@ -588,7 +608,7 @@ func (e *executorTestHarness) AssertNonMatchingChannelInfoErr(exeErr error,
 	err, ok := exeErr.(*ErrNonMatchingChannelInfo)
 	if !ok {
 		e.t.Fatalf("expected ErrNonMatchingChannelInfo instead got: %T",
-			err)
+			exeErr)
 	}
 
 	if rougeTraders[0] != err.Trader1 && rougeTraders[0] != err.Trader2 {
@@ -606,8 +626,8 @@ func (e *executorTestHarness) AssertMissingChannelInfoErr(exeErr error,
 
 	err, ok := exeErr.(*ErrMissingChannelInfo)
 	if !ok {
-		e.t.Fatalf("expected ErrNonMatchingChannelInfo instead got: %T",
-			err)
+		e.t.Fatalf("expected ErrMissingChannelInfo instead got: %T",
+			exeErr)
 	}
 
 	if err.Trader != rougeTrader {
@@ -647,8 +667,8 @@ func TestBatchExecutorOfflineTradersNewBatch(t *testing.T) {
 
 		testCtx.store.MasterAcct = oldMasterAccount
 		testCtx.store.Accs = map[[33]byte]*account.Account{
-			bigAcct.TraderKeyRaw:   bigAcct,
-			smallAcct.TraderKeyRaw: smallAcct,
+			bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+			smallAcct.TraderKeyRaw: smallAcct.Copy(),
 		}
 
 		// In this test, we'll have two traders which will be a part of
@@ -701,8 +721,8 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	masterAcct := oldMasterAccount
 	testCtx.store.MasterAcct = masterAcct
 	testCtx.store.Accs = map[[33]byte]*account.Account{
-		bigAcct.TraderKeyRaw:   bigAcct,
-		smallAcct.TraderKeyRaw: smallAcct,
+		bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+		smallAcct.TraderKeyRaw: smallAcct.Copy(),
 	}
 	for _, orderPair := range orderBatch.Orders {
 		ask := orderPair.Details.Ask
@@ -805,6 +825,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 				testCtx.AssertMsgRejectErr(
 					exeErr, rejectingTrader.AccountKey,
 				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
 
 				return
 			}
@@ -830,6 +851,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			// send the message in time.
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertMsgTimeoutErr(exeErr, *slowTrader)
+			testCtx.AssertStateTransitions(NoActiveBatch)
 		}
 	}
 
@@ -916,6 +938,86 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			if action == noAction {
 				testCtx.AssertStateTransitions(BatchSigning)
 			}
+
+			firstTrader := i == 0
+			secondTrader := i == 1
+
+			switch {
+			// On the other hand, if we sent an invalid sig above, then we
+			// expect that we go to the error state, but emit a distinct
+			// error.
+			case action == invalidSig:
+				// We'll reset everything after the first
+				// invalid signature is found, going back to
+				// the NoActiveBatch state. As a result, we
+				// expect the message to be ignored, since
+				// there are no longer any active batch.
+				if !firstTrader {
+					testCtx.AssertNoStateTransition(NoActiveBatch)
+					continue
+				}
+
+				testCtx.AssertStateTransitions(BatchTempError)
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertInvalidWitnessErr(
+					exeErr, fastTraders[0].AccountKey,
+				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
+
+			// If we did not provide the required channel info above, then
+			// we expect that we go to the error state, but emit a distinct
+			// error.
+			case action == missingChanInfo:
+				// We'll reset everything after the first
+				// missing chan info, going back to the
+				// NoActiveBatch state. As a result, we expect
+				// the message to be ignored, since there are
+				// no longer any active batch.
+				if !firstTrader {
+					testCtx.AssertNoStateTransition(NoActiveBatch)
+					continue
+				}
+
+				testCtx.AssertStateTransitions(BatchTempError)
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertMissingChannelInfoErr(
+					exeErr, fastTraders[0].AccountKey,
+				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
+
+			// If we did not provide the correct channel info above, then we
+			// expect that we go to the error state, but emit a distinct
+			// error.
+			case action == invalidChanInfo:
+				// If this is the first trader, we have no chan
+				// info to match with, so we'll stay in the
+				// batch siging state.
+				if firstTrader {
+					testCtx.AssertStateTransitions(BatchSigning)
+					continue
+				}
+
+				// For other traders than the first and second
+				// one we expect the batch to have already
+				// failed, so we'll ignore all messages,
+				// staying in NoActiveBatch.
+				if !secondTrader {
+					testCtx.AssertNoStateTransition(NoActiveBatch)
+					continue
+				}
+
+				// For the second trader we'll notice the
+				// invalid chan info and the batch will fail.
+				testCtx.AssertStateTransitions(BatchTempError)
+				exeErr := testCtx.ExpectExecutionError(respChan)
+				testCtx.AssertNonMatchingChannelInfoErr(
+					exeErr, [2]matching.AccountID{
+						fastTraders[0].AccountKey,
+						fastTraders[1].AccountKey,
+					},
+				)
+				testCtx.AssertStateTransitions(NoActiveBatch)
+			}
 		}
 
 		switch {
@@ -926,6 +1028,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			testCtx.AssertStateTransitions(BatchTempError)
 			exeErr := testCtx.ExpectExecutionError(respChan)
 			testCtx.AssertMsgTimeoutErr(exeErr, *slowTrader)
+			testCtx.AssertStateTransitions(NoActiveBatch)
 
 		// If we had a rejecting trader, then we'll ensure that we go
 		// to the expected error state, and also that the rejecting
@@ -936,39 +1039,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 			testCtx.AssertMsgTimeoutErr(
 				exeErr, rejectingTrader.AccountKey,
 			)
-
-		// On the other hand, if we sent an invalid sig above, then we
-		// expect that we go to the error state, but emit a distinct
-		// error.
-		case action == invalidSig:
-			testCtx.AssertStateTransitions(BatchTempError)
-			exeErr := testCtx.ExpectExecutionError(respChan)
-			testCtx.AssertInvalidWitnessErr(
-				exeErr, fastTraders[0].AccountKey,
-			)
-
-		// If we did not provide the required channel info above, then
-		// we expect that we go to the error state, but emit a distinct
-		// error.
-		case action == missingChanInfo:
-			testCtx.AssertStateTransitions(BatchTempError)
-			exeErr := testCtx.ExpectExecutionError(respChan)
-			testCtx.AssertMissingChannelInfoErr(
-				exeErr, fastTraders[0].AccountKey,
-			)
-
-		// If we did not provide the correct channel info above, then we
-		// expect that we go to the error state, but emit a distinct
-		// error.
-		case action == invalidChanInfo:
-			testCtx.AssertStateTransitions(BatchSigning, BatchTempError)
-			exeErr := testCtx.ExpectExecutionError(respChan)
-			testCtx.AssertNonMatchingChannelInfoErr(
-				exeErr, [2]matching.AccountID{
-					fastTraders[0].AccountKey,
-					fastTraders[1].AccountKey,
-				},
-			)
+			testCtx.AssertStateTransitions(NoActiveBatch)
 		}
 	}
 
@@ -1004,12 +1075,6 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		invalidSig, nil, nil, activeSmallTrader, activeBigTrader,
 	)
 
-	// Both signatures will be invalid, but we'll reset everything after
-	// the first invalid signature is found, leaving the second to still be
-	// processed. As a result, we expect to transition again to
-	// NoActiveBatch as we ignore all messages in the default state.
-	testCtx.AssertStateTransitions(NoActiveBatch)
-
 	// Next we'll execute again (from the top), but one of the traders will
 	// send non matching channel info, this should cause us to again bail
 	// out as we can't proceed.
@@ -1019,12 +1084,6 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	stepSignToFinalize(
 		missingChanInfo, nil, nil, activeSmallTrader, activeBigTrader,
 	)
-
-	// Both signatures will be invalid, but we'll reset everything after
-	// the first invalid signature is found, leaving the second to still be
-	// processed. As a result, we expect to transition again to
-	// NoActiveBatch as we ignore all messages in the default state.
-	testCtx.AssertStateTransitions(NoActiveBatch)
 
 	// Next we'll execute again (from the top), but one of the traders will
 	// send non matching channel info, this should cause us to again bail
@@ -1055,6 +1114,7 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 	// result to be received.
 	testCtx.AssertStateTransitions(BatchComplete)
 	exeRes := testCtx.ExpectExecutionSuccess(respChan)
+	testCtx.AssertStateTransitions(NoActiveBatch)
 
 	// We'll assert that a lifetime package was created for each matched
 	// order.
@@ -1093,8 +1153,8 @@ func TestBatchExecutorEmptyBatch(t *testing.T) {
 	masterAcct := oldMasterAccount
 	testCtx.store.MasterAcct = masterAcct
 	testCtx.store.Accs = map[[33]byte]*account.Account{
-		bigAcct.TraderKeyRaw:   bigAcct,
-		smallAcct.TraderKeyRaw: smallAcct,
+		bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+		smallAcct.TraderKeyRaw: smallAcct.Copy(),
 	}
 
 	// We'll register two traders as online. We won't actually include
@@ -1121,4 +1181,156 @@ func TestBatchExecutorEmptyBatch(t *testing.T) {
 		t.Fatalf("expected batch tx to be 1 in 1 out: %v",
 			spew.Sdump(exeRes.BatchTx))
 	}
+}
+
+// TestBatchExecutorIgnoreUnknownTraders runs through a normal, succesfull
+// batch execution scenario with two involved traders, while a third
+// non-participating trader is sending messages to the executor that should not
+// be impacting our state.
+func TestBatchExecutorIgnoreUnknownTraders(t *testing.T) {
+	// First, we'll create our test harness which includes all the
+	// functionality we need to carry out our tests.
+	msgTimeout := time.Millisecond * 200
+	testCtx := newExecutorTestHarness(t, msgTimeout)
+	testCtx.Start()
+	defer testCtx.Stop()
+
+	// Before we start, we'll also insert some initial master account state
+	// that we'll need in order to proceed, and also the on-disk state of
+	// the orders.
+	masterAcct := oldMasterAccount
+	testCtx.store.MasterAcct = masterAcct
+	testCtx.store.Accs = map[[33]byte]*account.Account{
+		bigAcct.TraderKeyRaw:   bigAcct.Copy(),
+		smallAcct.TraderKeyRaw: smallAcct.Copy(),
+	}
+	for _, orderPair := range orderBatch.Orders {
+		ask := orderPair.Details.Ask
+		bid := orderPair.Details.Bid
+		testCtx.store.Orders[ask.Nonce()] = ask
+		testCtx.store.Orders[bid.Nonce()] = bid
+	}
+
+	// We'll now register both traders as online so we're able to proceed
+	// as expected.
+	testCtx.RegisterTrader(smallAcct)
+	testCtx.RegisterTrader(bigAcct)
+
+	activeSmallTrader := &ActiveTrader{
+		Trader: &smallTrader,
+	}
+	activeBigTrader := &ActiveTrader{
+		Trader: &bigTrader,
+	}
+	acceptingTraders := []*ActiveTrader{activeSmallTrader, activeBigTrader}
+
+	// We create a third trader we'll just use to send random messages that
+	// should be ignored.
+	randomTrader := &ActiveTrader{
+		Trader: &medTrader,
+	}
+
+	// We start by sending a message to the executor, which should be
+	// ignored since there is no active batch.
+	testCtx.SendAcceptMsg(randomTrader)
+	testCtx.AssertNoStateTransition(NoActiveBatch)
+
+	// Next, we'll kick things off by submitting our canned batch.
+	batch := orderBatch.Copy()
+	batchFeeRate := 2 * chainfee.FeePerKwFloor
+	respChan := testCtx.SubmitBatch(&batch, batchFeeRate)
+
+	// At this point, both of our active traders should have the
+	// prepare message sent to them.
+	testCtx.ExpectPrepareMsgForAll()
+
+	// With the prepare message sent, our message timer should
+	// start, and we should now transition to the PrepareSent
+	// stage. The first transition is for when we first go to the
+	// state, and the second will be a no-op as the state machine
+	// won't progress further.
+	testCtx.AssertStateTransitions(PrepareSent)
+	testCtx.AssertStateTransitions(PrepareSent)
+
+	// Next, we'll send the accept messages.
+	for i, fastTrader := range acceptingTraders {
+		// Before sending messages from the participating trader, send
+		// a message from the random trader that should be ignored.
+		testCtx.SendAcceptMsg(randomTrader)
+		testCtx.AssertNoStateTransition(PrepareSent)
+
+		testCtx.SendAcceptMsg(fastTrader)
+		lastTrader := i == len(acceptingTraders)-1
+
+		// If this is the last trader, and we don't have any
+		// interrupting traders, then we'll transition to
+		// BatchSigning and can exit here.
+		if lastTrader {
+			testCtx.AssertStateTransitions(BatchSigning)
+			continue
+		}
+
+		// If this isn't the last responding trader, we expect
+		// no change in the auction state.
+		testCtx.AssertStateTransitions(PrepareSent)
+	}
+
+	// Now that we're entering the BatchSigning phase, we expect
+	// that the auctioneer sends the SignBeginMsg to all active
+	// traders.
+	testCtx.ExpectSignBeginMsgForAll()
+
+	// Similar to the prior state, we expect another finalize no-op
+	// as we self-loop waiting for responses.
+	testCtx.AssertStateTransitions(BatchSigning)
+
+	// We'll now send all sig messages for all the traders.
+	batchCopy := orderBatch.Copy()
+	batchCtx := testCtx.newTestExecutionContext(
+		&batchCopy, batchFeeRate,
+	)
+	for i, fastTrader := range acceptingTraders {
+		// Check that the random trader cannot influence our state.
+		signMsg := &TraderSignMsg{
+			Trader: randomTrader,
+		}
+		if err := testCtx.executor.HandleTraderMsg(signMsg); err != nil {
+			testCtx.t.Fatalf("unable to handle msg: %v", err)
+		}
+		testCtx.AssertNoStateTransition(BatchSigning)
+
+		// Send a signature from the paricipating trader.
+		testCtx.SendSignMsg(
+			batchCtx, fastTrader, noAction,
+		)
+
+		lastTrader := i == len(acceptingTraders)-1
+
+		// If this is the last trader, then we should transition to the
+		// finalize phase.
+		if lastTrader {
+			testCtx.AssertStateTransitions(BatchFinalize)
+			continue
+		}
+
+		// Otherwise, we expect a self-loop as we wait in this
+		// state until we have all the signatures we need.
+		testCtx.AssertStateTransitions(BatchSigning)
+	}
+
+	// At this point, all parties should now receive a finalize message,
+	// which signals the completion of this batch execution.
+	testCtx.ExpectFinalizeMsgForAll()
+
+	// Once the finalize message has been sent, we expect the state machine
+	// to terminate at the BatchComplete state and a successful execution
+	// result to be received.
+	testCtx.AssertStateTransitions(BatchComplete)
+	_ = testCtx.ExpectExecutionSuccess(respChan)
+	testCtx.AssertStateTransitions(NoActiveBatch)
+
+	// Now we're back to square one. The random trader is still not
+	// welcome.
+	testCtx.SendAcceptMsg(randomTrader)
+	testCtx.AssertNoStateTransition(NoActiveBatch)
 }
