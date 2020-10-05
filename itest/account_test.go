@@ -357,7 +357,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 					Amt:                     1500000,
 					MaxBatchFeeRateSatPerKw: uint64(12500),
 				},
-				LeaseDurationBlocks: 2 * dayInBlocks,
+				LeaseDurationBlocks: 2016,
 				Version:             uint32(order.CurrentVersion),
 			},
 		},

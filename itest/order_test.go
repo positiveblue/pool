@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	dayInBlocks uint32 = 144
+	defaultOrderDuration uint32 = 2016
 )
 
 // testOrderSubmission tests that a simple ask order can be created on both the
@@ -48,7 +48,7 @@ func testOrderSubmission(t *harnessTest) {
 	require.Error(t.t, err)
 
 	// Now try a correct one.
-	rpcAsk.LeaseDurationBlocks = 2 * dayInBlocks
+	rpcAsk.LeaseDurationBlocks = 2016
 	ask, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
 			Ask: rpcAsk,

@@ -107,7 +107,7 @@ func testBatchExecution(t *harnessTest) {
 	askAmt := btcutil.Amount(1_500_000)
 	ask1Nonce, err := submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
-		2*dayInBlocks, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
@@ -119,7 +119,7 @@ func testBatchExecution(t *harnessTest) {
 	bidAmt := btcutil.Amount(800_000)
 	bid1Nonce, err := submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
-		dayInBlocks, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -133,7 +133,7 @@ func testBatchExecution(t *harnessTest) {
 	bidAmt2 := btcutil.Amount(400_000)
 	bid2Nonce, err := submitBidOrder(
 		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
-		dayInBlocks, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -144,7 +144,7 @@ func testBatchExecution(t *harnessTest) {
 	// down the trader immediately after.
 	_, err = submitBidOrder(
 		thirdTrader, account4.TraderKey, orderFixedRate, bidAmt2,
-		dayInBlocks, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -258,19 +258,19 @@ func testBatchExecution(t *harnessTest) {
 	// established.
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *firstBatchTXID,
-		charlie.PubKey, dayInBlocks,
+		charlie.PubKey, defaultOrderDuration,
 	)
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt2), *firstBatchTXID,
-		charlie.PubKey, dayInBlocks,
+		charlie.PubKey, defaultOrderDuration,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *firstBatchTXID,
-		t.trader.cfg.LndNode.PubKey, dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt2), *firstBatchTXID,
-		t.trader.cfg.LndNode.PubKey, dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 
 	// All executed orders should now have several events recorded. The ask
@@ -330,7 +330,7 @@ func testBatchExecution(t *harnessTest) {
 	// remaining Ask order that should now have zero units remaining.
 	bidAmt3 := btcutil.Amount(300_000)
 	_, err = submitBidOrder(
-		secondTrader, account2.TraderKey, 100, bidAmt3, dayInBlocks,
+		secondTrader, account2.TraderKey, 100, bidAmt3, defaultOrderDuration,
 		uint32(order.CurrentVersion),
 	)
 	if err != nil {
@@ -507,7 +507,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 		_, err := submitAskOrder(
 			t.trader, account1.TraderKey, orderFixedRate, chanAmt,
-			2*dayInBlocks, uint32(order.CurrentVersion),
+			defaultOrderDuration, uint32(order.CurrentVersion),
 		)
 		if err != nil {
 			t.Fatalf("could not submit ask order: %v", err)
@@ -515,7 +515,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 		_, err = submitBidOrder(
 			secondTrader, account2.TraderKey, orderFixedRate, chanAmt,
-			dayInBlocks, uint32(order.CurrentVersion),
+			defaultOrderDuration, uint32(order.CurrentVersion),
 		)
 		if err != nil {
 			t.Fatalf("could not submit bid order: %v", err)
@@ -581,12 +581,12 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 		chanAmt := btcutil.Amount(i+1) * baseOrderAmt
 		assertActiveChannel(
 			t, t.trader.cfg.LndNode, int64(chanAmt), *batchTXID,
-			charlie.PubKey, dayInBlocks,
+			charlie.PubKey, defaultOrderDuration,
 		)
 
 		assertActiveChannel(
 			t, charlie, int64(chanAmt), *batchTXID,
-			t.trader.cfg.LndNode.PubKey, dayInBlocks,
+			t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
 		)
 	}
 
@@ -714,7 +714,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// default trader, selling 15 units (1.5M sats) of liquidity.
 	askAmt := btcutil.Amount(1_500_000)
 	_, err = submitAskOrder(
-		t.trader, account1.TraderKey, 100, askAmt, 2*dayInBlocks,
+		t.trader, account1.TraderKey, 100, askAmt, defaultOrderDuration,
 		uint32(order.CurrentVersion),
 	)
 	if err != nil {
@@ -725,7 +725,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// liquidity. So let's submit an order for that.
 	bidAmt := btcutil.Amount(800_000)
 	_, err = submitBidOrder(
-		secondTrader, account2.TraderKey, 100, bidAmt, dayInBlocks,
+		secondTrader, account2.TraderKey, 100, bidAmt, defaultOrderDuration,
 		uint32(order.CurrentVersion),
 	)
 	if err != nil {
@@ -767,11 +767,11 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// established.
 	chanPoint := assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
-		charlie.PubKey, dayInBlocks,
+		charlie.PubKey, defaultOrderDuration,
 	)
 	_ = assertActiveChannel(
 		t, charlie, int64(bidAmt), *batchTXID,
-		t.trader.cfg.LndNode.PubKey, dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 
 	// Proceed to force close the channel from the initiator. They should be
@@ -792,7 +792,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// The trader responsible should no longer be able to modify their
 	// account or submit orders.
 	_, err = submitAskOrder(
-		t.trader, account1.TraderKey, 100, 100_000, 2*dayInBlocks,
+		t.trader, account1.TraderKey, 100, 100_000, defaultOrderDuration,
 		uint32(order.CurrentVersion),
 	)
 	if err == nil || !strings.Contains(err.Error(), "banned") {
@@ -809,7 +809,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 
 	// The offended trader should still be able to however.
 	_, err = submitAskOrder(
-		secondTrader, account2.TraderKey, 100, 100_000, 2*dayInBlocks,
+		secondTrader, account2.TraderKey, 100, 100_000, defaultOrderDuration,
 		uint32(order.CurrentVersion),
 	)
 	if err != nil {
@@ -983,7 +983,7 @@ func testConsecutiveBatches(t *harnessTest) {
 	const bid2Size = 200_000
 	const bid3Size = 300_000
 	const askRate = 20
-	const durationBlocks = 144
+	const durationBlocks = 2016
 
 	// Submit an ask an bid that matches one third of the ask.
 	_, err = submitAskOrder(
