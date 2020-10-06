@@ -51,6 +51,10 @@ type BookConfig struct {
 	// MaxDuration is the maximum value for a bid's min duration or an ask's
 	// max duration.
 	MaxDuration uint32
+
+	// DurationBuckets should point to the set of active duration buckets
+	// for this market.
+	DurationBuckets *DurationBuckets
 }
 
 // Book is the representation of the auctioneer's order book and is responsible
@@ -98,6 +102,11 @@ func (b *Book) Stop() {
 		close(b.quit)
 		b.wg.Wait()
 	})
+}
+
+// DurationBuckets returns the set of active duration buckets for this market.
+func (b *Book) DurationBuckets() *DurationBuckets {
+	return b.cfg.DurationBuckets
 }
 
 // PrepareOrder validates an incoming order and stores it to the database.
@@ -313,26 +322,45 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 
 	// Now parse the order type specific fields and validate that the
 	// account has enough balance for the requested order.
+	var leaseDuration uint32
 	switch o := srvOrder.(type) {
 	case *Ask:
-		if o.MaxDuration() < order.MinimumOrderDurationBlocks {
+		if o.LeaseDuration() < order.MinimumOrderDurationBlocks {
 			return fmt.Errorf("invalid max duration, must be at "+
 				"least %d", order.MinimumOrderDurationBlocks)
 		}
-		if o.MaxDuration() > b.cfg.MaxDuration {
+		if o.LeaseDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for max "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
 
+		leaseDuration = o.LeaseDuration()
+
 	case *Bid:
-		if o.MinDuration() < order.MinimumOrderDurationBlocks {
+		if o.LeaseDuration() < order.MinimumOrderDurationBlocks {
 			return fmt.Errorf("invalid min duration, must be at "+
 				"least %d", order.MinimumOrderDurationBlocks)
 		}
-		if o.MinDuration() > b.cfg.MaxDuration {
+		if o.LeaseDuration() > b.cfg.MaxDuration {
 			return fmt.Errorf("maximum allowed value for min "+
 				"duration is %d", b.cfg.MaxDuration)
 		}
+
+		leaseDuration = o.LeaseDuration()
+	}
+
+	// Next, we'll ensure that the duration is actual part of the current
+	// set of duration buckets, and also that this market isn't closed and
+	// is currently accepting orders.
+	//
+	// TODO(roasbeef): only attempt to enforce if non-nil?
+	marketState := b.DurationBuckets().QueryMarketState(leaseDuration)
+	switch marketState {
+	case BucketStateAcceptingOrders, BucketStateClearingMarket:
+
+	default:
+		return fmt.Errorf("bucket for duration %v is in state: %v",
+			leaseDuration, marketState)
 	}
 
 	return nil

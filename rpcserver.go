@@ -408,9 +408,10 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+		clientKit.LeaseDuration = a.LeaseDurationBlocks
+
 		clientAsk := &orderT.Ask{
-			Kit:         *clientKit,
-			MaxDuration: a.MaxDurationBlocks,
+			Kit: *clientKit,
 		}
 		o = &order.Ask{
 			Ask: *clientAsk,
@@ -425,9 +426,10 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		if err != nil {
 			return nil, err
 		}
+		clientKit.LeaseDuration = b.LeaseDurationBlocks
+
 		clientBid := &orderT.Bid{
-			Kit:         *clientKit,
-			MinDuration: b.MinDurationBlocks,
+			Kit: *clientKit,
 		}
 		o = &order.Bid{
 			Bid: *clientBid,
@@ -1291,14 +1293,25 @@ func (s *rpcServer) OrderState(ctx context.Context,
 func (s *rpcServer) Terms(_ context.Context, _ *poolrpc.TermsRequest) (
 	*poolrpc.TermsResponse, error) {
 
-	return &poolrpc.TermsResponse{
+	resp := &poolrpc.TermsResponse{
 		MaxAccountValue:        uint64(s.terms.MaxAccountValue),
 		MaxOrderDurationBlocks: s.terms.MaxOrderDuration,
 		ExecutionFee: &poolrpc.ExecutionFee{
 			BaseFee: uint64(s.terms.OrderExecBaseFee),
 			FeeRate: uint64(s.terms.OrderExecFeeRate),
 		},
-	}, nil
+		LeaseDurations: make(map[uint32]bool),
+	}
+
+	durationBuckets := s.orderBook.DurationBuckets()
+	durationBuckets.IterBuckets(func(d uint32, s order.DurationBucketState) {
+		marketOpen := (s != order.BucketStateMarketClosed &&
+			s != order.BucketStateNoMarket)
+
+		resp.LeaseDurations[d] = marketOpen
+	})
+
+	return resp, nil
 }
 
 // RelevantBatchSnapshot returns a slimmed-down snapshot of the requested batch
@@ -1561,9 +1574,9 @@ func marshallMatchedAsk(ask *order.Ask,
 
 	return &poolrpc.MatchedAsk{
 		Ask: &poolrpc.ServerAsk{
-			Details:           marshallServerOrder(ask),
-			MaxDurationBlocks: ask.MaxDuration(),
-			Version:           uint32(ask.Version),
+			Details:             marshallServerOrder(ask),
+			LeaseDurationBlocks: ask.LeaseDuration(),
+			Version:             uint32(ask.Version),
 		},
 		UnitsFilled: uint32(unitsFilled),
 	}
@@ -1575,9 +1588,9 @@ func marshallMatchedBid(bid *order.Bid,
 
 	return &poolrpc.MatchedBid{
 		Bid: &poolrpc.ServerBid{
-			Details:           marshallServerOrder(bid),
-			MinDurationBlocks: bid.MinDuration(),
-			Version:           uint32(bid.Version),
+			Details:             marshallServerOrder(bid),
+			LeaseDurationBlocks: bid.LeaseDuration(),
+			Version:             uint32(bid.Version),
 		},
 		UnitsFilled: uint32(unitsFilled),
 	}
@@ -1951,16 +1964,16 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 
 		resp.MatchedOrders[i] = &poolrpc.MatchedOrderSnapshot{
 			Ask: &poolrpc.AskSnapshot{
-				Version:           uint32(ask.Version),
-				MaxDurationBlocks: ask.MaxDuration(),
-				RateFixed:         ask.Details().FixedRate,
-				ChanType:          uint32(ask.ServerDetails().ChanType),
+				Version:             uint32(ask.Version),
+				LeaseDurationBlocks: ask.LeaseDuration(),
+				RateFixed:           ask.Details().FixedRate,
+				ChanType:            uint32(ask.ServerDetails().ChanType),
 			},
 			Bid: &poolrpc.BidSnapshot{
-				Version:           uint32(bid.Version),
-				MinDurationBlocks: bid.MinDuration(),
-				RateFixed:         bid.Details().FixedRate,
-				ChanType:          uint32(bid.ServerDetails().ChanType),
+				Version:             uint32(bid.Version),
+				LeaseDurationBlocks: bid.LeaseDuration(),
+				RateFixed:           bid.Details().FixedRate,
+				ChanType:            uint32(bid.ServerDetails().ChanType),
 			},
 			MatchingRate:     uint32(quote.MatchingRate),
 			TotalSatsCleared: uint64(quote.TotalSatsCleared),

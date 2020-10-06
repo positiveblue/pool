@@ -102,7 +102,7 @@ type Wallet interface {
 	// SendOutputs creates a transaction creating the specified set of
 	// outputs at the target fee rate.
 	SendOutputs(context.Context, []*wire.TxOut,
-		chainfee.SatPerKWeight) (*wire.MsgTx, error)
+		chainfee.SatPerKWeight, string) (*wire.MsgTx, error)
 
 	// ConfirmedWalletBalance returns the total amount of confirmed coins
 	// in the wallet.
@@ -117,7 +117,8 @@ type Wallet interface {
 	DeriveNextKey(context.Context, int32) (*keychain.KeyDescriptor, error)
 
 	// PublishTransaction attempts to publish the target transaction.
-	PublishTransaction(ctx context.Context, tx *wire.MsgTx) error
+	PublishTransaction(ctx context.Context, tx *wire.MsgTx,
+		label string) error
 
 	// EstimateFee gets a fee rate estimate for the confirmation target.
 	EstimateFee(context.Context, int32) (chainfee.SatPerKWeight, error)
@@ -488,7 +489,9 @@ func (a *Auctioneer) publishBatchTx(ctx context.Context, batchTx *wire.MsgTx,
 
 	// First, we'll publish the batch transaction, so it'll be eligible to
 	// be included in a block.
-	err := a.cfg.Wallet.PublishTransaction(ctx, batchTx)
+	err := a.cfg.Wallet.PublishTransaction(
+		ctx, batchTx, fmt.Sprintf("PoolBatch(%x", batchID[:]),
+	)
 	if err != nil {
 		return fmt.Errorf("unable to publish batch tx: %v",
 			err)
@@ -1198,6 +1201,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		tx, err := a.cfg.Wallet.SendOutputs(
 			ctxb, []*wire.TxOut{acctOutput}, feeRate,
+			"Pool Master Acct Creation",
 		)
 		if err != nil {
 			return nil, fmt.Errorf("unable to send funds to master "+
@@ -1256,6 +1260,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			genesisTx, err = a.cfg.Wallet.SendOutputs(
 				ctxb, []*wire.TxOut{output}, feeRate,
+				"Pool Master Acct Creation",
 			)
 			if err != nil {
 				return nil, fmt.Errorf("unable to send funds to master "+
@@ -1423,6 +1428,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		log.Debugf("Using fee rate %v for match making", s.batchFeeRate)
 
 		// We'll attempt to make this market.
+		//
+		// TODO(roasbeef): iterate over then clear each market based on
+		// the duration? then merge at the end? before execution?
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
 			s.batchFeeRate, accountPredicate, predicateChain,
 		)

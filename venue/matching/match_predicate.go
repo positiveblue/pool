@@ -66,7 +66,7 @@ func AskRateSmallerOrEqualPredicate(ask *order.Ask, bid *order.Bid) bool {
 // the maximum time. If the minimum for a bid is above the ask, then no match
 // can occur.
 func AskDurationGreaterOrEqualPredicate(ask *order.Ask, bid *order.Bid) bool {
-	return ask.MaxDuration() >= bid.MinDuration()
+	return ask.LeaseDuration() >= bid.LeaseDuration()
 }
 
 // TODO(roasbeef): need to consider other fields like the min accepted

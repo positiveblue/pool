@@ -170,10 +170,10 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	numUnits := genCfg.supplyUnits(r)
 	b := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *orderT.NewKit(nonce),
-			MinDuration: genCfg.leaseDuration(r),
+			Kit: *orderT.NewKit(nonce),
 		},
 	}
+	b.Bid.LeaseDuration = genCfg.leaseDuration(r)
 	b.Amt = numUnits.ToSatoshis()
 	b.Units = numUnits
 	b.UnitsUnfulfilled = numUnits
@@ -210,10 +210,10 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	numUnits := genCfg.supplyUnits(r)
 	a := &order.Ask{
 		Ask: orderT.Ask{
-			Kit:         *orderT.NewKit(nonce),
-			MaxDuration: genCfg.leaseDuration(r),
+			Kit: *orderT.NewKit(nonce),
 		},
 	}
+	a.Ask.LeaseDuration = genCfg.leaseDuration(r)
 	a.Amt = numUnits.ToSatoshis()
 	a.Units = numUnits
 	a.UnitsUnfulfilled = numUnits
@@ -334,7 +334,7 @@ func TestMatchPossibleDurationIncompatability(t *testing.T) {
 	scenario := func(testPair orderPair) bool {
 		// If the min duration of the bid is less than the min duration
 		// of an ask, then we can skip this case.
-		if testPair.Bid.MinDuration() < testPair.Ask.MaxDuration() {
+		if testPair.Bid.LeaseDuration() < testPair.Ask.LeaseDuration() {
 			n++
 			return true
 		}
@@ -1296,7 +1296,7 @@ func TestMatchingAccountNotReady(t *testing.T) {
 		r,
 		acctDB,
 		staticUnitGen(ask.Units),
-		staticDurationGen(ask.MaxDuration()),
+		staticDurationGen(ask.LeaseDuration()),
 		staticRateGen(ask.FixedRate),
 		staticAccountState(account.StatePendingOpen),
 	)

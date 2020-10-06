@@ -385,11 +385,11 @@ func (e *environment) validateChanInfo(trader matching.AccountID,
 		bidTrader, askTrader = matchingChanTrader.AccountID, trader
 		bidChanInfo, askChanInfo = matchingChanTrader.ChannelInfo, chanInfo
 		bid := matchingChanTrader.OrderOutput.Order.(*order.Bid)
-		maturityHeight = bid.MinDuration()
+		maturityHeight = bid.LeaseDuration()
 	} else {
 		bidTrader, askTrader = trader, matchingChanTrader.AccountID
 		bidChanInfo, askChanInfo = chanInfo, matchingChanTrader.ChannelInfo
-		maturityHeight = chanOutput.Order.(*order.Bid).MinDuration()
+		maturityHeight = chanOutput.Order.(*order.Bid).LeaseDuration()
 	}
 
 	bidAccountKey, err := btcec.ParsePubKey(bidTrader[:], btcec.S256())

@@ -90,7 +90,7 @@ func testManualFeeBump(t *harnessTest) {
 	askAmt := btcutil.Amount(1_500_000)
 	_, err = submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
-		2*dayInBlocks, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
@@ -101,7 +101,7 @@ func testManualFeeBump(t *harnessTest) {
 	bidAmt := btcutil.Amount(800_000)
 	_, err = submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
-		dayInBlocks, uint32(order.CurrentVersion),
+		defaultOrderDuration, uint32(order.CurrentVersion),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -219,12 +219,12 @@ func testManualFeeBump(t *harnessTest) {
 	// established.
 	assertActiveChannel(
 		t, t.trader.cfg.LndNode, int64(bidAmt), *batchTXID,
-		charlie.PubKey, dayInBlocks,
+		charlie.PubKey, defaultOrderDuration,
 	)
 
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *batchTXID,
-		t.trader.cfg.LndNode.PubKey, dayInBlocks,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 
 	// Now that we're done here, we'll close these channels to ensure that

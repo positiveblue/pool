@@ -88,8 +88,7 @@ func TestPersistBatchResult(t *testing.T) {
 	// Now store a test order.
 	o1 := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *dummyClientOrder(t, 500000),
-			MinDuration: 1337,
+			Kit: *dummyClientOrder(t, 500000, 1337),
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -253,8 +252,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	addDummyAccount(t, store)
 	o1 := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *dummyClientOrder(t, 500000),
-			MinDuration: 1337,
+			Kit: *dummyClientOrder(t, 500000, 1337),
 		},
 		Kit: *dummyOrder(t),
 	}
@@ -336,7 +334,8 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	defer cleanup()
 
 	// Create an order batch that contains dummy data.
-	clientKit := dummyClientOrder(t, 123_456)
+	askClientKit := dummyClientOrder(t, 123_456, 12345)
+	bidClientKit := dummyClientOrder(t, 123_456, 54321)
 	serverKit := dummyOrder(t)
 	trader1 := matching.Trader{
 		AccountKey: matching.AccountID{
@@ -382,15 +381,13 @@ func TestPersistBatchSnapshot(t *testing.T) {
 				Details: matching.OrderPair{
 					Ask: &order.Ask{
 						Ask: orderT.Ask{
-							Kit:         *clientKit,
-							MaxDuration: 12345,
+							Kit: *askClientKit,
 						},
 						Kit: *serverKit,
 					},
 					Bid: &order.Bid{
 						Bid: orderT.Bid{
-							Kit:         *clientKit,
-							MinDuration: 54321,
+							Kit: *bidClientKit,
 						},
 						Kit: *serverKit,
 					},

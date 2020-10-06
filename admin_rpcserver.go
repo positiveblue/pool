@@ -206,15 +206,15 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 		switch o := dbOrder.(type) {
 		case *order.Ask:
 			rpcAsks = append(rpcAsks, &poolrpc.ServerAsk{
-				Details:           marshallServerOrder(o),
-				MaxDurationBlocks: o.MaxDuration(),
-				Version:           uint32(o.Version),
+				Details:             marshallServerOrder(o),
+				LeaseDurationBlocks: o.LeaseDuration(),
+				Version:             uint32(o.Version),
 			})
 		case *order.Bid:
 			rpcBids = append(rpcBids, &poolrpc.ServerBid{
-				Details:           marshallServerOrder(o),
-				MinDurationBlocks: o.MinDuration(),
-				Version:           uint32(o.Version),
+				Details:             marshallServerOrder(o),
+				LeaseDurationBlocks: o.LeaseDuration(),
+				Version:             uint32(o.Version),
 			})
 		}
 	}
@@ -397,14 +397,14 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 
 		resp.MatchedOrders[i] = &adminrpc.AdminMatchedOrderSnapshot{
 			Ask: &poolrpc.ServerAsk{
-				Details:           marshallServerOrder(ask),
-				MaxDurationBlocks: ask.MaxDuration(),
-				Version:           uint32(ask.Version),
+				Details:             marshallServerOrder(ask),
+				LeaseDurationBlocks: ask.LeaseDuration(),
+				Version:             uint32(ask.Version),
 			},
 			Bid: &poolrpc.ServerBid{
-				Details:           marshallServerOrder(bid),
-				MinDurationBlocks: bid.MinDuration(),
-				Version:           uint32(bid.Version),
+				Details:             marshallServerOrder(bid),
+				LeaseDurationBlocks: bid.LeaseDuration(),
+				Version:             uint32(bid.Version),
 			},
 			MatchingRate:     uint32(quote.MatchingRate),
 			TotalSatsCleared: uint64(quote.TotalSatsCleared),

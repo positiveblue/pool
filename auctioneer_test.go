@@ -300,7 +300,7 @@ type mockWallet struct {
 }
 
 func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
-	_ chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+	_ chainfee.SatPerKWeight, _ string) (*wire.MsgTx, error) {
 
 	m.Lock()
 	defer m.Unlock()
@@ -336,7 +336,9 @@ func (m *mockWallet) ListTransactions(context.Context, int32, int32) (
 	return transactions, nil
 }
 
-func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {
+func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx,
+	label string) error {
+
 	m.Lock()
 	defer m.Unlock()
 
@@ -820,7 +822,7 @@ func (a *auctioneerTestHarness) SendConf(txs ...*wire.MsgTx) {
 	}
 }
 
-func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
+func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) { // nolint:dupl
 	var nonce orderT.Nonce
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("unable to read nonce: %v", err)
@@ -829,6 +831,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 	kit := orderT.NewKit(nonce)
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
+	kit.LeaseDuration = duration
 
 	var acctPrivKey [32]byte
 	if _, err := rand.Read(acctPrivKey[:]); err != nil {
@@ -839,8 +842,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 
 	return &order.Ask{
 		Ask: orderT.Ask{
-			Kit:         *kit,
-			MaxDuration: duration,
+			Kit: *kit,
 		},
 		Kit: order.Kit{
 			MultiSigKey: kit.AcctKey,
@@ -848,7 +850,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 	}, nil
 }
 
-func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
+func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) { // nolint:dupl
 	var nonce orderT.Nonce
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("unable to read nonce: %v", err)
@@ -857,6 +859,7 @@ func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
 	kit := orderT.NewKit(nonce)
 	kit.FixedRate = fixedRate
 	kit.UnitsUnfulfilled = orderT.SupplyUnit(fixedRate * duration)
+	kit.LeaseDuration = duration
 
 	var acctPrivKey [32]byte
 	if _, err := rand.Read(acctPrivKey[:]); err != nil {
@@ -867,8 +870,7 @@ func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
 
 	return &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *kit,
-			MinDuration: duration,
+			Kit: *kit,
 		},
 		Kit: order.Kit{
 			MultiSigKey: kit.AcctKey,
