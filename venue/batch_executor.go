@@ -452,7 +452,7 @@ func (b *BatchExecutor) validateTradersOnline(batch *matching.OrderBatch) error 
 // witness script as well, so the final witness can easily be fully verified.
 func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	trader *ActiveTrader, batchTx *wire.MsgTx,
-	traderAcctInput *batchtx.AcctInput) (*btcec.Signature, []byte, error) {
+	traderAcctInput *batchtx.BatchInput) (*btcec.Signature, []byte, error) {
 
 	log.Debugf("Signing account input for trader=%x", trader.AccountKey[:])
 
