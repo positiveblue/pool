@@ -134,7 +134,7 @@ type executorTestHarness struct {
 func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTestHarness {
 	store := newMockExecutorStore(t)
 	signer := &account.MockSigner{
-		PrivKey: batchPriv,
+		PrivKeys: []*btcec.PrivateKey{batchPriv},
 	}
 
 	watcher := &mockAccountWatcher{}
@@ -486,7 +486,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 	}
 
 	traderSigner := &account.MockSigner{
-		PrivKey: senderPriv,
+		PrivKeys: []*btcec.PrivateKey{senderPriv},
 	}
 	sigs, err := traderSigner.SignOutputRaw(
 		context.Background(), batchTx,

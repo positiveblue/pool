@@ -47,7 +47,9 @@ func TestAuctioneerAccountWitness(t *testing.T) {
 	spendTx.AddTxOut(acctOutput)
 
 	// Now we'll construct the witness to simulate a spend of the account.
-	signer := &MockSigner{auctioneerKey}
+	signer := &MockSigner{
+		[]*btcec.PrivateKey{auctioneerKey},
+	}
 	witness, err := acct.AccountWitness(signer, spendTx, 0)
 	if err != nil {
 		t.Fatalf("unable to generate witness: %v", err)
