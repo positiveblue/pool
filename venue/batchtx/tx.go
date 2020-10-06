@@ -30,6 +30,10 @@ func (e *ErrPoorTrader) Error() string {
 	return e.Err.Error()
 }
 
+// ErrMasterBalanceDust will be returned if a batch transaction is attempted
+// assembled where the final master account balance would become dust.
+var ErrMasterBalanceDust = fmt.Errorf("final master account balance below dust")
+
 // OrderOutput represents an executed order within the batch execution
 // transaction. In order words, this output is the created channel from a
 // bid+ask order.
@@ -511,6 +515,13 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,
 		btcutil.Amount(finalAccountBalance),
 		btcutil.Amount(finalAccountBalance)-mAccountDiff.AccountBalance)
+
+	// If the final master account balance goes below dust, the next batch
+	// cannot be executed, so we have no choice other than return a
+	// terminal error.
+	if finalAccountBalance < int64(orderT.MinNoDustAccountSize) {
+		return ErrMasterBalanceDust
+	}
 
 	// Next, we'll derive the account script for the auctioneer itself,
 	// which is the final thing we need in order to generate the batch

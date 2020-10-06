@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
@@ -783,5 +784,54 @@ func TestBatchTxPoorTrader(t *testing.T) {
 
 	if feeErr.Account != asker.TraderKeyRaw {
 		t.Fatalf("expected %x got %x", asker.TraderKeyRaw, feeErr.Account)
+	}
+}
+
+// TestBatchTransactionDustAuctioneer creates a batch where the resulting
+// auctioneer output will be dust, causing an error to be returned.
+func TestBatchTransactionDustAuctioneer(t *testing.T) {
+	t.Parallel()
+
+	// We'll just use an empty batch for this test.
+	orderBatch := &matching.OrderBatch{}
+	feeSchedule := mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	// With all our set up done, we'll now create our master account diff,
+	// then construct the batch transaction.
+	priorAccountPoint := wire.OutPoint{}
+	auctPubKey := auctioneerKey.PubKey().SerializeCompressed()
+	copy(priorAccountPoint.Hash[:], auctPubKey)
+	masterAcct := &account.Auctioneer{
+		OutPoint: priorAccountPoint,
+		Balance:  100_000,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: auctioneerKey.PubKey(),
+		},
+	}
+	batchKey := auctioneerKey.PubKey()
+
+	// Since the batch is empty, fee estimation will be performed using a
+	// 1-input, 1-output transaction.
+	var weightEstimator input.TxWeightEstimator
+	weightEstimator.AddP2WSHOutput()
+	weightEstimator.AddWitnessInput(
+		account.AuctioneerWitnessSize,
+	)
+
+	// We'll use a fee rate for batch assembly that will leave only 500
+	// sats left for the auctioneer after chain fees.
+	feeRate := chainfee.SatPerKWeight(masterAcct.Balance-500) * 1000 /
+		chainfee.SatPerKWeight(weightEstimator.Weight())
+
+	// Now execute the batch assembly using this fee rate. We expect this
+	// to fail since the master account balance is now dust.
+	_, err := NewExecutionContext(
+		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+	)
+	if err != ErrMasterBalanceDust {
+		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
 	}
 }
