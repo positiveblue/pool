@@ -767,3 +767,13 @@ func (e *ExecutionContext) BatchInput(op wire.OutPoint) (*BatchInput, bool) {
 	input, ok := e.batchInputIndex[op]
 	return input, ok
 }
+
+// ExtraInputs returns a list of extra batch inputs added by the auctioneer.
+func (e *ExecutionContext) ExtraInputs() []*BatchInput {
+	extra := make([]*BatchInput, len(e.masterIO.Inputs))
+	for i, in := range e.masterIO.Inputs {
+		prev := in.PrevOutPoint
+		extra[i] = e.batchInputIndex[prev]
+	}
+	return extra
+}

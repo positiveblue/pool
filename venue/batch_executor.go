@@ -28,6 +28,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -934,6 +935,29 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			batchTx.TxIn[inputIndex].Witness = witness
 		}
 		batchTx.TxIn[auctioneerInputIndex].Witness = auctioneerWitness
+
+		// If there were any extra inputs added to the batch
+		// transaction by the auctioneer, we'll sign these now.
+		extraInputs := make(map[int]*lnwallet.Utxo)
+		for _, in := range env.exeCtx.ExtraInputs() {
+			index := int(in.InputIndex)
+			extraInputs[index] = &lnwallet.Utxo{
+				Value:    btcutil.Amount(in.PrevOutput.Value),
+				PkScript: in.PrevOutput.PkScript,
+			}
+		}
+
+		witnesses, err := account.InputWitnesses(
+			b.cfg.Signer, batchTx, extraInputs,
+		)
+		if err != nil {
+			return 0, env, err
+		}
+
+		for index, w := range witnesses {
+			batchTx.TxIn[index].SignatureScript = w.SigScript
+			batchTx.TxIn[index].Witness = w.Witness
+		}
 
 		// We have the fully signed transaction, and can find its final
 		// weight.
