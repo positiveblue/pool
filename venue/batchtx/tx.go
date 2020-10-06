@@ -92,7 +92,7 @@ type MasterAccountState struct {
 	AuctioneerKey [33]byte
 }
 
-// AccountScript derives the auctioneer's account script
+// AccountScript derives the auctioneer's account script.
 //
 // TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;)
 func (m *MasterAccountState) AccountScript() ([]byte, error) {
@@ -102,6 +102,26 @@ func (m *MasterAccountState) AccountScript() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return m.script(batchKey)
+}
+
+// PrevAccountScript derives the auctioneer's account script for the previous
+// batch.
+func (m *MasterAccountState) PrevAccountScript() ([]byte, error) {
+	batchKey, err := btcec.ParsePubKey(
+		m.BatchKey[:], btcec.S256(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	prevBatchKey := poolscript.DecrementKey(batchKey)
+	return m.script(prevBatchKey)
+}
+
+// script derives the auctioneer's account script for the given batch key.
+func (m *MasterAccountState) script(batchKey *btcec.PublicKey) ([]byte, error) {
 	auctioneerKey, err := btcec.ParsePubKey(
 		m.AuctioneerKey[:], btcec.S256(),
 	)
