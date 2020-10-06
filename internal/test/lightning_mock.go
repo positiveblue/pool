@@ -18,6 +18,7 @@ import (
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/invoicesrpc"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/routing/route"
@@ -376,5 +377,23 @@ func (m *MockLightning) Connect(_ context.Context, peer route.Vertex,
 	host string) error {
 
 	m.Connections[peer] = host
+	return nil
+}
+
+func (m *MockLightning) GetChanInfo(ctx context.Context,
+	cid uint64) (*lndclient.ChannelEdge, error) {
+
+	return nil, nil
+}
+
+func (m *MockLightning) SubscribeChannelBackups(ctx context.Context,
+) (<-chan lnrpc.ChanBackupSnapshot, <-chan error, error) {
+
+	return nil, nil, nil
+}
+
+func (m *MockLightning) UpdateChanPolicy(ctx context.Context,
+	req lndclient.PolicyUpdateRequest, chanPoint *wire.OutPoint) error {
+
 	return nil
 }

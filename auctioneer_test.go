@@ -300,7 +300,7 @@ type mockWallet struct {
 }
 
 func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
-	_ chainfee.SatPerKWeight) (*wire.MsgTx, error) {
+	_ chainfee.SatPerKWeight, _ string) (*wire.MsgTx, error) {
 
 	m.Lock()
 	defer m.Unlock()
@@ -336,7 +336,9 @@ func (m *mockWallet) ListTransactions(context.Context, int32, int32) (
 	return transactions, nil
 }
 
-func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx) error {
+func (m *mockWallet) PublishTransaction(ctx context.Context, tx *wire.MsgTx,
+	label string) error {
+
 	m.Lock()
 	defer m.Unlock()
 
@@ -820,7 +822,7 @@ func (a *auctioneerTestHarness) SendConf(txs ...*wire.MsgTx) {
 	}
 }
 
-func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
+func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) { // nolint:dupl
 	var nonce orderT.Nonce
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("unable to read nonce: %v", err)
@@ -848,7 +850,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) {
 	}, nil
 }
 
-func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) {
+func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) { // nolint:dupl
 	var nonce orderT.Nonce
 	if _, err := rand.Read(nonce[:]); err != nil {
 		return nil, fmt.Errorf("unable to read nonce: %v", err)
