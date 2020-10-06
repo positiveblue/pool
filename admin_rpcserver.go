@@ -10,7 +10,9 @@ import (
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
@@ -21,6 +23,8 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/sweep"
 	"google.golang.org/grpc"
@@ -29,6 +33,7 @@ import (
 // adminRPCServer is a server that implements the admin server RPC interface and
 // serves administrative and super user content.
 type adminRPCServer struct {
+	network    *chaincfg.Params
 	grpcServer *grpc.Server
 
 	listener net.Listener
@@ -48,12 +53,13 @@ type adminRPCServer struct {
 }
 
 // newAdminRPCServer creates a new adminRPCServer.
-func newAdminRPCServer(mainRPCServer *rpcServer, listener net.Listener,
-	serverOpts []grpc.ServerOption, auctioneer *Auctioneer,
-	store *subastadb.EtcdStore,
+func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
+	listener net.Listener, serverOpts []grpc.ServerOption,
+	auctioneer *Auctioneer, store *subastadb.EtcdStore,
 	durationBuckets *order.DurationBuckets) *adminRPCServer {
 
 	return &adminRPCServer{
+		network:         network,
 		grpcServer:      grpc.NewServer(serverOpts...),
 		listener:        listener,
 		quit:            make(chan struct{}),
@@ -931,4 +937,109 @@ func parseRPCDurationBucketState(
 		return 0, fmt.Errorf("unknown duration bucket state: %v",
 			rpcState)
 	}
+}
+
+func (s *adminRPCServer) MoveFunds(ctx context.Context,
+	req *adminrpc.MoveFundsRequest) (*adminrpc.EmptyResponse, error) {
+
+	io := &batchtx.BatchIO{}
+
+	for _, in := range req.Inputs {
+		hash, err := chainhash.NewHash(in.Outpoint.Txid)
+		if err != nil {
+			return nil, err
+		}
+
+		pkScript, err := hex.DecodeString(in.PkScript)
+		if err != nil {
+			return nil, err
+		}
+
+		// We parse the script for this input and use it to set the
+		// correct weight estimation closure. We do it here instead of
+		// when we actually go to create the batch transaction, such
+		// that we can be sure the input is actually supported. We only
+		// support P2WKH and nested-P2WKH.
+		var weightEstimate func(*input.TxWeightEstimator) error
+
+		scriptClass := txscript.GetScriptClass(pkScript)
+		switch scriptClass {
+		case txscript.WitnessV0PubKeyHashTy:
+			weightEstimate = input.WitnessKeyHash.AddWeightEstimation
+
+		case txscript.ScriptHashTy:
+			weightEstimate = input.NestedWitnessKeyHash.AddWeightEstimation
+
+		default:
+			return nil, fmt.Errorf("unsupported script type: %v",
+				scriptClass)
+		}
+
+		io.Inputs = append(io.Inputs, &batchtx.RequestedInput{
+			PrevOutPoint: wire.OutPoint{
+				Hash:  *hash,
+				Index: in.Outpoint.OutputIndex,
+			},
+			Value:             btcutil.Amount(in.Value),
+			PkScript:          pkScript,
+			AddWeightEstimate: weightEstimate,
+		})
+
+	}
+
+	for _, out := range req.Outputs {
+		addr, err := btcutil.DecodeAddress(out.Address, s.network)
+		if err != nil {
+			return nil, err
+		}
+
+		pkScript, err := txscript.PayToAddrScript(addr)
+		if err != nil {
+			return nil, err
+		}
+
+		// Similar to what we did for inputs, we parse the output
+		// script to make sure it is among or supported types (P2WKH,
+		// P2WSH, and nested-P2WKH aka P2SH) and set the correct weight
+		// estimation closure.
+		var weightEstimate func(*input.TxWeightEstimator) error
+
+		scriptClass := txscript.GetScriptClass(pkScript)
+		switch scriptClass {
+		case txscript.WitnessV0PubKeyHashTy:
+			weightEstimate = func(w *input.TxWeightEstimator) error {
+				w.AddP2WKHOutput()
+				return nil
+			}
+
+		case txscript.WitnessV0ScriptHashTy:
+			weightEstimate = func(w *input.TxWeightEstimator) error {
+				w.AddP2WSHOutput()
+				return nil
+			}
+
+		case txscript.ScriptHashTy:
+			weightEstimate = func(w *input.TxWeightEstimator) error {
+				w.AddP2SHOutput()
+				return nil
+			}
+
+		default:
+			return nil, fmt.Errorf("unsupported script type: %v",
+				scriptClass)
+		}
+
+		io.Outputs = append(io.Outputs, &batchtx.RequestedOutput{
+			PkScript:          pkScript,
+			Value:             btcutil.Amount(out.Value),
+			AddWeightEstimate: weightEstimate,
+		})
+
+	}
+
+	if err := s.auctioneer.RequestIO(io); err != nil {
+		return nil, err
+	}
+
+	return &adminrpc.EmptyResponse{}, nil
 }

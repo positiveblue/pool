@@ -30,6 +30,7 @@ service AuctionAdmin {
     rpc ListNodeRatings (EmptyRequest) returns (ListNodeRatingsResponse);
     rpc StoreLeaseDuration (LeaseDuration) returns (EmptyResponse);
     rpc RemoveLeaseDuration (LeaseDuration) returns (EmptyResponse);
+    rpc MoveFunds(MoveFundsRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -495,4 +496,20 @@ message LeaseDuration {
     uint32 duration = 1;
     
     poolrpc.DurationBucketState bucket_state = 2;
+}
+
+message Input {
+    OutPoint outpoint = 1;
+    uint64 value = 2;
+    string pk_script = 3;
+}
+
+message Output {
+    string address = 1;
+    uint64 value = 2;
+}
+
+message MoveFundsRequest{
+    repeated Input inputs = 1;
+    repeated Output outputs = 2;
 }
