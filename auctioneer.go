@@ -298,6 +298,13 @@ type Auctioneer struct {
 	// even if it is empty.
 	feeBumpPreference *sweep.FeePreference
 
+	// batchIORequets is a channel where we'll send requests for extra
+	// inputs/outputs to add to the batch transaction.
+	batchIORequests chan *batchtx.BatchIO
+
+	// batchIOReq is the latest request for IO made. Can be nil.
+	batchIOReq *batchtx.BatchIO
+
 	// watchAccountConfOnce is used to watch for the confirmation of the
 	// master account. This is only ever really used when the system is
 	// first initialized.
@@ -378,6 +385,7 @@ func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
 		cfg:                cfg,
 		auctionEvents:      make(chan EventTrigger),
 		feeBumpRequests:    make(chan sweep.FeePreference),
+		batchIORequests:    make(chan *batchtx.BatchIO),
 		quit:               make(chan struct{}),
 		orderFeederSignals: make(chan orderFeederState),
 		removedOrders:      make(map[orderT.Nonce]struct{}),
@@ -546,6 +554,18 @@ func (a *Auctioneer) RequestBatchFeeBump(pref sweep.FeePreference) error {
 	}
 }
 
+// RequestIO lets the auctioneer specify extra inputs/outputs to be included in
+// the next batch. Note that it will override any previous requested IO.
+func (a *Auctioneer) RequestIO(io *batchtx.BatchIO) error {
+	// TODO(halseth): sanity check balances?
+	select {
+	case a.batchIORequests <- io:
+		return nil
+	case <-a.quit:
+		return fmt.Errorf("shutting down")
+	}
+}
+
 // publishBatchTx attempts to publish (or re-publish) the batch execution
 // transaction. Was confirmed, a goroutine will mark the batch as confirmed on
 // disk.
@@ -554,6 +574,8 @@ func (a *Auctioneer) publishBatchTx(ctx context.Context, batchTx *wire.MsgTx,
 
 	log.Infof("Publishing batch transaction (txid=%v) for Batch(%x)",
 		batchTx.TxHash(), batchID[:])
+
+	log.Debugf("Batch TX: %v", spew.Sdump(batchTx))
 
 	// First, we'll publish the batch transaction, so it'll be eligible to
 	// be included in a block.
@@ -927,6 +949,11 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 		case <-a.traderRejectResetTicker.Ticks():
 			log.Infof("Clearing trader reject tracking map")
 			a.cfg.TraderRejected.Clear()
+
+		// New request for batch IO came in, override what we already
+		// have, if any.
+		case req := <-a.batchIORequests:
+			a.batchIOReq = req
 
 		// A new internally/externally initiated auction event has
 		// arrived. We'll process this event, advancing our state
@@ -1606,8 +1633,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		monitoring.ObserveBatchMatchAttempt(batchID[:], true)
 
-		// TODO: add pending inputs/outputs, pass to execution context.
+		// If IO has been requested we'll provide it the the execution
+		// context. Otherwise we'll just provide an empty IO struct.
 		io := &batchtx.BatchIO{}
+		if a.batchIOReq != nil {
+			io = a.batchIOReq
+		}
 
 		// Now that we have created an eligible batch, we'll construct
 		// the execution context we need to push things forward, which
@@ -1875,6 +1906,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			a.finalizedBatch = result
 			a.feeBumpPreference = nil
+			a.batchIOReq = nil
 
 			return BatchCommitState{}, nil
 
