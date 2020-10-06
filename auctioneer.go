@@ -1653,6 +1653,22 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
 			a.cfg.FeeSchedule,
 		)
+
+		// If we had non-nil batchIO requested, it could be the reason
+		// batch assembly fails. So we retry after nilling whatever IO
+		// we have set.
+		if err != nil && a.batchIOReq != nil {
+			log.Warnf("Re-attempting batch assembly after failed "+
+				"attempt with non-nil extra IO: %v", err)
+
+			a.batchIOReq = nil
+			io = &batchtx.BatchIO{}
+			exeCtx, err = batchtx.NewExecutionContext(
+				batchKey, orderBatch, masterAcct, io,
+				s.batchFeeRate, a.cfg.FeeSchedule,
+			)
+		}
+
 		if err != nil {
 			log.Errorf("Failed creating execution context: %v", err)
 
