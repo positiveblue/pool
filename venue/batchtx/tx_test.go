@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
@@ -376,8 +377,8 @@ func TestBatchTransactionAssembly(t *testing.T) {
 	// transaction and all the relevant indexes ere constructed properly.
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
-		test.batchKey, test.orderBatch, test.masterAcct, feeRate,
-		feeSchedule,
+		test.batchKey, test.orderBatch, test.masterAcct, &BatchIO{},
+		feeRate, feeSchedule,
 	)
 	require.NoError(t, err)
 
@@ -534,7 +535,8 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	// transaction and all the relevant indexes ere constructed properly.
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
-		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate,
+		&feeSchedule,
 	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
@@ -769,7 +771,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	// size is the same as the account size).
 	feeRate := chainfee.SatPerKWeight(200)
 	_, err = NewExecutionContext(
-		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, &feeSchedule,
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -829,9 +831,141 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 	// Now execute the batch assembly using this fee rate. We expect this
 	// to fail since the master account balance is now dust.
 	_, err := NewExecutionContext(
-		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate,
+		&feeSchedule,
 	)
 	if err != ErrMasterBalanceDust {
 		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
 	}
+}
+
+// TestBatchTransactionExtraIO tests that the batch transaction created when
+// providing extra batch IO is well formed, and that the difference wne up in
+// the master account balance.
+func TestBatchTransactionExtraIO(t *testing.T) {
+	t.Parallel()
+
+	feeSchedule := &mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	test, err := setupTestBatch(feeSchedule)
+	require.NoError(t, err)
+
+	// We'll add 10 BTC extra as inputs to the batch, and 8 BTC as extra
+	// outputs.
+	extraIO := &BatchIO{
+		Inputs: []*RequestedInput{
+			{
+				PrevOutPoint: wire.OutPoint{
+					Hash:  chainhash.Hash{},
+					Index: 67,
+				},
+				Value:    5 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("aa"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHInput()
+					return nil
+				},
+			},
+			{
+				PrevOutPoint: wire.OutPoint{
+					Hash:  chainhash.Hash{},
+					Index: 68,
+				},
+				Value:    5 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("bb"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHInput()
+					return nil
+				},
+			},
+		},
+		Outputs: []*RequestedOutput{
+			{
+				Value:    3 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("aaaa"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHOutput()
+					return nil
+				},
+			},
+			{
+				Value:    3 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("bbbb"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHOutput()
+					return nil
+				},
+			},
+			{
+				Value:    2 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("cccc"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHOutput()
+					return nil
+				},
+			},
+		},
+	}
+
+	// We use a zero fee rate for simplicity. This let us easily check that
+	// the difference from the extra inputs and outputs goes to the
+	// auctioneer, since we don't have to account for chain fees.
+	feeRate := chainfee.SatPerKWeight(0)
+	batchTxCtx, err := NewExecutionContext(
+		test.batchKey, test.orderBatch, test.masterAcct, extraIO, feeRate,
+		feeSchedule,
+	)
+	require.NoError(t, err)
+
+	require.Equal(
+		t, feeRate, batchTxCtx.FeeInfoEstimate.FeeRate(),
+		"assembled tx had wrong feerate",
+	)
+
+	checkContext(t, test, batchTxCtx)
+
+	batchTx := batchTxCtx.ExeTx
+
+	// Check that we find the extra inputs and outputs on the batch
+	// transaction.
+	expectedInputs := make(map[uint32]struct{})
+	for _, in := range extraIO.Inputs {
+		expectedInputs[in.PrevOutPoint.Index] = struct{}{}
+	}
+
+	expectedOutputs := make(map[[32]byte]struct{})
+	for _, out := range extraIO.Outputs {
+		var key [32]byte
+		copy(key[:], out.PkScript)
+		expectedOutputs[key] = struct{}{}
+	}
+
+	for _, txIn := range batchTx.TxIn {
+		delete(expectedInputs, txIn.PreviousOutPoint.Index)
+	}
+
+	if len(expectedInputs) > 0 {
+		t.Fatalf("did not find all extra inputs")
+	}
+
+	for _, txOut := range batchTx.TxOut {
+		var key [32]byte
+		copy(key[:], txOut.PkScript)
+		delete(expectedOutputs, key)
+	}
+
+	if len(expectedOutputs) > 0 {
+		t.Fatalf("did not find all extra outputs")
+	}
+
+	// Finally check that the extra 2 BTC when into the master account.
+	startingBalance := test.masterAcct.Balance
+	expBal := startingBalance + 2*btcutil.SatoshiPerBitcoin +
+		test.orderBatch.FeeReport.AuctioneerFeesAccrued
+	masterBal := batchTxCtx.MasterAccountDiff.AccountBalance
+
+	require.Equal(t, expBal, masterBal, "unexpected master balance")
 }

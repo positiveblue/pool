@@ -26,12 +26,15 @@ type chainFeeEstimator struct {
 
 	// orders is the test of orders within the given batch.
 	orders []matching.MatchedOrder
+
+	// extraIO are extra inputs and outputs added to the batch.
+	extraIO *BatchIO
 }
 
 // newChainFeeEstimator creates a new instance a chainFeeEstimator for an order
 // batch.
 func newChainFeeEstimator(orders []matching.MatchedOrder,
-	feeRate chainfee.SatPerKWeight) *chainFeeEstimator {
+	feeRate chainfee.SatPerKWeight, io *BatchIO) *chainFeeEstimator {
 
 	traderChanCount := make(map[matching.AccountID]uint32)
 	for _, order := range orders {
@@ -43,6 +46,7 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 		feeRate:         feeRate,
 		traderChanCount: traderChanCount,
 		orders:          orders,
+		extraIO:         io,
 	}
 }
 
@@ -50,7 +54,7 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 // signed batch execution transaction, given the number of non-dust trader
 // outputs.
 func (c *chainFeeEstimator) EstimateBatchWeight(
-	numTraderOuts int) int64 {
+	numTraderOuts int) (int64, error) {
 
 	var weightEstimator input.TxWeightEstimator
 
@@ -82,7 +86,24 @@ func (c *chainFeeEstimator) EstimateBatchWeight(
 		account.AuctioneerWitnessSize,
 	)
 
-	return int64(weightEstimator.Weight())
+	// If there are extra inputs requested added to the batch, use the
+	// witness type to estimate the added weight.
+	for _, in := range c.extraIO.Inputs {
+		err := in.AddWeightEstimate(&weightEstimator)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	// For extra outputs we support only P2WKH and P2WSH for now.
+	for _, out := range c.extraIO.Outputs {
+		err := out.AddWeightEstimate(&weightEstimator)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return int64(weightEstimator.Weight()), nil
 }
 
 // EstimateTraderFee returns the estimate for the fee that a trader will need
@@ -105,12 +126,15 @@ func (c *chainFeeEstimator) EstimateTraderFee(acctID matching.AccountID) btcutil
 // didn't have enough left to cover its full fee.
 //
 // NOTE: This value can be negative if there's no true "surplus".
-func (c *chainFeeEstimator) AuctioneerFee(
-	traderChainFeesPaid btcutil.Amount, numTraderOuts int) btcutil.Amount {
+func (c *chainFeeEstimator) AuctioneerFee(traderChainFeesPaid btcutil.Amount,
+	numTraderOuts int) (btcutil.Amount, error) {
 
 	// To compute the total surplus fee that we need to pay as the
 	// auctioneer, we'll first compute the weight of a completed exeTx.
-	totalTxWeight := c.EstimateBatchWeight(numTraderOuts)
+	totalTxWeight, err := c.EstimateBatchWeight(numTraderOuts)
+	if err != nil {
+		return 0, err
+	}
 
 	// Get the total tx fee to pay for this weight at our fee rate.
 	txFee := c.feeRate.FeeForWeight(totalTxWeight)
@@ -129,5 +153,5 @@ func (c *chainFeeEstimator) AuctioneerFee(
 	// that we pay for all signalling data in the serialized transaction,
 	// while the traders pay only for the inputs/outputs they add to the
 	// transaction.
-	return txFee - traderChainFeesPaid
+	return txFee - traderChainFeesPaid, nil
 }

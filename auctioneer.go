@@ -1606,6 +1606,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		monitoring.ObserveBatchMatchAttempt(batchID[:], true)
 
+		// TODO: add pending inputs/outputs, pass to execution context.
+		io := &batchtx.BatchIO{}
+
 		// Now that we have created an eligible batch, we'll construct
 		// the execution context we need to push things forward, which
 		// includes the final batch execution transaction, which we
@@ -1616,7 +1619,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		}
 
 		exeCtx, err := batchtx.NewExecutionContext(
-			batchKey, orderBatch, masterAcct, s.batchFeeRate,
+			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
 			a.cfg.FeeSchedule,
 		)
 		if err != nil {

@@ -393,20 +393,6 @@ func (b *BatchExecutor) Stop() error {
 	return nil
 }
 
-// NewExecutionContext creates a new ExecutionContext which contains all the
-// information needed to execute the passed OrderBatch. The execution context
-// should later be submitted to the BatchExecutor to start the execution
-// process.
-func (b *BatchExecutor) NewExecutionContext(batchKey *btcec.PublicKey,
-	batch *matching.OrderBatch, masterAcct *account.Auctioneer,
-	batchFeeRate chainfee.SatPerKWeight, feeSchedule terms.FeeSchedule) (
-	*batchtx.ExecutionContext, error) {
-
-	return batchtx.NewExecutionContext(
-		batchKey, batch, masterAcct, batchFeeRate, feeSchedule,
-	)
-}
-
 // validateTradersOnline ensures that all the traders included in this batch
 // are currently online within the venue. If not, then the batch will be failed
 // with ErrMissingTraders.
