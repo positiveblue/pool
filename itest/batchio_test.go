@@ -5,6 +5,7 @@ import (
 	"math"
 
 	"github.com/btcsuite/btcutil"
+	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -13,7 +14,7 @@ import (
 
 // testBatchIO tests that the autcioneer can add extra inputs and outputs to
 // the batch transaction, where the delta goes to the master account.
-func testBatchIO(t *harnessTest) {
+func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
@@ -172,19 +173,30 @@ func testBatchIO(t *harnessTest) {
 		Value:   uint64(firstVal),
 	})
 
-	// Let the auctioneer add some inputs and outputs to the batch.
+	// We start by requesting movement of funds, but immediately reset it.
 	_, err = t.auctioneer.AuctionAdminClient.MoveFunds(ctx, fundsReq)
 	if err != nil {
-		t.Fatalf("could not trigger batch tick: %v", err)
+		t.Fatalf("could not trigger move funds: %v", err)
 	}
 
-	// Let's kick the auctioneer once again to try and create a batch.
-	_, batchTXIDs := executeBatch(t, 1)
-	batchTXID := batchTXIDs[0]
+	emptyReq := &adminrpc.MoveFundsRequest{}
+	_, err = t.auctioneer.AuctionAdminClient.MoveFunds(ctx, emptyReq)
+	if err != nil {
+		t.Fatalf("could not trigger move funds: %v", err)
+	}
 
-	// We'll now mine a few block to confirm the transaction and fully
-	// confirm the channel.
+	// Execute the batch, making sure no extra inputs/outputs were added.
+	batchTxs, batchTXIDs := executeBatch(t, 1)
+	batchTx := batchTxs[0]
+	batchTXID := batchTXIDs[0]
 	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Two account and one auctioneer inputs, 2 account, one auctioneer and
+	// 1 channel output.
+	if len(batchTx.TxIn) != 3 || len(batchTx.TxOut) != 4 {
+		t.Fatalf("Unexpected number of inputs/outputs: %v",
+			spew.Sdump(batchTx))
+	}
 
 	// Now that the bath has been confirmed, ensure the channel was opened
 	// as expected.
@@ -195,6 +207,49 @@ func testBatchIO(t *harnessTest) {
 
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *batchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
+	)
+
+	// Submit another bid so we also get a match in the next batch.
+	bidAmt2 := bidAmt / 2
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt2,
+	)
+	if err != nil {
+		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	// Let the auctioneer add some inputs and outputs to the batch.
+	_, err = t.auctioneer.AuctionAdminClient.MoveFunds(ctx, fundsReq)
+	if err != nil {
+		t.Fatalf("could not trigger move funds: %v", err)
+	}
+
+	// Let's kick the auctioneer once again to try and create a batch.
+	batchTxs, batchTXIDs = executeBatch(t, 1)
+	batchTXID = batchTXIDs[0]
+	batchTx = batchTxs[0]
+
+	// Two account and one auctioneer + 3 extra inputs. 2 account, one
+	// auctioneer and 1 channel + 1 extra output.
+	if len(batchTx.TxIn) != 6 || len(batchTx.TxOut) != 5 {
+		t.Fatalf("Unexpected number of inputs/outputs: %v",
+			spew.Sdump(batchTx))
+	}
+
+	// We'll now mine a few block to confirm the transaction and fully
+	// confirm the channel.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Now that the bath has been confirmed, ensure the channel was opened
+	// as expected.
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt2), *batchTXID,
+		charlie.PubKey, defaultOrderDuration,
+	)
+
+	assertActiveChannel(
+		t, charlie, int64(bidAmt2), *batchTXID,
 		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 
@@ -240,5 +295,42 @@ func testBatchIO(t *harnessTest) {
 
 	}
 
+	// We'll test the case where the admin tries to spend more out of the
+	// master account than what is left. This should lead to the batch
+	// being executed without the extra IO.
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt2,
+	)
+	if err != nil {
+		t.Fatalf("could not submit bid order: %v", err)
+	}
+
+	// We'll request the whole balance going to a new output. Obviously
+	// this will take the master account either into dust or negative,
+	// which we won't allow.
+	fundsReq = &adminrpc.MoveFundsRequest{}
+	fundsReq.Outputs = append(fundsReq.Outputs, &adminrpc.Output{
+		Address: newAddrResp.Address,
+		Value:   uint64(finalMasterAcct.Balance),
+	})
+
+	_, err = t.auctioneer.AuctionAdminClient.MoveFunds(ctx, fundsReq)
+	if err != nil {
+		t.Fatalf("could not trigger move funds: %v", err)
+	}
+
+	// Let's kick the auctioneer once again to try and create a batch.
+	batchTxs, _ = executeBatch(t, 1)
+	batchTx = batchTxs[0]
+
+	// Two account and one auctioneer inputs. 2 account, one
+	// auctioneer and 1 channel output expected.
+	if len(batchTx.TxIn) != 3 || len(batchTx.TxOut) != 4 {
+		t.Fatalf("Unexpected number of inputs/outputs: %v",
+			spew.Sdump(batchTx))
+	}
+
+	// Confirm channels and close them before we exit.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
 	closeAllChannels(ctx, t, charlie)
 }
