@@ -353,6 +353,14 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		return err
 	}
 
+	// We'll create a deep copy of the order batch that we will work with
+	// during batch tx assembly. The reason is that we'll modify the fee
+	// report with chain fees paid, which means we'll mutate the balances
+	// in the batch. If this method fails for some reason, that would lead
+	// to the order batch passed in becoming invalid for the next call.
+	c := orderBatch.Copy()
+	orderBatch = &c
+
 	// First, we'll add all the necessary inputs: for each trader involved
 	// in this batch, we reference an account input on chain, and then also
 	// add our master account input as well.
@@ -654,6 +662,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		Fee:    txFee,
 		Weight: txWeight,
 	}
+
+	// Now that batch tx assembly has finished, update the order batch in
+	// the execution context to point to our working copy with chain fees
+	// accounted for.
+	e.OrderBatch = orderBatch
 
 	// Finally, we'll construct a new account diff to be used for the
 	// _next_ execution transaction which describes the ending state of the
