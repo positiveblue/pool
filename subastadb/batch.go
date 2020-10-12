@@ -260,14 +260,92 @@ func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
 		return nil, errNotInitialized
 	}
 
-	resp, err := s.getSingleValue(
-		ctx, s.batchSnapshotKeyPath(id), errBatchSnapshotNotFound,
-	)
+	var snapshot *BatchSnapshot
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		snapshot = nil
+
+		resp := stm.Get(s.batchSnapshotKeyPath(id))
+		if resp == "" {
+			return errBatchSnapshotNotFound
+		}
+
+		var err error
+		snapshot, err = deserializeBatchSnapshot(
+			bytes.NewReader([]byte(resp)),
+		)
+		if err != nil {
+			return err
+		}
+
+		// Now that we know what's in the batch, we'll do a second pass
+		// to populate all the node tier information for each batch.
+		return s.supplementSnapshotData(stm, snapshot)
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	return deserializeBatchSnapshot(bytes.NewReader(resp.Kvs[0].Value))
+	return snapshot, nil
+}
+
+// supplementSnapshotData takes the base batch snapshot, and supplements it
+// with all the additional information that may not be stored as part of the
+// batch matched order. This includes any new order fields that may have been
+// added over time such as the min node tier.
+func (s *EtcdStore) supplementSnapshotData(stm conc.STM,
+	snapshot *BatchSnapshot) error {
+
+	// For each bid included in the snapshot, we'll fetch the extra
+	// information to obtain what node tier what associated with the bid,
+	// and then attach that to the bid itself.
+	for _, matchedOrder := range snapshot.OrderBatch.Orders {
+		// In addition to the base order, we'll also need to obtain the
+		// node tier for this order. Note that this key won't exist if
+		// it wasn't populated for the order, or if it's an Ask.
+		bidNonce := matchedOrder.Details.Bid.Nonce()
+		nodeTier, err := s.fetchMinNodeTierSTM(stm, bidNonce)
+		if err != nil {
+			return err
+		}
+
+		matchedOrder.Details.Bid.MinNodeTier = nodeTier
+	}
+
+	return nil
+}
+
+// fetchMinNodeTierSTM attempts to fetch the min node tier for a given order
+// nonce using an existing STM context.
+func (s *EtcdStore) fetchMinNodeTierSTM(stm conc.STM,
+	bidNonce orderT.Nonce) (orderT.NodeTier, error) {
+
+	nodeTierKey := s.getOrderTierKeyArchive(bidNonce)
+	orderNodeTierResp := stm.Get(nodeTierKey)
+
+	// We'll first check in our response of the set of archived orders for
+	// the node tier, if it isn't there, then we'll check in the set of
+	// active orders.
+	nodeTierBytes := []byte(orderNodeTierResp)
+	if len(nodeTierBytes) == 0 {
+		nodeTierKey := s.getOrderTierKey(bidNonce)
+		orderNodeTierResp := stm.Get(nodeTierKey)
+
+		// If we still don't have data for this order, then assume the
+		// default node tier.
+		if orderNodeTierResp == "" {
+			return orderT.NodeTierDefault, nil
+		}
+
+		nodeTierBytes = []byte(orderNodeTierResp)
+	}
+
+	var minNodeTier orderT.NodeTier
+	err := ReadElement(bytes.NewReader(nodeTierBytes), &minNodeTier)
+	if err != nil {
+		return 0, err
+	}
+
+	return minNodeTier, nil
 }
 
 // serializeBatchSnapshot binary serializes a batch snapshot by using the LN
@@ -402,6 +480,7 @@ func serializeAccountTally(w io.Writer, t *orderT.AccountTally) error {
 // deserializeBatchSnapshot reconstructs a batch snapshot from binary data in
 // the LN wire format.
 func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
+
 	var (
 		txFee            btcutil.Amount
 		b                = &matching.OrderBatch{}
@@ -448,6 +527,7 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 // deserializeMatchedOrder reconstructs a matched order from binary data in the
 // LN wire format.
 func deserializeMatchedOrder(r io.Reader) (*matching.MatchedOrder, error) {
+
 	o := &matching.MatchedOrder{}
 	asker, err := deserializeTrader(r)
 	if err != nil {
@@ -498,11 +578,11 @@ func deserializeOrderPair(r io.Reader) (*matching.OrderPair, error) {
 	if err != nil {
 		return nil, err
 	}
-	ask, err := deserializeOrder(r, askNonce)
+	ask, err := deserializeOrder(r, nil, askNonce)
 	if err != nil {
 		return nil, err
 	}
-	bid, err := deserializeOrder(r, bidNonce)
+	bid, err := deserializeOrder(r, nil, bidNonce)
 	if err != nil {
 		return nil, err
 	}

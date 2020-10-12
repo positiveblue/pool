@@ -6,6 +6,7 @@ import (
 
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/ratings"
 )
 
 var (
@@ -365,3 +366,32 @@ func (p *NodeConflictPredicate) Clear() {
 // NodeConflictTracker and MatchPredicate interface.
 var _ NodeConflictTracker = (*NodeConflictPredicate)(nil)
 var _ MatchPredicate = (*NodeConflictPredicate)(nil)
+
+// MinNodeRatingPredicate is an order matching predicate that only matches bids
+// with an ask backing node that is at or above the target mid node tier.
+type MinNodeRatingPredicate struct {
+	agency ratings.Agency
+}
+
+// NewMinNodeRatingPredicate  returns a new instance of the
+// MinNodeRatingPredicate backed by an active ratings agency.
+func NewMinNodeRatingPredicate(agency ratings.Agency) *MinNodeRatingPredicate {
+	return &MinNodeRatingPredicate{
+		agency: agency,
+	}
+}
+
+// IsMatchable returns true if this specific predicate doesn't have any
+// objection about two orders being matched. In this specific instance, we
+// require that the tier of the node backed by the ask is greater than or equal
+// to the specified min node tier.
+func (m *MinNodeRatingPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) bool {
+	askNode := ask.NodeKey
+	askNodeTier := m.agency.RateNode(askNode)
+
+	return askNodeTier >= bid.MinNodeTier
+}
+
+// A compile-time check to ensure that MinNodeRatingPredicate implements the
+// MatchPredicate interface.
+var _ MatchPredicate = (*MinNodeRatingPredicate)(nil)

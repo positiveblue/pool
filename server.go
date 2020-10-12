@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -236,6 +237,43 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("conf target must be greater than 0")
 	}
 
+	var (
+		ratingsAgency ratings.Agency
+		ratingsDB     ratings.NodeRatingsDatabase
+	)
+
+	// We'll only activate the ratings agency if it has been flipped on in
+	// the config. In contexts like testnet or regtest, we
+	if cfg.NodeRatingsActive {
+		// If no bos score rating was detected, then we'll use the pure
+		// memory database instead, which is good for testing purposes.
+		memDB := ratings.NewMemRatingsDatabase(nil, nil)
+		if cfg.BosScoreWebURL == "" {
+			log.Infof("Initializing in-memory RatingsAgency")
+
+			ratingsDB = memDB
+		} else {
+			log.Infof("Initializing BosScore backed RatingsAgency")
+
+			bosScoreWebSorce := &ratings.BosScoreWebRatings{
+				URL: cfg.BosScoreWebURL,
+			}
+			ratingsDB = ratings.NewBosScoreRatingsDatabase(
+				bosScoreWebSorce, cfg.NodeRatingsRefreshInterval,
+				memDB,
+			)
+		}
+
+		// Before we pass it off to the agency, make sure we have the
+		// latest scoring index ready.
+		if err := ratingsDB.IndexRatings(); err != nil {
+			return nil, fmt.Errorf("unable to index "+
+				"ratings: %v", err)
+		}
+
+		ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
+	}
+
 	server := &Server{
 		cfg:            cfg,
 		lnd:            lnd,
@@ -284,6 +322,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			},
 			FundingConflicts: fundingConflicts,
 			TraderRejected:   traderRejected,
+			RatingsAgency:    ratingsAgency,
 		}),
 		channelEnforcer: channelEnforcer,
 		quit:            make(chan struct{}),
@@ -356,7 +395,8 @@ func NewServer(cfg *Config) (*Server, error) {
 	auctioneerServer := newRPCServer(
 		store, lnd.Signer, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, server.auctioneer,
-		auctionTerms, grpcListener, serverOpts, cfg.SubscribeTimeout,
+		auctionTerms, ratingsAgency, ratingsDB, grpcListener, serverOpts,
+		cfg.SubscribeTimeout,
 	)
 	server.rpcServer = auctioneerServer
 

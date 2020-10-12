@@ -26,7 +26,9 @@ var (
 		},
 	}
 	node4Bid = &order.Bid{
-		Bid: orderT.Bid{},
+		Bid: orderT.Bid{
+			MinNodeTier: 9,
+		},
 		Kit: order.Kit{
 			NodeKey: node4Key,
 		},
@@ -34,6 +36,8 @@ var (
 )
 
 func TestNodeConflictPredicate(t *testing.T) {
+	t.Parallel()
+
 	// Create the predicate and add some entries to it.
 	p := NewNodeConflictPredicate()
 	p.ReportConflict(node1Key, node2Key, "FUNDING_FAILED")
@@ -61,4 +65,34 @@ func TestNodeConflictPredicate(t *testing.T) {
 	// Also make sure the match predicate works as expected.
 	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
 	assert.True(t, p.IsMatchable(node1Ask, node4Bid))
+}
+
+type agency struct {
+	resp orderT.NodeTier
+}
+
+func (a *agency) RateNode(node [33]byte) orderT.NodeTier {
+	return a.resp
+}
+
+// TestMinNodeRatingPredicate tests that two orders will only batch if the ask
+// tier is GE the specified bid node tier.
+func TestMinNodeRatingPredicate(t *testing.T) {
+	t.Parallel()
+
+	nodeAgency := &agency{}
+	predicate := NewMinNodeRatingPredicate(nodeAgency)
+
+	// As is, the bid wants a tier of 9, while the ask isn't in the agency,
+	// which should cause it to fail.
+	if predicate.IsMatchable(node1Ask, node4Bid) {
+		t.Fatalf("node tier should be incompatible")
+	}
+
+	// Now we'll bump up the rating of the node to tier 11 which should
+	// allow these two orders to be matched.
+	nodeAgency.resp = 11
+	if !predicate.IsMatchable(node1Ask, node4Bid) {
+		t.Fatalf("node tier should be compatible")
+	}
 }

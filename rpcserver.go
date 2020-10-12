@@ -31,6 +31,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -131,6 +132,10 @@ type rpcServer struct {
 
 	signer lndclient.SignerClient
 
+	ratingAgency ratings.Agency
+
+	ratingsDB ratings.NodeRatingsDatabase
+
 	bestHeight func() uint32
 
 	terms *terms.AuctioneerTerms
@@ -150,6 +155,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 	accountManager *account.Manager, bestHeight func() uint32,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
+	ratingAgency ratings.Agency, ratingsDB ratings.NodeRatingsDatabase,
 	listener net.Listener, serverOpts []grpc.ServerOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
@@ -167,6 +173,8 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
 		subscribeTimeout: subscribeTimeout,
+		ratingAgency:     ratingAgency,
+		ratingsDB:        ratingsDB,
 	}
 }
 
@@ -428,8 +436,13 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		}
 		clientKit.LeaseDuration = b.LeaseDurationBlocks
 
+		nodeTier, err := unmarshallNodeTier(b.MinNodeTier)
+		if err != nil {
+			return nil, err
+		}
 		clientBid := &orderT.Bid{
-			Kit: *clientKit,
+			Kit:         *clientKit,
+			MinNodeTier: nodeTier,
 		}
 		o = &order.Bid{
 			Bid: *clientBid,
@@ -1994,6 +2007,32 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	return resp, nil
 }
 
+// NodeRating returns node rating for a set of nodes on LN.
+func (s *rpcServer) NodeRating(ctx context.Context,
+	req *poolrpc.ServerNodeRatingRequest) (*poolrpc.ServerNodeRatingResponse, error) {
+
+	nodeRatings := make([]*poolrpc.NodeRating, 0, len(req.NodePubkeys))
+	for _, nodePub := range req.NodePubkeys {
+		var pub [33]byte
+		copy(pub[:], nodePub)
+
+		nodeTier := s.ratingAgency.RateNode(pub)
+		rpcNodeTier, err := marshallNodeTier(nodeTier)
+		if err != nil {
+			return nil, err
+		}
+
+		nodeRatings = append(nodeRatings, &poolrpc.NodeRating{
+			NodePubkey: nodePub,
+			NodeTier:   rpcNodeTier,
+		})
+	}
+
+	return &poolrpc.ServerNodeRatingResponse{
+		NodeRatings: nodeRatings,
+	}, nil
+}
+
 // parseOnionAddr parses an onion address specified in host:port format.
 func parseOnionAddr(onionAddr string) (net.Addr, error) {
 	addrHost, addrPort, err := net.SplitHostPort(onionAddr)
@@ -2013,4 +2052,42 @@ func parseOnionAddr(onionAddr string) (net.Addr, error) {
 		OnionService: addrHost,
 		Port:         portNum,
 	}, nil
+}
+
+// unmarshallNodeTier maps the RPC node tier enum to the node tier used in
+// memory.
+func unmarshallNodeTier(nodeTier poolrpc.NodeTier) (orderT.NodeTier, error) {
+	switch nodeTier {
+	// This is the boundary where we enforce our interpretation of the min
+	// node tier: clients that specify the default on the RPC layer will be
+	// mapped to our current in-memory default.
+	case poolrpc.NodeTier_TIER_DEFAULT:
+		// TODO(roasbeef): base off order version?
+		return orderT.DefaultMinNodeTier, nil
+
+	case poolrpc.NodeTier_TIER_1:
+		return orderT.NodeTier1, nil
+
+	case poolrpc.NodeTier_TIER_0:
+		return orderT.NodeTier0, nil
+
+	default:
+		return 0, fmt.Errorf("unknown node tier: %v", nodeTier)
+	}
+}
+
+// marshallNodeTier maps the node tier integer into the enum used on the RPC
+// interface.
+func marshallNodeTier(nodeTier orderT.NodeTier) (poolrpc.NodeTier, error) {
+	switch nodeTier {
+
+	case orderT.NodeTier1:
+		return poolrpc.NodeTier_TIER_1, nil
+
+	case orderT.NodeTier0:
+		return poolrpc.NodeTier_TIER_0, nil
+
+	default:
+		return 0, fmt.Errorf("unknown node tier: %v", nodeTier)
+	}
 }

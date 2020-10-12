@@ -39,6 +39,12 @@ var (
 	// order data. From the top level directory, this path is:
 	// bitcoin/clm/subasta/<network>/order.
 	orderPrefix = "order"
+
+	// orderNodeTierPrefix is the key that we'll use to store the node tier
+	// for an order, which is nested within the main order prefix. From the
+	// top-level directory, this path is:
+	//  * bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/node_tier
+	orderNodeTierKey = "node_tier"
 )
 
 // SubmitOrder submits an order to the store. If an order with the given nonce
@@ -46,7 +52,7 @@ var (
 //
 // NOTE: This is part of the Store interface.
 func (s *EtcdStore) SubmitOrder(ctx context.Context,
-	order order.ServerOrder) error {
+	newOrder order.ServerOrder) error {
 
 	if !s.initialized {
 		return errNotInitialized
@@ -54,8 +60,8 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 
 	// In order to guarantee consistency between the cache and what gets
 	// submitted to the DB, we obtain a mutex exclusive to this nonce.
-	s.nonceMtx.lock(order.Nonce())
-	defer s.nonceMtx.unlock(order.Nonce())
+	s.nonceMtx.lock(newOrder.Nonce())
+	defer s.nonceMtx.unlock(newOrder.Nonce())
 
 	// Read and update the order in an isolated STM transaction to make sure
 	// the same order cannot be created concurrently.
@@ -63,7 +69,7 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 		// First, we need to make sure no order exists for the given
 		// nonce. In STM this is signaled by an empty string being
 		// returned.
-		key := s.getKeyOrderPrefix(order.Nonce())
+		key := s.getKeyOrderPrefix(newOrder.Nonce())
 		existing := stm.Get(key)
 		if existing != "" {
 			return ErrOrderExists
@@ -72,11 +78,31 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 		// Now that we know it doesn't yet exist, serialize and store
 		// the new order.
 		var buf bytes.Buffer
-		err := serializeOrder(&buf, order)
+		err := serializeOrder(&buf, newOrder)
 		if err != nil {
 			return err
 		}
 		stm.Put(key, buf.String())
+
+		// Next, we'll write to the nested key under the main namespace
+		// that stores the node tier of an order. However, for now, we
+		// only need to write to this keyspace if this order is a Bid.
+		newBidOrder, ok := newOrder.(*order.Bid)
+		if !ok {
+			return nil
+		}
+
+		var orderTierBuf bytes.Buffer
+		err = WriteElements(
+			&orderTierBuf, newBidOrder.MinNodeTier,
+		)
+		if err != nil {
+			return err
+		}
+
+		orderTierKey := s.getOrderTierKey(newOrder.Nonce())
+		stm.Put(orderTierKey, orderTierBuf.String())
+
 		return nil
 	})
 	if err != nil {
@@ -85,7 +111,7 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 
 	// Order was successfully submitted, update cache.
 	s.activeOrdersCacheMtx.Lock()
-	s.activeOrdersCache[order.Nonce()] = order
+	s.activeOrdersCache[newOrder.Nonce()] = newOrder
 	s.activeOrdersCacheMtx.Unlock()
 
 	return nil
@@ -150,13 +176,26 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		if resp == "" {
 			return nil, ErrNoOrder
 		}
-		dbOrder, err := deserializeOrder(
-			bytes.NewReader([]byte(resp)), nonce,
-		)
 
+		// If this is a Bid, then we'll need to grab some additional
+		// auxiliary data. Note that this data might not be explicitly
+		// there for some earlier order.
+		orderNodeTierBuf := &bytes.Reader{}
+		nodeTierKey := s.getOrderTierKey(nonce)
+		orderNodeTierResp := stm.Get(nodeTierKey)
+		if orderNodeTierResp != "" {
+			orderNodeTierBuf = bytes.NewReader(
+				[]byte(orderNodeTierResp),
+			)
+		}
+
+		dbOrder, err := deserializeOrder(
+			bytes.NewReader([]byte(resp)), orderNodeTierBuf, nonce,
+		)
 		if err != nil {
 			return nil, err
 		}
+
 		for _, modifier := range modifiers[idx] {
 			modifier(dbOrder)
 		}
@@ -176,6 +215,12 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		}
 		stm.Put(key, buf.String())
 
+		if orderNodeTierResp != "" {
+			// We'll also update the node tier as well, though this
+			// is considered to be immutable data.
+			stm.Put(nodeTierKey, orderNodeTierResp)
+		}
+
 		cacheUpdates[nonce] = dbOrder
 	}
 
@@ -185,7 +230,7 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		defer s.activeOrdersCacheMtx.Unlock()
 
 		for nonce, order := range cacheUpdates {
-			// If the order now is archvied, delete it from the
+			// If the order now is archived, delete it from the
 			// cache of active orders.
 			if order.Details().State.Archived() {
 				delete(s.activeOrdersCache, nonce)
@@ -228,7 +273,20 @@ func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 	if err != nil {
 		return nil, err
 	}
-	return deserializeOrder(bytes.NewReader(resp.Kvs[0].Value), nonce)
+
+	// In addition to the base order, we'll also need to obtain the node
+	// tier for this order. Note that this key won't exist if it wasn't
+	// populated for the order, or if it's an Ask.
+	nodeTierBytes, err := fetchNodeTierBytes(ctx, s, nonce, true)
+	if err != nil {
+		return nil, err
+	}
+
+	return deserializeOrder(
+		bytes.NewReader(resp.Kvs[0].Value),
+		bytes.NewReader(nodeTierBytes),
+		nonce,
+	)
 }
 
 // GetOrders returns all non-archived orders that are currently known to the
@@ -261,19 +319,60 @@ func (s *EtcdStore) fillActiveOrdersCache(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	for key, value := range resultMap {
+	for key, baseOrderBytes := range resultMap {
+		// If this isn't just a plain order, then it'll be additional
+		// data that we stored outside the main order key. Due to the
+		// storing, we'll always get the base order key, followed by
+		// any additional columns that were added later.
+		if !isBaseOrderBytes(key) {
+			// In this case, we'll skip it given that we'll
+			// manually query the map below for the column data we
+			// need.
+			continue
+		}
+
 		nonce, err := nonceFromKey(key)
 		if err != nil {
 			return err
 		}
-		o, err := deserializeOrder(bytes.NewReader(value), nonce)
+
+		// Next, we'll need to read out any of the extra data that'll
+		// be stored using suffix of the main order key.
+		nodeTierBytes, ok := resultMap[strings.Join(
+			[]string{key, orderNodeTierKey}, keyDelimiter,
+		)]
+		if !ok {
+			// If we can't find this data, then it'll just default
+			// to what the default node tier is, and we'll pass in
+			// a set of empty bytes below to trigger that behavior.
+			log.Warnf("unable to find node tier bytes for "+
+				"order_nonce=%v", nonce)
+		}
+
+		o, err := deserializeOrder(
+			bytes.NewReader(baseOrderBytes),
+			bytes.NewReader(nodeTierBytes),
+			nonce,
+		)
 		if err != nil {
 			return err
 		}
+
 		s.activeOrdersCache[nonce] = o
 	}
 
 	return nil
+}
+
+// isBaseOrderBytes returns true if the target DB key properly matches what
+// we'd expect from a key that only stores the base order bytes. This is used
+// typically in range statements.
+func isBaseOrderBytes(dbKey string) bool {
+	keySplits := strings.Split(dbKey, keyDelimiter)
+
+	// We know it's a pure order base bytes key, if there're no extra paths
+	// in the full key.
+	return len(keySplits) == numOrderKeyParts
 }
 
 // GetArchivedOrders returns all archived orders that are currently known to the
@@ -293,12 +392,37 @@ func (s *EtcdStore) GetArchivedOrders(ctx context.Context) ([]order.ServerOrder,
 		return nil, err
 	}
 	orders := make([]order.ServerOrder, 0, len(resultMap))
-	for key, value := range resultMap {
+	for key, baseOrderBytes := range resultMap {
+		// Skip this key if it doesn't store a set of base order bytes.
+		if !isBaseOrderBytes(key) {
+			continue
+		}
+
+		// Now that we know this key stores the base border bytes,
+		// we'll extract the nonce from the key.
 		nonce, err := nonceFromKey(key)
 		if err != nil {
 			return nil, err
 		}
-		o, err := deserializeOrder(bytes.NewReader(value), nonce)
+
+		// Next, we'll need to read out any of the extra data that'll
+		// be stored using suffix of the main order key.
+		nodeTierBytes, ok := resultMap[strings.Join(
+			[]string{key, orderNodeTierKey}, keyDelimiter,
+		)]
+		if !ok {
+			// If we can't find this data, then it'll just default
+			// to what the default node tier is, and we'll pass in
+			// a set of empty bytes below to trigger that behavior.
+			log.Warnf("unable to find node tier bytes for "+
+				"order_nonce=%v", nonce)
+		}
+
+		o, err := deserializeOrder(
+			bytes.NewReader(baseOrderBytes),
+			bytes.NewReader(nodeTierBytes),
+			nonce,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -333,6 +457,51 @@ func (s *EtcdStore) getKeyOrderArchivePrefix(archive bool) string {
 	return strings.Join([]string{
 		s.getKeyPrefix(orderPrefix), strconv.FormatBool(archive),
 	}, keyDelimiter)
+}
+
+// getOrderTierKey returns the key used to store the tier of an order.
+// Currently, this key will only be populated for Bid orders.
+func (s *EtcdStore) getOrderTierKey(nonce orderT.Nonce) string {
+	// bitcoin/clm/subasta/<network>/order/<archiveFalse>/<nonce>/order_tier.
+	return strings.Join([]string{
+		s.getKeyOrderPrefix(nonce), orderNodeTierKey,
+	}, keyDelimiter)
+}
+
+// getOrderTierKeyArchive returns the key used to store the tier of an order.
+// Currently, this key will only be populated for Bid orders. This version
+// should be used to read the node tier of archived orders.
+func (s *EtcdStore) getOrderTierKeyArchive(nonce orderT.Nonce) string {
+	// bitcoin/clm/subasta/<network>/order/<archiveTrue>/<nonce>/order_tier.
+	return strings.Join([]string{
+		s.getKeyOrderPrefixArchive(nonce), orderNodeTierKey,
+	}, keyDelimiter)
+}
+
+// fetchNodeTierBytes fetches the raw bytes of a stored node tier for a given
+// order nonce and archive status.
+func fetchNodeTierBytes(ctx context.Context, s *EtcdStore, nonce orderT.Nonce,
+	archive bool) ([]byte, error) {
+
+	var nodeTierKey string
+	if archive {
+		nodeTierKey = s.getOrderTierKeyArchive(nonce)
+	} else {
+		nodeTierKey = s.getOrderTierKey(nonce)
+	}
+
+	orderNodeTierResp, err := s.getSingleValue(
+		ctx, nodeTierKey, nil,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	if orderNodeTierResp == nil {
+		return nil, nil
+	}
+
+	return orderNodeTierResp.Kvs[0].Value, nil
 }
 
 // nonceFromKey parses a whole order key and tries to extract the nonce from
@@ -382,21 +551,22 @@ func serializeOrder(w io.Writer, o order.ServerOrder) error {
 
 // deserializeOrder reconstructs an order from binary data in the LN wire
 // format.
-func deserializeOrder(r io.Reader, nonce orderT.Nonce) (order.ServerOrder,
-	error) {
+func deserializeOrder(
+	baseOrderBytes io.Reader, orderTierBytes io.Reader,
+	nonce orderT.Nonce) (order.ServerOrder, error) {
 
 	kit := &order.Kit{}
 
 	// Deserialize the client part first.
-	clientOrder, err := clientdb.DeserializeOrder(nonce, r)
+	clientOrder, err := clientdb.DeserializeOrder(nonce, baseOrderBytes)
 	if err != nil {
 		return nil, err
 	}
 
 	// We don't serialize the nonce as it's part of the etcd key already.
 	err = ReadElements(
-		r, &kit.Sig, &kit.NodeKey, &kit.NodeAddrs, &kit.ChanType,
-		&kit.Lsat, &kit.MultiSigKey,
+		baseOrderBytes, &kit.Sig, &kit.NodeKey, &kit.NodeAddrs,
+		&kit.ChanType, &kit.Lsat, &kit.MultiSigKey,
 	)
 	if err != nil {
 		return nil, err
@@ -410,6 +580,30 @@ func deserializeOrder(r io.Reader, nonce orderT.Nonce) (order.ServerOrder,
 
 	case *orderT.Bid:
 		bid := &order.Bid{Bid: *t, Kit: *kit}
+
+		if orderTierBytes == nil {
+			return bid, nil
+		}
+
+		// For bid orders, we'll also now attempt to read the extra
+		// state of the order from the orderTierBytes buffer.
+		//
+		// Existing orders may not have this value, in which case,
+		// we'll just assume the default order tier.
+		var orderNodeTier uint32
+		err := ReadElements(orderTierBytes, &orderNodeTier)
+		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+			return nil, err
+		}
+
+		// If this wasn't found in the database, then we'll assume the
+		// default value.
+		if err == io.EOF || err == io.ErrUnexpectedEOF {
+			bid.MinNodeTier = orderT.NodeTierDefault
+		} else {
+			bid.MinNodeTier = orderT.NodeTier(orderNodeTier)
+		}
+
 		return bid, nil
 
 	default:

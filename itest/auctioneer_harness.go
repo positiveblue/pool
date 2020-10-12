@@ -78,16 +78,21 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 	return &auctioneerHarness{
 		cfg: &cfg,
 		serverCfg: &subasta.Config{
-			Network:          cfg.NetParams.Name,
-			Insecure:         true,
-			FakeAuth:         true,
-			BaseDir:          cfg.BaseDir,
-			ExecFeeBase:      subasta.DefaultExecutionFeeBase,
-			ExecFeeRate:      subasta.DefaultExecutionFeeRate,
-			BatchConfTarget:  6,
-			MaxAcctValue:     btcutil.SatoshiPerBitcoin,
-			MaxDuration:      365 * 144,
-			SubscribeTimeout: 500 * time.Millisecond,
+			Network: cfg.NetParams.Name,
+			// We'll turn on node ratings, but we don't set a bos
+			// score URL. As a result, all nodes will be seen as
+			// being in the lowest tier unless we manually set
+			// their scores.
+			NodeRatingsActive: true,
+			Insecure:          true,
+			FakeAuth:          true,
+			BaseDir:           cfg.BaseDir,
+			ExecFeeBase:       subasta.DefaultExecutionFeeBase,
+			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
+			BatchConfTarget:   6,
+			MaxAcctValue:      btcutil.SatoshiPerBitcoin,
+			MaxDuration:       365 * 144,
+			SubscribeTimeout:  500 * time.Millisecond,
 			Lnd: &subasta.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,

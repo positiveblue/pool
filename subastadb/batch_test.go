@@ -387,7 +387,8 @@ func TestPersistBatchSnapshot(t *testing.T) {
 					},
 					Bid: &order.Bid{
 						Bid: orderT.Bid{
-							Kit: *bidClientKit,
+							Kit:         *bidClientKit,
+							MinNodeTier: 10,
 						},
 						Kit: *serverKit,
 					},
@@ -432,6 +433,20 @@ func TestPersistBatchSnapshot(t *testing.T) {
 			AuctioneerFeesAccrued: 1337,
 		},
 		ClearingPrice: 123,
+	}
+
+	// All the orders above also need to be inserted as normal orders to
+	// ensure we're able to retrieve all the supplemental data we need.
+	for _, order := range batch.Orders {
+		err := store.SubmitOrder(ctx, order.Details.Ask)
+		if err != nil {
+			t.Fatalf("unable to submit order: %v", err)
+		}
+
+		err = store.SubmitOrder(ctx, order.Details.Bid)
+		if err != nil {
+			t.Fatalf("unable to submit order: %v", err)
+		}
 	}
 
 	txFee := btcutil.Amount(911)

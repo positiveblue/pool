@@ -21,6 +21,7 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -227,6 +228,10 @@ type AuctioneerConfig struct {
 	// already have channels between each other. This map is reset before
 	// each new batch but survives multiple match making attempts.
 	TraderRejected *matching.NodeConflictPredicate
+
+	// RatingsAgency if non-nil, will be used as an extract matching
+	// predicate when doing match making.
+	RatingsAgency ratings.Agency
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1421,6 +1426,20 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			accountPredicate, a.cfg.FundingConflicts,
 			a.cfg.TraderRejected,
 		}
+
+		// Next, before we add the actual core matching predicate,
+		// we'll initialize the predicate for the done rating agency.
+		// This may not always be enabled in contexts like testnet for
+		// example.
+		if a.cfg.RatingsAgency != nil {
+			ratingAgencyPredicate := matching.NewMinNodeRatingPredicate(
+				a.cfg.RatingsAgency,
+			)
+			predicateChain = append(
+				predicateChain, ratingAgencyPredicate,
+			)
+		}
+
 		predicateChain = append(
 			predicateChain, matching.DefaultPredicateChain...,
 		)
