@@ -1662,6 +1662,9 @@ func parseRPCServerOrder(version uint32, details *poolrpc.ServerOrder,
 	kit.MaxBatchFeeRate = chainfee.SatPerKWeight(
 		details.MaxBatchFeeRateSatPerKw,
 	)
+	kit.MinUnitsMatch = orderT.NewSupplyFromSats(
+		btcutil.Amount(details.MinChanAmt),
+	)
 
 	// The trader must supply a nonce.
 	if nonce == orderT.ZeroNonce {
