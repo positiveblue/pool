@@ -549,23 +549,22 @@ func serializeOrder(w io.Writer, o order.ServerOrder) error {
 	)
 }
 
-// deserializeOrder reconstructs an order from binary data in the LN wire
-// format.
-func deserializeOrder(
-	baseOrderBytes io.Reader, orderTierBytes io.Reader,
-	nonce orderT.Nonce) (order.ServerOrder, error) {
+// deserializeOrder reconstructs a base order order from binary data in the LN
+// wire format without any additional order data.
+func deserializeBaseOrder(r io.Reader, nonce orderT.Nonce) (order.ServerOrder,
+	error) {
 
 	kit := &order.Kit{}
 
 	// Deserialize the client part first.
-	clientOrder, err := clientdb.DeserializeOrder(nonce, baseOrderBytes)
+	clientOrder, err := clientdb.DeserializeOrder(nonce, r)
 	if err != nil {
 		return nil, err
 	}
 
 	// We don't serialize the nonce as it's part of the etcd key already.
 	err = ReadElements(
-		baseOrderBytes, &kit.Sig, &kit.NodeKey, &kit.NodeAddrs,
+		r, &kit.Sig, &kit.NodeKey, &kit.NodeAddrs,
 		&kit.ChanType, &kit.Lsat, &kit.MultiSigKey,
 	)
 	if err != nil {
@@ -580,34 +579,53 @@ func deserializeOrder(
 
 	case *orderT.Bid:
 		bid := &order.Bid{Bid: *t, Kit: *kit}
+		return bid, nil
 
-		if orderTierBytes == nil {
-			return bid, nil
-		}
+	default:
+		return nil, fmt.Errorf("unknown order type: %v",
+			clientOrder.Type())
+	}
+}
 
+// deserializeOrder reconstructs an order from binary data in the LN wire
+// format.
+func deserializeOrder(baseOrderBytes, orderTierBytes io.Reader,
+	nonce orderT.Nonce) (order.ServerOrder, error) {
+
+	serverOrder, err := deserializeBaseOrder(baseOrderBytes, nonce)
+	if err != nil {
+		return nil, err
+	}
+
+	switch o := serverOrder.(type) {
+	case *order.Ask:
+		return o, nil
+
+	case *order.Bid:
 		// For bid orders, we'll also now attempt to read the extra
 		// state of the order from the orderTierBytes buffer.
 		//
 		// Existing orders may not have this value, in which case,
 		// we'll just assume the default order tier.
-		var orderNodeTier uint32
-		err := ReadElements(orderTierBytes, &orderNodeTier)
-		if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+		err := ReadElements(orderTierBytes, &o.MinNodeTier)
+		switch err {
+		// Successful read, return the order with the field set.
+		case nil:
+			break
+
+		// If it wasn't found in the database, then we'll assume the
+		// default value.
+		case io.EOF, io.ErrUnexpectedEOF:
+			o.MinNodeTier = orderT.NodeTierDefault
+
+		// Unexpected error, return.
+		default:
 			return nil, err
 		}
 
-		// If this wasn't found in the database, then we'll assume the
-		// default value.
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
-			bid.MinNodeTier = orderT.NodeTierDefault
-		} else {
-			bid.MinNodeTier = orderT.NodeTier(orderNodeTier)
-		}
-
-		return bid, nil
+		return o, nil
 
 	default:
-		return nil, fmt.Errorf("unknown order type: %d",
-			clientOrder.Type())
+		return nil, fmt.Errorf("unknown order type: %v", o.Type())
 	}
 }

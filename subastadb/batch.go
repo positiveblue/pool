@@ -572,17 +572,20 @@ func deserializeTrader(r io.Reader) (*matching.Trader, error) {
 
 // deserializeOrderPair reconstructs an order pair from binary data in the LN
 // wire format.
+//
+// NOTE: Orders have additional data outside of the single byte stream given to
+// this method.
 func deserializeOrderPair(r io.Reader) (*matching.OrderPair, error) {
 	var askNonce, bidNonce orderT.Nonce
 	err := ReadElements(r, &askNonce, &bidNonce)
 	if err != nil {
 		return nil, err
 	}
-	ask, err := deserializeOrder(r, nil, askNonce)
+	ask, err := deserializeBaseOrder(r, askNonce)
 	if err != nil {
 		return nil, err
 	}
-	bid, err := deserializeOrder(r, nil, bidNonce)
+	bid, err := deserializeBaseOrder(r, bidNonce)
 	if err != nil {
 		return nil, err
 	}
