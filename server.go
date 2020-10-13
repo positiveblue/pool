@@ -266,7 +266,8 @@ func NewServer(cfg *Config) (*Server, error) {
 
 		// Before we pass it off to the agency, make sure we have the
 		// latest scoring index ready.
-		if err := ratingsDB.IndexRatings(); err != nil {
+		err := ratingsDB.IndexRatings(context.Background())
+		if err != nil {
 			return nil, fmt.Errorf("unable to index "+
 				"ratings: %v", err)
 		}

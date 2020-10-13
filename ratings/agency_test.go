@@ -1,6 +1,7 @@
 package ratings
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -67,6 +68,8 @@ func closeOrFail(t *testing.T, c io.Closer) {
 func TestBosScoreRatingsDatabase(t *testing.T) {
 	t.Parallel()
 
+	ctx := context.Background()
+
 	var node1, node2, node3 [33]byte
 	copy(node1[:], nodeKey1.SerializeCompressed())
 	copy(node2[:], nodeKey2.SerializeCompressed())
@@ -100,7 +103,7 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 
 	// First, we'll kick off the indexing of the ratings for the first
 	// time.
-	err := bosScoreDB.IndexRatings()
+	err := bosScoreDB.IndexRatings(ctx)
 	require.NoError(t, err)
 
 	// We'll manually pause the ticker here to make the test a bit easier
@@ -109,26 +112,26 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 
 	// Now that the source has been indexed, we should be able to find the
 	// two nodes that we initialized the service with.
-	freshNode1Score, ok := bosScoreDB.LookupNode(node1)
+	freshNode1Score, ok := bosScoreDB.LookupNode(ctx, node1)
 	require.True(t, ok)
 	require.Equal(t, freshNode1Score, order.NodeTier1)
 
-	freshNode2Score, ok := bosScoreDB.LookupNode(node2)
+	freshNode2Score, ok := bosScoreDB.LookupNode(ctx, node2)
 	require.True(t, ok)
 	require.Equal(t, freshNode2Score, order.NodeTier1)
 
 	// The write thru DB should now also have the same data as well.
-	freshNode1Score, ok = writeThruDB.LookupNode(node1)
+	freshNode1Score, ok = writeThruDB.LookupNode(ctx, node1)
 	require.True(t, ok)
 	require.Equal(t, freshNode1Score, order.NodeTier1)
-	freshNode2Score, ok = writeThruDB.LookupNode(node2)
+	freshNode2Score, ok = writeThruDB.LookupNode(ctx, node2)
 	require.True(t, ok)
 	require.Equal(t, freshNode2Score, order.NodeTier1)
 
 	// Additionally, if we try to look up the 3rd node that isn't yet part
 	// of the list, then we should come up with a node tier of 0 (the base
 	// tier).
-	freshNode3Score, ok := bosScoreDB.LookupNode(node3)
+	freshNode3Score, ok := bosScoreDB.LookupNode(ctx, node3)
 	require.True(t, ok)
 	require.Equal(t, freshNode3Score, order.NodeTier0)
 
@@ -141,8 +144,8 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	// shows up at node tier 1.
 	err = wait.Predicate(func() bool {
 
-		freshNode3Score, _ := bosScoreDB.LookupNode(node3)
-		writeThruNode3Score, _ := writeThruDB.LookupNode(node3)
+		freshNode3Score, _ := bosScoreDB.LookupNode(ctx, node3)
+		writeThruNode3Score, _ := writeThruDB.LookupNode(ctx, node3)
 
 		return (freshNode3Score == order.NodeTier1 &&
 			writeThruNode3Score == order.NodeTier1)

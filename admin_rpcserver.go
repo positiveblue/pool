@@ -614,7 +614,7 @@ func (s *adminRPCServer) ModifyNodeRatings(ctx context.Context,
 	copy(pub[:], req.NodeKey)
 
 	err := s.mainRPCServer.ratingsDB.ModifyNodeRating(
-		pub, orderT.NodeTier(req.NewNodeTier),
+		ctx, pub, orderT.NodeTier(req.NewNodeTier),
 	)
 	if err != nil {
 		return nil, err
