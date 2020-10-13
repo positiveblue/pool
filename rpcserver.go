@@ -2016,7 +2016,11 @@ func (s *rpcServer) NodeRating(ctx context.Context,
 		var pub [33]byte
 		copy(pub[:], nodePub)
 
-		nodeTier := s.ratingAgency.RateNode(pub)
+		nodeTier := orderT.DefaultMinNodeTier
+		if s.ratingAgency != nil {
+			nodeTier = s.ratingAgency.RateNode(pub)
+		}
+
 		rpcNodeTier, err := marshallNodeTier(nodeTier)
 		if err != nil {
 			return nil, err
