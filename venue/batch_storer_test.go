@@ -98,7 +98,7 @@ var (
 
 	ask = &order.Ask{
 		Ask: orderT.Ask{
-			Kit: newClientKit(orderT.Nonce{0x01}, 4),
+			Kit: newClientKit(orderT.Nonce{0x01}, 4, 1),
 		},
 		Kit: order.Kit{
 			MultiSigKey: batchID,
@@ -107,7 +107,7 @@ var (
 
 	bid1 = &order.Bid{
 		Bid: orderT.Bid{
-			Kit: newClientKit(orderT.Nonce{0x02}, 2),
+			Kit: newClientKit(orderT.Nonce{0x02}, 3, 1),
 		},
 		Kit: order.Kit{
 			MultiSigKey: acctIDSmall,
@@ -116,7 +116,7 @@ var (
 
 	bid2 = &order.Bid{
 		Bid: orderT.Bid{
-			Kit: newClientKit(orderT.Nonce{0x03}, 8),
+			Kit: newClientKit(orderT.Nonce{0x03}, 3, 2),
 		},
 		Kit: order.Kit{
 			MultiSigKey: acctIDBig,
@@ -241,21 +241,21 @@ func TestBatchStorer(t *testing.T) {
 		t.Fatalf("invalid units unfulfilled, got %d wanted %d",
 			ask.UnitsUnfulfilled, 0)
 	}
-	if bid1.State != orderT.StateExecuted {
-		t.Fatalf("invalid order state, got %d wanted %d",
-			bid1.State, orderT.StateExecuted)
+	if bid1.State != orderT.StatePartiallyFilled {
+		t.Fatalf("invalid order state, got %v wanted %v",
+			bid1.State, orderT.StatePartiallyFilled)
 	}
-	if bid1.UnitsUnfulfilled != 0 {
+	if bid1.UnitsUnfulfilled != 1 {
 		t.Fatalf("invalid units unfulfilled, got %d wanted %d",
-			bid1.UnitsUnfulfilled, 0)
+			bid1.UnitsUnfulfilled, 1)
 	}
-	if bid2.State != orderT.StatePartiallyFilled {
+	if bid2.State != orderT.StateExecuted {
 		t.Fatalf("invalid order state, got %d wanted %d",
-			bid2.State, orderT.StatePartiallyFilled)
+			bid2.State, orderT.StateExecuted)
 	}
-	if bid2.UnitsUnfulfilled != 6 {
+	if bid2.UnitsUnfulfilled != 1 {
 		t.Fatalf("invalid units unfulfilled, got %d wanted %d",
-			bid2.UnitsUnfulfilled, 6)
+			bid2.UnitsUnfulfilled, 1)
 	}
 
 	// Check the account states next.
@@ -306,16 +306,17 @@ func TestBatchStorer(t *testing.T) {
 	}
 }
 
-func newClientKit(nonce orderT.Nonce, units orderT.SupplyUnit) orderT.Kit {
+func newClientKit(nonce orderT.Nonce, units, minUnitsMatch orderT.SupplyUnit) orderT.Kit {
 	kit := orderT.NewKit(nonce)
 	kit.Units = units
 	kit.UnitsUnfulfilled = units
+	kit.MinUnitsMatch = minUnitsMatch
 	kit.State = orderT.StateSubmitted
 	return *kit
 }
 
 func init() {
 	ask.UnitsUnfulfilled = 0
-	bid1.UnitsUnfulfilled = 0
-	bid2.UnitsUnfulfilled = 6
+	bid1.UnitsUnfulfilled = 1
+	bid2.UnitsUnfulfilled = 1
 }
