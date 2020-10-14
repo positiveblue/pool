@@ -211,10 +211,16 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				Version:             uint32(o.Version),
 			})
 		case *order.Bid:
+			nodeTier, err := marshallNodeTier(o.MinNodeTier)
+			if err != nil {
+				return nil, err
+			}
+
 			rpcBids = append(rpcBids, &poolrpc.ServerBid{
 				Details:             marshallServerOrder(o),
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
+				MinNodeTier:         nodeTier,
 			})
 		}
 	}
