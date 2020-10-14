@@ -355,6 +355,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 					TraderKey:               open.TraderKey,
 					RateFixed:               100,
 					Amt:                     1500000,
+					MinUnitsMatch:           1,
 					MaxBatchFeeRateSatPerKw: uint64(12500),
 				},
 				LeaseDurationBlocks: 2016,

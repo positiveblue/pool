@@ -262,17 +262,13 @@ func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
 
 	var snapshot *BatchSnapshot
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
-		snapshot = nil
-
 		resp := stm.Get(s.batchSnapshotKeyPath(id))
 		if resp == "" {
 			return errBatchSnapshotNotFound
 		}
 
 		var err error
-		snapshot, err = deserializeBatchSnapshot(
-			bytes.NewReader([]byte(resp)),
-		)
+		snapshot, err = deserializeBatchSnapshot(strings.NewReader(resp))
 		if err != nil {
 			return err
 		}
@@ -305,10 +301,23 @@ func (s *EtcdStore) supplementSnapshotData(stm conc.STM,
 		bidNonce := matchedOrder.Details.Bid.Nonce()
 		nodeTier, err := s.fetchMinNodeTierSTM(stm, bidNonce)
 		if err != nil {
-			return err
+			return fmt.Errorf("node tier: %v", err)
 		}
-
 		matchedOrder.Details.Bid.MinNodeTier = nodeTier
+
+		// We'll also obtain the min units match for both orders.
+		askNonce := matchedOrder.Details.Ask.Nonce()
+		askMinUnitsMatch, err := s.fetchMinUnitsMatchSTM(stm, askNonce)
+		if err != nil {
+			return fmt.Errorf("ask min units match: %v", err)
+		}
+		matchedOrder.Details.Ask.MinUnitsMatch = askMinUnitsMatch
+
+		bidMinUnitsMatch, err := s.fetchMinUnitsMatchSTM(stm, bidNonce)
+		if err != nil {
+			return fmt.Errorf("bid min units match: %v", err)
+		}
+		matchedOrder.Details.Bid.MinUnitsMatch = bidMinUnitsMatch
 	}
 
 	return nil
@@ -319,33 +328,63 @@ func (s *EtcdStore) supplementSnapshotData(stm conc.STM,
 func (s *EtcdStore) fetchMinNodeTierSTM(stm conc.STM,
 	bidNonce orderT.Nonce) (orderT.NodeTier, error) {
 
-	nodeTierKey := s.getOrderTierKeyArchive(bidNonce)
-	orderNodeTierResp := stm.Get(nodeTierKey)
+	// Since we don't know the state of the order, we'll need to check both
+	// possible branches (archived vs active).
+	nodeTierKey := s.getOrderTierKey(false, bidNonce)
+	nodeTierResp := stm.Get(nodeTierKey)
 
-	// We'll first check in our response of the set of archived orders for
-	// the node tier, if it isn't there, then we'll check in the set of
-	// active orders.
-	nodeTierBytes := []byte(orderNodeTierResp)
-	if len(nodeTierBytes) == 0 {
-		nodeTierKey := s.getOrderTierKey(bidNonce)
-		orderNodeTierResp := stm.Get(nodeTierKey)
+	// If the order has been archived, we'll check for that branch.
+	if nodeTierResp == "" {
+		nodeTierKey = s.getOrderTierKey(true, bidNonce)
+		nodeTierResp = stm.Get(nodeTierKey)
 
-		// If we still don't have data for this order, then assume the
-		// default node tier.
-		if orderNodeTierResp == "" {
+		// If the value still hasn't been found, then this is an old
+		// order that was not aware of the value, so we'll fall back to
+		// the default.
+		if nodeTierResp == "" {
 			return orderT.NodeTierDefault, nil
 		}
-
-		nodeTierBytes = []byte(orderNodeTierResp)
 	}
 
 	var minNodeTier orderT.NodeTier
-	err := ReadElement(bytes.NewReader(nodeTierBytes), &minNodeTier)
+	err := ReadElement(strings.NewReader(nodeTierResp), &minNodeTier)
 	if err != nil {
 		return 0, err
 	}
 
 	return minNodeTier, nil
+}
+
+// fetchMinUnitsMatchSTM attempts to fetch the min units match for a given order
+// nonce using an existing STM context.
+func (s *EtcdStore) fetchMinUnitsMatchSTM(stm conc.STM,
+	nonce orderT.Nonce) (orderT.SupplyUnit, error) {
+
+	// Since we don't know the state of the order, we'll need to check both
+	// possible branches (archived vs active).
+	minUnitsMatchKey := s.getOrderMinUnitsMatchKey(false, nonce)
+	minUnitsMatchResp := stm.Get(minUnitsMatchKey)
+
+	// If the order has been archived, we'll check for that branch.
+	if minUnitsMatchResp == "" {
+		minUnitsMatchKey = s.getOrderMinUnitsMatchKey(true, nonce)
+		minUnitsMatchResp = stm.Get(minUnitsMatchKey)
+
+		// If the value still hasn't been found, then this is an old
+		// order that was not aware of the value, so we'll fall back to
+		// the default.
+		if minUnitsMatchResp == "" {
+			return 1, nil
+		}
+	}
+
+	var minUnitsMatch orderT.SupplyUnit
+	err := ReadElement(strings.NewReader(minUnitsMatchResp), &minUnitsMatch)
+	if err != nil {
+		return 0, err
+	}
+
+	return minUnitsMatch, nil
 }
 
 // serializeBatchSnapshot binary serializes a batch snapshot by using the LN
@@ -572,17 +611,20 @@ func deserializeTrader(r io.Reader) (*matching.Trader, error) {
 
 // deserializeOrderPair reconstructs an order pair from binary data in the LN
 // wire format.
+//
+// NOTE: Orders have additional data outside of the single byte stream given to
+// this method.
 func deserializeOrderPair(r io.Reader) (*matching.OrderPair, error) {
 	var askNonce, bidNonce orderT.Nonce
 	err := ReadElements(r, &askNonce, &bidNonce)
 	if err != nil {
 		return nil, err
 	}
-	ask, err := deserializeOrder(r, nil, askNonce)
+	ask, err := deserializeBaseOrder(r, askNonce)
 	if err != nil {
 		return nil, err
 	}
-	bid, err := deserializeOrder(r, nil, bidNonce)
+	bid, err := deserializeBaseOrder(r, bidNonce)
 	if err != nil {
 		return nil, err
 	}

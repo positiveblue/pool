@@ -65,6 +65,18 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 		askSupply = askRemainder
 	}
 
+	// We create a new slice to prevent potentially modifying the underlying
+	// predicate chain found within the matchmaker.
+	//
+	// https://golang.org/pkg/builtin/#append
+	predicateChain := []MatchPredicate{
+		MinPartialMatchPredicate{
+			BidSupply: bidSupply,
+			AskSupply: askSupply,
+		},
+	}
+	predicateChain = append(predicateChain, m.predicateChain...)
+
 	// TODO(roasbeef): need to factor in the TIME as well
 	//  * just need sanity check for compat? will need zip based ordering
 	//    in the end then?
@@ -75,7 +87,7 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	// there is no market to be made. Most of this logic is implemented in
 	// predicates, only the parts that require more information than just
 	// the two orders are implemented here directly.
-	if !ChainMatches(ask, bid, m.predicateChain...) {
+	if !ChainMatches(ask, bid, predicateChain...) {
 		return NullQuote, false
 	}
 

@@ -274,6 +274,7 @@ func dummyClientOrder(t *testing.T, amt btcutil.Amount,
 	kit.Amt = amt
 	kit.Units = orderT.NewSupplyFromSats(amt)
 	kit.UnitsUnfulfilled = kit.Units
+	kit.MinUnitsMatch = 1
 	kit.MultiSigKeyLocator = keychain.KeyLocator{Index: 1, Family: 2}
 	kit.MaxBatchFeeRate = chainfee.FeePerKwFloor
 	kit.LeaseDuration = leaseDuration

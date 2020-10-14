@@ -135,6 +135,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -153,6 +154,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    0,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -171,6 +173,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    143,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -189,6 +192,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1235,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -207,6 +211,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    0,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -225,6 +230,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    143,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -243,6 +249,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -261,6 +268,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1235,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -279,6 +287,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  0,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -297,6 +306,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor - 1,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -315,6 +325,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -333,6 +344,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    145,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -351,6 +363,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -370,6 +383,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -388,6 +402,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -418,6 +433,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
+						MinUnitsMatch:    1,
 					},
 				},
 			}
@@ -450,6 +466,7 @@ func TestBookPrepareOrder(t *testing.T) {
 							AcctKey:          toRawKey(testAuctioneerKey),
 							MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 							LeaseDuration:    1024,
+							MinUnitsMatch:    1,
 						},
 					},
 				}

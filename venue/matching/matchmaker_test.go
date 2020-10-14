@@ -415,6 +415,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 				staticRateGen(1000),
 				staticUnitGen(1000),
 				staticDurationGen(2),
+				staticMinUnitsMatchGen(1),
 			)
 
 			randOrderSet.Bids = append(
@@ -449,11 +450,11 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		bid := genRandBid(
 			r, acctDB, staticRateGen(1000), staticUnitGen(10),
-			staticDurationGen(144),
+			staticMinUnitsMatchGen(1), staticDurationGen(144),
 		)
 		ask := genRandAsk(
 			r, acctDB, staticRateGen(1000), staticUnitGen(10),
-			staticDurationGen(144),
+			staticMinUnitsMatchGen(1), staticDurationGen(144),
 		)
 
 		feeRate := chainfee.FeePerKwFloor * chainfee.SatPerKWeight(i+1)

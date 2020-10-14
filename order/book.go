@@ -297,6 +297,19 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 			"translate exactly to amount")
 	}
 
+	// Verify the minimum units match amount has been properly set.
+	minUnitsMatch := order.SupplyUnit(1)
+	switch {
+	case srvOrder.Details().MinUnitsMatch < minUnitsMatch:
+		return fmt.Errorf("minimum units match %v must be above %v",
+			srvOrder.Details().MinUnitsMatch, minUnitsMatch)
+
+	case srvOrder.Details().MinUnitsMatch > srvOrder.Details().Units:
+		return fmt.Errorf("minimum units match %v is above total "+
+			"order units %v", srvOrder.Details().MinUnitsMatch,
+			srvOrder.Details().Units)
+	}
+
 	// First validate the order signature.
 	digest, err := srvOrder.Digest()
 	if err != nil {

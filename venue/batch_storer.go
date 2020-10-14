@@ -84,6 +84,14 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 				order.UnitsFulfilledModifier(0),
 			}
 
+		// The order has not been fully filled, but its minimum match
+		// does not allow it to be matched again, so it can be archived.
+		case unitsUnfulfilled < matchedOrder.Details().MinUnitsMatch:
+			orderModifiers[orderIndex] = []order.Modifier{
+				order.StateModifier(orderT.StateExecuted),
+				order.UnitsFulfilledModifier(unitsUnfulfilled),
+			}
+
 		// Some units were not yet filled.
 		default:
 			orderModifiers[orderIndex] = []order.Modifier{

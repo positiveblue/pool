@@ -20,11 +20,12 @@ import (
 var emptyAcct [33]byte
 
 type orderGenCfg struct {
-	numUnits  orderT.SupplyUnit
-	fixedRate uint32
-	duration  uint32
-	acctKey   [33]byte
-	acctState *account.State
+	numUnits      orderT.SupplyUnit
+	minUnitsMatch orderT.SupplyUnit
+	fixedRate     uint32
+	duration      uint32
+	acctKey       [33]byte
+	acctState     *account.State
 }
 
 type orderGenOption func(*orderGenCfg)
@@ -32,6 +33,12 @@ type orderGenOption func(*orderGenCfg)
 func staticUnitGen(numUnits orderT.SupplyUnit) orderGenOption {
 	return func(opt *orderGenCfg) {
 		opt.numUnits = numUnits
+	}
+}
+
+func staticMinUnitsMatchGen(minUnitsMatch orderT.SupplyUnit) orderGenOption {
+	return func(opt *orderGenCfg) {
+		opt.minUnitsMatch = minUnitsMatch
 	}
 }
 
@@ -103,6 +110,14 @@ func (o *orderGenCfg) supplyUnits(r *rand.Rand) orderT.SupplyUnit {
 	return orderT.SupplyUnit(r.Int31())
 }
 
+func (o *orderGenCfg) getMinUnitsMatch(r *rand.Rand) orderT.SupplyUnit { // nolint:unparam
+	if o.minUnitsMatch != 0 {
+		return o.minUnitsMatch
+	}
+
+	return orderT.SupplyUnit(r.Int31())
+}
+
 func (o *orderGenCfg) rate(r *rand.Rand) uint32 {
 	if o.fixedRate != 0 {
 		return o.fixedRate
@@ -168,6 +183,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	acct := genRandAccount(r, genOptions...)
 
 	numUnits := genCfg.supplyUnits(r)
+	minUnitsMatch := genCfg.getMinUnitsMatch(r)
 	b := &order.Bid{
 		Bid: orderT.Bid{
 			Kit: *orderT.NewKit(nonce),
@@ -177,6 +193,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	b.Amt = numUnits.ToSatoshis()
 	b.Units = numUnits
 	b.UnitsUnfulfilled = numUnits
+	b.MinUnitsMatch = minUnitsMatch
 	b.FixedRate = genCfg.rate(r)
 	b.MaxBatchFeeRate = chainfee.FeePerKwFloor
 
@@ -208,6 +225,7 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	acct := genRandAccount(r, genOptions...)
 
 	numUnits := genCfg.supplyUnits(r)
+	minUnitsMatch := genCfg.getMinUnitsMatch(r)
 	a := &order.Ask{
 		Ask: orderT.Ask{
 			Kit: *orderT.NewKit(nonce),
@@ -217,6 +235,7 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	a.Amt = numUnits.ToSatoshis()
 	a.Units = numUnits
 	a.UnitsUnfulfilled = numUnits
+	a.MinUnitsMatch = minUnitsMatch
 	a.FixedRate = genCfg.rate(r)
 	a.MaxBatchFeeRate = chainfee.FeePerKwFloor
 
@@ -787,6 +806,7 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 				r,
 				acctDB,
 				staticUnitGen(orderT.SupplyUnit(totalSupply)),
+				staticMinUnitsMatchGen(1),
 				staticDurationGen(bidDuration),
 				staticRateGen(bidRate),
 			)
@@ -822,6 +842,7 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 					r,
 					acctDB,
 					staticUnitGen(orderT.SupplyUnit(askSupply)),
+					staticMinUnitsMatchGen(1),
 					minDurationGenBound(bidDuration, r),
 					maxRateGenBound(bidRate, r),
 				))
@@ -952,6 +973,7 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 				r,
 				acctDB,
 				staticUnitGen(orderT.SupplyUnit(totalSupply)),
+				staticMinUnitsMatchGen(1),
 				staticDurationGen(askDuration),
 				staticRateGen(askRate),
 			)
@@ -991,6 +1013,7 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 						r,
 						acctDB,
 						staticUnitGen(orderT.SupplyUnit(bidSupply)),
+						staticMinUnitsMatchGen(1),
 						maxDurationGenBound(askDuration, r),
 						minRateGenBound(askRate, r),
 					))
@@ -1193,12 +1216,6 @@ func TestMatchMakingBatch(t *testing.T) {
 			ask := matchedOrder.Details.Ask
 			bid := matchedOrder.Details.Bid
 
-			if _, ok := matchMaker.MatchPossible(bid, ask); !ok {
-				t.Logf("incompatible orders returned in match "+
-					"set: %v vs %v", spew.Sdump(bid), spew.Sdump(ask))
-				return false
-			}
-
 			if matchedOrder.Details.Quote.Type == TotalFulfill {
 				fullyClearedOrders[ask.Nonce()] = struct{}{}
 				fullyClearedOrders[bid.Nonce()] = struct{}{}
@@ -1332,12 +1349,14 @@ func TestMatchingAccountNotReadyCloseToExpiry(t *testing.T) {
 	ask := genRandAsk(
 		r, acctDB,
 		staticUnitGen(orderT.SupplyUnit(askSupply)),
+		staticMinUnitsMatchGen(1),
 		staticDurationGen(askDuration), staticRateGen(targetRate),
 	)
 	bid := genRandBid(
 		r,
 		acctDB,
 		staticUnitGen(orderT.SupplyUnit(askSupply)),
+		staticMinUnitsMatchGen(1),
 		staticDurationGen(askDuration), staticRateGen(targetRate),
 	)
 
@@ -1404,6 +1423,7 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 			r,
 			acctDB,
 			staticUnitGen(orderT.SupplyUnit(askSupply)),
+			staticMinUnitsMatchGen(1),
 			staticDurationGen(askDuration),
 			staticRateGen(targetRate),
 		),
@@ -1419,6 +1439,7 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 			r,
 			acctDB,
 			staticUnitGen(orderT.SupplyUnit(askSupply)),
+			staticMinUnitsMatchGen(1),
 			staticDurationGen(askDuration*2),
 			staticRateGen(targetRate*2),
 		),
@@ -1428,6 +1449,7 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 			r,
 			acctDB,
 			staticUnitGen(orderT.SupplyUnit(askSupply)),
+			staticMinUnitsMatchGen(1),
 			staticDurationGen(askDuration),
 			staticRateGen(targetRate),
 		),
@@ -1465,6 +1487,99 @@ func TestMatchingLowestAskNoMatchMultiPass(t *testing.T) {
 	if uint32(quoteDetails.MatchingRate) != targetRate {
 		t.Fatalf("wrong rate: expected %v got %v",
 			targetRate, quoteDetails.MatchingRate)
+	}
+}
+
+// TestMatchingMinPartialMatch ensures that matchmaking properly takes into
+// account an order's min units match preference.
+func TestMatchingMinPartialMatch(t *testing.T) {
+	t.Parallel()
+
+	acctDB, acctCacher, predicates := newAcctCacher()
+	matchMaker := NewMultiUnitMatchMaker(acctCacher, predicates)
+
+	// We'll create a single ask, fixing the parameters that are critical
+	// for matching.
+	askDuration := uint32(1000)
+	targetRate := uint32(1000)
+	askSupply := orderT.SupplyUnit(7)
+	minUnitsMatch := orderT.SupplyUnit(2)
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	asks := []*order.Ask{
+		genRandAsk(
+			r,
+			acctDB,
+			staticUnitGen(askSupply),
+			staticMinUnitsMatchGen(minUnitsMatch),
+			staticDurationGen(askDuration),
+			staticRateGen(targetRate),
+		),
+	}
+
+	// We'll now create three bids, two that will be fully consumed by the
+	// ask, and one that can't be matched as it only has 1 unit available,
+	// while the ask requires at least 2.
+	bids := []*order.Bid{
+		genRandBid(
+			r,
+			acctDB,
+			staticUnitGen(minUnitsMatch),
+			staticMinUnitsMatchGen(1),
+			staticDurationGen(askDuration),
+			staticRateGen(targetRate),
+		),
+		genRandBid(
+			r,
+			acctDB,
+			staticUnitGen(minUnitsMatch),
+			staticMinUnitsMatchGen(1),
+			staticDurationGen(askDuration),
+			staticRateGen(targetRate),
+		),
+		// Incompatible bid due to min units match.
+		genRandBid(
+			r,
+			acctDB,
+			staticUnitGen(minUnitsMatch-1),
+			staticMinUnitsMatchGen(1),
+			staticDurationGen(askDuration),
+			staticRateGen(targetRate*2),
+		),
+	}
+
+	matchSet, err := matchMaker.MatchBatch(bids, asks)
+	if err != nil {
+		t.Fatalf("unable to match orders: %v", err)
+	}
+
+	// We should have exactly two matches, zero unmatched asks, and a single
+	// unmatched bid.
+	switch {
+	case len(matchSet.MatchedOrders) != 2:
+		t.Fatalf("expected a single matched order, instead "+
+			"got %v", len(matchSet.MatchedOrders))
+
+	case len(matchSet.UnmatchedBids) != 1:
+		t.Fatalf("expected a single unmatched bid, instead "+
+			"got %v", len(matchSet.UnmatchedBids))
+
+	case len(matchSet.UnmatchedAsks) != 0:
+		t.Fatalf("expected a single unmatched ask, instead "+
+			"got %v", len(matchSet.UnmatchedAsks))
+	}
+
+	// The matches should be a full match for the bids, and should report
+	// our target rate above.
+	for _, orderPair := range matchSet.MatchedOrders {
+		quoteDetails := orderPair.Details.Quote
+		if quoteDetails.Type != PartialAskFulfill {
+			t.Fatalf("expected total fill, instead got: %v",
+				quoteDetails.Type)
+		}
+		if uint32(quoteDetails.MatchingRate) != targetRate {
+			t.Fatalf("wrong rate: expected %v got %v",
+				targetRate, quoteDetails.MatchingRate)
+		}
 	}
 }
 

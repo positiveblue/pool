@@ -91,6 +91,7 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 					TraderKey:               daveAccount.TraderKey,
 					RateFixed:               askRate,
 					Amt:                     bidSize,
+					MinUnitsMatch:           1,
 					MaxBatchFeeRateSatPerKw: uint64(12500),
 				},
 				LeaseDurationBlocks: durationBlocks,

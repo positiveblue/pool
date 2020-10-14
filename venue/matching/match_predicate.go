@@ -4,6 +4,7 @@ import (
 	"sync"
 	"time"
 
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
@@ -70,8 +71,23 @@ func AskDurationGreaterOrEqualPredicate(ask *order.Ask, bid *order.Bid) bool {
 	return ask.LeaseDuration() >= bid.LeaseDuration()
 }
 
-// TODO(roasbeef): need to consider other fields like the min accepted
-// channel and such
+// MinPartialMatchPredicate is a matching predicate that returns true if the
+// bid's and ask's supply each satisfy the other's minimum units to match.
+// Matchmaking keeps track of each order's unfulfilled supply in-memory, which
+// is why the supply needs to be provided out-of-band.
+type MinPartialMatchPredicate struct {
+	// BidSupply is the latest known unfulfilled supply of the bid order.
+	BidSupply orderT.SupplyUnit
+
+	// AskSupply is the latest known unfulfilled supply of the ask order.
+	AskSupply orderT.SupplyUnit
+}
+
+// IsMatchable returns true if the bid's and ask's supply each satisfy the
+// other's minimum units to match.
+func (p MinPartialMatchPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) bool {
+	return p.AskSupply >= bid.MinUnitsMatch && p.BidSupply >= ask.MinUnitsMatch
+}
 
 // ChainMatches returns true if all predicates in the given chain are matchable
 // to the given ask and bid orders.
