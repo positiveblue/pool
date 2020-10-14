@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"fmt"
 
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
@@ -33,6 +34,8 @@ var auctionCommands = []cli.Command{
 			removeReservationCommand,
 			listConflictsCommand,
 			clearConflictsCommand,
+			modifyNodeRatingsCommand,
+			listNodeRatingsCommand,
 		},
 	},
 }
@@ -351,5 +354,51 @@ var clearConflictsCommand = cli.Command{
 		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
 		return client.ClearConflicts(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var modifyNodeRatingsCommand = cli.Command{
+	Name:      "modifyrating",
+	ShortName: "mr",
+	Usage:     "manually modify an existing node rating",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  "node_key",
+			Usage: "the node key to modify the rating for",
+		},
+		cli.Uint64Flag{
+			Name:  "new_rating",
+			Usage: "the new rating to set: 1 is t0, 2 is t1",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		nodeRating := cliCtx.Uint64("new_rating")
+		if nodeRating == 0 {
+			return nil, fmt.Errorf("rating must be 1 or 2 (t1)")
+		}
+
+		nodeKey, err := hex.DecodeString(cliCtx.String("node_key"))
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse node "+
+				"key: %v", err)
+		}
+
+		return client.ModifyNodeRatings(ctx, &adminrpc.ModifyRatingRequest{
+			NodeKey:     nodeKey,
+			NewNodeTier: uint32(nodeRating),
+		})
+	}),
+}
+
+var listNodeRatingsCommand = cli.Command{
+	Name:      "listnoderatings",
+	ShortName: "lnr",
+	Usage:     "list the current set of node ratings",
+	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.ListNodeRatings(ctx, &adminrpc.EmptyRequest{})
 	}),
 }
