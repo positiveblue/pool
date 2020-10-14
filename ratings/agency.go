@@ -1,6 +1,7 @@
 package ratings
 
 import (
+	"context"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -27,12 +28,12 @@ type Agency interface {
 type NodeRatingsDatabase interface {
 	// IndexRatings indexes the set of ratings to get the most up to date
 	// state. No other calls should be executed before this one.
-	IndexRatings() error
+	IndexRatings(context.Context) error
 
 	// LookupNode attempts to look up a rating for a node. If the node
 	// isn't found, the lowest rating should be returned. The second return
 	// value signifies if this node was found in the DB or not.
-	LookupNode(nodeKey [33]byte) (order.NodeTier, bool)
+	LookupNode(context.Context, [33]byte) (order.NodeTier, bool)
 
 	// ModifyNodeRating attempts to modify the rating for a node in-place.
 	// This rating will then supersede the existing entry in the database.
@@ -40,7 +41,7 @@ type NodeRatingsDatabase interface {
 	// tracked.
 	//
 	// TODO(roasbeef): have only batched versions of this and the above?
-	ModifyNodeRating([33]byte, order.NodeTier) error
+	ModifyNodeRating(context.Context, [33]byte, order.NodeTier) error
 }
 
 // NodeRatingWebSource represents a web end point that serves node rating
@@ -157,8 +158,7 @@ func NewMemRatingsDatabase(writeThroughDB NodeRatingsDatabase,
 // other calls should be executed before this one.
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
-func (m *MemRatingsDatabase) IndexRatings() error {
-
+func (m *MemRatingsDatabase) IndexRatings(_ context.Context) error {
 	// No need to index things since we already had a set of seed ratings.
 	return nil
 }
@@ -168,15 +168,15 @@ func (m *MemRatingsDatabase) IndexRatings() error {
 // can also be used to add a rating for a node that isn't tracked.
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
-func (m *MemRatingsDatabase) ModifyNodeRating(node [33]byte,
-	tier order.NodeTier) error {
+func (m *MemRatingsDatabase) ModifyNodeRating(ctx context.Context,
+	node [33]byte, tier order.NodeTier) error {
 
 	m.Lock()
 	defer m.Unlock()
 
 	// First write through to the other DB if it's available.
 	if m.writeThroughDB != nil {
-		err := m.writeThroughDB.ModifyNodeRating(node, tier)
+		err := m.writeThroughDB.ModifyNodeRating(ctx, node, tier)
 		if err != nil {
 			return err
 		}
@@ -191,7 +191,9 @@ func (m *MemRatingsDatabase) ModifyNodeRating(node [33]byte,
 // the lowest rating should be returned.
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
-func (m *MemRatingsDatabase) LookupNode(nodeKey [33]byte) (order.NodeTier, bool) {
+func (m *MemRatingsDatabase) LookupNode(ctx context.Context,
+	nodeKey [33]byte) (order.NodeTier, bool) {
+
 	m.RLock()
 	defer m.RUnlock()
 
@@ -250,8 +252,9 @@ func NewBosScoreRatingsDatabase(webSource NodeRatingWebSource,
 //
 // NOTE: This method should only be called ONCE, as it creates a time.AfterFunc
 // to refresh the scores after an interval.
-func (m *BosScoreRatingsDatabase) updateNodeRatings(doneChan chan struct{},
-) func() {
+func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
+	doneChan chan struct{}) func() {
+
 	// TODO(roasbeef): if empty at this point, then read from disk or
 	// accept existing ratings as args
 
@@ -305,7 +308,9 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(doneChan chan struct{},
 		// for a longer period of time if they're volatile and are
 		// right on the order
 		for nodeKey, newRating := range nodeRatings {
-			err := m.ratingsDB.ModifyNodeRating(nodeKey, newRating)
+			err := m.ratingsDB.ModifyNodeRating(
+				ctx, nodeKey, newRating,
+			)
 			if err != nil {
 				log.Errorf("unable to modify rating for %x",
 					nodeKey[:])
@@ -316,7 +321,7 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(doneChan chan struct{},
 		// invocation after our wait interval.
 		if m.refreshFunc == nil {
 			m.refreshFunc = time.AfterFunc(
-				m.refreshInterval, m.updateNodeRatings(nil),
+				m.refreshInterval, m.updateNodeRatings(ctx, nil),
 			)
 
 			// The very first time around, we'll close the done
@@ -341,7 +346,7 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(doneChan chan struct{},
 // other calls should be executed before this one.
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
-func (m *BosScoreRatingsDatabase) IndexRatings() error {
+func (m *BosScoreRatingsDatabase) IndexRatings(ctx context.Context) error {
 	scrapeStart := time.Now()
 
 	log.Infof("Indexing Bos Score Database")
@@ -351,7 +356,7 @@ func (m *BosScoreRatingsDatabase) IndexRatings() error {
 	// We want to make this first instance synchronous to ensure that once
 	// this method returns the indexing has been completed, so we'll pass
 	// in a done channel, then wait on it below.
-	m.updateNodeRatings(doneChan)()
+	m.updateNodeRatings(ctx, doneChan)()
 
 	select {
 	case <-doneChan:
@@ -375,8 +380,10 @@ func (m *BosScoreRatingsDatabase) IndexRatings() error {
 // the lowest rating should be returned.
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
-func (m *BosScoreRatingsDatabase) LookupNode(nodeKey [33]byte) (order.NodeTier, bool) {
-	if _, ok := m.ratingsDB.LookupNode(nodeKey); !ok {
+func (m *BosScoreRatingsDatabase) LookupNode(ctx context.Context,
+	nodeKey [33]byte) (order.NodeTier, bool) {
+
+	if _, ok := m.ratingsDB.LookupNode(ctx, nodeKey); !ok {
 		return order.NodeTier0, true
 	}
 
@@ -388,10 +395,10 @@ func (m *BosScoreRatingsDatabase) LookupNode(nodeKey [33]byte) (order.NodeTier, 
 // can also be used to add a rating for a node that isn't tracked.
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
-func (m *BosScoreRatingsDatabase) ModifyNodeRating(node [33]byte,
-	tier order.NodeTier) error {
+func (m *BosScoreRatingsDatabase) ModifyNodeRating(ctx context.Context,
+	node [33]byte, tier order.NodeTier) error {
 
-	return m.ratingsDB.ModifyNodeRating(node, tier)
+	return m.ratingsDB.ModifyNodeRating(ctx, node, tier)
 }
 
 // A compile-time assertion to ensure the BosScoreRatingsDatabase struct satisfies
@@ -417,7 +424,7 @@ func NewNodeTierAgency(ratingsDB NodeRatingsDatabase) *NodeTierAgency {
 //
 // NOTE: This is part of the Agency interface.
 func (n *NodeTierAgency) RateNode(nodeKey [33]byte) order.NodeTier {
-	rating, _ := n.ratingsDB.LookupNode(nodeKey)
+	rating, _ := n.ratingsDB.LookupNode(context.Background(), nodeKey)
 	return rating
 }
 

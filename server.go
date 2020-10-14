@@ -142,6 +142,8 @@ type Server struct {
 // NewServer returns a new auctioneer server that is started in daemon mode,
 // listens for gRPC connections and executes commands.
 func NewServer(cfg *Config) (*Server, error) {
+	ctx := context.Background()
+
 	// First, we'll set up our logging infrastructure so all operations
 	// below will properly be logged.
 	if err := initLogging(cfg); err != nil {
@@ -243,11 +245,18 @@ func NewServer(cfg *Config) (*Server, error) {
 	)
 
 	// We'll only activate the ratings agency if it has been flipped on in
-	// the config. In contexts like testnet or regtest, we
+	// the config. In contexts like testnet or regtest, we don't have an
+	// instance of bos scores to point to.
 	if cfg.NodeRatingsActive {
 		// If no bos score rating was detected, then we'll use the pure
 		// memory database instead, which is good for testing purposes.
-		memDB := ratings.NewMemRatingsDatabase(nil, nil)
+		nodeRatings, err := store.NodeRatings(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to retrieve stored "+
+				"node ratings: %v", err)
+		}
+		memDB := ratings.NewMemRatingsDatabase(store, nodeRatings)
+
 		if cfg.BosScoreWebURL == "" {
 			log.Infof("Initializing in-memory RatingsAgency")
 
@@ -266,7 +275,8 @@ func NewServer(cfg *Config) (*Server, error) {
 
 		// Before we pass it off to the agency, make sure we have the
 		// latest scoring index ready.
-		if err := ratingsDB.IndexRatings(); err != nil {
+		err = ratingsDB.IndexRatings(ctx)
+		if err != nil {
 			return nil, fmt.Errorf("unable to index "+
 				"ratings: %v", err)
 		}
