@@ -622,3 +622,25 @@ func (s *adminRPCServer) ModifyNodeRatings(ctx context.Context,
 
 	return &adminrpc.ModifyRatingResponse{}, nil
 }
+
+// ListNodeRatingsResponse lists the current set of valid node ratings.
+func (s *adminRPCServer) ListNodeRatings(ctx context.Context,
+	_ *adminrpc.EmptyRequest) (*adminrpc.ListNodeRatingsResponse, error) {
+
+	nodeRatings, err := s.store.NodeRatings(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resp := &adminrpc.ListNodeRatingsResponse{
+		NodeRatings: make([]*adminrpc.NodeRating, 0, len(nodeRatings)),
+	}
+	for nodeKey, nodeRating := range nodeRatings {
+		resp.NodeRatings = append(resp.NodeRatings, &adminrpc.NodeRating{
+			NodeKey:  nodeKey[:],
+			NodeTier: uint32(nodeRating),
+		})
+	}
+
+	return resp, nil
+}

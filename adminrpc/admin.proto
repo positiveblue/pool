@@ -23,6 +23,7 @@ service AuctionAdmin {
     rpc BumpBatchFeeRate (BumpBatchFeeRateRequest) returns (EmptyResponse);
     rpc QueryNodeRating(RatingQueryRequest) returns (RatingQueryResponse); 
     rpc ModifyNodeRatings(ModifyRatingRequest) returns (ModifyRatingResponse);
+    rpc ListNodeRatings(EmptyRequest) returns (ListNodeRatingsResponse);
 }
 
 message EmptyRequest {
@@ -346,4 +347,14 @@ message BumpBatchFeeRateRequest{
     // Request the next batch transaction to bump the effective fee rate of all
     // unconfirmed batches to this exact fee rate.
     uint32 fee_rate_sat_per_kw = 2;
+}
+
+message NodeRating {
+    bytes node_key = 1;
+
+    uint32 node_tier = 2;
+}
+
+message ListNodeRatingsResponse {
+    repeated NodeRating node_ratings = 1;
 }
