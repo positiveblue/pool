@@ -1625,6 +1625,7 @@ func marshallServerOrder(order order.ServerOrder) *poolrpc.ServerOrder {
 		// TODO: ChanType should be an enum in RPC?
 		ChanType:                uint32(order.ServerDetails().ChanType),
 		MaxBatchFeeRateSatPerKw: uint64(order.Details().MaxBatchFeeRate),
+		MinChanAmt:              uint64(order.Details().MinUnitsMatch.ToSatoshis()),
 	}
 }
 
