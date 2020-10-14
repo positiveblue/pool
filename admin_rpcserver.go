@@ -636,8 +636,10 @@ func (s *adminRPCServer) ListNodeRatings(ctx context.Context,
 		NodeRatings: make([]*adminrpc.NodeRating, 0, len(nodeRatings)),
 	}
 	for nodeKey, nodeRating := range nodeRatings {
+		pubKey := nodeKey
+
 		resp.NodeRatings = append(resp.NodeRatings, &adminrpc.NodeRating{
-			NodeKey:  nodeKey[:],
+			NodeKey:  pubKey[:],
 			NodeTier: uint32(nodeRating),
 		})
 	}
