@@ -75,7 +75,7 @@ const (
 
 	// defaultMsgTimeout is the default amount of time that we'll wait for
 	// a trader to send us an expected batch execution message.
-	defaultMsgTimeout = time.Second * 10
+	defaultMsgTimeout = 30 * time.Second
 
 	// defaultBatchTickInterval is the default amount of time we'll wait
 	// between attempts to create a new batch.
