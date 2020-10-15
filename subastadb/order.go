@@ -675,7 +675,7 @@ func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes io.Read
 		// If it wasn't found in the database, then we'll assume the
 		// default value.
 		case io.EOF, io.ErrUnexpectedEOF:
-			o.MinNodeTier = orderT.NodeTierDefault
+			o.MinNodeTier = orderT.DefaultMinNodeTier
 
 		// Unexpected error, return.
 		default:

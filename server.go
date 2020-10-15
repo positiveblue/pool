@@ -131,6 +131,8 @@ type Server struct {
 
 	channelEnforcer *chanenforcement.ChannelEnforcer
 
+	ratingsDB ratings.NodeRatingsDatabase
+
 	quit chan struct{}
 
 	wg sync.WaitGroup
@@ -273,14 +275,6 @@ func NewServer(cfg *Config) (*Server, error) {
 			)
 		}
 
-		// Before we pass it off to the agency, make sure we have the
-		// latest scoring index ready.
-		err = ratingsDB.IndexRatings(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("unable to index "+
-				"ratings: %v", err)
-		}
-
 		ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
 	}
 
@@ -335,6 +329,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			RatingsAgency:    ratingsAgency,
 		}),
 		channelEnforcer: channelEnforcer,
+		ratingsDB:       ratingsDB,
 		quit:            make(chan struct{}),
 	}
 
@@ -451,6 +446,14 @@ func (s *Server) Start() error {
 			startErr = fmt.Errorf("unable to initialize etcd "+
 				"store: %v", err)
 			return
+		}
+
+		// Now that the DB has been initialized, we'll actually index
+		// the set of ratings.
+		err := s.ratingsDB.IndexRatings(ctx)
+		if err != nil {
+			startErr = fmt.Errorf("unable to index ratings: %v",
+				err)
 		}
 
 		lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)

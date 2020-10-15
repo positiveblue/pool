@@ -385,6 +385,10 @@ var modifyNodeRatingsCommand = cli.Command{
 				"key: %v", err)
 		}
 
+		if len(nodeKey) != 33 {
+			return nil, fmt.Errorf("proper node key must be specified")
+		}
+
 		return client.ModifyNodeRatings(ctx, &adminrpc.ModifyRatingRequest{
 			NodeKey:     nodeKey,
 			NewNodeTier: uint32(nodeRating),

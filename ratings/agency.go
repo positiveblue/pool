@@ -262,6 +262,8 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
 	// directly into time.AfterFunc, while also being able to give the
 	// caller a sync call back.
 	scrape := func() {
+		log.Infof("Scraping Bos Score Endpoint")
+
 		// Rather than use the default http.Client, we'll make a custom
 		// one which will allow us to control how long we'll wait to
 		// read the response from the service. This way, if the service
@@ -299,6 +301,8 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
 			return
 		}
 
+		log.Infof("Retrieved %v Bos Score nodes", len(nodeRatings))
+
 		// Rather than replace, we'll merge in this new response to
 		// make sure we don't override any of the existing scores.
 		//
@@ -312,14 +316,16 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
 				ctx, nodeKey, newRating,
 			)
 			if err != nil {
-				log.Errorf("unable to modify rating for %x",
-					nodeKey[:])
+				log.Errorf("unable to modify rating for %x: %v",
+					nodeKey[:], err)
 			}
 		}
 
 		// If this is our first run, then we'll set up the next
 		// invocation after our wait interval.
 		if m.refreshFunc == nil {
+			log.Infof("Setting Bos Score Re Scrape Timer")
+
 			m.refreshFunc = time.AfterFunc(
 				m.refreshInterval, m.updateNodeRatings(ctx, nil),
 			)

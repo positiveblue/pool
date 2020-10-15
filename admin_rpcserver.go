@@ -211,10 +211,16 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				Version:             uint32(o.Version),
 			})
 		case *order.Bid:
+			nodeTier, err := marshallNodeTier(o.MinNodeTier)
+			if err != nil {
+				return nil, err
+			}
+
 			rpcBids = append(rpcBids, &poolrpc.ServerBid{
 				Details:             marshallServerOrder(o),
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
+				MinNodeTier:         nodeTier,
 			})
 		}
 	}
@@ -636,8 +642,10 @@ func (s *adminRPCServer) ListNodeRatings(ctx context.Context,
 		NodeRatings: make([]*adminrpc.NodeRating, 0, len(nodeRatings)),
 	}
 	for nodeKey, nodeRating := range nodeRatings {
+		pubKey := nodeKey
+
 		resp.NodeRatings = append(resp.NodeRatings, &adminrpc.NodeRating{
-			NodeKey:  nodeKey[:],
+			NodeKey:  pubKey[:],
 			NodeTier: uint32(nodeRating),
 		})
 	}

@@ -342,7 +342,7 @@ func (s *EtcdStore) fetchMinNodeTierSTM(stm conc.STM,
 		// order that was not aware of the value, so we'll fall back to
 		// the default.
 		if nodeTierResp == "" {
-			return orderT.NodeTierDefault, nil
+			return orderT.DefaultMinNodeTier, nil
 		}
 	}
 
