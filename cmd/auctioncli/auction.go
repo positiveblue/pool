@@ -385,7 +385,7 @@ var modifyNodeRatingsCommand = cli.Command{
 				"key: %v", err)
 		}
 
-		if len(nodeKey) == 0 {
+		if len(nodeKey) != 33 {
 			return nil, fmt.Errorf("proper node key must be specified")
 		}
 
