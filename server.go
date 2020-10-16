@@ -448,12 +448,14 @@ func (s *Server) Start() error {
 			return
 		}
 
-		// Now that the DB has been initialized, we'll actually index
-		// the set of ratings.
-		err := s.ratingsDB.IndexRatings(ctx)
-		if err != nil {
-			startErr = fmt.Errorf("unable to index ratings: %v",
-				err)
+		if s.ratingsDB != nil {
+			// Now that the DB has been initialized, we'll actually
+			// index the set of ratings.
+			err := s.ratingsDB.IndexRatings(ctx)
+			if err != nil {
+				startErr = fmt.Errorf("unable to index ratings: %v",
+					err)
+			}
 		}
 
 		lndCtx, lndCancel := context.WithTimeout(ctx, getInfoTimeout)
