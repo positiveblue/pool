@@ -36,6 +36,7 @@ import (
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chanbackup"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tor"
@@ -471,9 +472,9 @@ func (s *rpcServer) CancelOrder(ctx context.Context,
 	req *poolrpc.ServerCancelOrderRequest) (
 	*poolrpc.ServerCancelOrderResponse, error) {
 
-	var nonce orderT.Nonce
-	copy(nonce[:], req.OrderNonce)
-	err := s.orderBook.CancelOrder(ctx, nonce)
+	var noncePreimage lntypes.Preimage
+	copy(noncePreimage[:], req.OrderNoncePreimage)
+	err := s.orderBook.CancelOrderWithPreimage(ctx, noncePreimage)
 	if err != nil {
 		return nil, err
 	}
@@ -1066,8 +1067,8 @@ func (s *rpcServer) sendAccountRecovery(traderKey [33]byte,
 				stream.Context(), o.Nonce(),
 			)
 			if err != nil {
-				return fmt.Errorf("error canceling order: "+
-					"%v", err)
+				return fmt.Errorf("error canceling order %v: %v",
+					o.Nonce(), err)
 			}
 		}
 	}

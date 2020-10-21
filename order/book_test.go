@@ -17,7 +17,9 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -498,6 +500,63 @@ func TestBookPrepareOrder(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestCancelOrder ensures that we can cancel an order through its preimage.
+func TestCancelOrderWithPreimage(t *testing.T) {
+	t.Parallel()
+
+	store := subastadb.NewStoreMock(t)
+	store.Accs[testAccount.TraderKeyRaw] = &testAccount
+
+	signer := &mockSigner{shouldVerify: true}
+
+	durations := order.NewDurationBuckets()
+	durations.AddNewMarket(1024, order.BucketStateAcceptingOrders)
+
+	book := order.NewBook(&order.BookConfig{
+		MaxDuration:     1234,
+		Store:           store,
+		Signer:          signer,
+		DurationBuckets: durations,
+	})
+	require.NoError(t, book.Start())
+	defer book.Stop()
+
+	// Create a test order we'll attempt to cancel after submission.
+	preimage := lntypes.Preimage{1}
+	kit := orderT.NewKitWithPreimage(preimage)
+	kit.AcctKey = testAccount.TraderKeyRaw
+	kit.LeaseDuration = 1024
+	kit.Amt = 100_000
+	kit.Units = orderT.NewSupplyFromSats(kit.Amt)
+	kit.UnitsUnfulfilled = orderT.NewSupplyFromSats(kit.Amt)
+	kit.MinUnitsMatch = 1
+	kit.MaxBatchFeeRate = chainfee.FeePerKwFloor
+
+	ctx := context.Background()
+	o := &order.Ask{
+		Ask: orderT.Ask{
+			Kit: *kit,
+		},
+	}
+	feeSchedule := terms.NewLinearFeeSchedule(1, 100)
+	require.NoError(t, book.PrepareOrder(ctx, o, feeSchedule, 100))
+
+	storedOrder, err := store.GetOrder(ctx, kit.Nonce())
+	require.NoError(t, err)
+	require.Equal(t, storedOrder.Details().State, orderT.StateSubmitted)
+
+	// Using an invalid preimage should fail.
+	invalidPreimage := lntypes.Preimage{1, 1}
+	require.Error(t, book.CancelOrderWithPreimage(ctx, invalidPreimage))
+
+	// After canceling the order through its preimage, its state should be
+	// updated properly.
+	require.NoError(t, book.CancelOrderWithPreimage(ctx, preimage))
+	storedOrder, err = store.GetOrder(ctx, kit.Nonce())
+	require.NoError(t, err)
+	require.Equal(t, storedOrder.Details().State, orderT.StateCanceled)
 }
 
 func toRawKey(pubkey *btcec.PublicKey) [33]byte {

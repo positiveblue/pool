@@ -179,8 +179,19 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	return nil
 }
 
-// CancelOrder sets an order's state to canceled if it has not yet been
-// archived yet and is still pending.
+// CancelOrderWithPreimage sets an order's state to canceled if it has not yet
+// been archived yet and is still pending.
+func (b *Book) CancelOrderWithPreimage(ctx context.Context,
+	noncePreimage lntypes.Preimage) error {
+
+	preimageHash := noncePreimage.Hash()
+	var nonce order.Nonce
+	copy(nonce[:], preimageHash[:])
+	return b.CancelOrder(ctx, nonce)
+}
+
+// CancelOrder sets an order's state to canceled if it has not yet been archived
+// yet and is still pending.
 func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	o, err := b.cfg.Store.GetOrder(ctx, nonce)
 	if err != nil {
