@@ -22,6 +22,8 @@ import (
 	"github.com/lightningnetwork/lnd/multimutex"
 	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 var (
@@ -178,7 +180,10 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 		return errAlreadyInitialized
 	}
 
-	resp, err := s.client.Get(ctx, s.getKeyPrefix(versionPrefix))
+	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
+	defer cancel()
+
+	resp, err := s.client.Get(ctxt, s.getKeyPrefix(versionPrefix))
 	if err != nil {
 		return err
 	}
@@ -187,7 +192,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 
 	if resp.Count == 0 {
 		log.Infof("Initializing db with version %v", currentDbVersion)
-		return s.firstTimeInit(ctx, currentDbVersion)
+		return s.firstTimeInit(ctxt, currentDbVersion)
 	}
 
 	version, err := strconv.Atoi(string(resp.Kvs[0].Value))
@@ -203,7 +208,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 	}
 
 	// We end initialization by filling the active orders cache.
-	return s.fillActiveOrdersCache(ctx)
+	return s.fillActiveOrdersCache(ctxt)
 }
 
 // firstTimeInit stores all initial required key-value pairs throughout the
@@ -226,11 +231,16 @@ func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 
 // getSingleValue is a helper method to retrieve the value for a key that should
 // only have a single value mapped to it. If no value is found, the provided
-// errNoValue error is returned.
+// errNoValue error is returned. Upon a critical failure, a daemon shutdown will
+// be requested.
 func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
 	errNoValue error) (*clientv3.GetResponse, error) {
 
-	resp, err := s.client.Get(ctx, key)
+	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
+	defer cancel()
+
+	resp, err := s.client.Get(ctxt, key)
+	s.requestShutdownOnCriticalErr(err)
 	if err != nil {
 		return nil, err
 	}
@@ -246,7 +256,8 @@ func (s *EtcdStore) getSingleValue(ctx context.Context, key string,
 }
 
 // getAllValuesByPrefix reads multiple keys from the etcd database and returns
-// their content as a map of byte slices, keyed by the storage key.
+// their content as a map of byte slices, keyed by the storage key. Upon a
+// critical failure, a daemon shutdown will be requested.
 func (s *EtcdStore) getAllValuesByPrefix(mainCtx context.Context,
 	prefix string) (map[string][]byte, error) {
 
@@ -254,6 +265,7 @@ func (s *EtcdStore) getAllValuesByPrefix(mainCtx context.Context,
 	defer cancel()
 
 	resp, err := s.client.Get(ctx, prefix, clientv3.WithPrefix())
+	s.requestShutdownOnCriticalErr(err)
 	if err != nil {
 		return nil, err
 	}
@@ -277,14 +289,36 @@ func (s *EtcdStore) put(ctx context.Context, k, v string) error {
 
 // defaultSTM returns an STM transaction wrapper for the store's etcd client
 // with the default isolation level that is suitable for manipulating accounts
-// and orders during the order submit phase.
+// and orders during the order submit phase. Upon a critical failure, a daemon
+// shutdown will be requested.
 func (s *EtcdStore) defaultSTM(ctx context.Context, apply func(conc.STM) error) (
 	*clientv3.TxnResponse, error) {
 
 	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
 	defer cancel()
-	return conc.NewSTM(
+
+	resp, err := conc.NewSTM(
 		s.client, apply, conc.WithAbortContext(ctxt),
 		conc.WithIsolation(stmDefaultIsolation),
 	)
+	s.requestShutdownOnCriticalErr(err)
+	return resp, err
+}
+
+// requestShutdownOnCriticalErr requests a daemon shutdown if the error is
+// deemed critical to daemon operation.
+func (s *EtcdStore) requestShutdownOnCriticalErr(err error) {
+	statusErr, isStatusErr := status.FromError(err)
+	switch {
+	// The context attached to the client request has timed out. This can be
+	// due to not being able to reach the etcd server, or it taking too long
+	// to respond. In either case, request a shutdown.
+	case err == context.DeadlineExceeded:
+		fallthrough
+
+	// The etcd server's context timed out before the client's due to clock
+	// skew, request a shutdown anyway.
+	case isStatusErr && statusErr.Code() == codes.DeadlineExceeded:
+		log.Critical("Timed out waiting for etcd response")
+	}
 }
