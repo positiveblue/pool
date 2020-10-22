@@ -92,6 +92,10 @@ type PrometheusConfig struct {
 	// NumActiveTraders should return the number of active traders in the
 	// venue in a thread-safe manner.
 	NumActiveTraders func() int
+
+	// BatchConfTarget should mimic the conf target that is set in the main
+	// config. We use it to monitor the estimated batch feerates.
+	BatchConfTarget int32
 }
 
 // PrometheusExporter is a metric exporter that uses Prometheus directly. The

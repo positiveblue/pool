@@ -57,6 +57,10 @@ const (
 	// each of the published batch transactions.
 	batchTxFees = "batch_tx_fees"
 
+	// batchTxFeeEstimate is the fee estimate for our current batch conf
+	// target.
+	batchTxFeeEstimate = "batch_tx_fee_estimate"
+
 	// conflictCount is the number of funding conflicts recorder per peer.
 	conflictCount = "conflict_count"
 
@@ -100,6 +104,8 @@ const (
 	labelSubjectID  = "subject_id"
 	labelReason     = "reason"
 	labelMarketMade = "market_made"
+
+	labelConfTarget = "conf_target"
 )
 
 // batchCollector is a collector that keeps track of our accounts.
@@ -153,6 +159,13 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 		batchTxNumOutputs, "number of on-chain tx outputs", baseLabels,
 	)
 	g.addGauge(batchTxFees, "on-chain tx fees in satoshis", baseLabels)
+
+	feeRateLabels := []string{labelConfTarget}
+	g.addGauge(
+		batchTxFeeEstimate, "on-chain tx fee estimate in sat/vb",
+		feeRateLabels,
+	)
+
 	g.addGauge(conflictCount, "number of funding conflicts", conflictLabels)
 
 	// Now that we've created the set of gagues to be reset each round,
@@ -351,6 +364,21 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	// the information about previous batches, Prometheus itself will add
 	// the time factor by querying these metrics periodically.
 	c.observeBatch(batchID, batch, tx)
+
+	feeRate, err := c.cfg.Lnd.WalletKit.EstimateFee(
+		ctx, c.cfg.BatchConfTarget,
+	)
+	if err != nil {
+		log.Errorf("could not query fee estimate: %v", err)
+		return
+	}
+
+	labels := prometheus.Labels{
+		labelConfTarget: fmt.Sprintf("%d", c.cfg.BatchConfTarget),
+	}
+	c.g[batchTxFeeEstimate].With(labels).Set(
+		float64(feeRate.FeePerKVByte()) / 1000,
+	)
 
 	// Finally, collect the metrics into the prometheus collect channel.
 	c.g.collect(ch)

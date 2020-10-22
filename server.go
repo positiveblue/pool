@@ -410,6 +410,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		defer auctioneerServer.connectedStreamsMutex.Unlock()
 		return numTraders
 	}
+	cfg.Prometheus.BatchConfTarget = cfg.BatchConfTarget
 
 	poolrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,
