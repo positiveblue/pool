@@ -264,6 +264,17 @@ func (s *EtcdStore) getAllValuesByPrefix(mainCtx context.Context,
 	return result, nil
 }
 
+// put inserts a key-value pair into the etcd store. Upon a critical failure, a
+// daemon shutdown will be requested.
+func (s *EtcdStore) put(ctx context.Context, k, v string) error {
+	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
+	defer cancel()
+
+	_, err := s.client.Put(ctxt, k, v)
+	s.requestShutdownOnCriticalErr(err)
+	return err
+}
+
 // defaultSTM returns an STM transaction wrapper for the store's etcd client
 // with the default isolation level that is suitable for manipulating accounts
 // and orders during the order submit phase.

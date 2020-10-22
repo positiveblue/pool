@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/lightninglabs/subasta/chanenforcement"
-	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
@@ -85,19 +84,15 @@ func (s *EtcdStore) storeLifetimePackage(stm conc.STM,
 func (s *EtcdStore) LifetimePackages(ctx context.Context) (
 	[]*chanenforcement.LifetimePackage, error) {
 
-	keyPrefix := s.lifetimeKeyPathPrefix()
-	resp, err := s.client.Get(ctx, keyPrefix, clientv3.WithPrefix())
+	resp, err := s.getAllValuesByPrefix(ctx, s.lifetimeKeyPathPrefix())
 	if err != nil {
 		return nil, err
 	}
-	if len(resp.Kvs) == 0 {
-		return nil, nil
-	}
 
 	r := bytes.NewReader(nil)
-	pkgs := make([]*chanenforcement.LifetimePackage, 0, len(resp.Kvs))
-	for _, kv := range resp.Kvs {
-		r.Reset(kv.Value)
+	pkgs := make([]*chanenforcement.LifetimePackage, 0, len(resp))
+	for _, v := range resp {
+		r.Reset(v)
 
 		pkg, err := deserializeLifetimePackage(r)
 		if err != nil {

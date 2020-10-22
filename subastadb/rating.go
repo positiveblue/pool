@@ -115,8 +115,7 @@ func (s *EtcdStore) ModifyNodeRating(ctx context.Context, nodeKey [33]byte,
 		return err
 	}
 
-	_, err := s.client.Put(ctx, s.getNodeRatingKey(nodeKey), buf.String())
-	return err
+	return s.put(ctx, s.getNodeRatingKey(nodeKey), buf.String())
 }
 
 // NodeRatings returns a map of all node ratings known to the database.

@@ -11,7 +11,6 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
-	"go.etcd.io/etcd/clientv3"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
@@ -104,26 +103,22 @@ func (s *EtcdStore) HasReservationForKey(ctx context.Context,
 		return nil, nil, errNotInitialized
 	}
 
-	k := s.getKeyPrefix(reservationDir)
-	resp, err := s.client.Get(ctx, k, clientv3.WithPrefix())
+	resp, err := s.getAllValuesByPrefix(ctx, s.getKeyPrefix(reservationDir))
 	if err != nil {
 		return nil, nil, err
-	}
-	if len(resp.Kvs) == 0 {
-		return nil, nil, account.ErrNoReservation
 	}
 
 	var traderKeyRaw [33]byte
 	copy(traderKeyRaw[:], traderKey.SerializeCompressed())
 
-	for _, kv := range resp.Kvs {
-		res, err := deserializeReservation(bytes.NewReader(kv.Value))
+	for k, v := range resp {
+		res, err := deserializeReservation(bytes.NewReader(v))
 		if err != nil {
 			return nil, nil, err
 		}
 
 		// Parse the token ID from the last part of the key.
-		keyParts := strings.Split(string(kv.Key), keyDelimiter)
+		keyParts := strings.Split(k, keyDelimiter)
 		tokenPart := keyParts[len(keyParts)-1]
 		tokenID, err := lsat.MakeIDFromString(tokenPart)
 		if err != nil {
@@ -411,18 +406,14 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 		return nil, errNotInitialized
 	}
 
-	k := s.getKeyPrefix(accountDir)
-	resp, err := s.client.Get(ctx, k, clientv3.WithPrefix())
+	resp, err := s.getAllValuesByPrefix(ctx, s.getKeyPrefix(accountDir))
 	if err != nil {
 		return nil, err
 	}
-	if len(resp.Kvs) == 0 {
-		return nil, nil
-	}
 
-	accounts := make([]*account.Account, 0, len(resp.Kvs))
-	for _, kv := range resp.Kvs {
-		acct, err := deserializeAccount(bytes.NewReader(kv.Value))
+	accounts := make([]*account.Account, 0, len(resp))
+	for _, v := range resp {
+		acct, err := deserializeAccount(bytes.NewReader(v))
 		if err != nil {
 			return nil, err
 		}
