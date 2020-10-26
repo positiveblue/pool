@@ -8,7 +8,6 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
-	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/aperture/lsat"
@@ -159,7 +158,7 @@ func (s *adminRPCServer) BatchTick(_ context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
 	// Force a new batch ticker event in the main auctioneer state machine.
-	s.auctioneer.cfg.BatchTicker.Force <- time.Now()
+	s.auctioneer.cfg.BatchTicker.ForceTick()
 
 	return &adminrpc.EmptyResponse{}, nil
 }
