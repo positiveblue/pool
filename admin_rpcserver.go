@@ -172,6 +172,11 @@ func (s *adminRPCServer) PauseBatchTicker(_ context.Context,
 	// Pause the batch ticker of the main auctioneer state machine.
 	s.auctioneer.cfg.BatchTicker.Pause()
 
+	// Make sure any manual ticks don't resume the ticker.
+	s.auctioneer.auctionHaltedMtx.Lock()
+	s.auctioneer.auctionHalted = true
+	s.auctioneer.auctionHaltedMtx.Unlock()
+
 	return &adminrpc.EmptyResponse{}, nil
 }
 
@@ -181,6 +186,12 @@ func (s *adminRPCServer) ResumeBatchTicker(_ context.Context,
 
 	// Resume the batch ticker of the main auctioneer state machine.
 	s.auctioneer.cfg.BatchTicker.Resume()
+
+	// Resume normal operation, the auctioneer can now pause and resume
+	// the ticker by itself normally.
+	s.auctioneer.auctionHaltedMtx.Lock()
+	s.auctioneer.auctionHalted = false
+	s.auctioneer.auctionHaltedMtx.Unlock()
 
 	return &adminrpc.EmptyResponse{}, nil
 }

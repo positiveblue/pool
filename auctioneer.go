@@ -317,6 +317,12 @@ type Auctioneer struct {
 	// TODO(roasbeef): other solutions: emit own triggers, pre-check?
 	batchRetry bool
 
+	// auctionHalted indicates that the main auction ticker was halted
+	// manually by the admin RPC server. If this is set to true, the
+	// resumeBatchTicker() method is a no-op.
+	auctionHalted    bool
+	auctionHaltedMtx sync.Mutex
+
 	quit chan struct{}
 
 	startOnce sync.Once
@@ -651,6 +657,18 @@ func (a *Auctioneer) blockFeeder(newBlockChan chan int32,
 // instructs us to try and clear a market after BatchTickInterval has passed.
 func (a *Auctioneer) resumeBatchTicker() {
 	log.Debugf("Resuming BatchTicker")
+
+	a.auctionHaltedMtx.Lock()
+	defer a.auctionHaltedMtx.Unlock()
+
+	// Trading can be halted manually through the admin RPC. If no batches
+	// should be created automatically, we don't want the ticker to resume,
+	// even after a manual tick.
+	if a.auctionHalted {
+		log.Debugf("Not resuming BatchTicker, auction was halted " +
+			"manually")
+		return
+	}
 
 	a.cfg.BatchTicker.Resume()
 }
