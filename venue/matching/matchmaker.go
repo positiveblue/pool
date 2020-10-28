@@ -110,6 +110,8 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 		b := bid.Value.(order.Bid)
 
 		if b.MaxBatchFeeRate < feeRate {
+			log.Debugf("Filtered out bid %v with max fee rate %v",
+				b.Nonce(), b.MaxBatchFeeRate)
 			continue
 		}
 
@@ -119,6 +121,8 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 		a := ask.Value.(order.Ask)
 
 		if a.MaxBatchFeeRate < feeRate {
+			log.Debugf("Filtered out ask %v with max fee rate %v",
+				a.Nonce(), a.MaxBatchFeeRate)
 			continue
 		}
 
