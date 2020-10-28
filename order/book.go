@@ -114,9 +114,8 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	feeSchedule terms.FeeSchedule, bestHeight uint32) error {
 
 	// Get the account that is making this order.
-	acctKey, err := btcec.ParsePubKey(
-		o.Details().AcctKey[:], btcec.S256(),
-	)
+	rawKey := o.Details().AcctKey
+	acctKey, err := btcec.ParsePubKey(rawKey[:], btcec.S256())
 	if err != nil {
 		return err
 	}
@@ -148,16 +147,17 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	// locked value and submitted this order, we get a mutex exclusive for
 	// this account. We use the first 32 bytes as an account identifier.
 	var acctID lntypes.Hash
-	copy(acctID[:], o.Details().AcctKey[:32])
+	copy(acctID[:], rawKey[:32])
 	b.acctMutex.Lock(acctID)
 	defer b.acctMutex.Unlock(acctID)
 
-	totalCost, err := b.LockedValue(
-		ctx, o.Details().AcctKey, feeSchedule, o,
-	)
+	totalCost, err := b.LockedValue(ctx, rawKey, feeSchedule, o)
 	if err != nil {
 		return err
 	}
+
+	log.Debugf("Total locked value for account %x (value=%v) after adding "+
+		"order %v: %v", rawKey, acct.Value, o.Nonce(), totalCost)
 
 	// Check if the trader can afford this set of orders in the worst case.
 	if totalCost > acct.Value {

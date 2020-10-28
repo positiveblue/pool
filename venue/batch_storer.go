@@ -110,9 +110,8 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	for _, diff := range batch.FeeReport.AccountDiffs {
 		// Get the current state of the account first so we can create
 		// a proper diff.
-		acctKey, err := btcec.ParsePubKey(
-			diff.StartingState.AccountKey[:], btcec.S256(),
-		)
+		rawKey := diff.StartingState.AccountKey[:]
+		acctKey, err := btcec.ParsePubKey(rawKey, btcec.S256())
 		if err != nil {
 			return fmt.Errorf("error parsing account key: %v", err)
 		}
@@ -143,15 +142,19 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 					diff.StartingState.AccountKey)
 			}
 
+			op := wire.OutPoint{
+				Index: uint32(outpointIndex),
+				Hash:  batchTxHash,
+			}
 			modifiers = append(
 				modifiers,
 				account.StateModifier(account.StatePendingBatch),
-				account.OutPointModifier(wire.OutPoint{
-					Index: uint32(outpointIndex),
-					Hash:  batchTxHash,
-				}),
+				account.OutPointModifier(op),
 				account.IncrementBatchKey(),
 			)
+
+			log.Debugf("Account %x recreated at %v with ending "+
+				"balance %v", rawKey, op, diff.EndingBalance)
 
 		// The account was fully spent on-chain. We need to wait for the
 		// batch (spend) TX to be confirmed still.
@@ -160,6 +163,9 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 				modifiers,
 				account.StateModifier(account.StateClosed),
 			)
+
+			log.Debugf("Account %x fully spent! Ending balance=%v",
+				rawKey, diff.EndingBalance)
 
 		default:
 			return fmt.Errorf("invalid ending account state %d",

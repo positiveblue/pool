@@ -110,6 +110,8 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 		b := bid.Value.(order.Bid)
 
 		if b.MaxBatchFeeRate < feeRate {
+			log.Debugf("Filtered out bid %v with max fee rate %v",
+				b.Nonce(), b.MaxBatchFeeRate)
 			continue
 		}
 
@@ -119,6 +121,8 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 		a := ask.Value.(order.Ask)
 
 		if a.MaxBatchFeeRate < feeRate {
+			log.Debugf("Filtered out ask %v with max fee rate %v",
+				a.Nonce(), a.MaxBatchFeeRate)
 			continue
 		}
 
@@ -157,6 +161,20 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 			"in empty set", len(matchSet.MatchedOrders))
 	}
 
+	logMatches := func(matches []MatchedOrder) string {
+		s := ""
+		for _, m := range matches {
+			d := m.Details
+			s += fmt.Sprintf("ask=%v, bid=%v, units=%v\n",
+				d.Ask.Nonce(), d.Bid.Nonce(), d.Quote.UnitsMatched)
+		}
+
+		return s
+	}
+
+	log.Debugf("Final matches at clearing price %v: \n%v",
+		clearingPrice, logMatches(matches))
+
 	// As a final step, we'll compute the diff for each trader's account.
 	// With this final piece of information, the caller will be able to
 	// easily update all the order/account state in a single atomic
@@ -187,7 +205,7 @@ func filterAnomalies(matches []MatchedOrder,
 		if ask.FixedRate > uint32(clearingPrice) {
 			log.Debugf("Filtered out ask %v (and matched bid %v) "+
 				"with fixed rate %v for clearing price %v",
-				ask.Nonce, bid.Nonce, ask.FixedRate,
+				ask.Nonce(), bid.Nonce(), ask.FixedRate,
 				clearingPrice)
 			continue
 		}
@@ -195,7 +213,7 @@ func filterAnomalies(matches []MatchedOrder,
 		if bid.FixedRate < uint32(clearingPrice) {
 			log.Debugf("Filtered out bid %v (and matched ask %v) "+
 				"with fixed rate %v for clearing price %v",
-				bid.Nonce, ask.Nonce, bid.FixedRate,
+				bid.Nonce(), ask.Nonce(), bid.FixedRate,
 				clearingPrice)
 			continue
 		}
