@@ -187,7 +187,7 @@ func filterAnomalies(matches []MatchedOrder,
 		if ask.FixedRate > uint32(clearingPrice) {
 			log.Debugf("Filtered out ask %v (and matched bid %v) "+
 				"with fixed rate %v for clearing price %v",
-				ask.Nonce, bid.Nonce, ask.FixedRate,
+				ask.Nonce(), bid.Nonce(), ask.FixedRate,
 				clearingPrice)
 			continue
 		}
@@ -195,7 +195,7 @@ func filterAnomalies(matches []MatchedOrder,
 		if bid.FixedRate < uint32(clearingPrice) {
 			log.Debugf("Filtered out bid %v (and matched ask %v) "+
 				"with fixed rate %v for clearing price %v",
-				bid.Nonce, ask.Nonce, bid.FixedRate,
+				bid.Nonce(), ask.Nonce(), bid.FixedRate,
 				clearingPrice)
 			continue
 		}
