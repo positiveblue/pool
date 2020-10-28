@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -328,11 +329,22 @@ func TestReserveAccount(t *testing.T) {
 		t.Fatalf("unable to determine existing reservation: %v", err)
 	}
 
-	// It's not possible to make a reservation for another account while
-	// one's already in flight.
+	// It's not possible to make a new reservation for the same account
+	// while one's already in flight.
 	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
 	if err != nil {
-		t.Fatalf("unable to reserve account: %v", err)
+		t.Fatalf("expected no error on idempotent reservation: %v", err)
+	}
+	h.assertExistingReservation()
+
+	// It's not possible to make a reservation for another account with the
+	// same LSAT token while one's already in flight.
+	params.TraderKey = testAuctioneerKey
+	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
+	if err == nil || !strings.Contains(err.Error(),
+		"found existing pending reservation") {
+		t.Fatalf("expected new reservation attempt to fail, got err: "+
+			"%v", err)
 	}
 	h.assertExistingReservation()
 
