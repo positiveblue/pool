@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -336,6 +337,9 @@ type Auctioneer struct {
 	auctionHalted    bool
 	auctionHaltedMtx sync.Mutex
 
+	fundingConflictResetTicker *IntervalAwareForceTicker
+	traderRejectResetTicker    *IntervalAwareForceTicker
+
 	quit chan struct{}
 
 	startOnce sync.Once
@@ -347,6 +351,19 @@ type Auctioneer struct {
 // NewAuctioneer returns a new instance of the auctioneer given a fully
 // populated config struct.
 func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
+	// A zero interval is not valid so the timer would panic if we passed
+	// that in. Instead we set it to the maximum value which would cause a
+	// tick only every ~300 years.
+	fundingConflictResetInterval := time.Duration(math.MaxInt64)
+	if cfg.FundingConflictsResetInterval != 0 {
+		fundingConflictResetInterval = cfg.FundingConflictsResetInterval
+	}
+
+	traderRejectResetInterval := time.Duration(math.MaxInt64)
+	if cfg.TraderRejectResetInterval != 0 {
+		traderRejectResetInterval = cfg.TraderRejectResetInterval
+	}
+
 	return &Auctioneer{
 		cfg:                cfg,
 		auctionEvents:      make(chan EventTrigger),
@@ -354,6 +371,12 @@ func NewAuctioneer(cfg AuctioneerConfig) *Auctioneer {
 		quit:               make(chan struct{}),
 		orderFeederSignals: make(chan orderFeederState),
 		removedOrders:      make(map[orderT.Nonce]struct{}),
+		fundingConflictResetTicker: NewIntervalAwareForceTicker(
+			fundingConflictResetInterval,
+		),
+		traderRejectResetTicker: NewIntervalAwareForceTicker(
+			traderRejectResetInterval,
+		),
 	}
 }
 
@@ -452,6 +475,10 @@ func (a *Auctioneer) Start() error {
 			startErr = err
 			return
 		}
+
+		// Start the tickers for the automatic conflict map reset.
+		a.fundingConflictResetTicker.Resume()
+		a.traderRejectResetTicker.Resume()
 
 		a.wg.Add(1)
 		go a.auctionCoordinator(newBlockChan, blockErrChan, subscription)
@@ -864,6 +891,18 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 		// the next batch.
 		case feeReq := <-a.feeBumpRequests:
 			a.feeBumpPreference = &feeReq
+
+		// The ticker to reset the funding conflict tracker just ticked,
+		// let's clear the map now.
+		case <-a.fundingConflictResetTicker.Ticks():
+			log.Infof("Clearing funding conflict tracking map")
+			a.cfg.FundingConflicts.Clear()
+
+		// The ticker to reset the trader reject tracker just ticked,
+		// let's clear the map now.
+		case <-a.traderRejectResetTicker.Ticks():
+			log.Infof("Clearing trader reject tracking map")
+			a.cfg.TraderRejected.Clear()
 
 		// A new internally/externally initiated auction event has
 		// arrived. We'll process this event, advancing our state
@@ -1360,7 +1399,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			// might have changed in the meantime.
 			a.pauseOrderFeeder()
 			a.pauseBatchTicker()
-			a.cfg.TraderRejected.Clear()
 
 			// Before we start match making, we get a fee estimate.
 			return FeeEstimationState{}, nil
