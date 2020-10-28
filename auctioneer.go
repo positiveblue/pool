@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
@@ -223,11 +224,23 @@ type AuctioneerConfig struct {
 	// restarts. It can be manually cleared through the admin interface.
 	FundingConflicts *matching.NodeConflictPredicate
 
+	// FundingConflictsResetInterval is the interval after which we
+	// automatically clear the above FundingConflicts map. If this is set to
+	// 0, no automatic clearing will happen but can still be triggered
+	// through the admin RPC.
+	FundingConflictsResetInterval time.Duration
+
 	// TraderRejected is a map that keeps track of nodes that have expressed
 	// the preference to not be matched together, for example because they
-	// already have channels between each other. This map is reset before
-	// each new batch but survives multiple match making attempts.
+	// already have channels between each other. This map is reset
+	// periodically by the TraderRejectResetInterval ticker. Therefore it
+	// can take a while for a trader that removes the --newnodesonly flag to
+	// be matched with existing nodes again.
 	TraderRejected *matching.NodeConflictPredicate
+
+	// TraderRejectResetInterval is the interval after which we
+	// automatically clear the above TraderRejected map.
+	TraderRejectResetInterval time.Duration
 
 	// RatingsAgency if non-nil, will be used as an extract matching
 	// predicate when doing match making.
