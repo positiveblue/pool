@@ -2090,6 +2090,9 @@ func unmarshallNodeTier(nodeTier poolrpc.NodeTier) (orderT.NodeTier, error) {
 func marshallNodeTier(nodeTier orderT.NodeTier) (poolrpc.NodeTier, error) {
 	switch nodeTier {
 
+	case orderT.NodeTierDefault:
+		return poolrpc.NodeTier_TIER_DEFAULT, nil
+
 	case orderT.NodeTier1:
 		return poolrpc.NodeTier_TIER_1, nil
 
