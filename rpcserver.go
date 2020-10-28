@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -30,6 +31,7 @@ import (
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -2008,6 +2010,11 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 
 	resp.BatchTx = txBuf.Bytes()
 	resp.BatchTxId = batchTx.TxHash().String()
+
+	// We'll also need to include its fee rate in the response.
+	txWeight := blockchain.GetTransactionWeight(btcutil.NewTx(batchTx))
+	txFeeRate := feebump.FeeRate(batchSnapshot.BatchTxFee, txWeight)
+	resp.BatchTxFeeRateSatPerKw = uint64(txFeeRate)
 
 	return resp, nil
 }

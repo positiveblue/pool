@@ -10,9 +10,9 @@ require (
 	github.com/golang/protobuf v1.3.3
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/aperture v0.1.1-beta.0.20200901205500-5237b07a6ef5
+	github.com/lightninglabs/aperture v0.1.3-beta
 	github.com/lightninglabs/lndclient v1.0.1-0.20201005192720-d7e439329144
-	github.com/lightninglabs/pool v0.2.9-alpha.0.20201022224847-7e93150867c6
+	github.com/lightninglabs/pool v0.3.1-alpha.0.20201030235945-53842871e198
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
 	github.com/lightningnetwork/lnd v0.11.1-beta.rc3
 	github.com/lightningnetwork/lnd/cert v1.0.3
