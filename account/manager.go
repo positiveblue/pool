@@ -194,8 +194,18 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 	// they're trying to make a reservation with?
 	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
 	switch err {
-	// If we do, return the associated key.
+	// If we do, make sure the existing reservation is for the same account
+	// being reserved.
 	case nil:
+		var resTraderKey [33]byte
+		copy(resTraderKey[:], params.TraderKey.SerializeCompressed())
+		if reservation.TraderKeyRaw != resTraderKey {
+			return nil, fmt.Errorf("unable to make new "+
+				"reservation, found existing pending "+
+				"reservation for account %x",
+				reservation.TraderKeyRaw)
+		}
+
 		return reservation, nil
 
 	// If we don't, proceed to make a new reservation below.
