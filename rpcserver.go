@@ -1306,8 +1306,17 @@ func (s *rpcServer) OrderState(ctx context.Context,
 
 // Terms returns the current dynamic terms like max account size, max order
 // duration in blocks and the auction fee schedule.
-func (s *rpcServer) Terms(_ context.Context, _ *poolrpc.TermsRequest) (
+func (s *rpcServer) Terms(ctx context.Context, _ *poolrpc.TermsRequest) (
 	*poolrpc.TermsResponse, error) {
+
+	nextBatchFeeRate, err := s.auctioneer.cfg.Wallet.EstimateFee(
+		ctx, s.auctioneer.cfg.ConfTarget,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("unable to estimate fee rate for next "+
+			"batch: %v", err)
+	}
+	nextBatchClear := time.Now().Add(s.auctioneer.cfg.BatchTicker.NextTickIn())
 
 	resp := &poolrpc.TermsResponse{
 		MaxAccountValue:        uint64(s.terms.MaxAccountValue),
@@ -1316,7 +1325,10 @@ func (s *rpcServer) Terms(_ context.Context, _ *poolrpc.TermsRequest) (
 			BaseFee: uint64(s.terms.OrderExecBaseFee),
 			FeeRate: uint64(s.terms.OrderExecFeeRate),
 		},
-		LeaseDurations: make(map[uint32]bool),
+		LeaseDurations:           make(map[uint32]bool),
+		NextBatchConfTarget:      uint32(s.auctioneer.cfg.ConfTarget),
+		NextBatchFeeRateSatPerKw: uint64(nextBatchFeeRate),
+		NextBatchClearTimestamp:  uint64(nextBatchClear.Unix()),
 	}
 
 	durationBuckets := s.orderBook.DurationBuckets()
