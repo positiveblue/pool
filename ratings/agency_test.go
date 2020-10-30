@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -19,7 +20,7 @@ import (
 const (
 	// testServerAddr is the address that our test server will listen on
 	// within this set.
-	testServerAddr = "localhost:10020"
+	testServerAddr = "localhost:0"
 )
 
 var (
@@ -80,14 +81,18 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	bosScoreAPI.ratings[node1] = order.NodeTier(node1Score)
 	bosScoreAPI.ratings[node2] = order.NodeTier(node2Score)
 
+	// To pass the race tests where this test case is run multiple times in
+	// parallel, we need to choose a distinct port for the server each time.
+	listener, err := net.Listen("tcp", testServerAddr)
+	require.NoError(t, err)
+	defer closeOrFail(t, listener)
+
 	// Start a server that'll serve the response of the web server within
 	// our tests.
 	server := &http.Server{
-		Addr:    testServerAddr,
 		Handler: http.HandlerFunc(bosScoreAPI.ServeHTTP),
 	}
-	go func() { _ = server.ListenAndServe() }()
-	defer closeOrFail(t, server)
+	go func() { _ = server.Serve(listener) }()
 
 	// Next, we'll set up the set of struct we need, as well as set up the
 	// write thru DB as well to test the caching logic.
@@ -95,7 +100,7 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	writeThruDB := NewMemRatingsDatabase(nil, nil)
 	ratingsDB := NewMemRatingsDatabase(writeThruDB, nil)
 	scoreWebSource := BosScoreWebRatings{
-		URL: fmt.Sprintf("http://%s/", testServerAddr),
+		URL: fmt.Sprintf("http://%s/", listener.Addr()),
 	}
 	bosScoreDB := NewBosScoreRatingsDatabase(
 		&scoreWebSource, refreshInterval, ratingsDB,
@@ -103,7 +108,7 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 
 	// First, we'll kick off the indexing of the ratings for the first
 	// time.
-	err := bosScoreDB.IndexRatings(ctx)
+	err = bosScoreDB.IndexRatings(ctx)
 	require.NoError(t, err)
 
 	// We'll manually pause the ticker here to make the test a bit easier
