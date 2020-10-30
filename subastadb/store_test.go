@@ -48,6 +48,7 @@ func newTestEtcdStore(t *testing.T) (*EtcdStore, func()) {
 
 	cfg := embed.NewConfig()
 	cfg.Logger = "zap"
+	cfg.LogLevel = "error"
 	cfg.Dir = tempDir
 
 	clientURL := fmt.Sprintf("127.0.0.1:%d", getFreePort())
