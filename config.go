@@ -107,6 +107,15 @@ const (
 	// on testnet as well, but isn't as reliable since that's essentially a
 	// zombie network.
 	defaultBosScoreURL = "https://nodes.lightning.computer/availability/v1/btc.json"
+
+	// defaultFundingConflictResetInterval is the default interval after
+	// which we automatically reset the funding conflict map. By default we
+	// don't reset the funding conflicts automatically.
+	defaultFundingConflictResetInterval = time.Duration(0)
+
+	// defaultTraderRejectResetInterval is the default interval after which
+	// we automatically reset the trader reject conflict map.
+	defaultTraderRejectResetInterval = time.Hour * 24
 )
 
 var (
@@ -188,6 +197,9 @@ type Config struct {
 	NodeRatingsRefreshInterval time.Duration `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
 	BosScoreWebURL             string        `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
 
+	FundingConflictResetInterval time.Duration `long:"fundingconflictresetinterval" description:"the reset interval for funding conflicts (errors during channel opens), set to 0 for no automatic reset"`
+	TraderRejectResetInterval    time.Duration `long:"traderrejectresetinterval" description:"the reset interval for trader rejects (partial rejects because of --newnodesonly flag)"`
+
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
@@ -228,16 +240,18 @@ var DefaultConfig = &Config{
 	Bitcoin: &chain.BitcoinConfig{
 		Host: "localhost:8332",
 	},
-	TLSCertPath:                defaultTLSCertPath,
-	TLSKeyPath:                 defaultTLSKeyPath,
-	MaxLogFiles:                defaultMaxLogFiles,
-	MaxLogFileSize:             defaultMaxLogFileSize,
-	DebugLevel:                 defaultLogLevel,
-	LogDir:                     defaultLogDir,
-	AccountExpiryOffset:        defaultAccountExpiryOffset,
-	DurationBuckets:            defaultDurationBuckets,
-	NodeRatingsRefreshInterval: defaultNodeRatingsRefreshInterval,
-	BosScoreWebURL:             defaultBosScoreURL,
+	TLSCertPath:                  defaultTLSCertPath,
+	TLSKeyPath:                   defaultTLSKeyPath,
+	MaxLogFiles:                  defaultMaxLogFiles,
+	MaxLogFileSize:               defaultMaxLogFileSize,
+	DebugLevel:                   defaultLogLevel,
+	LogDir:                       defaultLogDir,
+	AccountExpiryOffset:          defaultAccountExpiryOffset,
+	DurationBuckets:              defaultDurationBuckets,
+	NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
+	BosScoreWebURL:               defaultBosScoreURL,
+	FundingConflictResetInterval: defaultFundingConflictResetInterval,
+	TraderRejectResetInterval:    defaultTraderRejectResetInterval,
 }
 
 // extractCertOpt examines the main configuration to create a grpc.ServerOption
