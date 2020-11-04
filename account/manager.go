@@ -183,11 +183,6 @@ func (m *Manager) Stop() {
 func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 	tokenID lsat.TokenID, bestHeight uint32) (*Reservation, error) {
 
-	// First, make sure we have valid parameters to create the account.
-	if err := m.validateAccountParams(params, bestHeight); err != nil {
-		return nil, err
-	}
-
 	// Check whether we have an existing reservation already.
 	//
 	// TODO(wilmer): Check whether we already have an account with the key
@@ -213,6 +208,11 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 		break
 
 	default:
+		return nil, err
+	}
+
+	// Make sure we have valid parameters to create the account.
+	if err := m.validateAccountParams(params, bestHeight); err != nil {
 		return nil, err
 	}
 
