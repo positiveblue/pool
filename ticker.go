@@ -19,7 +19,7 @@ type IntervalAwareForceTicker struct {
 	// debugging when trying to wake an event.
 	Force chan time.Time
 
-	ticker <-chan time.Time
+	ticker *time.Ticker
 	skip   chan struct{}
 
 	interval time.Duration
@@ -44,7 +44,7 @@ var _ ticker.Ticker = (*IntervalAwareForceTicker)(nil)
 // output by the channel returned by Ticks().
 func NewIntervalAwareForceTicker(interval time.Duration) *IntervalAwareForceTicker {
 	t := &IntervalAwareForceTicker{
-		ticker:        time.NewTicker(interval).C,
+		ticker:        time.NewTicker(interval),
 		interval:      interval,
 		Force:         make(chan time.Time),
 		skip:          make(chan struct{}),
@@ -52,13 +52,21 @@ func NewIntervalAwareForceTicker(interval time.Duration) *IntervalAwareForceTick
 		lastTimedTick: time.Now(),
 	}
 
-	// Proxy the real ticks to our Force channel if we are active.
+	// Start the main goroutine that handles the clock ticks.
+	t.start()
+
+	return t
+}
+
+// start starts the main event loop where real ticks are proxied to our Force
+// channel if we are active.
+func (t *IntervalAwareForceTicker) start() {
 	t.wg.Add(1)
 	go func() {
 		defer t.wg.Done()
 		for {
 			select {
-			case tick := <-t.ticker:
+			case tick := <-t.ticker.C:
 				// Always update the last tick timestamp so we
 				// can more accurately say when the next one
 				// will happen if we're un-paused.
@@ -82,8 +90,6 @@ func NewIntervalAwareForceTicker(interval time.Duration) *IntervalAwareForceTick
 			}
 		}
 	}()
-
-	return t
 }
 
 // Ticks returns a receive-only channel that delivers times at the ticker's
@@ -124,8 +130,44 @@ func (t *IntervalAwareForceTicker) Pause() {
 // NOTE: Part of the Ticker interface.
 func (t *IntervalAwareForceTicker) Stop() {
 	t.Pause()
+	t.ticker.Stop()
 	close(t.quit)
 	t.wg.Wait()
+}
+
+// ResetWithInterval restarts the ticker with the given interval, causing the
+// next clock tick to occur in the given interval.
+func (t *IntervalAwareForceTicker) ResetWithInterval(newInterval time.Duration) {
+	// Shutdown the internal clock ticker without changing isActive.
+	t.ticker.Stop()
+	close(t.quit)
+	t.wg.Wait()
+
+	// Reset everything to the same state as if we'd just created this
+	// ticker from scratch.
+	t.interval = newInterval
+	t.ticker = time.NewTicker(newInterval)
+	t.quit = make(chan struct{})
+	t.lastTimedTickMtx.Lock()
+	t.lastTimedTick = time.Now()
+	t.lastTimedTickMtx.Unlock()
+
+	// Restart the actual run loop now that we have a new ticker.
+	t.start()
+}
+
+// Reset restarts the ticker interval, causing the next clock tick to occur in
+// the configured interval.
+func (t *IntervalAwareForceTicker) Reset() {
+	t.ResetWithInterval(t.interval)
+}
+
+// ForceTick force feeds an event into the ticker channel and resets the
+// internal clock ticker causing the next clock tick to occur in the configured
+// interval.
+func (t *IntervalAwareForceTicker) ForceTick() {
+	t.Reset()
+	t.Force <- time.Now()
 }
 
 // LastTimedTick returns the timestamp when the last tick occurred that was

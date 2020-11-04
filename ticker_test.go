@@ -114,6 +114,20 @@ func testTicker(t *testing.T, ticker *subasta.IntervalAwareForceTicker) {
 		}
 	}
 
+	// Make sure we can reset the ticker, causing it to restart its internal
+	// clock ticker.
+	ticker.Reset()
+	assertTickTimeUpdated(t, ticker)
+
+	for i := 0; i < numActiveTicks; i++ {
+		select {
+		case <-ticker.Ticks():
+		case <-time.After(2 * interval):
+			t.Fatalf("ticker should have ticked after calling " +
+				"Reset")
+		}
+	}
+
 	// Stop the ticker altogether, should render it inactive.
 	ticker.Stop()
 
