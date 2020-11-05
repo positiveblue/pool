@@ -605,7 +605,6 @@ func TestMatchingAccountNotReady(t *testing.T) {
 
 	r := rand.New(rand.NewSource(time.Now().Unix()))
 	acctDB, acctCacher, predicates := newAcctCacher()
-	matchMaker := NewMultiUnitMatchMaker(acctCacher, predicates)
 
 	ask := genRandAsk(r, acctDB)
 	asks := []*order.Ask{ask}
@@ -620,12 +619,7 @@ func TestMatchingAccountNotReady(t *testing.T) {
 	)
 	bids := []*order.Bid{bid}
 
-	matchSet, err := matchMaker.MatchBatch(bids, asks)
-	require.NoError(t, err)
-
-	require.Empty(t, matchSet.MatchedOrders)
-	require.Equal(t, matchSet.UnmatchedAsks, asks)
-	require.Equal(t, matchSet.UnmatchedBids, bids)
+	assertNotInBatch(t, acctCacher, predicates, asks, bids)
 }
 
 // TestMatchingAccountNotReadyCloseToExpiry tests that if an account is close
@@ -664,23 +658,15 @@ func TestMatchingAccountNotReadyCloseToExpiry(t *testing.T) {
 	asks := []*order.Ask{ask}
 	bids := []*order.Bid{bid}
 
-	assertNotInBatch := func() {
-		matchSet, err := matchMaker.MatchBatch(bids, asks)
-		require.NoError(t, err)
-		require.Empty(t, matchSet.MatchedOrders)
-		require.Equal(t, matchSet.UnmatchedAsks, asks)
-		require.Equal(t, matchSet.UnmatchedBids, bids)
-	}
-
 	// As the expiry is one block before the current height, it shouldn't
 	// be able to join the batch.
 	acctDB.accts[bid.NodeKey].Expiry = currentHeight - 1
 
-	assertNotInBatch()
+	assertNotInBatch(t, acctCacher, predicates, asks, bids)
 
 	// We'll invalidate the cache so we fetch the latest state for the next
 	// attempt.
-	matchMaker.accountCacher.(*AccountPredicate).accountCache = make(
+	matchMaker.accountCacher.(*AccountFilter).accountCache = make(
 		map[[33]byte]*account.Account,
 	)
 
@@ -689,11 +675,11 @@ func TestMatchingAccountNotReadyCloseToExpiry(t *testing.T) {
 	// check.
 	acctDB.accts[bid.NodeKey].Expiry = currentHeight + accountExpiryOffset
 
-	assertNotInBatch()
+	assertNotInBatch(t, acctCacher, predicates, asks, bids)
 
 	// Finally, if we set a height well ahead of our cut off, then we
 	// should have a match.
-	matchMaker.accountCacher.(*AccountPredicate).accountCache = make(
+	matchMaker.accountCacher.(*AccountFilter).accountCache = make(
 		map[[33]byte]*account.Account,
 	)
 	acctDB.accts[bid.NodeKey].Expiry = currentHeight + (accountExpiryOffset * 2)
@@ -701,4 +687,31 @@ func TestMatchingAccountNotReadyCloseToExpiry(t *testing.T) {
 	matchSet, err := matchMaker.MatchBatch(bids, asks)
 	require.NoError(t, err)
 	require.NotEmpty(t, matchSet.MatchedOrders)
+}
+
+func assertNotInBatch(t *testing.T, acctCacher *AccountFilter,
+	predicates []MatchPredicate, asks []*order.Ask, bids []*order.Bid) {
+
+	// LastAcceptedBid is the clearing price model used.
+	callMarket := NewUniformPriceCallMarket(
+		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+	)
+	filterChain := []OrderFilter{acctCacher}
+
+	// Add all orders from the scenario to the call market, and
+	// clear the batch.
+	if err := callMarket.ConsiderBids(bids...); err != nil {
+		t.Fatalf("unable to add bids: %v", err)
+	}
+	if err := callMarket.ConsiderAsks(asks...); err != nil {
+		t.Fatalf("unable to add asks: %v", err)
+	}
+
+	orderBatch, err := callMarket.MaybeClear(
+		acctCacher, filterChain, predicates,
+	)
+
+	require.Error(t, err)
+	require.Equal(t, ErrNoMarketPossible, err)
+	require.Nil(t, orderBatch)
 }

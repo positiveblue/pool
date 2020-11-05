@@ -261,17 +261,14 @@ type acctFetcher struct {
 	accts map[[33]byte]*account.Account
 }
 
-func newAcctCacher() (*acctFetcher, *AccountPredicate, []MatchPredicate) {
+func newAcctCacher() (*acctFetcher, *AccountFilter, []MatchPredicate) {
 	fetcher := &acctFetcher{
 		accts: make(map[[33]byte]*account.Account),
 	}
-	acctPredicate := NewAccountPredicate(
+	acctPredicate := NewAccountFilter(
 		fetcher.fetchAcct, 0, fetcher.isTraderAllowed,
 	)
-	predicates := []MatchPredicate{acctPredicate}
-	return fetcher, acctPredicate, append(
-		predicates, DefaultPredicateChain...,
-	)
+	return fetcher, acctPredicate, DefaultPredicateChain
 }
 
 func (a *acctFetcher) fetchAcct(k AccountID) (*account.Account, error) {

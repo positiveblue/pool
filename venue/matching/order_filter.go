@@ -84,9 +84,9 @@ type AccountCacher interface {
 	GetCachedAccount(key [33]byte) (*account.Account, error)
 }
 
-// AccountPredicate is a type that implements the MatchPredicate interface to
-// make sure two orders can be matched based on their account's state.
-type AccountPredicate struct {
+// AccountFilter is a type that implements the OrderFilter interface to
+// make sure an order's account is in the correct state for matchmaking.
+type AccountFilter struct {
 	// fetchAcct fetches the latest state of an account identified by its
 	// trader public key.
 	fetchAcct AccountFetcher
@@ -106,12 +106,12 @@ type AccountPredicate struct {
 	allowedChecker AllowedChecker
 }
 
-// NewAccountPredicate creates a new account predicate that can fetch and cache
+// NewAccountFilter creates a new account filter that can fetch and cache
 // accounts during its lifetime.
-func NewAccountPredicate(acctFetcher AccountFetcher,
-	accountExpiryCutoff uint32, allowedChecker AllowedChecker) *AccountPredicate {
+func NewAccountFilter(acctFetcher AccountFetcher, accountExpiryCutoff uint32,
+	allowedChecker AllowedChecker) *AccountFilter {
 
-	return &AccountPredicate{
+	return &AccountFilter{
 		fetchAcct:           acctFetcher,
 		accountCache:        make(map[[33]byte]*account.Account),
 		accountExpiryCutoff: accountExpiryCutoff,
@@ -119,46 +119,43 @@ func NewAccountPredicate(acctFetcher AccountFetcher,
 	}
 }
 
-// IsMatchable returns true if this specific predicate doesn't have any
-// objection about two orders being matched. This does not yet mean the match
-// will succeed as many predicates are usually chained together and a match only
-// succeeds if _all_ of the predicates return true.
+// IsSuitable returns true if this specific predicate doesn't have any objection
+// about an order being included in the matchmaking process.
 //
-// NOTE: This is part of the MatchPredicate interface.
-func (p *AccountPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) bool {
-	if !p.allowedChecker(ask.NodeKey, ask.AcctKey) {
-		log.Debugf("Cannot match ask %s against bid %s because asker "+
-			"is banned", ask.Nonce(), bid.Nonce())
+// NOTE: This is part of the OrderFilter interface.
+func (p *AccountFilter) IsSuitable(o order.ServerOrder) bool {
+	if !p.allowedChecker(o.ServerDetails().NodeKey, o.Details().AcctKey) {
+		log.Debugf("Filtered out order %v with banned trader ("+
+			"node=%x, acct=%x)", o.Nonce(),
+			o.ServerDetails().NodeKey[:], o.Details().AcctKey[:])
 
 		return false
 	}
 
-	if !p.allowedChecker(bid.NodeKey, bid.AcctKey) {
-		log.Debugf("Cannot match ask %s against bid %s because bidder "+
-			"is banned", ask.Nonce(), bid.Nonce())
-
-		return false
-	}
-
-	bidAcct, err := p.GetCachedAccount(bid.AcctKey)
+	acct, err := p.GetCachedAccount(o.Details().AcctKey)
 	if err != nil {
-		return false
-	}
-	askAcct, err := p.GetCachedAccount(ask.AcctKey)
-	if err != nil {
+		log.Debugf("Filtered out order %v with account not in cache: "+
+			"%v", o.Nonce(), err)
+
 		return false
 	}
 
-	// Ensure both accounts are ready to participate in a batch.
-	return isAccountReady(bidAcct, p.accountExpiryCutoff) &&
-		isAccountReady(askAcct, p.accountExpiryCutoff)
+	// Ensure the account is ready to participate in a batch.
+	isReady := isAccountReady(acct, p.accountExpiryCutoff)
+	if !isReady {
+		log.Debugf("Filtered out order %v with account not ready, "+
+			"state=%v, expiry=%v, cutoff=%v", o.Nonce(),
+			acct.State, acct.State, p.accountExpiryCutoff)
+	}
+
+	return isReady
 }
 
 // GetCachedAccount retrieves the account with the given key from the cache. If
 // if it hasn't been cached yet, then it's retrieved from disk and cached.
 //
 // NOTE: This is part of the AccountCacher interface.
-func (p *AccountPredicate) GetCachedAccount(key [33]byte) (*account.Account,
+func (p *AccountFilter) GetCachedAccount(key [33]byte) (*account.Account,
 	error) {
 
 	if acct, ok := p.accountCache[key]; ok {
@@ -174,10 +171,10 @@ func (p *AccountPredicate) GetCachedAccount(key [33]byte) (*account.Account,
 	return acct, nil
 }
 
-// A compile time check to make sure AccountPredicate implements the
-// MatchPredicate and AccountCacher interface.
-var _ MatchPredicate = (*AccountPredicate)(nil)
-var _ AccountCacher = (*AccountPredicate)(nil)
+// A compile time check to make sure AccountFilter implements the OrderFilter
+// and AccountCacher interface.
+var _ OrderFilter = (*AccountFilter)(nil)
+var _ AccountCacher = (*AccountFilter)(nil)
 
 // isAccountReady determines whether an account is ready to participate in a
 // batch.

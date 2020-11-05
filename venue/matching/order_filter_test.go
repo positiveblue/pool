@@ -95,26 +95,27 @@ func TestAccountPredicate(t *testing.T) {
 	}
 
 	cutoff := uint32(144)
-	p := NewAccountPredicate(fetcher, cutoff, allowedChecker)
+	f := NewAccountFilter(fetcher, cutoff, allowedChecker)
 
-	// Make sure that by default we can match the two test orders.
-	assert.True(t, p.IsMatchable(node1Ask, node2Bid))
+	// Make sure that by default we accept the two test orders.
+	assert.True(t, f.IsSuitable(node1Ask))
+	assert.True(t, f.IsSuitable(node2Bid))
 
 	// Banned accounts shouldn't be matchable.
 	acct1banned = true
-	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	assert.False(t, f.IsSuitable(node1Ask))
 	acct1banned = false
 	acct2banned = true
-	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	assert.False(t, f.IsSuitable(node2Bid))
 	acct1banned = false
 	acct2banned = false
 
 	// Accounts close to expiry should also not match.
 	acct1.Expiry = 144
-	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	assert.False(t, f.IsSuitable(node1Ask))
 	acct1.Expiry = 2016
 
 	// Accounts in the wrong state also shouldn't be matched.
 	acct1.State = account.StatePendingOpen
-	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	assert.False(t, f.IsSuitable(node1Ask))
 }
