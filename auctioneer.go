@@ -1501,6 +1501,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				return err == nil && !traderBanned
 			},
 		)
+		filterChain := []matching.OrderFilter{
+			matching.NewBatchFeeRateFilter(s.batchFeeRate),
+		}
 
 		// We pass in our two conflict handlers that also act as match
 		// predicates together with the default predicate chain.
@@ -1540,7 +1543,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// the duration? then merge at the end? before execution?
 		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
-			s.batchFeeRate, accountPredicate, predicateChain,
+			accountPredicate, filterChain, predicateChain,
 		)
 		matchLatency := time.Since(matchTimeStart)
 

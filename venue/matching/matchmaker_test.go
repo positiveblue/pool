@@ -14,6 +14,12 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
+var (
+	dummyFilterChain = []OrderFilter{
+		NewBatchFeeRateFilter(chainfee.FeePerKwFloor),
+	}
+)
+
 // TestCallMarketConsiderForgetOrders tests that we're able to properly add and
 // remove orders from the uniform price call market.
 func TestCallMarketConsiderForgetOrders(t *testing.T) {
@@ -167,7 +173,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 	)
 
 	_, err := callMarket.MaybeClear(
-		chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, dummyFilterChain, predicates,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
@@ -202,7 +208,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 	// If we attempt to make a market, we should get the
 	// ErrNoMarketPossible error.
 	_, err := callMarket.MaybeClear(
-		chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, dummyFilterChain, predicates,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
@@ -263,7 +269,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
 		orderBatch, err := callMarket.MaybeClear(
-			chainfee.FeePerKwFloor, acctCacher, predicates,
+			acctCacher, dummyFilterChain, predicates,
 		)
 		if err != nil {
 			fmt.Println("clear error: ", err)
@@ -479,7 +485,9 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	// If we attempt to make a market with a fee rate above all the orders'
 	// max fee rate, we should get the ErrNoMarketPossible error.
 	_, err := callMarket.MaybeClear(
-		7*chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, []OrderFilter{NewBatchFeeRateFilter(
+			7 * chainfee.FeePerKwFloor,
+		)}, predicates,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
@@ -488,7 +496,9 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	// Now make a market with a fee rate that should make exactly 3 matches
 	// possible.
 	orderBatch, err := callMarket.MaybeClear(
-		4*chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, []OrderFilter{NewBatchFeeRateFilter(
+			4 * chainfee.FeePerKwFloor,
+		)}, predicates,
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -524,7 +534,7 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 		}
 
 		orderBatch, err := callMarket.MaybeClear(
-			chainfee.FeePerKwFloor, acctCacher, predicates,
+			acctCacher, dummyFilterChain, predicates,
 		)
 		switch {
 		case err == ErrNoMarketPossible:
