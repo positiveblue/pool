@@ -104,12 +104,17 @@ func (d *DurationBuckets) ValidDurations() []uint32 {
 // IterBuckets is a concurrent-safe method that can be used to iterate over the
 // current set of active duration markets along with their state.
 func (d *DurationBuckets) IterBuckets(f func(durationBlocks uint32,
-	marketState DurationBucketState)) {
+	marketState DurationBucketState) error) error {
 
 	d.RLock()
 	defer d.RUnlock()
 
 	for duration, state := range d.buckets {
-		f(duration, state)
+		err := f(duration, state)
+		if err != nil {
+			return err
+		}
 	}
+
+	return nil
 }
