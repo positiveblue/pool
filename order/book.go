@@ -374,7 +374,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	// Anything below the supply unit size cannot be filled anyway so we
 	// don't allow any order size that's not dividable by the supply size.
 	amt := srvOrder.Details().Amt
-	if amt == 0 || amt%btcutil.Amount(order.BaseSupplyUnit) != 0 {
+	if amt <= 0 || amt%btcutil.Amount(order.BaseSupplyUnit) != 0 {
 		return fmt.Errorf("order amount must be multiple of %d sats",
 			order.BaseSupplyUnit)
 	}
