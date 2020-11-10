@@ -597,3 +597,141 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 			int64(batchTxCtx.MasterAccountDiff.AccountBalance))
 	}
 }
+
+// TestBatchTxPoorTrader checks we get back ErrPoorTrader if a trader cannot
+// pay its chain fees.
+func TestBatchTxPoorTrader(t *testing.T) {
+	t.Parallel()
+
+	const clearingPrice = orderT.FixedRatePremium(10000)
+	feeSchedule := mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	// We'll just do a simple batch with two traders, one match.
+	acctValue := btcutil.Amount(btcutil.SatoshiPerBitcoin)
+	numRandTraders := 2
+
+	orderBatch := &matching.OrderBatch{}
+
+	// Genarate the two traders.
+	traders := make([]*account.Account, numRandTraders)
+	for i := 0; i < numRandTraders; i++ {
+		traderKey, err := btcec.NewPrivateKey(btcec.S256())
+		if err != nil {
+			t.Fatalf("unable to generate trader key: %v", err)
+		}
+
+		acct := &account.Account{
+			Value:    acctValue,
+			Expiry:   2016,
+			BatchKey: traderKey.PubKey(),
+		}
+		traderKeyBytes := traderKey.PubKey().SerializeCompressed()
+		copy(acct.TraderKeyRaw[:], traderKeyBytes)
+		copy(acct.Secret[:], traderKeyBytes)
+		copy(acct.OutPoint.Hash[:], traderKeyBytes)
+
+		traders[i] = acct
+	}
+
+	asker := traders[0]
+	bidder := traders[1]
+
+	// Next, create a bid and an ask.
+	orderSize := acctValue
+
+	var (
+		askKey   [33]byte
+		askNonce [32]byte
+	)
+	askerFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	if err != nil {
+		t.Fatalf("unable to generate funding key: %v", err)
+	}
+	copy(askKey[:], askerFundingKey.PubKey().SerializeCompressed())
+	copy(askNonce[:], askKey[:])
+	ask := &order.Ask{
+		Ask: orderT.Ask{
+			Kit: *orderT.NewKit(askNonce),
+		},
+		Kit: order.Kit{
+			MultiSigKey: askKey,
+		},
+	}
+
+	var (
+		bidKey   [33]byte
+		bidNonce [32]byte
+	)
+	bidderFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	if err != nil {
+		t.Fatalf("unable to generate funding key: %v", err)
+	}
+	copy(bidKey[:], bidderFundingKey.PubKey().SerializeCompressed())
+	copy(bidNonce[:], bidKey[:])
+	bid := &order.Bid{
+		Bid: orderT.Bid{
+			Kit: *orderT.NewKit(bidNonce),
+		},
+		Kit: order.Kit{
+			MultiSigKey: bidKey,
+		},
+	}
+
+	orderBatch.Orders = append(orderBatch.Orders, matching.MatchedOrder{
+		Asker:  matching.NewTraderFromAccount(asker),
+		Bidder: matching.NewTraderFromAccount(bidder),
+		Details: matching.OrderPair{
+			Bid: bid,
+			Ask: ask,
+			Quote: matching.PriceQuote{
+				TotalSatsCleared: orderSize,
+			},
+		},
+	})
+
+	// To complete our test batch, we'll generate an actual trading report,
+	// and also supply the clearing price of 1% that we use in our tests to
+	// make things easy.
+	orderBatch.FeeReport = matching.NewTradingFeeReport(
+		orderBatch.Orders, &feeSchedule, clearingPrice,
+	)
+	orderBatch.ClearingPrice = clearingPrice
+
+	// With all our set up done, we'll now create our master account diff,
+	// then construct the batch transaction.
+	priorAccountPoint := wire.OutPoint{}
+	auctPubKey := auctioneerKey.PubKey().SerializeCompressed()
+	copy(priorAccountPoint.Hash[:], auctPubKey)
+	masterAcct := &account.Auctioneer{
+		OutPoint: priorAccountPoint,
+		Balance:  acctValue * 10,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: auctioneerKey.PubKey(),
+		},
+	}
+	batchKey := auctioneerKey.PubKey()
+
+	// Attempt to assemble a batch TX, this should fail! (since the order
+	// size is the same as the account size).
+	feeRate := chainfee.SatPerKWeight(200)
+	_, err = NewExecutionContext(
+		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+	)
+	if err == nil {
+		t.Fatalf("expected error")
+	}
+
+	// Check we get the error we expect, with the correct trader (the
+	// asker) detected.
+	feeErr, ok := err.(*ErrPoorTrader)
+	if !ok {
+		t.Fatalf("Expected ErrPoorTrader, got %v", err)
+	}
+
+	if feeErr.Account != asker.TraderKeyRaw {
+		t.Fatalf("expected %x got %x", asker.TraderKeyRaw, feeErr.Account)
+	}
+}

@@ -19,6 +19,17 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
+// ErrPoorTrader is returned if an account cannot pay their chain fees!
+type ErrPoorTrader struct {
+	Account matching.AccountID
+	Err     error
+}
+
+// Error returns a human-readable error message.
+func (e *ErrPoorTrader) Error() string {
+	return e.Err.Error()
+}
+
 // OrderOutput represents an executed order within the batch execution
 // transaction. In order words, this output is the created channel from a
 // bid+ask order.
@@ -336,9 +347,13 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// chain fees, otherwise we shouldn't have accepted the order
 		// into this batch.
 		if traderFee > trader.EndingBalance {
-			return fmt.Errorf("account %x only had balance %v to "+
+			err := fmt.Errorf("account %x only had balance %v to "+
 				"cover chain fee %v", acctID,
 				trader.EndingBalance, traderFee)
+			return &ErrPoorTrader{
+				Account: acctID,
+				Err:     err,
+			}
 		}
 
 		// Subtract the chain fee from their balance.
