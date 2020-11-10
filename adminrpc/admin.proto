@@ -11,7 +11,10 @@ service AuctionAdmin {
     rpc PauseBatchTicker (EmptyRequest) returns (EmptyResponse);
     rpc ResumeBatchTicker (EmptyRequest) returns (EmptyResponse);
     rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
+    rpc AccountDetails (AccountDetailsRequest) returns (poolrpc.AuctionAccount);
     rpc ListAccounts (EmptyRequest) returns (ListAccountsResponse);
+    rpc EditAccount (EditAccountRequest) returns (poolrpc.AuctionAccount);
+    rpc DeleteAccountDiff (DeleteAccountDiffRequest) returns (EmptyResponse);
     rpc AuctionStatus (EmptyRequest) returns (AuctionStatusResponse);
     rpc ListBatches (EmptyRequest) returns (ListBatchesResponse);
     rpc BatchSnapshot (poolrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
@@ -116,6 +119,48 @@ message ListOrdersRequest {
 message ListOrdersResponse {
     repeated poolrpc.ServerAsk asks = 1;
     repeated poolrpc.ServerBid bids = 2;
+}
+
+message AccountDetailsRequest {
+    // The identifying key of the account to retrieve.
+    bytes account_key = 1;
+
+    /*
+    Whether the account diff, if any, should be retrieved instead of the main
+    account state.
+    */
+    bool include_diff = 2;
+}
+
+message EditAccountRequest {
+    // The identifying key of the account to edit details of.
+    bytes account_key = 1;
+
+    /*
+    Whether the account diff, if any, should be edited instead of the main
+    account state.
+    */
+    bool edit_diff = 2;
+
+    // The new value of the account.
+    uint64 value = 3;
+
+    /*
+    Determines how many times we should rotate the account's current batch key.
+    Negative integers decrement the key, while positive increments it.
+    */
+    int32 rotate_batch_key = 4;
+
+    // The new outpoint of the account.
+    OutPoint outpoint = 5;
+
+    // The new latest transaction of the account.
+    bytes latest_tx = 6;
+}
+
+message DeleteAccountDiffRequest {
+    // The identifying key of the account to delete the staged diff of.
+    bytes account_key = 1;
 }
 
 message ListAccountsResponse {
