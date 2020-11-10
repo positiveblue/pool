@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
@@ -343,9 +344,44 @@ func TestAccountDiffs(t *testing.T) {
 		t.Fatal("committed account does not match expected")
 	}
 
-	// Finally, attempt to store another diff, to ensure the previous one
-	// was cleared.
+	// Attempt to store another diff, to ensure the previous one was
+	// cleared.
 	if err := store.StoreAccountDiff(ctx, traderKey, mods); err != nil {
 		t.Fatalf("unable to store account diff: %v", err)
+	}
+
+	// Update the account diff and ensure it was updated correctly.
+	diffMods := []account.Modifier{
+		account.ValueModifier(btcutil.SatoshiPerBitcoin),
+	}
+	if err := store.UpdateAccountDiff(ctx, traderKey, diffMods); err != nil {
+		t.Fatalf("unable to update account diff: %v", err)
+	}
+	accountWithUpdatedDiff, err := store.Account(ctx, traderKey, true)
+	if err != nil {
+		t.Fatalf("unable to retrieve account diff: %v", err)
+	}
+	aWithUpdatedDiff := a.Copy(append(mods, diffMods...)...)
+	if !reflect.DeepEqual(accountWithUpdatedDiff, aWithUpdatedDiff) {
+		t.Fatal("stored account diff does not match expected")
+	}
+
+	// Finally, delete the diff and ensure it wasn't applied.
+	if err := store.DeleteAccountDiff(ctx, traderKey); err != nil {
+		t.Fatalf("unable to delete account diff: %v", err)
+	}
+	finalAccount, err := store.Account(ctx, traderKey, true)
+	if err != nil {
+		t.Fatalf("unable to retrieve account: %v", err)
+	}
+	if !reflect.DeepEqual(finalAccount, committedAccount) {
+		t.Fatal("expected account to not have deleted diff applied")
+	}
+
+	// We shouldn't be able to update an account diff after it no longer
+	// exists.
+	err = store.UpdateAccountDiff(ctx, traderKey, diffMods)
+	if err != account.ErrNoDiff {
+		t.Fatalf("expteced ErrNoDiff, got %v", err)
 	}
 }
