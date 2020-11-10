@@ -1569,6 +1569,34 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.cfg.FeeSchedule,
 		)
 		if err != nil {
+			log.Errorf("Failed creating execution context: %v", err)
+
+			// If this is an error because of lingering orders
+			// having their reserved value calvulated wrongly, we
+			// remove ignore them and redo matchmaking.
+			if feeErr, ok := err.(*batchtx.ErrPoorTrader); ok {
+				// Get all nonces in the batch from the trader
+				// that triggered this error.
+				var nonces []orderT.Nonce
+				for _, match := range orderBatch.Orders {
+					ask := match.Details.Ask.Nonce()
+					bid := match.Details.Bid.Nonce()
+
+					if match.Asker.AccountKey == feeErr.Account {
+						nonces = append(nonces, ask)
+					}
+					if match.Bidder.AccountKey == feeErr.Account {
+						nonces = append(nonces, bid)
+					}
+				}
+
+				log.Infof("Removing %d orders from poor traders",
+					len(nonces))
+				a.removeIneligibleOrders(nonces)
+
+				return FeeEstimationState{}, nil
+			}
+
 			return nil, err
 		}
 
