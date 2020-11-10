@@ -220,6 +220,84 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	return err
 }
 
+// reservedValue is a temporary copy of the method found in Pool.
+// TODO(halseth): fix it there.
+func ReservedValue(o order.Order, feeSchedule terms.FeeSchedule) btcutil.Amount {
+	// If this order is in a state where it cannot be matched, return 0.
+	if o.Details().State.Archived() {
+		return 0
+	}
+
+	price := order.FixedRatePremium(o.Details().FixedRate)
+
+	// The situation where the trader needs to pay the largest amount of
+	// fees is when the order gets partially matched by its minimum possible
+	// units per batch. This situation results in the most chain and
+	// execution fees possible.
+	totalSats := o.Details().UnitsUnfulfilled.ToSatoshis()
+	minMatchSize := o.Details().MinUnitsMatch.ToSatoshis()
+	maxNumMatches := totalSats / minMatchSize
+
+	// We handle the case where the last match consumes the remainder of
+	// the order size.
+	rem := btcutil.Amount(0)
+	if maxNumMatches*minMatchSize < totalSats {
+		maxNumMatches--
+		rem = totalSats - maxNumMatches*minMatchSize
+	}
+
+	// We'll calculate the worst case possible wrt. fees paid by the
+	// account if the order is filled by minimum size matched.
+	var balanceDelta btcutil.Amount
+	satsPremium := price.LumpSumPremium(totalSats, o.Details().LeaseDuration)
+
+	switch o.(type) {
+	case *Ask:
+		balanceDelta -= totalSats
+		balanceDelta += satsPremium
+
+	case *Bid:
+		balanceDelta -= satsPremium
+	}
+
+	exeFee := maxNumMatches * executionFee(minMatchSize, feeSchedule)
+	if rem > 0 {
+		exeFee += executionFee(rem, feeSchedule)
+	}
+
+	balanceDelta -= exeFee
+
+	// Subtract the worst case chain fee from the balance.
+	chainFee := maxNumMatches * order.EstimateTraderFee(
+		1, o.Details().MaxBatchFeeRate,
+	)
+	if rem > 0 {
+		chainFee += order.EstimateTraderFee(
+			1, o.Details().MaxBatchFeeRate,
+		)
+	}
+
+	balanceDelta -= chainFee
+
+	// If the balance delta is negative, meaning this order will decrease
+	// the balance, the reserved value is the negative balance delta.
+	if balanceDelta < 0 {
+		return -balanceDelta
+	}
+
+	// Otherwise this order will increase the balance if matched, and we
+	// don't have to reserve any amount.
+	return 0
+}
+
+// executionFee calculates the execution fee which is the base fee plus the
+// execution fee which scales based on the order size.
+func executionFee(amount btcutil.Amount,
+	schedule terms.FeeSchedule) btcutil.Amount {
+
+	return schedule.BaseFee() + schedule.ExecutionFee(amount)
+}
+
 // LockedValue uses the current active orders for the given account to
 // calculate an upper bound of how much might be deducted from the account if
 // they are matched. newOrders can be added to get this upper bound if
@@ -234,23 +312,23 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 		return 0, err
 	}
 
-	var reservedValue btcutil.Amount
+	var reserved btcutil.Amount
 	for _, o := range allOrders {
 		// Filter by account.
 		if o.Details().AcctKey != acctKey {
 			continue
 		}
 
-		reservedValue += o.ReservedValue(feeSchedule)
+		reserved += ReservedValue(o, feeSchedule)
 	}
 
 	// Add the new orders to the list if any and return the worst case
 	// cost.
 	for _, o := range newOrders {
-		reservedValue += o.ReservedValue(feeSchedule)
+		reserved += ReservedValue(o, feeSchedule)
 	}
 
-	return reservedValue, nil
+	return reserved, nil
 }
 
 // validateAccountState makes sure the account is in a state where we can
@@ -296,7 +374,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	// Anything below the supply unit size cannot be filled anyway so we
 	// don't allow any order size that's not dividable by the supply size.
 	amt := srvOrder.Details().Amt
-	if amt == 0 || amt%btcutil.Amount(order.BaseSupplyUnit) != 0 {
+	if amt <= 0 || amt%btcutil.Amount(order.BaseSupplyUnit) != 0 {
 		return fmt.Errorf("order amount must be multiple of %d sats",
 			order.BaseSupplyUnit)
 	}
