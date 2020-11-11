@@ -647,6 +647,9 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// conflicts in our conflict trackers and give the match
 			// maker a chance to find more suitable matches.
 			case *TraderPartialRejectMsg:
+				log.Warnf("Received TraderPartialRejectMsg from "+
+					"trader=%x", m.Src())
+
 				// Add the rejected orders/peers to our conflict
 				// trackers according to the reject reason sent
 				// by the trader. This also marks this trader
@@ -1074,6 +1077,8 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 	env.rejectingTraders[reporter] = &OrderRejectMap{
 		PartialRejects: msg.Orders,
 	}
+
+	log.Debugf("Trader %x rejected orders %v", msg.Src(), spew.Sdump(msg.Orders))
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new

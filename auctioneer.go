@@ -1978,6 +1978,8 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 
 		// Remove the trader's own orders in case of a full reject.
 		if rejectMap.FullReject != nil {
+			log.Debugf("Full reject from %x, removing all orders",
+				reporter[:])
 			removeAllOrders(rejectMap.FullReject)
 		}
 
@@ -2031,8 +2033,15 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 			// they are not part of, since that can stall batch
 			// execution.
 			if matchedOrder.Details().AcctKey != reporter {
+				log.Warnf("Trader %x sent partial reject for "+
+					"order %v it was not matched with",
+					reporter[:], rejectNonce)
 				continue
 			}
+
+			log.Warnf("Trader %x partially rejected order %v "+
+				"with node %x", reporter[:], rejectNonce,
+				rejectedOrder.ServerDetails().NodeKey[:])
 
 			// Report the conflicts now as we know both the
 			// reporting trader's order and the subject's order.
@@ -2046,6 +2055,9 @@ func (a *Auctioneer) handleReject(batch *matching.OrderBatch,
 		// act on, remove all its orders to ensure we converge on the
 		// order book.
 		if !rejected {
+			log.Warnf("Trader %x sent reject with nothing to act "+
+				"on, removing all orders", reporter[:])
+
 			rej := &venue.Reject{
 				Type:   venue.FullRejectUnknown,
 				Reason: "invalid reject msg",
