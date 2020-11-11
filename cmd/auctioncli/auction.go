@@ -3,8 +3,12 @@ package main
 import (
 	"context"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -22,7 +26,10 @@ var auctionCommands = []cli.Command{
 			listBatchesCommand,
 			listOrdersCommand,
 			listArchivedOrdersCommand,
+			accountDetailsCommand,
 			listAccountsCommand,
+			editAccountCommand,
+			deleteAccountDiffCommand,
 			listBansCommand,
 			batchTickCommand,
 			pauseBatchTickerCommand,
@@ -91,6 +98,35 @@ var listArchivedOrdersCommand = cli.Command{
 	}),
 }
 
+var accountDetailsCommand = cli.Command{
+	Name:      "accountdetails",
+	ShortName: "ad",
+	Usage:     "retrieve the details of an existing account",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "account_key",
+			Usage: "the identifying key of the account to retrieve " +
+				"details of",
+		},
+		cli.BoolFlag{
+			Name:  "include_diff",
+			Usage: "retrieve the details of the account's staged diff",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		acctKey, err := hex.DecodeString(cliCtx.String("account_key"))
+		if err != nil {
+			return nil, err
+		}
+		return client.AccountDetails(ctx, &adminrpc.AccountDetailsRequest{
+			AccountKey:  acctKey,
+			IncludeDiff: cliCtx.Bool("include_diff"),
+		})
+	}),
+}
+
 var listAccountsCommand = cli.Command{
 	Name:      "listaccounts",
 	ShortName: "la",
@@ -99,6 +135,116 @@ var listAccountsCommand = cli.Command{
 		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
 		return client.ListAccounts(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var editAccountCommand = cli.Command{
+	Name:      "editaccount",
+	ShortName: "ea",
+	Usage:     "edit the details of an account",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "account_key",
+			Usage: "the identifying key of the account to edit " +
+				"details of",
+		},
+		cli.BoolFlag{
+			Name: "edit_diff",
+			Usage: "whether the account diff should be edited " +
+				"instead of the main account state",
+		},
+		cli.Uint64Flag{
+			Name:  "value",
+			Usage: "the new value of the account in satoshis",
+		},
+		cli.Int64Flag{
+			Name: "rotate_batch_key",
+			Usage: "the number of times to rotate the batch key " +
+				"(positive integers increment, negative " +
+				"integers decrement)",
+		},
+		cli.StringFlag{
+			Name:  "outpoint",
+			Usage: "the new outpoint of the account",
+		},
+		cli.StringFlag{
+			Name:  "latest_tx",
+			Usage: "the new latest tx of the account",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		acctKey, err := hex.DecodeString(cliCtx.String("account_key"))
+		if err != nil {
+			return nil, err
+		}
+
+		var outpoint *adminrpc.OutPoint
+		if cliCtx.IsSet("outpoint") {
+			parts := strings.Split(cliCtx.String("outpoint"), ":")
+			if len(parts) != 2 {
+				return nil, errors.New("expected outpoint of " +
+					"form hash:index")
+			}
+
+			hash, err := chainhash.NewHashFromStr(parts[0])
+			if err != nil {
+				return nil, err
+			}
+			index, err := strconv.ParseUint(parts[1], 10, 32)
+			if err != nil {
+				return nil, err
+			}
+
+			outpoint = &adminrpc.OutPoint{
+				Txid:        hash[:],
+				OutputIndex: uint32(index),
+			}
+		}
+
+		var latestTx []byte
+		if cliCtx.IsSet("latest_tx") {
+			latestTx, err = hex.DecodeString(
+				cliCtx.String("latest_tx"),
+			)
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		return client.EditAccount(ctx, &adminrpc.EditAccountRequest{
+			AccountKey:     acctKey,
+			EditDiff:       cliCtx.Bool("edit_diff"),
+			Value:          cliCtx.Uint64("value"),
+			RotateBatchKey: int32(cliCtx.Int64("rotate_batch_key")),
+			Outpoint:       outpoint,
+			LatestTx:       latestTx,
+		})
+	}),
+}
+
+var deleteAccountDiffCommand = cli.Command{
+	Name:      "deleteaccountdiff",
+	ShortName: "dad",
+	Usage:     "delete the staged diff of an account modification",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name: "account_key",
+			Usage: "the identifying key of the account to delete " +
+				"the staged diff of",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		acctKey, err := hex.DecodeString(cliCtx.String("account_key"))
+		if err != nil {
+			return nil, err
+		}
+		return client.DeleteAccountDiff(ctx, &adminrpc.DeleteAccountDiffRequest{
+			AccountKey: acctKey,
+		})
 	}),
 }
 
