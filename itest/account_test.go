@@ -308,7 +308,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	}
 	idCtx := getTokenContext(tokenID)
 
-	const defaultExpiration uint32 = 1_000
+	const defaultRelativeExpiration uint32 = 1_000
 
 	// We create three full accounts. One that is closed again, one
 	// that remains open and one that is pending open, waiting for on-chain
@@ -316,7 +316,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	closed := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-			RelativeHeight: defaultExpiration,
+			RelativeHeight: defaultRelativeExpiration,
 		},
 	})
 	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
@@ -325,13 +325,13 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	open := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-			RelativeHeight: defaultExpiration,
+			RelativeHeight: defaultRelativeExpiration,
 		},
 	})
 	pending, err := t.trader.InitAccount(ctxb, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-			RelativeHeight: defaultExpiration,
+			RelativeHeight: defaultRelativeExpiration,
 		},
 		Fees: &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
@@ -380,13 +380,18 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// we don't. The trader won't know of any of them but when recovering
 	// will still try to recover them. We need to use a dummy token for the
 	// first one, otherwise we couldn't register the second one.
+	_, minerHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
+	if err != nil {
+		t.Fatalf("unable to retrieve miner height: %v", err)
+	}
 	resRecoveryFailed := addReservation(
 		getTokenContext(&lsat.TokenID{0x02}), t, t.lndHarness.Bob,
-		defaultAccountValue, defaultExpiration, false,
+		defaultAccountValue, uint32(minerHeight)+defaultRelativeExpiration,
+		false,
 	)
 	resRecoveryOk := addReservation(
-		idCtx, t, t.lndHarness.Bob,
-		defaultAccountValue, defaultExpiration, true,
+		idCtx, t, t.lndHarness.Bob, defaultAccountValue,
+		uint32(minerHeight)+defaultRelativeExpiration, true,
 	)
 
 	// Now we simulate data loss by shutting down the trader and removing
