@@ -405,7 +405,15 @@ func (m *MinNodeRatingPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) boo
 	askNode := ask.NodeKey
 	askNodeTier := m.agency.RateNode(askNode)
 
-	return askNodeTier >= bid.MinNodeTier
+	result := askNodeTier >= bid.MinNodeTier
+
+	if !result {
+		log.Debugf("Cannot match ask %s against bid %s because of "+
+			"tier mismatch: wanted min tier %d but ask node has %d",
+			ask.Nonce(), bid.Nonce(), bid.MinNodeTier, askNodeTier)
+	}
+
+	return result
 }
 
 // A compile-time check to ensure that MinNodeRatingPredicate implements the
