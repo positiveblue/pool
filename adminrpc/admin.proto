@@ -20,6 +20,7 @@ service AuctionAdmin {
     rpc BatchSnapshot (poolrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
     rpc ListBans (EmptyRequest) returns (ListBansResponse);
     rpc RemoveBan (RemoveBanRequest) returns (EmptyResponse);
+    rpc AddBan (BanRequest) returns (EmptyResponse);
     rpc RemoveReservation (RemoveReservationRequest) returns (EmptyResponse);
     rpc FundingConflicts (EmptyRequest) returns (FundingConflictsResponse);
     rpc ClearConflicts (EmptyRequest) returns (EmptyResponse);
@@ -282,6 +283,19 @@ message RemoveBanRequest {
         // Remove the ban of a node, identified by the node's identity pubkey.
         bytes node = 2;
     }
+}
+
+message BanRequest {
+    oneof ban {
+        // Ban an account, identified by the trader's account key.
+        bytes account = 1;
+
+        // Ban a node, identified by the node's identity pubkey.
+        bytes node = 2;
+    }
+
+    // The number of blocks the ban will last for once applied.
+    uint32 duration = 3;
 }
 
 message AdminMatchedOrderSnapshot {

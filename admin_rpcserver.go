@@ -620,6 +620,44 @@ func (s *adminRPCServer) RemoveBan(ctx context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
+// AddBan adds a ban for either a node or account ID.
+func (s *adminRPCServer) AddBan(ctx context.Context,
+	req *adminrpc.BanRequest) (*adminrpc.EmptyResponse, error) {
+
+	var (
+		banFn func(context.Context, *btcec.PublicKey, uint32,
+			uint32) error
+		keyBytes []byte
+	)
+	switch {
+	case req.GetAccount() != nil:
+		keyBytes = req.GetAccount()
+		banFn = s.store.SetAccountBanInfo
+
+	case req.GetNode() != nil:
+		keyBytes = req.GetNode()
+		banFn = s.store.SetNodeBanInfo
+
+	default:
+		return nil, fmt.Errorf("must set either node or account")
+	}
+
+	if req.Duration == 0 {
+		return nil, fmt.Errorf("must specify duration in blocks")
+	}
+
+	key, err := btcec.ParsePubKey(keyBytes, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+	err = banFn(ctx, key, s.mainRPCServer.bestHeight(), req.Duration)
+	if err != nil {
+		return nil, err
+	}
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
 // RemoveReservation removes the reservation of either an account key or an LSAT
 // ID. This can be used to manually un-stuck a trader that crashed during the
 // account funding process.
