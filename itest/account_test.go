@@ -265,6 +265,66 @@ func testAccountDeposit(t *harnessTest) {
 		auctioneerAccount.StateOpen,
 	)
 
+	// We'll then attempt a deposit using a NP2WKH input. To do so, we'll
+	// need a NP2WKH available to spend. We send over 4 BTC and will attempt
+	// a 3 BTC deposit to ensure the NP2WKH input is chosen.
+	err = t.lndHarness.SendCoinsNP2WKH(
+		ctx, btcutil.SatoshiPerBitcoin*4, t.trader.cfg.LndNode,
+	)
+	if err != nil {
+		t.Fatalf("unable to send np2wkh coins: %v", err)
+	}
+	depositReq.AmountSat = btcutil.SatoshiPerBitcoin * 3
+	valueAfterSecondDeposit := btcutil.Amount(
+		depositResp.Account.Value + depositReq.AmountSat,
+	)
+	depositResp, err = t.trader.DepositAccount(ctx, depositReq)
+	if err != nil {
+		t.Fatalf("unable to process account deposit: %v", err)
+	}
+
+	// We should expect to see the transaction causing the deposit.
+	depositTxid, _ = chainhash.NewHash(depositResp.Account.Outpoint.Txid)
+	txids, err = waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	if err != nil {
+		t.Fatalf("deposit transaction not found in mempool: %v", err)
+	}
+	if !txids[0].IsEqual(depositTxid) {
+		t.Fatalf("found mempool transaction %v instead of %v",
+			txids[0], depositTxid)
+	}
+
+	// The deposit transaction should contain at least one NP2WKH input.
+	depositTx, err := t.lndHarness.Miner.Node.GetRawTransaction(depositTxid)
+	if err != nil {
+		t.Fatalf("unable to retrieve mempool transaction: %v", err)
+	}
+	foundNP2WKHInput := false
+	for _, input := range depositTx.MsgTx().TxIn {
+		if len(input.SignatureScript) > 0 {
+			foundNP2WKHInput = true
+		}
+	}
+	if !foundNP2WKHInput {
+		t.Fatalf("expected NP2WKH input in deposit transaction %v: %v",
+			depositTxid, depositTx)
+	}
+
+	// Confirm the deposit, and once again assert that the account state
+	// is reflected correctly.
+	block = mineBlocks(t, t.lndHarness, 6, 1)[0]
+	_ = assertTxInBlock(t, block, depositTxid)
+	assertTraderAccount(
+		t, t.trader, depositResp.Account.TraderKey,
+		valueAfterSecondDeposit, poolrpc.AccountState_OPEN,
+	)
+	assertAuctioneerAccount(
+		t, depositResp.Account.TraderKey, valueAfterSecondDeposit,
+		auctioneerAccount.StateOpen,
+	)
+
 	// Finally, end the test by closing the account.
 	_ = closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
