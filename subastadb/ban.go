@@ -205,14 +205,23 @@ func (s *EtcdStore) banNodeKey(stm conc.STM, nodeKey *btcec.PublicKey,
 // IsTraderBanned determines whether the trader's account or node is banned at
 // the current height.
 func (s *EtcdStore) IsTraderBanned(ctx context.Context, accountKey,
-	nodeKey *btcec.PublicKey, currentHeight uint32) (bool, error) {
+	nodeKey [33]byte, currentHeight uint32) (bool, error) {
+
+	nodePubkey, err := btcec.ParsePubKey(nodeKey[:], btcec.S256())
+	if err != nil {
+		return false, err
+	}
+	accountPubkey, err := btcec.ParsePubKey(accountKey[:], btcec.S256())
+	if err != nil {
+		return false, err
+	}
 
 	var banned bool
-	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
 		// First, check the trader's account.
 		var err error
 		banned, _, err = s.isAccountBanned(
-			stm, accountKey, currentHeight,
+			stm, accountPubkey, currentHeight,
 		)
 		if err != nil {
 			return err
@@ -223,7 +232,7 @@ func (s *EtcdStore) IsTraderBanned(ctx context.Context, accountKey,
 			return nil
 		}
 
-		banned, _, err = s.isNodeBanned(stm, nodeKey, currentHeight)
+		banned, _, err = s.isNodeBanned(stm, nodePubkey, currentHeight)
 		return err
 	})
 	return banned, err
