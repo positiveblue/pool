@@ -246,34 +246,31 @@ func NewServer(cfg *Config) (*Server, error) {
 		ratingsDB     ratings.NodeRatingsDatabase
 	)
 
-	// We'll only activate the ratings agency if it has been flipped on in
-	// the config. In contexts like testnet or regtest, we don't have an
-	// instance of bos scores to point to.
-	if cfg.NodeRatingsActive {
-		// If no bos score rating was detected, then we'll use the pure
-		// memory database instead, which is good for testing purposes.
-		nodeRatings, err := store.NodeRatings(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("unable to retrieve stored "+
-				"node ratings: %v", err)
+	// We'll always use an in-memory ratings DB that writes through to the
+	// etcd store.
+	log.Infof("Initializing in-memory RatingsAgency")
+	nodeRatings, err := store.NodeRatings(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to retrieve stored node "+
+			"ratings: %v", err)
+	}
+	ratingsDB = ratings.NewMemRatingsDatabase(store, nodeRatings)
+	ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
+
+	// We'll only activate the BOS score backed ratings agency if it has
+	// been flipped on in the config. In contexts like testnet or regtest,
+	// we don't have an instance of bos scores to point to but we can still
+	// manually edit the ratings through the admin RPC.
+	if cfg.NodeRatingsActive && cfg.BosScoreWebURL != "" {
+		log.Infof("Initializing BosScore backed RatingsAgency")
+
+		bosScoreWebScore := &ratings.BosScoreWebRatings{
+			URL: cfg.BosScoreWebURL,
 		}
-		memDB := ratings.NewMemRatingsDatabase(store, nodeRatings)
-
-		if cfg.BosScoreWebURL == "" {
-			log.Infof("Initializing in-memory RatingsAgency")
-
-			ratingsDB = memDB
-		} else {
-			log.Infof("Initializing BosScore backed RatingsAgency")
-
-			bosScoreWebSorce := &ratings.BosScoreWebRatings{
-				URL: cfg.BosScoreWebURL,
-			}
-			ratingsDB = ratings.NewBosScoreRatingsDatabase(
-				bosScoreWebSorce, cfg.NodeRatingsRefreshInterval,
-				memDB,
-			)
-		}
+		ratingsDB = ratings.NewBosScoreRatingsDatabase(
+			bosScoreWebScore, cfg.NodeRatingsRefreshInterval,
+			ratingsDB,
+		)
 
 		ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
 	}
