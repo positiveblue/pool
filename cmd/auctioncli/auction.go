@@ -38,6 +38,7 @@ var auctionCommands = []cli.Command{
 			statusCommand,
 			batchSnapshotCommand,
 			removeBanCommand,
+			addBanCommand,
 			removeReservationCommand,
 			listConflictsCommand,
 			clearConflictsCommand,
@@ -416,6 +417,10 @@ var removeBanCommand = cli.Command{ // nolint:dupl
 			req.Ban = &adminrpc.RemoveBanRequest_Node{
 				Node: nodeKey,
 			}
+
+		default:
+			return nil, fmt.Errorf("must specify account or node " +
+				"key")
 		}
 
 		return client.RemoveBan(ctx, req)
@@ -469,6 +474,10 @@ var removeReservationCommand = cli.Command{ // nolint:dupl
 			req.Reservation = &adminrpc.RemoveReservationRequest_Lsat{
 				Lsat: lsatID,
 			}
+
+		default:
+			return nil, fmt.Errorf("must specify account key or " +
+				"lsat ID")
 		}
 
 		return client.RemoveReservation(ctx, req)
@@ -550,5 +559,66 @@ var listNodeRatingsCommand = cli.Command{
 		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
 		return client.ListNodeRatings(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var addBanCommand = cli.Command{ // nolint:dupl
+	Name:      "addban",
+	ShortName: "ab",
+	Usage:     "add a ban for a trader, either by account key or node key",
+	ArgsUsage: "--account_key | --node_key --duration",
+	Flags: []cli.Flag{
+		cli.StringFlag{
+			Name:  "account_key",
+			Usage: "the hex encoded trader account key",
+		},
+		cli.StringFlag{
+			Name:  "node_key",
+			Usage: "the hex encoded trader node key",
+		},
+		cli.Uint64Flag{
+			Name:  "duration",
+			Usage: "the duration in blocks to ban the trader for",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		if cliCtx.NArg() != 0 || cliCtx.NumFlags() != 2 {
+			return nil, cli.ShowCommandHelp(cliCtx, "addban")
+		}
+
+		req := &adminrpc.BanRequest{
+			Duration: uint32(cliCtx.Uint64("duration")),
+		}
+		switch {
+		case cliCtx.IsSet("account_key"):
+			acctKey, err := hex.DecodeString(
+				cliCtx.String("account_key"),
+			)
+			if err != nil {
+				return nil, err
+			}
+			req.Ban = &adminrpc.BanRequest_Account{
+				Account: acctKey,
+			}
+
+		case cliCtx.IsSet("node_key"):
+			nodeKey, err := hex.DecodeString(
+				cliCtx.String("node_key"),
+			)
+			if err != nil {
+				return nil, err
+			}
+			req.Ban = &adminrpc.BanRequest_Node{
+				Node: nodeKey,
+			}
+
+		default:
+			return nil, fmt.Errorf("must specify account or node " +
+				"key")
+		}
+
+		return client.AddBan(ctx, req)
 	}),
 }
