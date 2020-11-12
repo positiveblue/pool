@@ -67,6 +67,19 @@ func TestBanTrader(t *testing.T) {
 
 	assertTraderBanStatus(currentHeight + (initialBanDuration * 2))
 
+	// Overwrite the bans manually to make sure the admin RPC can interfere
+	// if necessary.
+	err = store.SetNodeBanInfo(ctx, nodeKey, currentHeight, 4)
+	if err != nil {
+		t.Fatalf("unable to set node ban info: %v", err)
+	}
+	err = store.SetAccountBanInfo(ctx, accountKey, currentHeight, 4)
+	if err != nil {
+		t.Fatalf("unable to set account ban info: %v", err)
+	}
+
+	assertTraderBanStatus(currentHeight + 4)
+
 	// Remove the ban for both the account and node, then check they're not
 	// banned anymore.
 	err = store.RemoveAccountBan(ctx, accountKey)

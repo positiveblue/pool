@@ -393,6 +393,52 @@ func (s *EtcdStore) RemoveNodeBan(ctx context.Context,
 	return err
 }
 
+// SetNodeBanInfo stores or overwrites the ban info for a node.
+func (s *EtcdStore) SetNodeBanInfo(ctx context.Context,
+	nodeKey *btcec.PublicKey, currentHeight, duration uint32) error {
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		nodeBanInfo := &BanInfo{
+			Height:   currentHeight,
+			Duration: duration,
+		}
+
+		// Store or overwrite the ban info.
+		banNodeKeyPath := s.banNodeKeyPath(nodeKey)
+		var buf bytes.Buffer
+		if err := serializeBanInfo(&buf, nodeBanInfo); err != nil {
+			return err
+		}
+		stm.Put(banNodeKeyPath, buf.String())
+
+		return nil
+	})
+	return err
+}
+
+// SetAccountBanInfo stores or overwrites the ban info for a trader account.
+func (s *EtcdStore) SetAccountBanInfo(ctx context.Context,
+	accountKey *btcec.PublicKey, currentHeight, duration uint32) error {
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		accountBanInfo := &BanInfo{
+			Height:   currentHeight,
+			Duration: duration,
+		}
+
+		// Store or overwrite the ban info.
+		banAccountKeyPath := s.banAccountKeyPath(accountKey)
+		var buf bytes.Buffer
+		if err := serializeBanInfo(&buf, accountBanInfo); err != nil {
+			return err
+		}
+		stm.Put(banAccountKeyPath, buf.String())
+
+		return nil
+	})
+	return err
+}
+
 // rawKeyFromBanKey parses a whole ban key and tries to extract the pubkey from
 // the last part of it. This function also checks that the key has the expected
 // length and number of key parts.
