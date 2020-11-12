@@ -574,7 +574,7 @@ func (s *adminRPCServer) ListBans(ctx context.Context,
 		return nil, err
 	}
 	rpcNodes := make(map[string]*adminrpc.BanInfo, len(nodes))
-	for nodeKey, banInfo := range accts {
+	for nodeKey, banInfo := range nodes {
 		rpcNodes[hex.EncodeToString(nodeKey[:])] = &adminrpc.BanInfo{
 			Height:   banInfo.Height,
 			Duration: banInfo.Duration,
