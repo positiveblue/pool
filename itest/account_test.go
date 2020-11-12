@@ -94,7 +94,7 @@ func testAccountCreation(t *harnessTest) {
 	// Make sure the default account limit is enforced on the auctioneer
 	// side.
 	_, err = t.trader.InitAccount(ctx, &poolrpc.InitAccountRequest{
-		AccountValue: uint64(btcutil.SatoshiPerBitcoin + 1),
+		AccountValue: uint64(11 * btcutil.SatoshiPerBitcoin),
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
