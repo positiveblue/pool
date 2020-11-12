@@ -107,6 +107,11 @@ func ChainMatches(ask *order.Ask, bid *order.Bid,
 // an account which is identified the its trader public key (or acctID).
 type AccountFetcher func(AccountID) (*account.Account, error)
 
+// AllowedChecker is a function that is able to check if an account or trader is
+// currently ready to be used, so not banned. It returns true if no ban exists
+// and the trader/account is generally allowed to participate.
+type AllowedChecker func(nodeKey, acctKey [33]byte) bool
+
 // AccountCacher is an internal interface for a type that can cache accounts.
 type AccountCacher interface {
 	// GetCachedAccount returns the requested account from the cache or
@@ -130,17 +135,22 @@ type AccountPredicate struct {
 	// account is before this cutoff, then we'll ignore it when clearing
 	// the market.
 	accountExpiryCutoff uint32
+
+	// allowedChecker is a function that can check if an account or trader
+	// is allowed to participate in a batch.
+	allowedChecker AllowedChecker
 }
 
 // NewAccountPredicate creates a new account predicate that can fetch and cache
 // accounts during its lifetime.
 func NewAccountPredicate(acctFetcher AccountFetcher,
-	accountExpiryCutoff uint32) *AccountPredicate {
+	accountExpiryCutoff uint32, allowedChecker AllowedChecker) *AccountPredicate {
 
 	return &AccountPredicate{
 		fetchAcct:           acctFetcher,
 		accountCache:        make(map[[33]byte]*account.Account),
 		accountExpiryCutoff: accountExpiryCutoff,
+		allowedChecker:      allowedChecker,
 	}
 }
 
@@ -151,6 +161,20 @@ func NewAccountPredicate(acctFetcher AccountFetcher,
 //
 // NOTE: This is part of the MatchPredicate interface.
 func (p *AccountPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) bool {
+	if !p.allowedChecker(ask.NodeKey, ask.AcctKey) {
+		log.Debugf("Cannot match ask %s against bid %s because asker "+
+			"is banned", ask.Nonce(), bid.Nonce())
+
+		return false
+	}
+
+	if !p.allowedChecker(bid.NodeKey, bid.AcctKey) {
+		log.Debugf("Cannot match ask %s against bid %s because bidder "+
+			"is banned", ask.Nonce(), bid.Nonce())
+
+		return false
+	}
+
 	bidAcct, err := p.GetCachedAccount(bid.AcctKey)
 	if err != nil {
 		return false

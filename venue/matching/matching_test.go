@@ -266,7 +266,9 @@ func newAcctCacher() (*acctFetcher, *AccountPredicate, []MatchPredicate) {
 	fetcher := &acctFetcher{
 		accts: make(map[[33]byte]*account.Account),
 	}
-	acctPredicate := NewAccountPredicate(fetcher.fetchAcct, 0)
+	acctPredicate := NewAccountPredicate(
+		fetcher.fetchAcct, 0, fetcher.isTraderAllowed,
+	)
 	predicates := []MatchPredicate{acctPredicate}
 	return fetcher, acctPredicate, append(
 		predicates, DefaultPredicateChain...,
@@ -280,6 +282,11 @@ func (a *acctFetcher) fetchAcct(k AccountID) (*account.Account, error) {
 	}
 
 	return acct, nil
+}
+
+func (a *acctFetcher) isTraderAllowed(_, _ [33]byte) bool {
+
+	return true
 }
 
 // TestMatchPossibleSpreadNeverMatches tests that given a bid and an ask, if

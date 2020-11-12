@@ -97,6 +97,11 @@ type AuctioneerDatabase interface {
 	// ban will depend on how many times the node has been banned before and
 	// grows exponentially, otherwise it is 144 blocks.
 	BanAccount(context.Context, *btcec.PublicKey, uint32) error
+
+	// IsTraderBanned determines whether the trader's account or node is
+	// banned at the current height.
+	IsTraderBanned(context.Context, [33]byte, [33]byte, uint32) (bool,
+		error)
 }
 
 // Wallet is an interface that contains all the methods necessary for the
@@ -1487,6 +1492,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		expiryCutoff := a.BestHeight() + a.cfg.AccountExpiryOffset
 		accountPredicate := matching.NewAccountPredicate(
 			a.cfg.AccountFetcher, expiryCutoff,
+			func(nodeKey, accountKey [33]byte) bool {
+				traderBanned, err := a.cfg.DB.IsTraderBanned(
+					ctxb, accountKey, nodeKey,
+					a.BestHeight(),
+				)
+				return err == nil && !traderBanned
+			},
 		)
 
 		// We pass in our two conflict handlers that also act as match

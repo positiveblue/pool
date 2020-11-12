@@ -289,6 +289,15 @@ func (m *mockAuctioneerState) isBannedTrader(trader matching.AccountID) bool {
 	return ok
 }
 
+func (m *mockAuctioneerState) IsTraderBanned(_ context.Context, accountKey,
+	_ [33]byte, _ uint32) (bool, error) {
+
+	m.Lock()
+	defer m.Unlock()
+
+	return m.isBannedTrader(accountKey), nil
+}
+
 var _ AuctioneerDatabase = (*mockAuctioneerState)(nil)
 
 type mockWallet struct {

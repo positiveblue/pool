@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/stretchr/testify/assert"
 )
@@ -13,20 +14,43 @@ var (
 	node2Key = NodeID{2, 3, 4, 5}
 	node3Key = NodeID{3, 4, 5, 6}
 	node4Key = NodeID{4, 5, 6, 7}
+	acct1Key = [33]byte{1, 2, 3, 4}
+	acct2Key = [33]byte{2, 3, 4, 5}
+	acct1    = &account.Account{
+		TraderKeyRaw: acct1Key,
+		State:        account.StateOpen,
+		Expiry:       2016,
+	}
+	acct2 = &account.Account{
+		TraderKeyRaw: acct2Key,
+		State:        account.StatePendingBatch,
+		Expiry:       2016,
+	}
 	node1Ask = &order.Ask{
-		Ask: orderT.Ask{},
+		Ask: orderT.Ask{
+			Kit: orderT.Kit{
+				AcctKey: acct1Key,
+			},
+		},
 		Kit: order.Kit{
 			NodeKey: node1Key,
 		},
 	}
 	node2Bid = &order.Bid{
-		Bid: orderT.Bid{},
+		Bid: orderT.Bid{
+			Kit: orderT.Kit{
+				AcctKey: acct2Key,
+			},
+		},
 		Kit: order.Kit{
 			NodeKey: node2Key,
 		},
 	}
 	node4Bid = &order.Bid{
 		Bid: orderT.Bid{
+			Kit: orderT.Kit{
+				AcctKey: acct2Key,
+			},
 			MinNodeTier: 9,
 		},
 		Kit: order.Kit{
@@ -65,6 +89,55 @@ func TestNodeConflictPredicate(t *testing.T) {
 	// Also make sure the match predicate works as expected.
 	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
 	assert.True(t, p.IsMatchable(node1Ask, node4Bid))
+}
+
+func TestAccountPredicate(t *testing.T) {
+	t.Parallel()
+
+	fetcher := func(acctKey AccountID) (*account.Account, error) {
+		if acctKey == acct1Key {
+			return acct1, nil
+		}
+		return acct2, nil
+	}
+
+	acct1banned := false
+	acct2banned := false
+	allowedChecker := func(_, acctKey [33]byte) bool {
+		if acctKey == acct1Key && acct1banned {
+			return false
+		}
+
+		if acctKey == acct2Key && acct2banned {
+			return false
+		}
+
+		return true
+	}
+
+	cutoff := uint32(144)
+	p := NewAccountPredicate(fetcher, cutoff, allowedChecker)
+
+	// Make sure that by default we can match the two test orders.
+	assert.True(t, p.IsMatchable(node1Ask, node2Bid))
+
+	// Banned accounts shouldn't be matchable.
+	acct1banned = true
+	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	acct1banned = false
+	acct2banned = true
+	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	acct1banned = false
+	acct2banned = false
+
+	// Accounts close to expiry should also not match.
+	acct1.Expiry = 144
+	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
+	acct1.Expiry = 2016
+
+	// Accounts in the wrong state also shouldn't be matched.
+	acct1.State = account.StatePendingOpen
+	assert.False(t, p.IsMatchable(node1Ask, node2Bid))
 }
 
 type agency struct {
