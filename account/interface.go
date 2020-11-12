@@ -338,6 +338,14 @@ func IncrementBatchKey() Modifier {
 	}
 }
 
+// DecrementBatchKey is a functional option that decrements the batch key of an
+// account by subtracting the curve's base point.
+func DecrementBatchKey() Modifier {
+	return func(account *Account) {
+		account.BatchKey = poolscript.DecrementKey(account.BatchKey)
+	}
+}
+
 // OutPointModifier is a functional option that modifies the out point of an
 // account.
 func OutPointModifier(outPoint wire.OutPoint) Modifier {

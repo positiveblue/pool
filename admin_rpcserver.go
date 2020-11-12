@@ -10,10 +10,14 @@ import (
 	"sync/atomic"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -239,6 +243,111 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 		Asks: rpcAsks,
 		Bids: rpcBids,
 	}, nil
+}
+
+// AccountDetails retrieves the details of specified account from the store.
+func (s *adminRPCServer) AccountDetails(ctx context.Context,
+	req *adminrpc.AccountDetailsRequest) (*poolrpc.AuctionAccount, error) {
+
+	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+	acct, err := s.store.Account(ctx, acctKey, req.IncludeDiff)
+	if err != nil {
+		return nil, err
+	}
+	return marshallServerAccount(acct)
+}
+
+// EditAccount edits the details of an existing account.
+func (s *adminRPCServer) EditAccount(ctx context.Context,
+	req *adminrpc.EditAccountRequest) (*poolrpc.AuctionAccount, error) {
+
+	// Retrieve the account with the associated key.
+	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+	acct, err := s.store.Account(ctx, acctKey, req.EditDiff)
+	if err != nil {
+		return nil, err
+	}
+
+	// Parse any fields we should update from the request.
+	var mods []account.Modifier
+	if req.Value != 0 {
+		mods = append(
+			mods, account.ValueModifier(btcutil.Amount(req.Value)),
+		)
+	}
+	if req.RotateBatchKey != 0 {
+		rotate := int(req.RotateBatchKey)
+		mod := account.IncrementBatchKey()
+		if req.RotateBatchKey < 0 {
+			rotate *= -1
+			mod = account.DecrementBatchKey()
+		}
+		for i := 0; i < rotate; i++ {
+			mods = append(mods, mod)
+		}
+	}
+	if req.Outpoint != nil {
+		hash, err := chainhash.NewHash(req.Outpoint.Txid)
+		if err != nil {
+			return nil, err
+		}
+		mods = append(mods, account.OutPointModifier(wire.OutPoint{
+			Hash:  *hash,
+			Index: req.Outpoint.OutputIndex,
+		}))
+	}
+	if len(req.LatestTx) > 0 {
+		var latestTx wire.MsgTx
+		err := latestTx.Deserialize(bytes.NewReader(req.LatestTx))
+		if err != nil {
+			return nil, err
+		}
+		mods = append(mods, account.LatestTxModifier(&latestTx))
+	}
+
+	// Either update the main account state or its diff as instructed per
+	// the request.
+	if req.EditDiff {
+		err := s.store.UpdateAccountDiff(ctx, acctKey, mods)
+		if err != nil {
+			return nil, err
+		}
+
+		// Fetch the account again to return the new staged diff.
+		acct, err = s.store.Account(ctx, acctKey, req.EditDiff)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		err := s.store.UpdateAccount(ctx, acct, mods...)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return marshallServerAccount(acct)
+}
+
+// DeleteAccountDiff deletes the staged diff of an account.
+func (s *adminRPCServer) DeleteAccountDiff(ctx context.Context,
+	req *adminrpc.DeleteAccountDiffRequest) (*adminrpc.EmptyResponse, error) {
+
+	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.store.DeleteAccountDiff(ctx, acctKey); err != nil {
+		return nil, err
+	}
+
+	return &adminrpc.EmptyResponse{}, nil
 }
 
 // ListAccounts returns a list of all currently known accounts of the auctioneer

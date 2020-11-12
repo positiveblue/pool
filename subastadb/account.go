@@ -361,6 +361,64 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 	return err
 }
 
+// UpdateAccountDiff updates an account's pending diff.
+func (s *EtcdStore) UpdateAccountDiff(ctx context.Context,
+	accountKey *btcec.PublicKey, modifiers []account.Modifier) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		// First, we'll make sure the account we're attempting to store
+		// a diff for exists.
+		dbAccountKey := s.getAccountKey(accountKey)
+		if len(stm.Get(dbAccountKey)) == 0 {
+			return NewAccountNotFoundError(accountKey)
+		}
+
+		// We'll also make sure a diff already exists.
+		dbAccountDiffKey := s.getAccountDiffKey(accountKey)
+		rawAccountDiff := stm.Get(dbAccountDiffKey)
+		if len(rawAccountDiff) == 0 {
+			return account.ErrNoDiff
+		}
+
+		// Then, we'll update the staged account diff.
+		acctDiff, err := deserializeAccount(
+			strings.NewReader(rawAccountDiff),
+		)
+		if err != nil {
+			return err
+		}
+
+		var buf bytes.Buffer
+		newAcctDiff := acctDiff.Copy(modifiers...)
+		if err := serializeAccount(&buf, newAcctDiff); err != nil {
+			return err
+		}
+
+		stm.Put(dbAccountDiffKey, buf.String())
+		return nil
+	})
+	return err
+}
+
+// DeleteAccountDiff deletes an account's pending diff.
+func (s *EtcdStore) DeleteAccountDiff(ctx context.Context,
+	accountKey *btcec.PublicKey) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		stm.Del(s.getAccountDiffKey(accountKey))
+		return nil
+	})
+	return err
+}
+
 // Account retrieves the account associated with the given trader key.  The
 // boolean indicates whether the account's diff should be returned instead. If a
 // diff does not exist, then the existing account state is returned.
