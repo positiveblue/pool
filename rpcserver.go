@@ -335,6 +335,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 					Hash:  *opHash,
 					Index: newInput.Outpoint.OutputIndex,
 				},
+				SignatureScript: newInput.SigScript,
 			})
 		}
 	}
