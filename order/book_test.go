@@ -564,30 +564,3 @@ func toRawKey(pubkey *btcec.PublicKey) [33]byte {
 	copy(result[:], pubkey.SerializeCompressed())
 	return result
 }
-
-// TestReservedValue is a temp test to catch a wrong reserved value
-// calculation.
-func TestReservedValue(t *testing.T) {
-	feeSchedule := terms.NewLinearFeeSchedule(1, 1000)
-	units := orderT.SupplyUnit(160)
-	minMatch := orderT.SupplyUnit(160)
-	o := &order.Ask{
-		Ask: orderT.Ask{
-			Kit: orderT.Kit{
-				Amt:              units.ToSatoshis(),
-				Units:            units,
-				FixedRate:        942,
-				LeaseDuration:    2016,
-				UnitsUnfulfilled: units,
-				AcctKey:          toRawKey(testTraderKey),
-				MaxBatchFeeRate:  25_000,
-				MinUnitsMatch:    minMatch,
-			},
-		},
-	}
-
-	res := order.ReservedValue(o, feeSchedule)
-	if res < units.ToSatoshis() {
-		t.Fatalf("unexpected reserved value: %v", res)
-	}
-}
