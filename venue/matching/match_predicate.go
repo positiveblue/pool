@@ -432,7 +432,7 @@ func (m *MinNodeRatingPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) boo
 	result := askNodeTier >= bid.MinNodeTier
 
 	if !result {
-		log.Debugf("Cannot match ask %s against bid %s because of "+
+		log.Tracef("Cannot match ask %s against bid %s because of "+
 			"tier mismatch: wanted min tier %d but ask node has %d",
 			ask.Nonce(), bid.Nonce(), bid.MinNodeTier, askNodeTier)
 	}
