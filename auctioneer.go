@@ -1563,6 +1563,10 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				a.resumeBatchTicker()
 				a.resumeOrderFeeder()
 
+				monitoring.ObserveBatchMatchAttempt(
+					batchID[:], false,
+				)
+
 				return OrderSubmitState{}, nil
 			}
 
@@ -1573,6 +1577,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		case err != nil:
 			return nil, err
 		}
+
+		monitoring.ObserveBatchMatchAttempt(batchID[:], true)
 
 		// Now that we have created an eligible batch, we'll construct
 		// the execution context we need to push things forward, which
@@ -1710,6 +1716,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 	case BatchExecutionState:
 		log.Infof("Attempting to execute Batch(%v)",
 			a.getPendingBatchID())
+
+		pbid := a.getPendingBatchID()
+		monitoring.ObserveBatchExecutionAttempt(pbid[:])
 
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
