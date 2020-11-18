@@ -12,6 +12,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 const (
@@ -79,6 +80,14 @@ type PrometheusConfig struct {
 	// FundingConflicts is a conflict tracker that keeps track of funding
 	// conflicts (problems during channel funding) between nodes.
 	FundingConflicts matching.NodeConflictTracker
+
+	// AdminRPCServer is a pointer to the admin RPC server. We use this to
+	// ensure that we'll export metrics for the admin RPC.
+	AdminRPCServer *grpc.Server
+
+	// PublicRPCServer is a pointer to the main RPC server. We use this to
+	// export generic RPC metrics to monitor the health of the service.
+	PublicRPCServer *grpc.Server
 }
 
 // PrometheusExporter is a metric exporter that uses Prometheus directly. The

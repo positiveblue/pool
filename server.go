@@ -403,6 +403,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		cfg.SubscribeTimeout,
 	)
 	server.rpcServer = auctioneerServer
+	cfg.Prometheus.PublicRPCServer = auctioneerServer.grpcServer
 
 	poolrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,
@@ -435,6 +436,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		auctioneerServer, adminListener, adminServerOpts,
 		server.auctioneer, store,
 	)
+	cfg.Prometheus.AdminRPCServer = server.adminServer.grpcServer
 	adminrpc.RegisterAuctionAdminServer(
 		server.adminServer.grpcServer, server.adminServer,
 	)
