@@ -404,6 +404,12 @@ func NewServer(cfg *Config) (*Server, error) {
 	)
 	server.rpcServer = auctioneerServer
 	cfg.Prometheus.PublicRPCServer = auctioneerServer.grpcServer
+	cfg.Prometheus.NumActiveTraders = func() int {
+		auctioneerServer.connectedStreamsMutex.Lock()
+		numTraders := len(auctioneerServer.connectedStreams)
+		defer auctioneerServer.connectedStreamsMutex.Unlock()
+		return numTraders
+	}
 
 	poolrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,

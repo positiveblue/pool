@@ -88,6 +88,10 @@ type PrometheusConfig struct {
 	// PublicRPCServer is a pointer to the main RPC server. We use this to
 	// export generic RPC metrics to monitor the health of the service.
 	PublicRPCServer *grpc.Server
+
+	// NumActiveTraders should return the number of active traders in the
+	// venue in a thread-safe manner.
+	NumActiveTraders func() int
 }
 
 // PrometheusExporter is a metric exporter that uses Prometheus directly. The

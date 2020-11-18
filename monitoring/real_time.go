@@ -109,8 +109,10 @@ func (r *realTimeCollector) Describe(ch chan<- *prometheus.Desc) {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (r *realTimeCollector) Collect(ch chan<- prometheus.Metric) {
-	// The only live metric we need to export atm is a gauge which tracks
-	// the number of active traders.
+	ch <- prometheus.MustNewConstMetric(
+		r.numActiveTraders, prometheus.GaugeValue,
+		float64(r.cfg.NumActiveTraders()),
+	)
 }
 
 // fetchRealTimeCollector is a helper function that we'll use to allow those at
