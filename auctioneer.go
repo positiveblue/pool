@@ -1759,8 +1759,20 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 					}
 					a.removeIneligibleOrders(nonces)
 
+					for traderKey := range exeErr.TraderKeys {
+						monitoring.ObserveBatchExeFailure(
+							pbid[:], "MissingTraders",
+							traderKey[:],
+						)
+					}
+
 				case *venue.ErrInvalidWitness:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
+
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "InvalidWitness",
+						exeErr.Trader[:],
+					)
 
 				case *venue.ErrReject:
 					log.Debugf("Restarting execution "+
@@ -1773,18 +1785,48 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 						exeErr.RejectingTraders,
 					)
 
+					for traderKey := range exeErr.RejectingTraders {
+						monitoring.ObserveBatchExeFailure(
+							pbid[:], "Reject",
+							traderKey[:],
+						)
+					}
+
 				case *venue.ErrMissingChannelInfo:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
+
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "NoChannelInfo",
+						exeErr.Trader[:],
+					)
 
 				case *venue.ErrNonMatchingChannelInfo:
 					a.banTrader(exeErr.Trader1)
 					a.banTrader(exeErr.Trader2)
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "ChannelInfoMismatch",
+						exeErr.Trader1[:],
+					)
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "ChannelInfoMismatch",
+						exeErr.Trader2[:],
+					)
+
 				case *venue.ErrMsgTimeout:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "MsgTimeout",
+						exeErr.Trader[:],
+					)
+
 				default:
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "UnknownError", []byte{},
+					)
+
 					// If we get down to this state, then
 					// we had an unexpected error, meaning
 					// we can't continue so we'll exit out.
