@@ -39,6 +39,9 @@ const (
 	labelOrderState = "order_state"
 	labelOrderNonce = "order_nonce"
 	labelOrderRate  = "order_rate"
+	// orderFeeRate is a gague that keeps track of the fee rates of the set
+	// of active orders.
+	orderFeeRate = "order_fee_rate"
 )
 
 // orderCollector is a collector that keeps track of our accounts.
@@ -70,6 +73,9 @@ func newOrderCollector(cfg *PrometheusConfig) *orderCollector {
 	g.addGauge(
 		orderRate, "fixed rate of orders",
 		append(baseLabels, labelOrderNonce),
+	g.addGauge(
+		orderFeeRate, "fee rate of specified orders",
+		baseLabels,
 	)
 	return &orderCollector{
 		cfg: cfg,
@@ -211,6 +217,8 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 	case *order.Bid:
 		c.g[orderDuration].With(labels).Set(float64(t.LeaseDuration()))
 	}
+
+	c.g[orderFeeRate].With(labels).Set(float64(o.Details().MaxBatchFeeRate))
 }
 
 // resetGauges resets all gauges and adds some default values for nicer graphs.
