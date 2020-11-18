@@ -35,13 +35,17 @@ const (
 	// billion) of all orders there are.
 	orderRate = "order_rate"
 
-	labelOrderType  = "order_type"
-	labelOrderState = "order_state"
-	labelOrderNonce = "order_nonce"
-	labelOrderRate  = "order_rate"
 	// orderFeeRate is a gague that keeps track of the fee rates of the set
 	// of active orders.
 	orderFeeRate = "order_fee_rate"
+
+	labelOrderType     = "order_type"
+	labelOrderState    = "order_state"
+	labelOrderNonce    = "order_nonce"
+	labelOrderRate     = "order_rate"
+	labelOrderDuration = "order_duration"
+	labelOrderFeeRate  = "order_fee_rate"
+	labelBidNodeTier   = "order_node_tier"
 )
 
 // orderCollector is a collector that keeps track of our accounts.
@@ -53,26 +57,33 @@ type orderCollector struct {
 
 // newOrderCollector makes a new orderCollector instance.
 func newOrderCollector(cfg *PrometheusConfig) *orderCollector {
-	baseLabels := []string{labelOrderType, labelOrderState}
+	baseLabels := []string{
+		labelOrderType, labelOrderState, labelOrderNonce,
+		labelOrderRate, labelOrderDuration, labelOrderFeeRate,
+		labelBidNodeTier,
+	}
+
 	g := make(gauges)
 	g.addGauge(
-		orderCount, "total number of orders", baseLabels,
+		orderCount, "total number of orders",
+		[]string{labelOrderType, labelOrderState},
 	)
 	g.addGauge(
 		orderUnits, "number of units in orders",
-		append(baseLabels, labelOrderNonce, labelOrderRate),
+		baseLabels,
 	)
 	g.addGauge(
 		orderUnitsUnfulfilled, "number of unfulfilled units in orders",
-		append(baseLabels, labelOrderNonce, labelOrderRate),
+		baseLabels,
 	)
 	g.addGauge(
 		orderDuration, "min/max duration of orders",
-		append(baseLabels, labelOrderNonce),
+		baseLabels,
 	)
 	g.addGauge(
 		orderRate, "fixed rate of orders",
-		append(baseLabels, labelOrderNonce),
+		baseLabels,
+	)
 	g.addGauge(
 		orderFeeRate, "fee rate of specified orders",
 		baseLabels,
@@ -187,25 +198,24 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 	}
 
 	labels = prometheus.Labels{
-		labelOrderType:  o.Type().String(),
-		labelOrderState: o.Details().State.String(),
-		labelOrderNonce: o.Nonce().String(),
+		labelOrderType:     o.Type().String(),
+		labelOrderState:    o.Details().State.String(),
+		labelOrderNonce:    o.Nonce().String(),
+		labelOrderRate:     strconv.Itoa(int(o.Details().FixedRate)),
+		labelOrderDuration: strconv.Itoa(int(o.Details().LeaseDuration)),
+		labelOrderFeeRate:  strconv.Itoa(int(o.Details().MaxBatchFeeRate)),
 	}
 
-	rateString := strconv.Itoa(int(o.Details().FixedRate))
-	if _, ok := o.(*order.Bid); ok {
-		rateString = "-" + rateString
+	if b, ok := o.(*order.Bid); ok {
+		labels[labelOrderRate] = "-" + labels[labelOrderRate]
+
+		labels[labelBidNodeTier] = b.MinNodeTier.String()
+	} else {
+		labels[labelBidNodeTier] = "N/A"
 	}
 
-	unitLabels := prometheus.Labels{
-		labelOrderType:  o.Type().String(),
-		labelOrderState: o.Details().State.String(),
-		labelOrderNonce: o.Nonce().String(),
-		labelOrderRate:  rateString,
-	}
-
-	c.g[orderUnits].With(unitLabels).Set(float64(o.Details().Units))
-	c.g[orderUnitsUnfulfilled].With(unitLabels).Set(
+	c.g[orderUnits].With(labels).Set(float64(o.Details().Units))
+	c.g[orderUnitsUnfulfilled].With(labels).Set(
 		float64(o.Details().UnitsUnfulfilled),
 	)
 	c.g[orderRate].With(labels).Set(float64(o.Details().FixedRate))
