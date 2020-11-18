@@ -1377,3 +1377,145 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	)
 	mineBlocks(t, t.lndHarness, 1, 1)
 }
+
+// testBatchMatchingConditions tests that all order and account preconditions
+// for being matched are applied correctly.
+func testBatchMatchingConditions(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader.
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	require.NoError(t.t, err)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	require.NoError(t.t, err)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders.
+	account1 := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// default trader, selling 15 units (1.5M sats) of liquidity.
+	const orderFixedRate = 100
+	askAmt := btcutil.Amount(1_500_000)
+	ask1Nonce, err := submitAskOrder(
+		t.trader, account1.TraderKey, orderFixedRate, askAmt,
+		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
+	)
+	require.NoError(t.t, err)
+
+	// Our second trader, connected to Charlie, wants to buy 4 units of
+	// liquidity. So let's submit an order for that.
+	bidAmt := btcutil.Amount(400_000)
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
+		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
+	)
+	require.NoError(t.t, err)
+
+	// To ensure the venue is aware of account deposits/withdrawals, we'll
+	// process a deposit for the account behind the ask.
+	depositResp, err := t.trader.DepositAccount(
+		ctx, &poolrpc.DepositAccountRequest{
+			TraderKey:       account1.TraderKey,
+			AmountSat:       100_000,
+			FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+		},
+	)
+	require.NoError(t.t, err)
+
+	// We should expect to see the transaction causing the deposit.
+	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, depositTxid, txids[0])
+
+	// Let's go ahead and confirm it. The account should remain in
+	// PendingUpdate as it hasn't met all of the required confirmations.
+	block := mineBlocks(t, t.lndHarness, 1, 1)[0]
+	_ = assertTxInBlock(t, block, depositTxid)
+	assertAuctioneerAccountState(
+		t, account1.TraderKey, account.StatePendingUpdate,
+	)
+
+	// Since the ask account is pending an update, a batch should not be
+	// cleared. Let's make sure the reason for not clearing was what we
+	// expected.
+	_, _ = executeBatch(t, 0)
+	assertServerLogContains(
+		t, "Filtered out order %v with account not ready, state=%v",
+		ask1Nonce, account.StatePendingUpdate,
+	)
+
+	// Let's now fully confirm the account again, but then ban the trader.
+	_ = mineBlocks(t, t.lndHarness, 2, 0)
+	assertAuctioneerAccountState(t, account1.TraderKey, account.StateOpen)
+	_, err = t.auctioneer.AddBan(ctx, &adminrpc.BanRequest{
+		Duration: 3,
+		Ban: &adminrpc.BanRequest_Account{
+			Account: account1.TraderKey,
+		},
+	})
+	require.NoError(t.t, err)
+
+	// The batch should now fail because of the banned account.
+	_, _ = executeBatch(t, 0)
+	assertServerLogContains(
+		t, "Filtered out order %v with banned trader (node=%x, acct=%x",
+		ask1Nonce, t.trader.cfg.LndNode.PubKey, account1.TraderKey,
+	)
+
+	// Let's unban the trader now and make sure the orders go through.
+	_, err = t.auctioneer.RemoveBan(ctx, &adminrpc.RemoveBanRequest{
+		Ban: &adminrpc.RemoveBanRequest_Account{
+			Account: account1.TraderKey,
+		},
+	})
+	require.NoError(t.t, err)
+	_, _ = executeBatch(t, 1)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidAmt, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+	mineBlocks(t, t.lndHarness, 1, 1)
+
+	// Let's add a second bid order, this time with a max fee rate that is
+	// too low.
+	bid2Nonce, err := submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
+		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.Details.MaxBatchFeeRateSatPerKw = 255
+		},
+	)
+	require.NoError(t.t, err)
+
+	// The batch should now fail because the bid is filtered out based on
+	// its max fee rate.
+	_, _ = executeBatch(t, 0)
+	assertServerLogContains(
+		t, "Filtered out order %v with max fee rate %v", bid2Nonce, 255,
+	)
+}
