@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -1508,6 +1509,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.cfg.TraderRejected,
 		}
 
+		batchKey, err := a.cfg.DB.BatchKey(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		batchID := orderT.NewBatchID(batchKey)
+
 		// Next, before we add the actual core matching predicate,
 		// we'll initialize the predicate for the done rating agency.
 		// This may not always be enabled in contexts like testnet for
@@ -1531,9 +1538,14 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		//
 		// TODO(roasbeef): iterate over then clear each market based on
 		// the duration? then merge at the end? before execution?
+		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
 			s.batchFeeRate, accountPredicate, predicateChain,
 		)
+		matchLatency := time.Since(matchTimeStart)
+
+		// TODO(roasbeef): export stuff like # confclits, etc?
+		monitoring.ObserveMatchingLatency(batchID[:], matchLatency)
 
 		switch {
 
@@ -1567,11 +1579,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// includes the final batch execution transaction, which we
 		// will attempt do use during execution later.
 		masterAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
-		if err != nil {
-			return nil, err
-		}
-
-		batchKey, err := a.cfg.DB.BatchKey(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -1706,6 +1713,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
+		exeTimeStart := time.Now()
 		executionResult, err := a.cfg.BatchExecutor.Submit(s.exeCtx)
 		if err != nil {
 			return nil, err
@@ -1716,6 +1724,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// go, or we need to make some changes to attempt to re-submit
 		// it.
 		case result := <-executionResult:
+			exeLatency := time.Since(exeTimeStart)
+
+			monitoring.ObserveBatchExecutionLatency(
+				pbid[:], exeLatency,
+			)
+
 			// If we have a non-nil error, then this means there
 			// was an issue with the batch, so we'll try to see if
 			// we can fix the issue to re-submit.
