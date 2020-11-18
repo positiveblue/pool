@@ -65,6 +65,10 @@ func newRealTimeCollector(cfg *PrometheusConfig) *realTimeCollector {
 //
 // NOTE: Part of the MetricGroup interface.
 func (r *realTimeCollector) RegisterMetricFuncs() error {
+	// Before we register both servers, we'll also ensure that the
+	// collector will export latency metrics for the histogram.
+	grpc_prometheus.EnableHandlingTimeHistogram()
+
 	// Export the gRPC information for both the admin RPC as well as the
 	// public gRPC server. Exporting the admin RPC server as well gives us
 	// a light weight audit log of any manual actions that may have been
