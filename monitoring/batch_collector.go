@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"strconv"
+	"time"
 
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -67,6 +70,29 @@ const (
 	// batchTotalRevenue is a gague that keeps track of the total amount of
 	// revenue the system has earned to date.
 	batchTotalRevenue = "batch_total_revenue"
+
+	// batchMatchAttempts is a counter that is incremented with each attempt at
+	// matching a new batch.
+	batchMatchAttempts = "batch_match_attempt"
+
+	// batchExecutionAttempts is a counter that's incremented each time we
+	// try to *execute* a new batch.
+	batchExecutionAttempts = "batch_exe_attempt"
+
+	// batchMatchTime is the amount of time it took to generate a match of
+	// a given batch.
+	//
+	// TODO(roasbeef): what labels other than batch ID?
+	batchMatchTime = "batch_match_latency_ms"
+
+	// batchExecutionTime is the amount of time that it took to execute a
+	// given batch from top to bottom.
+	batchExecutionTime = "batch_execution_latency_ms"
+
+	// batchFailure is a counter that's incremented each time we fail to
+	// fully execute a batch.
+	batchFailureCounter = "batch_failures"
+
 	labelBatchID   = "batch_id"
 	labelOrderPair = "order_pair"
 
@@ -82,6 +108,27 @@ type batchCollector struct {
 	g gauges
 
 	permGauges gauges
+
+	// batchMatchCounter is incremented each time we attempt to match a new
+	// match. This lets us see how many times we attempt to restart match
+	// making with a given batch.
+	batchMatchCounter *prometheus.CounterVec
+
+	// batchExecutionCounter is incremented each time we attempt to execute
+	// a given batch. Note that it's possible that we execute a match set
+	// multiple times as traders fall out of it for w/e reason.
+	batchExecutionCounter *prometheus.CounterVec
+
+	// batchFailureCounter is incremented each time we fail a batch.
+	batchFailureCounter *prometheus.CounterVec
+
+	// matchingLatencyHisto is a histogram of how long it takes to perform
+	// match making for  a given batch.
+	matchingLatencyHisto *prometheus.HistogramVec
+
+	// executionLatencyHisto is a histogram of how long it takes to execute
+	// a given match.
+	executionLatencyHisto *prometheus.HistogramVec
 }
 
 // newBatchCollector makes a new batchCollector instance.
@@ -118,6 +165,59 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 		cfg:        cfg,
 		g:          g,
 		permGauges: permGauges,
+
+		batchMatchCounter: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: batchMatchAttempts,
+				Help: "counter that tracks match making attempts",
+			},
+			baseLabels,
+		),
+		batchExecutionCounter: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: batchExecutionAttempts,
+				Help: "counter that tracks batch execution attempts",
+			},
+			baseLabels,
+		),
+		batchFailureCounter: prometheus.NewCounterVec(
+			prometheus.CounterOpts{
+				Name: batchFailureCounter,
+				Help: "a counter that's incremented each time we fail a batch",
+			},
+			append(baseLabels, labelReason),
+		),
+
+		matchingLatencyHisto: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name: batchMatchTime,
+				Help: "time in ms it takes to find a match",
+
+				// We'll create buckets from 0 to 30 seconds, with each
+				// bucket being 100 ms wide. The args express we want
+				// the range to be from 0, add 100ms for each bucket,
+				// and create 300 buckets.
+				Buckets: prometheus.LinearBuckets(
+					0, 100, 300,
+				),
+			},
+			baseLabels,
+		),
+		executionLatencyHisto: prometheus.NewHistogramVec(
+			prometheus.HistogramOpts{
+				Name: batchExecutionTime,
+				Help: "time in ms it takes to execute a batch",
+
+				// We'll create buckets from 0 to 30 seconds, with each
+				// bucket being 100 ms wide. The args express we want
+				// the range to be from 0, add 100ms for each bucket,
+				// and create 300 buckets.
+				Buckets: prometheus.LinearBuckets(
+					0, 100, 300,
+				),
+			},
+			baseLabels,
+		),
 	}
 }
 
@@ -303,6 +403,90 @@ func (c *batchCollector) observeBatch(id orderT.BatchID,
 	}
 }
 
+// fetchBatchCollector is a helper function that we'll use to allow those at
+// the package level to obtain an active pointer to the current batchCollector
+// instance.
+func fetchBatchCollector() *batchCollector {
+	metricsMtx.Lock()
+	defer metricsMtx.Unlock()
+
+	batchGroup, ok := activeGroups[batchCollectorName]
+	if !ok {
+		return nil
+	}
+
+	s := batchGroup.(*batchCollector)
+	return s
+}
+
+// ObserveBatchMatchAttempt increments the counter that tracks how often we
+// attempt to perform match making for a given batch.
+func ObserveBatchMatchAttempt(batchID []byte, marketMade bool) {
+	c := fetchBatchCollector()
+	if c == nil {
+		return
+	}
+
+	c.batchMatchCounter.With(prometheus.Labels{
+		labelBatchID:  hex.EncodeToString(batchID),
+		"market_made": strconv.FormatBool(marketMade),
+	}).Inc()
+}
+
+// ObserveBatchExecutionAttempt increments a counter that tracks how often we
+// attempt to execute a batch given a set of valid matches.
+func ObserveBatchExecutionAttempt(batchID []byte) {
+	c := fetchBatchCollector()
+	if c == nil {
+		return
+	}
+
+	c.batchExecutionCounter.With(prometheus.Labels{
+		labelBatchID: hex.EncodeToString(batchID),
+	}).Inc()
+}
+
+// ObserveMatchingLatency exports a new observation of how long it took to
+// perform match making for a given batch.
+func ObserveMatchingLatency(batchID []byte, t time.Duration) {
+	c := fetchBatchCollector()
+	if c == nil {
+		return
+	}
+
+	c.matchingLatencyHisto.With(prometheus.Labels{
+		labelBatchID: hex.EncodeToString(batchID),
+	}).Observe(float64(t.Milliseconds()))
+}
+
+// ObserveBatchExecutionLatency exports a new observation of how long it took
+// to fully execute a given batch.
+func ObserveBatchExecutionLatency(batchID []byte, t time.Duration) {
+	c := fetchBatchCollector()
+	if c == nil {
+		return
+	}
+
+	c.executionLatencyHisto.With(prometheus.Labels{
+		labelBatchID: hex.EncodeToString(batchID),
+	}).Observe(float64(t.Milliseconds()))
+}
+
+// ObserveBatchExeFailure observes an instance wherein we attempt to execute a
+// batch but failed.
+func ObserveBatchExeFailure(batchID []byte, reason string, reporter []byte) {
+	c := fetchBatchCollector()
+	if c == nil {
+		return
+	}
+
+	c.batchFailureCounter.With(prometheus.Labels{
+		labelBatchID:    hex.EncodeToString(batchID),
+		labelReason:     reason,
+		labelReporterID: hex.EncodeToString(reporter),
+	}).Inc()
+}
+
 // RegisterMetricFuncs signals to the underlying hybrid collector that it
 // should register all metrics that it aims to export with the global
 // Prometheus registry. Rather than using the series of "MustRegister"
@@ -311,6 +495,23 @@ func (c *batchCollector) observeBatch(id orderT.BatchID,
 //
 // NOTE: Part of the MetricGroup interface.
 func (c *batchCollector) RegisterMetricFuncs() error {
+	// We'll also need to register our counters now individually.
+	if err := prometheus.Register(c.batchMatchCounter); err != nil {
+		return err
+	}
+	if err := prometheus.Register(c.batchExecutionCounter); err != nil {
+		return err
+	}
+	if err := prometheus.Register(c.batchFailureCounter); err != nil {
+		return err
+	}
+	if err := prometheus.Register(c.matchingLatencyHisto); err != nil {
+		return err
+	}
+	if err := prometheus.Register(c.executionLatencyHisto); err != nil {
+		return err
+	}
+
 	return prometheus.Register(c)
 }
 
