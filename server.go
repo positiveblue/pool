@@ -355,8 +355,8 @@ func NewServer(cfg *Config) (*Server, error) {
 		),
 	}
 
-	// Prometheus itself needs a gRPC interceptor to measure performance
-	// of the API calls. We chain them together with the LSAT interceptor.
+	// Prometheus itself needs a gRPC interceptor to measure performance of
+	// the API calls. We chain them together with the LSAT interceptor.
 	if cfg.Prometheus.Active {
 		cfg.Prometheus.Store = store
 		cfg.Prometheus.Lnd = lnd.LndServices
@@ -419,8 +419,20 @@ func NewServer(cfg *Config) (*Server, error) {
 				"listen on %s", cfg.AdminRPCListen)
 		}
 	}
+
+	var adminServerOpts []grpc.ServerOption
+	if cfg.Prometheus.Active {
+		adminServerOpts = []grpc.ServerOption{
+			grpc.ChainUnaryInterceptor(
+				grpc_prometheus.UnaryServerInterceptor,
+			),
+			grpc.ChainStreamInterceptor(
+				grpc_prometheus.StreamServerInterceptor,
+			),
+		}
+	}
 	server.adminServer = newAdminRPCServer(
-		auctioneerServer, adminListener, []grpc.ServerOption{},
+		auctioneerServer, adminListener, adminServerOpts,
 		server.auctioneer, store,
 	)
 	adminrpc.RegisterAuctionAdminServer(
