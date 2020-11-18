@@ -57,6 +57,16 @@ const (
 	// conflictCount is the number of funding conflicts recorder per peer.
 	conflictCount = "conflict_count"
 
+	// batchTotalVolume is a gague that keeps track the total volume of the
+	// system to date.
+	//
+	// TODO(roasbeef): need to find a more scalable way of exporting this
+	// info, just make into admin RPC command?
+	batchTotalVolume = "batch_total_volume"
+
+	// batchTotalRevenue is a gague that keeps track of the total amount of
+	// revenue the system has earned to date.
+	batchTotalRevenue = "batch_total_revenue"
 	labelBatchID   = "batch_id"
 	labelOrderPair = "order_pair"
 
@@ -70,6 +80,8 @@ type batchCollector struct {
 	cfg *PrometheusConfig
 
 	g gauges
+
+	permGauges gauges
 }
 
 // newBatchCollector makes a new batchCollector instance.
@@ -94,9 +106,18 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 	)
 	g.addGauge(batchTxFees, "on-chain tx fees in satoshis", baseLabels)
 	g.addGauge(conflictCount, "number of funding conflicts", conflictLabels)
+
+	// Now that we've created the set of gagues to be reset each round,
+	// we'll make a new set that are never reset to ensure we have a
+	// cummulative vaue.
+	permGauges := make(gauges)
+	permGauges.addGauge(batchTotalVolume, "total batch volume", nil)
+	permGauges.addGauge(batchTotalRevenue, "total batch revenue", nil)
+
 	return &batchCollector{
-		cfg: cfg,
-		g:   g,
+		cfg:        cfg,
+		g:          g,
+		permGauges: permGauges,
 	}
 }
 
@@ -173,9 +194,30 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	// one yet, we'd returned above.
 	numBatches := float64(1)
 	tempBatchKey := batchKey
+	var totalVolume, totalRevenue btcutil.Amount
 	for !tempBatchKey.IsEqual(subastadb.InitialBatchKey) {
 		numBatches++
 		tempBatchKey = poolscript.DecrementKey(tempBatchKey)
+
+		// For the set of metrics which want a cumulative value, we'll
+		// fetch the snapshot as well to be able to export the volume
+		// as well as the revenue.
+		//
+		// TODO(roasbeef): fetch all and do a single batch query
+		// instead?
+		batchID := orderT.NewBatchID(tempBatchKey)
+		batch, err := c.cfg.Store.GetBatchSnapshot(ctx, batchID)
+		if err != nil {
+			log.Errorf("could not query batch snapshot with ID %v: %v",
+				batchID, err)
+		}
+
+		// Tally up the total volume in the batch as well as the amount
+		// of satoshis the auctioneer has earned from the batch.
+		for _, matchedOrder := range batch.OrderBatch.Orders {
+			totalVolume += matchedOrder.Details.Quote.TotalSatsCleared
+		}
+		totalRevenue += batch.OrderBatch.FeeReport.AuctioneerFeesAccrued
 
 		// Unlikely to happen but in case we start from an invalid value
 		// we want to avoid an endless loop. Can't image we'd ever do
@@ -186,6 +228,9 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 		}
 	}
 	c.g[batchCount].With(nil).Set(numBatches)
+
+	c.permGauges[batchTotalVolume].With(nil).Set(float64(totalVolume))
+	c.permGauges[batchTotalRevenue].With(nil).Set(float64(totalRevenue))
 
 	// Fetch the batch by its ID.
 	ctx, cancel = context.WithTimeout(context.Background(), dbTimeout)
@@ -206,6 +251,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Finally, collect the metrics into the prometheus collect channel.
 	c.g.collect(ch)
+	c.permGauges.collect(ch)
 }
 
 // observeBatch records all metrics of a batch and fetches the details of the
