@@ -107,7 +107,6 @@ func testBatchExecution(t *harnessTest) {
 	askAmt := btcutil.Amount(1_500_000)
 	ask1Nonce, err := submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
@@ -119,7 +118,6 @@ func testBatchExecution(t *harnessTest) {
 	bidAmt := btcutil.Amount(800_000)
 	bid1Nonce, err := submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -133,7 +131,6 @@ func testBatchExecution(t *harnessTest) {
 	bidAmt2 := btcutil.Amount(400_000)
 	bid2Nonce, err := submitBidOrder(
 		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -144,7 +141,6 @@ func testBatchExecution(t *harnessTest) {
 	// down the trader immediately after.
 	_, err = submitBidOrder(
 		thirdTrader, account4.TraderKey, orderFixedRate, bidAmt2,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -329,10 +325,7 @@ func testBatchExecution(t *harnessTest) {
 	// another order for 3 units, which should be matched with Bob's
 	// remaining Ask order that should now have zero units remaining.
 	bidAmt3 := btcutil.Amount(300_000)
-	_, err = submitBidOrder(
-		secondTrader, account2.TraderKey, 100, bidAmt3, defaultOrderDuration,
-		uint32(order.VersionNodeTierMinMatch),
-	)
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt3)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
 	}
@@ -507,7 +500,6 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 		_, err := submitAskOrder(
 			t.trader, account1.TraderKey, orderFixedRate, chanAmt,
-			defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 		)
 		if err != nil {
 			t.Fatalf("could not submit ask order: %v", err)
@@ -515,7 +507,6 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 		_, err = submitBidOrder(
 			secondTrader, account2.TraderKey, orderFixedRate, chanAmt,
-			defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 		)
 		if err != nil {
 			t.Fatalf("could not submit bid order: %v", err)
@@ -713,10 +704,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
 	askAmt := btcutil.Amount(1_500_000)
-	_, err = submitAskOrder(
-		t.trader, account1.TraderKey, 100, askAmt, defaultOrderDuration,
-		uint32(order.VersionNodeTierMinMatch),
-	)
+	_, err = submitAskOrder(t.trader, account1.TraderKey, 100, askAmt)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
 	}
@@ -724,10 +712,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// Our second trader, connected to Charlie, wants to buy 8 units of
 	// liquidity. So let's submit an order for that.
 	bidAmt := btcutil.Amount(800_000)
-	_, err = submitBidOrder(
-		secondTrader, account2.TraderKey, 100, bidAmt, defaultOrderDuration,
-		uint32(order.VersionNodeTierMinMatch),
-	)
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
 	}
@@ -791,10 +776,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 
 	// The trader responsible should no longer be able to modify their
 	// account or submit orders.
-	_, err = submitAskOrder(
-		t.trader, account1.TraderKey, 100, 100_000, defaultOrderDuration,
-		uint32(order.VersionNodeTierMinMatch),
-	)
+	_, err = submitAskOrder(t.trader, account1.TraderKey, 100, 100_000)
 	if err == nil || !strings.Contains(err.Error(), "banned") {
 		t.Fatalf("expected order submission to fail due to account ban")
 	}
@@ -808,10 +790,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	}
 
 	// The offended trader should still be able to however.
-	_, err = submitAskOrder(
-		secondTrader, account2.TraderKey, 100, 100_000, defaultOrderDuration,
-		uint32(order.VersionNodeTierMinMatch),
-	)
+	_, err = submitAskOrder(secondTrader, account2.TraderKey, 100, 100_000)
 	if err != nil {
 		t.Fatalf("expected order submission to succeed: %v", err)
 	}
@@ -875,7 +854,9 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// Submit an ask an bid which will match exactly.
 	_, err = submitAskOrder(
 		t.trader, account1.TraderKey, matchRate, orderSize,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
@@ -883,7 +864,9 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 
 	_, err = submitBidOrder(
 		secondTrader, account2.TraderKey, matchRate, orderSize,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	if err != nil {
 		t.Fatalf("could not submit bid order: %v", err)
@@ -983,17 +966,14 @@ func testConsecutiveBatches(t *harnessTest) {
 	const bid2Size = 200_000
 	const bid3Size = 300_000
 	const askRate = 20
-	const durationBlocks = 2016
 
 	// Submit an ask an bid that matches one third of the ask.
 	_, err = submitAskOrder(
 		t.trader, askAccount.TraderKey, askRate, askSize,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
 	)
 	require.NoError(t.t, err)
 	_, err = submitBidOrder(
 		secondTrader, bidAccount.TraderKey, askRate, bid1Size,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
 	)
 	require.NoError(t.t, err)
 
@@ -1012,7 +992,6 @@ func testConsecutiveBatches(t *harnessTest) {
 	// the unconfirmed chain of batches.
 	_, err = submitBidOrder(
 		secondTrader, bidAccount.TraderKey, askRate, bid2Size,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
 	)
 	require.NoError(t.t, err)
 
@@ -1057,7 +1036,6 @@ func testConsecutiveBatches(t *harnessTest) {
 	)
 	_, err = submitBidOrder(
 		secondTrader, bidAccount.TraderKey, askRate, bid3Size,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
 	)
 	require.NoError(t.t, err)
 
@@ -1137,12 +1115,16 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// Submit an ask an bid that matches half of the ask.
 	_, err = submitAskOrder(
 		t.trader, askAccount.TraderKey, askRate, askSize,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 	_, err = submitBidOrder(
 		secondTrader, bidAccountCharlie.TraderKey, askRate, askSize/2,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 
@@ -1163,12 +1145,16 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// and the second time Dave will get the remaining 2 units.
 	_, err = submitBidOrder(
 		secondTrader, bidAccountCharlie.TraderKey, askRate*2,
-		askSize/2, durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		askSize/2, func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 	_, err = submitBidOrder(
 		thirdTrader, bidAccountDave.TraderKey, askRate,
-		askSize/2, durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		askSize/2, func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 
@@ -1262,7 +1248,9 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// times.
 	ask1Nonce, err := submitAskOrder(
 		t.trader, askAccount.TraderKey, askRate, askSize,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 	ask1Created := time.Now()
@@ -1283,7 +1271,9 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// rejecting the batch because of a failed funding attempt.
 	bid1Nonce, err := submitBidOrder(
 		secondTrader, bidAccountCharlie.TraderKey, askRate, bidSize1,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 	bid1Created := time.Now()
@@ -1294,7 +1284,9 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// around.
 	bid2Nonce, err := submitBidOrder(
 		thirdTrader, bidAccountDave.TraderKey, askRate, bidSize2,
-		durationBlocks, uint32(order.VersionNodeTierMinMatch),
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 	bid2Created := time.Now()
@@ -1418,7 +1410,6 @@ func testBatchMatchingConditions(t *harnessTest) {
 	askAmt := btcutil.Amount(1_500_000)
 	ask1Nonce, err := submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	require.NoError(t.t, err)
 
@@ -1427,7 +1418,6 @@ func testBatchMatchingConditions(t *harnessTest) {
 	bidAmt := btcutil.Amount(400_000)
 	_, err = submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 	)
 	require.NoError(t.t, err)
 
@@ -1505,7 +1495,6 @@ func testBatchMatchingConditions(t *harnessTest) {
 	// too low.
 	bid2Nonce, err := submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
-		defaultOrderDuration, uint32(order.VersionNodeTierMinMatch),
 		func(bid *poolrpc.SubmitOrderRequest_Bid) {
 			bid.Bid.Details.MaxBatchFeeRateSatPerKw = 255
 		},

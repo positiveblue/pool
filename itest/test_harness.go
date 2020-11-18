@@ -57,6 +57,8 @@ const (
 	// defaultTimeout is a timeout that will be used for various wait
 	// scenarios where no custom timeout value is defined.
 	defaultTimeout = time.Second * 5
+
+	defaultOrderDuration uint32 = 2016
 )
 
 // testCase is a struct that holds a single test case.
@@ -1020,8 +1022,8 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 type bidModifier func(bid *poolrpc.SubmitOrderRequest_Bid)
 
 func submitBidOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration uint32, // nolint:unparam
-	version uint32, modifiers ...bidModifier) (orderT.Nonce, error) { // nolint:unparam
+	rate uint32, amt btcutil.Amount,
+	modifiers ...bidModifier) (orderT.Nonce, error) {
 
 	rpcBid := &poolrpc.SubmitOrderRequest_Bid{
 		Bid: &poolrpc.Bid{
@@ -1032,9 +1034,11 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 				MinUnitsMatch:           1,
 				MaxBatchFeeRateSatPerKw: uint64(12500),
 			},
-			LeaseDurationBlocks: duration,
-			Version:             version,
-			MinNodeTier:         poolrpc.NodeTier_TIER_0,
+			LeaseDurationBlocks: defaultOrderDuration,
+			Version: uint32(
+				orderT.VersionNodeTierMinMatch,
+			),
+			MinNodeTier: poolrpc.NodeTier_TIER_0,
 		},
 	}
 	for _, modifier := range modifiers {
@@ -1064,8 +1068,8 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 type askModifier func(ask *poolrpc.SubmitOrderRequest_Ask)
 
 func submitAskOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration uint32, // nolint:unparam
-	version uint32, modifiers ...askModifier) (orderT.Nonce, error) { // nolint:unparam
+	rate uint32, amt btcutil.Amount,
+	modifiers ...askModifier) (orderT.Nonce, error) {
 
 	rpcAsk := &poolrpc.SubmitOrderRequest_Ask{
 		Ask: &poolrpc.Ask{
@@ -1076,8 +1080,10 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 				MinUnitsMatch:           1,
 				MaxBatchFeeRateSatPerKw: uint64(12500),
 			},
-			LeaseDurationBlocks: duration,
-			Version:             version,
+			LeaseDurationBlocks: defaultOrderDuration,
+			Version: uint32(
+				orderT.VersionNodeTierMinMatch,
+			),
 		},
 	}
 	for _, modifier := range modifiers {

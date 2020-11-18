@@ -9,10 +9,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const (
-	defaultOrderDuration uint32 = 2016
-)
-
 // testOrderSubmission tests that a simple ask order can be created on both the
 // trader server and the auction server.
 func testOrderSubmission(t *harnessTest) {
@@ -88,9 +84,7 @@ func testOrderSubmission(t *harnessTest) {
 			Bid: rpcBid,
 		},
 	})
-	if err != nil {
-		t.Fatalf("unable to submit order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// There should be two orders now, with one of them being an ask with the
 	// proper state and node tier set.
@@ -150,10 +144,7 @@ func testOrderSubmission(t *harnessTest) {
 		}
 
 		cancelIdx = i
-		if bid.MinNodeTier != poolrpc.NodeTier_TIER_0 {
-			t.Fatalf("wrong node tier, expected %v, got %v",
-				poolrpc.NodeTier_TIER_0, bid.MinNodeTier)
-		}
+		require.Equal(t.t, poolrpc.NodeTier_TIER_0, bid.MinNodeTier)
 	}
 
 	// To close, we'll the final ask, then query again to confirm that all
@@ -161,27 +152,23 @@ func testOrderSubmission(t *harnessTest) {
 	_, err = t.trader.CancelOrder(ctx, &poolrpc.CancelOrderRequest{
 		OrderNonce: list.Asks[0].Details.OrderNonce,
 	})
-	if err != nil {
-		t.Fatalf("unable to cancel order: %v", err)
-	}
+	require.NoError(t.t, err)
 	_, err = t.trader.CancelOrder(ctx, &poolrpc.CancelOrderRequest{
 		OrderNonce: list.Bids[cancelIdx].Details.OrderNonce,
 	})
-	if err != nil {
-		t.Fatalf("unable to cancel order: %v", err)
-	}
+	require.NoError(t.t, err)
 	list, err = t.trader.ListOrders(ctx, &poolrpc.ListOrdersRequest{})
-	if err != nil {
-		t.Fatalf("could not list orders: %v", err)
-	}
+	require.NoError(t.t, err)
 	for _, bid := range list.Bids {
-		if bid.Details.State != poolrpc.OrderState_ORDER_CANCELED {
-			t.Fatalf("bid not marked as canceled")
-		}
+		require.Equal(
+			t.t, poolrpc.OrderState_ORDER_CANCELED,
+			bid.Details.State,
+		)
 	}
 	for _, ask := range list.Asks {
-		if ask.Details.State != poolrpc.OrderState_ORDER_CANCELED {
-			t.Fatalf("ask not marked as canceled")
-		}
+		require.Equal(
+			t.t, poolrpc.OrderState_ORDER_CANCELED,
+			ask.Details.State,
+		)
 	}
 }
