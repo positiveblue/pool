@@ -32,6 +32,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/feebump"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -1245,6 +1246,8 @@ func (s *rpcServer) addStreamSubscription(traderID lsat.TokenID,
 			maxAccountsPerTrader)
 	}
 
+	monitoring.ObserveNewConnection(newSub.AccountKey)
+
 	// There's no subscription for that account yet, notify our batch
 	// executor that the trader for a certain account is now connected.
 	trader.Subscriptions[newSub.AccountKey] = newSub
@@ -1274,7 +1277,9 @@ func (s *rpcServer) disconnectTrader(traderID lsat.TokenID) error {
 
 	// TODO(rooasbeef): notify some other component that the
 	// client is no longer there?
-	for _, trader := range subscriptions {
+	for acctKey, trader := range subscriptions {
+		monitoring.ObserveFailedConnection(acctKey)
+
 		err := s.batchExecutor.UnregisterTrader(trader)
 		if err != nil {
 			return fmt.Errorf("error unregistering"+
