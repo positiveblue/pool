@@ -411,6 +411,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		return numTraders
 	}
 	cfg.Prometheus.BatchConfTarget = cfg.BatchConfTarget
+	cfg.Prometheus.SnapshotSource = auctioneerServer.lookupSnapshot
 
 	poolrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,

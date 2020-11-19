@@ -1,11 +1,13 @@
 package monitoring
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -96,6 +98,11 @@ type PrometheusConfig struct {
 	// BatchConfTarget should mimic the conf target that is set in the main
 	// config. We use it to monitor the estimated batch feerates.
 	BatchConfTarget int32
+
+	// SnapshotSource is a function that returns the batch snapshot for a
+	// batch with the given batch ID.
+	SnapshotSource func(context.Context,
+		*btcec.PublicKey) (*subastadb.BatchSnapshot, error)
 }
 
 // PrometheusExporter is a metric exporter that uses Prometheus directly. The
