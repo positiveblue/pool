@@ -2,10 +2,55 @@ package rejects
 
 import (
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
+
+// Order holds the minimal information needed about an order in a match
+type Order struct {
+	// Nonce is the order nonce.
+	Nonce orderT.Nonce
+
+	// AcctKey is the account that made this order.
+	AcctKey matching.AccountID
+
+	// NodeKey is the node public key for this order.
+	NodeKey [33]byte
+}
+
+// Match holds the ask and bid of a match.
+type Match struct {
+	// Ask is the ask that matched with the ask.
+	Ask Order
+
+	// Bid is the bid that matched with the bid.
+	Bid Order
+}
+
+// FromBatch extracts the matches needed for reject handling from the given
+// batch.
+func FromBatch(batch *matching.OrderBatch) []Match {
+	matches := make([]Match, len(batch.Orders))
+	for i, o := range batch.Orders {
+		ask := o.Details.Ask
+		bid := o.Details.Bid
+
+		matches[i] = Match{
+			Ask: Order{
+				AcctKey: ask.Details().AcctKey,
+				NodeKey: ask.ServerDetails().NodeKey,
+				Nonce:   ask.Nonce(),
+			},
+			Bid: Order{
+				AcctKey: bid.Details().AcctKey,
+				NodeKey: bid.ServerDetails().NodeKey,
+				Nonce:   bid.Nonce(),
+			},
+		}
+	}
+
+	return matches
+}
 
 // RejectHandler encapsulates logic for handling reject messages sent from
 // traders and filter out orders from the order book accrodingly.
@@ -22,7 +67,7 @@ type RejectHandler struct {
 // reportPartialReject handles a partial reject sent by a trader by making sure
 // the order pair won't be matched again.
 func (r *RejectHandler) reportPartialReject(reporter matching.AccountID,
-	reporterOrder, subjectOrder order.ServerOrder, reject *venue.Reject) {
+	reporterOrder, subjectOrder *Order, reject *venue.Reject) {
 
 	switch reject.Type {
 	// The reporter node already has channels with the subject node
@@ -30,8 +75,8 @@ func (r *RejectHandler) reportPartialReject(reporter matching.AccountID,
 	// batch (this preference will be cleared for the next batch).
 	case venue.PartialRejectDuplicatePeer:
 		r.ReportConflict(
-			reporterOrder.ServerDetails().NodeKey,
-			subjectOrder.ServerDetails().NodeKey,
+			reporterOrder.NodeKey,
+			subjectOrder.NodeKey,
 			reject.Reason,
 		)
 
@@ -41,8 +86,8 @@ func (r *RejectHandler) reportPartialReject(reporter matching.AccountID,
 	// across multiple batches but not across server restarts).
 	case venue.PartialRejectFundingFailed:
 		r.ReportConflict(
-			reporterOrder.ServerDetails().NodeKey,
-			subjectOrder.ServerDetails().NodeKey,
+			reporterOrder.NodeKey,
+			subjectOrder.NodeKey,
 			reject.Reason,
 		)
 
@@ -54,7 +99,7 @@ func (r *RejectHandler) reportPartialReject(reporter matching.AccountID,
 		log.Warnf("Trader %x sent invalid reject type %v",
 			reporter[:], reject)
 		r.RemoveIneligibleOrders([]orderT.Nonce{
-			reporterOrder.Nonce(),
+			reporterOrder.Nonce,
 		})
 	}
 }
@@ -95,7 +140,7 @@ func (r *RejectHandler) reportFullReject(reporter matching.AccountID,
 // creates the appropriate conflict reports or punishes traders if they exceeded
 // their reject limit. Note that it is expected that if the reject map of a
 // trader points to its own orders, it means it rejected the whole batch.
-func (r *RejectHandler) HandleReject(batch *matching.OrderBatch,
+func (r *RejectHandler) HandleReject(orders []Match,
 	rejectingTrader map[matching.AccountID]*venue.OrderRejectMap) {
 
 	// Let's inspect the list of traders that rejected. We need to be aware
@@ -127,19 +172,20 @@ func (r *RejectHandler) HandleReject(batch *matching.OrderBatch,
 		// For each partial reject, find the rejected order in the
 		// batch and find out which order it was matched to.
 		for rejectNonce, reject := range rejectMap.PartialRejects {
-			var rejectedOrder, matchedOrder order.ServerOrder
-			for _, orderPair := range batch.Orders {
-				ask := orderPair.Details.Ask
-				bid := orderPair.Details.Bid
+			var rejectedOrder, matchedOrder *Order
+			for _, orderPair := range orders {
+				ask := orderPair.Ask
+				bid := orderPair.Bid
 
-				if ask.Nonce() == rejectNonce {
-					rejectedOrder = ask
-					matchedOrder = bid
+				if ask.Nonce == rejectNonce {
+					rejectedOrder = &ask
+					matchedOrder = &bid
 					break
 				}
-				if bid.Nonce() == rejectNonce {
-					rejectedOrder = bid
-					matchedOrder = ask
+
+				if bid.Nonce == rejectNonce {
+					rejectedOrder = &bid
+					matchedOrder = &ask
 					break
 				}
 			}
@@ -173,7 +219,7 @@ func (r *RejectHandler) HandleReject(batch *matching.OrderBatch,
 			// avoid malicious nodes sending rejects for orders
 			// they are not part of, since that can stall batch
 			// execution.
-			if matchedOrder.Details().AcctKey != reporter {
+			if matchedOrder.AcctKey != reporter {
 				log.Warnf("Trader %x sent partial reject for "+
 					"order %v it was not matched with",
 					reporter[:], rejectNonce)
@@ -182,7 +228,7 @@ func (r *RejectHandler) HandleReject(batch *matching.OrderBatch,
 
 			log.Warnf("Trader %x partially rejected order %v "+
 				"with node %x", reporter[:], rejectNonce,
-				rejectedOrder.ServerDetails().NodeKey[:])
+				rejectedOrder.NodeKey[:])
 
 			// Report the conflicts now as we know both the
 			// reporting trader's order and the subject's order.

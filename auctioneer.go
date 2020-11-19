@@ -1790,10 +1790,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 						"the batch",
 						len(exeErr.RejectingTraders))
 
-					a.rejectHandler.HandleReject(
-						s.exeCtx.OrderBatch,
-						exeErr.RejectingTraders,
-					)
+					matches := rejects.FromBatch(s.exeCtx.OrderBatch)
+					a.rejectHandler.HandleReject(matches, exeErr.RejectingTraders)
 
 					for traderKey := range exeErr.RejectingTraders {
 						monitoring.ObserveBatchExeFailure(
