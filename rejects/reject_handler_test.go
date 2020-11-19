@@ -13,12 +13,16 @@ import (
 var (
 	nonce1 = orderT.Nonce{0x01}
 	nonce2 = orderT.Nonce{0x02}
+	nonce3 = orderT.Nonce{0x03}
+	nonce4 = orderT.Nonce{0x04}
 
 	acct1 = matching.AccountID{0x01}
 	acct2 = matching.AccountID{0x02}
+	acct3 = matching.AccountID{0x03}
 
 	node1 = [33]byte{0x11}
 	node2 = [33]byte{0x12}
+	node3 = [33]byte{0x13}
 )
 
 type conflict struct {
@@ -89,6 +93,92 @@ func TestHandleReject(t *testing.T) {
 			{
 				node1, node2,
 			},
+		},
+	}, {
+		// In this test case there is a bid that is matched
+		// with two asks. One of the askers rejects.
+		name: "partial matches, partial reject from one",
+		matches: []rejects.Match{
+			{
+				Ask: rejects.Order{
+					AcctKey: acct1,
+					NodeKey: node1,
+					Nonce:   nonce1,
+				},
+				Bid: rejects.Order{
+					AcctKey: acct2,
+					NodeKey: node2,
+					Nonce:   nonce2,
+				},
+			},
+			{
+				Ask: rejects.Order{
+					AcctKey: acct3,
+					NodeKey: node3,
+					Nonce:   nonce3,
+				},
+				Bid: rejects.Order{
+					AcctKey: acct2,
+					NodeKey: node2,
+					Nonce:   nonce2,
+				},
+			},
+		},
+		rejectingTrader: map[matching.AccountID]*venue.OrderRejectMap{
+			acct3: {
+				PartialRejects: map[orderT.Nonce]*venue.Reject{
+					nonce2: {
+						Type:   venue.PartialRejectFundingFailed,
+						Reason: "hmm",
+					},
+				},
+				OwnOrders: []orderT.Nonce{
+					nonce3,
+				},
+			},
+		},
+		// We expect node 3 and 2 to have a conflict.
+		expConflicts: []conflict{
+			{
+				node3, node2,
+			},
+		},
+	}, {
+		// In this test case there is a node that rejects an order it
+		// was not matched with.
+		name: "partial reject invalid nonce",
+		matches: []rejects.Match{
+			{
+				Ask: rejects.Order{
+					AcctKey: acct1,
+					NodeKey: node1,
+					Nonce:   nonce1,
+				},
+				Bid: rejects.Order{
+					AcctKey: acct2,
+					NodeKey: node2,
+					Nonce:   nonce2,
+				},
+			},
+		},
+		rejectingTrader: map[matching.AccountID]*venue.OrderRejectMap{
+			acct1: {
+				PartialRejects: map[orderT.Nonce]*venue.Reject{
+					nonce3: {
+						Type:   venue.PartialRejectFundingFailed,
+						Reason: "hmm",
+					},
+				},
+				OwnOrders: []orderT.Nonce{
+					nonce1, nonce4,
+				},
+			},
+		},
+		// We expect the node's orders to be removed, since it sent a
+		// reject for a nonce it was not matched with.
+		expRemoved: []orderT.Nonce{
+			nonce1,
+			nonce4,
 		},
 	}}
 

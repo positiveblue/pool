@@ -177,49 +177,30 @@ func (r *RejectHandler) HandleReject(orders []Match,
 				ask := orderPair.Ask
 				bid := orderPair.Bid
 
-				if ask.Nonce == rejectNonce {
+				if ask.Nonce == rejectNonce &&
+					bid.AcctKey == reporter {
+
 					rejectedOrder = &ask
 					matchedOrder = &bid
 					break
 				}
 
-				if bid.Nonce == rejectNonce {
+				if bid.Nonce == rejectNonce &&
+					ask.AcctKey == reporter {
+
 					rejectedOrder = &bid
 					matchedOrder = &ask
 					break
 				}
 			}
 
-			// We can't continue if the rejected nonce wasn't in the
-			// batch.
+			// We can't continue if the reporter didn't have a
+			// match with the rejected nonce in the batch.
+			// TODO(halseth): this could be the result of the
+			// message de-multiplexing in the RPC server. We have
+			// no other option than to remove all orders from this
+			// trader.
 			if rejectedOrder == nil || matchedOrder == nil {
-				// TODO(guggero): The reporter reported a nonce
-				// that wasn't in the batch. This could be an
-				// attempt at interfering and should be
-				// aggressively rate limited.
-				log.Warnf("Trader %x sent invalid order in "+
-					"reject: %v", reporter[:], rejectNonce)
-
-				// Remove all orders for the trader.
-				rej := &venue.Reject{
-					Type:   venue.FullRejectUnknown,
-					Reason: "invalid partial reject",
-				}
-				removeAllOrders(rej)
-				continue
-			}
-
-			// Is the reporter on the other side of the rejected
-			// order? If not, this could be the result of the
-			// message de-multiplexing in the RPC server. Since we
-			// found the order that was rejected (it was a valid
-			// nonce), it is very unlikely that this is a deliberate
-			// attempt to interfere, so we can safely skip this.
-			// TODO(halseth): get rid of the RPC de-multiplexing to
-			// avoid malicious nodes sending rejects for orders
-			// they are not part of, since that can stall batch
-			// execution.
-			if matchedOrder.AcctKey != reporter {
 				log.Warnf("Trader %x sent partial reject for "+
 					"order %v it was not matched with",
 					reporter[:], rejectNonce)
