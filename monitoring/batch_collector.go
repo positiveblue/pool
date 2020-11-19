@@ -99,6 +99,7 @@ const (
 	labelReporterID = "reporter_id"
 	labelSubjectID  = "subject_id"
 	labelReason     = "reason"
+	labelMarketMade = "market_made"
 )
 
 // batchCollector is a collector that keeps track of our accounts.
@@ -171,7 +172,7 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 				Name: batchMatchAttempts,
 				Help: "counter that tracks match making attempts",
 			},
-			baseLabels,
+			append(baseLabels, labelMarketMade),
 		),
 		batchExecutionCounter: prometheus.NewCounterVec(
 			prometheus.CounterOpts{
@@ -185,7 +186,7 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 				Name: batchFailureCounter,
 				Help: "a counter that's incremented each time we fail a batch",
 			},
-			append(baseLabels, labelReason),
+			append(baseLabels, labelReason, labelReporterID),
 		),
 
 		matchingLatencyHisto: prometheus.NewHistogramVec(
@@ -198,7 +199,7 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 				// the range to be from 0, add 100ms for each bucket,
 				// and create 300 buckets.
 				Buckets: prometheus.LinearBuckets(
-					0, 100, 300,
+					100, 100, 300,
 				),
 			},
 			baseLabels,
@@ -213,7 +214,7 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 				// the range to be from 0, add 100ms for each bucket,
 				// and create 300 buckets.
 				Buckets: prometheus.LinearBuckets(
-					0, 100, 300,
+					100, 100, 300,
 				),
 			},
 			baseLabels,
@@ -428,8 +429,8 @@ func ObserveBatchMatchAttempt(batchID []byte, marketMade bool) {
 	}
 
 	c.batchMatchCounter.With(prometheus.Labels{
-		labelBatchID:  hex.EncodeToString(batchID),
-		"market_made": strconv.FormatBool(marketMade),
+		labelBatchID:    hex.EncodeToString(batchID),
+		labelMarketMade: strconv.FormatBool(marketMade),
 	}).Inc()
 }
 
