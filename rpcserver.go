@@ -149,6 +149,9 @@ type rpcServer struct {
 
 	terms *terms.AuctioneerTerms
 
+	snapshotCache    map[orderT.BatchID]*subastadb.BatchSnapshot
+	snapshotCacheMtx sync.Mutex
+
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
 	// but can subscribe to updates for multiple accounts through the same
@@ -181,6 +184,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
+		snapshotCache:    make(map[orderT.BatchID]*subastadb.BatchSnapshot),
 		subscribeTimeout: subscribeTimeout,
 		ratingAgency:     ratingAgency,
 		ratingsDB:        ratingsDB,
@@ -1363,11 +1367,12 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	req *poolrpc.RelevantBatchRequest) (*poolrpc.RelevantBatch, error) {
 
 	// We'll start by retrieving the snapshot of the requested batch.
-	var batchID orderT.BatchID
-	copy(batchID[:], req.Id)
+	batchKey, err := btcec.ParsePubKey(req.Id, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
 
-	// TODO(wilmer): Add caching layer? LRU?
-	batchSnapshot, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := s.lookupSnapshot(ctx, batchKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1383,7 +1388,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	resp := &poolrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
 		Version:           uint32(orderT.CurrentVersion),
-		Id:                batchID[:],
+		Id:                batchKey.SerializeCompressed(),
 		ClearingPriceRate: uint32(batch.ClearingPrice),
 		ExecutionFee:      nil,
 		Transaction:       buf.Bytes(),
@@ -1973,15 +1978,43 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 		}
 	}
 
-	// Next, we'll fetch the targeted batch snapshot.
-	batchSnapshot, err := s.store.GetBatchSnapshot(
-		ctx, orderT.NewBatchID(batchKey),
-	)
+	batchSnapshot, err := s.lookupSnapshot(ctx, batchKey)
 	if err != nil {
 		return nil, err
 	}
 
 	return marshallBatchSnapshot(batchKey, batchSnapshot)
+}
+
+// lookupSnapshot checks whether the batch snapshot with the given batch ID
+// already exists in the cache. If it does, it's returned directly, otherwise
+// it is fetched from the database and placed into the cache.
+func (s *rpcServer) lookupSnapshot(ctx context.Context,
+	batchKey *btcec.PublicKey) (*subastadb.BatchSnapshot, error) {
+
+	// Hold the mutex during the whole duration of this method to ensure
+	// that two parallel requests for the same batch ID will be serialized
+	// properly and the second one can be served from cache.
+	s.snapshotCacheMtx.Lock()
+	defer s.snapshotCacheMtx.Unlock()
+
+	// TODO(guggero): Use LRU cache instead of storing all batches in RAM?
+	batchID := orderT.NewBatchID(batchKey)
+	batchSnapshot, ok := s.snapshotCache[batchID]
+
+	// If we don't have that particular batch in the cache, let's fetch it
+	// once and populate the cache for future requests.
+	if !ok {
+		var err error
+		batchSnapshot, err = s.store.GetBatchSnapshot(ctx, batchID)
+		if err != nil {
+			return nil, err
+		}
+
+		s.snapshotCache[batchID] = batchSnapshot
+	}
+
+	return batchSnapshot, nil
 }
 
 // marshallBatchSnapshot converts a batch snapshot into the RPC representation.
