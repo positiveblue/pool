@@ -60,6 +60,10 @@ const (
 	// the multiplexing of multiple accounts through the same gRPC stream
 	// has an upper bound.
 	maxAccountsPerTrader = 50
+
+	// maxSnapshotsPerRequest is the maximum number of batch snapshots that
+	// we return in the answer for one request.
+	maxSnapshotsPerRequest = 100
 )
 
 var (
@@ -1963,7 +1967,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	)
 
 	if len(req.BatchId) == 0 || bytes.Equal(zeroBatchID[:], req.BatchId) {
-		currentBatchKey, err := s.store.BatchKey(context.Background())
+		currentBatchKey, err := s.store.BatchKey(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to fetch latest "+
 				"batch key: %v", err)
@@ -2015,6 +2019,86 @@ func (s *rpcServer) lookupSnapshot(ctx context.Context,
 	}
 
 	return batchSnapshot, nil
+}
+
+// BatchSnapshots returns a list of batch snapshots starting at the start batch
+// ID and going back through the history of batches, returning at most the
+// number of specified batches. A maximum of 100 snapshots can be queried in
+// one call. If no start batch ID is provided, the most recent finalized batch
+// is used as the starting point to go back from.
+func (s *rpcServer) BatchSnapshots(ctx context.Context,
+	req *poolrpc.BatchSnapshotsRequest) (*poolrpc.BatchSnapshotsResponse,
+	error) {
+
+	rpcLog.Tracef("[BatchSnapshots] start_batch_id=%x, num_batches_back=%x",
+		req.StartBatchId, req.NumBatchesBack)
+
+	if req.NumBatchesBack == 0 || req.NumBatchesBack > maxSnapshotsPerRequest {
+		return nil, fmt.Errorf("invalid num batches back, must be "+
+			"between 1 and %d", maxSnapshotsPerRequest)
+	}
+
+	// If the passed start batch ID wasn't specified, or is nil, then we'll
+	// fetch the key for the current batch key (which isn't associated with
+	// a cleared batch, then walk that back one to get to the most recent
+	// batch.
+	var (
+		err           error
+		startBatchKey *btcec.PublicKey
+	)
+	if len(req.StartBatchId) == 0 ||
+		bytes.Equal(zeroBatchID[:], req.StartBatchId) {
+
+		currentBatchKey, err := s.store.BatchKey(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to fetch latest batch "+
+				"key: %v", err)
+		}
+
+		// If there is no finalized batch yet, return an empty response.
+		if currentBatchKey.IsEqual(subastadb.InitialBatchKey) {
+			return &poolrpc.BatchSnapshotsResponse{}, nil
+		}
+
+		startBatchKey = poolscript.DecrementKey(currentBatchKey)
+	} else {
+		startBatchKey, err = btcec.ParsePubKey(
+			req.StartBatchId, btcec.S256(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse start batch "+
+				"ID (%x): %v", req.StartBatchId, err)
+		}
+	}
+
+	numBatches := int(req.NumBatchesBack)
+	resp := &poolrpc.BatchSnapshotsResponse{
+		Batches: make([]*poolrpc.BatchSnapshotResponse, 0, numBatches),
+	}
+	batchKey := startBatchKey
+	for i := 0; i < numBatches; i++ {
+		// Try to get the snapshot from the cache.
+		batchSnapshot, err := s.lookupSnapshot(ctx, batchKey)
+		if err != nil {
+			return nil, err
+		}
+
+		rpcBatch, err := marshallBatchSnapshot(batchKey, batchSnapshot)
+		if err != nil {
+			return nil, err
+		}
+		resp.Batches = append(resp.Batches, rpcBatch)
+
+		// We've reached the initial batch key, we can't continue any
+		// further and are done.
+		if batchKey.IsEqual(subastadb.InitialBatchKey) {
+			break
+		}
+
+		batchKey = poolscript.DecrementKey(batchKey)
+	}
+
+	return resp, nil
 }
 
 // marshallBatchSnapshot converts a batch snapshot into the RPC representation.
