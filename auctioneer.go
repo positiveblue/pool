@@ -22,6 +22,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
+	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -1508,6 +1509,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			a.cfg.TraderRejected,
 		}
 
+		batchKey, err := a.cfg.DB.BatchKey(context.Background())
+		if err != nil {
+			return nil, err
+		}
+		batchID := orderT.NewBatchID(batchKey)
+
 		// Next, before we add the actual core matching predicate,
 		// we'll initialize the predicate for the done rating agency.
 		// This may not always be enabled in contexts like testnet for
@@ -1531,9 +1538,14 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		//
 		// TODO(roasbeef): iterate over then clear each market based on
 		// the duration? then merge at the end? before execution?
+		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
 			s.batchFeeRate, accountPredicate, predicateChain,
 		)
+		matchLatency := time.Since(matchTimeStart)
+
+		// TODO(roasbeef): export stuff like # confclits, etc?
+		monitoring.ObserveMatchingLatency(batchID[:], matchLatency)
 
 		switch {
 
@@ -1551,6 +1563,10 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				a.resumeBatchTicker()
 				a.resumeOrderFeeder()
 
+				monitoring.ObserveBatchMatchAttempt(
+					batchID[:], false,
+				)
+
 				return OrderSubmitState{}, nil
 			}
 
@@ -1562,16 +1578,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
+		monitoring.ObserveBatchMatchAttempt(batchID[:], true)
+
 		// Now that we have created an eligible batch, we'll construct
 		// the execution context we need to push things forward, which
 		// includes the final batch execution transaction, which we
 		// will attempt do use during execution later.
 		masterAcct, err := a.cfg.DB.FetchAuctioneerAccount(ctxb)
-		if err != nil {
-			return nil, err
-		}
-
-		batchKey, err := a.cfg.DB.BatchKey(context.Background())
 		if err != nil {
 			return nil, err
 		}
@@ -1704,8 +1717,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		log.Infof("Attempting to execute Batch(%v)",
 			a.getPendingBatchID())
 
+		pbid := a.getPendingBatchID()
+		monitoring.ObserveBatchExecutionAttempt(pbid[:])
+
 		// To kick things off, we'll attempt to execute the batch as
 		// is.
+		exeTimeStart := time.Now()
 		executionResult, err := a.cfg.BatchExecutor.Submit(s.exeCtx)
 		if err != nil {
 			return nil, err
@@ -1716,6 +1733,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// go, or we need to make some changes to attempt to re-submit
 		// it.
 		case result := <-executionResult:
+			exeLatency := time.Since(exeTimeStart)
+
+			monitoring.ObserveBatchExecutionLatency(
+				pbid[:], exeLatency,
+			)
+
 			// If we have a non-nil error, then this means there
 			// was an issue with the batch, so we'll try to see if
 			// we can fix the issue to re-submit.
@@ -1736,8 +1759,20 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 					}
 					a.removeIneligibleOrders(nonces)
 
+					for traderKey := range exeErr.TraderKeys {
+						monitoring.ObserveBatchExeFailure(
+							pbid[:], "MissingTraders",
+							traderKey[:],
+						)
+					}
+
 				case *venue.ErrInvalidWitness:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
+
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "InvalidWitness",
+						exeErr.Trader[:],
+					)
 
 				case *venue.ErrReject:
 					log.Debugf("Restarting execution "+
@@ -1750,18 +1785,48 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 						exeErr.RejectingTraders,
 					)
 
+					for traderKey := range exeErr.RejectingTraders {
+						monitoring.ObserveBatchExeFailure(
+							pbid[:], "Reject",
+							traderKey[:],
+						)
+					}
+
 				case *venue.ErrMissingChannelInfo:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
+
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "NoChannelInfo",
+						exeErr.Trader[:],
+					)
 
 				case *venue.ErrNonMatchingChannelInfo:
 					a.banTrader(exeErr.Trader1)
 					a.banTrader(exeErr.Trader2)
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "ChannelInfoMismatch",
+						exeErr.Trader1[:],
+					)
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "ChannelInfoMismatch",
+						exeErr.Trader2[:],
+					)
+
 				case *venue.ErrMsgTimeout:
 					a.removeIneligibleOrders(exeErr.OrderNonces)
 
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "MsgTimeout",
+						exeErr.Trader[:],
+					)
+
 				default:
+					monitoring.ObserveBatchExeFailure(
+						pbid[:], "UnknownError", []byte{},
+					)
+
 					// If we get down to this state, then
 					// we had an unexpected error, meaning
 					// we can't continue so we'll exit out.
