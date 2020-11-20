@@ -194,12 +194,13 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 				Name: batchMatchTime,
 				Help: "time in ms it takes to find a match",
 
-				// We'll create buckets from 0 to 30 seconds, with each
-				// bucket being 100 ms wide. The args express we want
-				// the range to be from 0, add 100ms for each bucket,
-				// and create 300 buckets.
-				Buckets: prometheus.LinearBuckets(
-					100, 100, 300,
+				// We'll create a series of exponentially
+				// increasing buckets starting from 10 ms. The
+				// final set of buckets will be: [10 20 40 80
+				// 160 320 640 1280 2560 5120 10240 20480
+				// 40960].
+				Buckets: prometheus.ExponentialBuckets(
+					10, 2, 13,
 				),
 			},
 			baseLabels,
@@ -209,12 +210,13 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 				Name: batchExecutionTime,
 				Help: "time in ms it takes to execute a batch",
 
-				// We'll create buckets from 0 to 30 seconds, with each
-				// bucket being 100 ms wide. The args express we want
-				// the range to be from 0, add 100ms for each bucket,
-				// and create 300 buckets.
-				Buckets: prometheus.LinearBuckets(
-					100, 100, 300,
+				// We'll create a series of exponentially
+				// increasing buckets starting from 10 ms. The
+				// final set of buckets will be: [10 20 40 80
+				// 160 320 640 1280 2560 5120 10240 20480
+				// 40960].
+				Buckets: prometheus.ExponentialBuckets(
+					10, 2, 13,
 				),
 			},
 			baseLabels,
