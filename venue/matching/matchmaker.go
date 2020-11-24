@@ -4,6 +4,7 @@ import (
 	"container/list"
 	"encoding/hex"
 	"fmt"
+	"sync"
 
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
@@ -50,6 +51,8 @@ type UniformPriceCallMarket struct {
 	// be used to determine how much to charge traders in venue and
 	// execution fees.
 	feeSchedule terms.FeeSchedule
+
+	sync.Mutex
 }
 
 // NewUniformPriceCallMarket returns a new instance of the
@@ -62,6 +65,10 @@ func NewUniformPriceCallMarket(priceClearer PriceClearer,
 		priceClearer: priceClearer,
 		feeSchedule:  feeSchedule,
 	}
+
+	u.Lock()
+	defer u.Unlock()
+
 	u.resetOrderState()
 
 	return u
@@ -69,6 +76,8 @@ func NewUniformPriceCallMarket(priceClearer PriceClearer,
 }
 
 // resetOrderState resets the order state to blank.
+//
+// NOTE: The mutex MUST be held when calling this method.
 func (u *UniformPriceCallMarket) resetOrderState() {
 	u.bids = list.New()
 	u.bidIndex = make(map[orderT.Nonce]*list.Element)
@@ -88,6 +97,9 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 	acctCacher AccountCacher, predicateChain []MatchPredicate) (*OrderBatch,
 	error) {
+
+	u.Lock()
+	defer u.Unlock()
 
 	// At this point we know we have a set of orders, so we'll create the
 	// match maker for usage below.
@@ -229,6 +241,9 @@ func filterAnomalies(matches []MatchedOrder,
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) RemoveMatches(matches ...MatchedOrder) error {
+	u.Lock()
+	defer u.Unlock()
+
 	// Index the filled volume by nonce.
 	filledVolume := make(map[orderT.Nonce]orderT.SupplyUnit)
 	for _, match := range matches {
@@ -307,10 +322,10 @@ func (u *UniformPriceCallMarket) RemoveMatches(matches ...MatchedOrder) error {
 	// Finally reset the order book state, and add back the updated bids
 	// and asks.
 	u.resetOrderState()
-	if err := u.ConsiderBids(bids...); err != nil {
+	if err := u.considerBids(bids...); err != nil {
 		return err
 	}
-	if err := u.ConsiderAsks(asks...); err != nil {
+	if err := u.considerAsks(asks...); err != nil {
 		return err
 	}
 
@@ -323,6 +338,18 @@ func (u *UniformPriceCallMarket) RemoveMatches(matches ...MatchedOrder) error {
 //
 // NOTE: This is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) ConsiderBids(bids ...*order.Bid) error {
+	u.Lock()
+	defer u.Unlock()
+
+	return u.considerBids(bids...)
+}
+
+// ConsiderBid adds a set of bids to the staging arena for match making. Only
+// once a bid has been considered will it be eligible to be included in an
+// OrderBatch.
+//
+// NOTE: The mutex MUST be held when calling this method.
+func (u *UniformPriceCallMarket) considerBids(bids ...*order.Bid) error {
 	// We'll add all the bids in a single batch, while keeping our pointer
 	// to the "best" (highest) bid in the batch up to date.
 	for _, bid := range bids {
@@ -346,6 +373,9 @@ func (u *UniformPriceCallMarket) ConsiderBids(bids ...*order.Bid) error {
 //
 // NOTE: This is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) ForgetBids(bids ...orderT.Nonce) error {
+	u.Lock()
+	defer u.Unlock()
+
 	for _, bidNonce := range bids {
 		bidElement, ok := u.bidIndex[bidNonce]
 		if !ok {
@@ -365,6 +395,18 @@ func (u *UniformPriceCallMarket) ForgetBids(bids ...orderT.Nonce) error {
 //
 // NOTE: This is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) ConsiderAsks(asks ...*order.Ask) error {
+	u.Lock()
+	defer u.Unlock()
+
+	return u.considerAsks(asks...)
+}
+
+// ConsiderAsk adds a set of asks to the staging arena for match making. Only
+// once an ask has been considered will it be eligible to be included in an
+// OrderBatch.
+//
+// NOTE: The mutex MUST be held when calling this method.
+func (u *UniformPriceCallMarket) considerAsks(asks ...*order.Ask) error {
 	// We'll add all the asks in a single batch, while keeping our pointer
 	// to the "best" (lowest) ask in the batch up to date.
 	for _, ask := range asks {
@@ -388,6 +430,9 @@ func (u *UniformPriceCallMarket) ConsiderAsks(asks ...*order.Ask) error {
 //
 // NOTE: This is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) ForgetAsks(asks ...orderT.Nonce) error {
+	u.Lock()
+	defer u.Unlock()
+
 	for _, askNonce := range asks {
 		askElement, ok := u.askIndex[askNonce]
 		if !ok {
