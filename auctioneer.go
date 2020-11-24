@@ -1714,8 +1714,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 	// In this phase, we'll attempt to execute the order by entering into a
 	// multi-party signing protocol with all the relevant traders.
 	case BatchExecutionState:
-		log.Infof("Attempting to execute Batch(%v)",
-			a.getPendingBatchID())
+		log.Infof("Attempting to execute Batch(%v) with TXID(%v)",
+			a.getPendingBatchID(), s.exeCtx.ExeTx.TxHash())
 
 		pbid := a.getPendingBatchID()
 		monitoring.ObserveBatchExecutionAttempt(pbid[:])
@@ -1840,8 +1840,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				return FeeEstimationState{}, nil
 			}
 
-			log.Infof("Batch(%v) successfully executed!!! Fee=%v, "+
-				"weight=%v (feerate=%v)", a.getPendingBatchID(),
+			log.Infof("Batch(%v) with TXID(%v) successfully "+
+				"executed!!! Fee=%v, weight=%v (feerate=%v)",
+				a.getPendingBatchID(), result.BatchTx.TxHash(),
 				result.FeeInfo.Fee, result.FeeInfo.Weight,
 				result.FeeInfo.FeeRate())
 
