@@ -1365,13 +1365,19 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	batch := batchSnapshot.OrderBatch
 	batchTx := batchSnapshot.BatchTx
 
+	var buf bytes.Buffer
+	err = batchTx.Serialize(&buf)
+	if err != nil {
+		return nil, err
+	}
+
 	resp := &poolrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
 		Version:           uint32(orderT.CurrentVersion),
 		Id:                batchID[:],
 		ClearingPriceRate: uint32(batch.ClearingPrice),
 		ExecutionFee:      nil,
-		Transaction:       nil,
+		Transaction:       buf.Bytes(),
 		FeeRateSatPerKw:   0,
 	}
 
