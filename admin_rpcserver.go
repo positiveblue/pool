@@ -214,15 +214,18 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 		return nil, err
 	}
 
-	rpcAsks := make([]*poolrpc.ServerAsk, 0, len(dbOrders)/2)
-	rpcBids := make([]*poolrpc.ServerBid, 0, len(dbOrders)/2)
+	rpcAsks := make([]*adminrpc.ServerAsk, 0, len(dbOrders)/2)
+	rpcBids := make([]*adminrpc.ServerBid, 0, len(dbOrders)/2)
 	for _, dbOrder := range dbOrders {
 		switch o := dbOrder.(type) {
 		case *order.Ask:
-			rpcAsks = append(rpcAsks, &poolrpc.ServerAsk{
+			rpcAsks = append(rpcAsks, &adminrpc.ServerAsk{
 				Details:             marshallServerOrder(o),
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
+				State: poolrpc.OrderState(
+					o.Details().State,
+				),
 			})
 		case *order.Bid:
 			nodeTier, err := marshallNodeTier(o.MinNodeTier)
@@ -230,11 +233,14 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				return nil, err
 			}
 
-			rpcBids = append(rpcBids, &poolrpc.ServerBid{
+			rpcBids = append(rpcBids, &adminrpc.ServerBid{
 				Details:             marshallServerOrder(o),
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
 				MinNodeTier:         nodeTier,
+				State: poolrpc.OrderState(
+					o.Details().State,
+				),
 			})
 		}
 	}

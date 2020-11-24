@@ -25,9 +25,9 @@ service AuctionAdmin {
     rpc FundingConflicts (EmptyRequest) returns (FundingConflictsResponse);
     rpc ClearConflicts (EmptyRequest) returns (EmptyResponse);
     rpc BumpBatchFeeRate (BumpBatchFeeRateRequest) returns (EmptyResponse);
-    rpc QueryNodeRating(RatingQueryRequest) returns (RatingQueryResponse); 
-    rpc ModifyNodeRatings(ModifyRatingRequest) returns (ModifyRatingResponse);
-    rpc ListNodeRatings(EmptyRequest) returns (ListNodeRatingsResponse);
+    rpc QueryNodeRating (RatingQueryRequest) returns (RatingQueryResponse);
+    rpc ModifyNodeRatings (ModifyRatingRequest) returns (ModifyRatingResponse);
+    rpc ListNodeRatings (EmptyRequest) returns (ListNodeRatingsResponse);
 }
 
 message EmptyRequest {
@@ -118,8 +118,62 @@ message ListOrdersRequest {
 }
 
 message ListOrdersResponse {
-    repeated poolrpc.ServerAsk asks = 1;
-    repeated poolrpc.ServerBid bids = 2;
+    repeated ServerAsk asks = 1;
+    repeated ServerBid bids = 2;
+}
+
+message ServerAsk {
+    /*
+    The common fields shared between both ask and bid order types.
+    */
+    poolrpc.ServerOrder details = 1;
+
+    /*
+    The number of blocks the liquidity provider is willing to provide the
+    channel funds for.
+    */
+    uint32 lease_duration_blocks = 2;
+
+    /*
+    The version of the order format that is used. Will be increased once new
+    features are added.
+    */
+    uint32 version = 3;
+
+    /*
+    The state the order currently is in.
+    */
+    poolrpc.OrderState state = 4;
+}
+
+message ServerBid {
+    /*
+    The common fields shared between both ask and bid order types.
+    */
+    poolrpc.ServerOrder details = 1;
+
+    /*
+    Required number of blocks that a channel opened as a result of this bid
+    should be kept open.
+    */
+    uint32 lease_duration_blocks = 2;
+
+    /*
+    The version of the order format that is used. Will be increased once new
+    features are added.
+    */
+    uint32 version = 3;
+
+    /*
+    The state the order currently is in.
+    */
+    poolrpc.OrderState state = 4;
+
+    /*
+    The minium node tier this order should be matched with. Only asks backed by
+    a node this tier or higher will be eligible for matching with this bid.
+    */
+    poolrpc.NodeTier min_node_tier = 5;
 }
 
 message AccountDetailsRequest {
@@ -367,38 +421,38 @@ message ConflictList {
 message Conflict {
     // The hex encoded node ID of the subject of the report.
     string subject = 1;
-    
+
     // The reported reason for the conflict.
     string reason = 2;
-    
+
     // The unix timestamp in seconds of the time the conflict was reported.
     int64 report_timestamp = 3;
-    }
+}
 
 message RatingQueryRequest {
-        // The node to query a rating for.
-        bytes node_key = 1;
+    // The node to query a rating for.
+    bytes node_key = 1;
 }
 message RatingQueryResponse {
-        // The node this rating belongs to.
-        bytes node_key = 1;
+    // The node this rating belongs to.
+    bytes node_key = 1;
 
-        // The ratings tier this node belongs to. zero means they aren't ranked.
-        uint32 node_tier = 2;
+    // The ratings tier this node belongs to. zero means they aren't ranked.
+    uint32 node_tier = 2;
 }
 
 message ModifyRatingRequest {
-        // The node this rating belongs to.
-        bytes node_key = 1;
+    // The node this rating belongs to.
+    bytes node_key = 1;
 
-        // The new node tier this node should be placed in.
-        uint32 new_node_tier = 2;
+    // The new node tier this node should be placed in.
+    uint32 new_node_tier = 2;
 }
 
 message ModifyRatingResponse {
 }
 
-message BumpBatchFeeRateRequest{
+message BumpBatchFeeRateRequest {
     // Request the next batch transaction to bump the effective fee rate of all
     // unconfirmed batches to a fee estimate for this confirmation target.
     uint32 conf_target = 1;
