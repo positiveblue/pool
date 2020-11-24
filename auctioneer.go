@@ -787,6 +787,13 @@ func (a *Auctioneer) orderFeeder(orderSubscription *subscribe.Client) {
 			}
 
 		case *order.CancelledOrderUpdate:
+			// To make sure we won't just add the order back in the
+			// next round, we also need to make sure it's not kept
+			// in the removedOrders map.
+			a.removedOrdersMtx.Lock()
+			delete(a.removedOrders, u.Nonce)
+			a.removedOrdersMtx.Unlock()
+
 			if u.Ask {
 				err := a.cfg.CallMarket.ForgetAsks(u.Nonce)
 				if err != nil {
