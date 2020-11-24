@@ -327,7 +327,8 @@ type Auctioneer struct {
 	// removedOrders is a map used to store the nonces of orders removed
 	// between attempts to execute a batch. Once the batch is successfully
 	// executed, we'll restore these to the main call market.
-	removedOrders map[orderT.Nonce]struct{}
+	removedOrders    map[orderT.Nonce]struct{}
+	removedOrdersMtx sync.Mutex
 
 	// batchRetry is a bool that indicates a special state transition from
 	// match making state to the order submit state. This allows us to
@@ -811,7 +812,7 @@ func (a *Auctioneer) orderFeeder(orderSubscription *subscribe.Client) {
 	for {
 		select {
 
-		// A new signal from the main gorotuine has arrvied, we'll
+		// A new signal from the main goroutine has arrived, we'll
 		// either stop delivering updates, or send out the back log
 		// from when we were paused.
 		case newFeederState := <-a.orderFeederSignals:
@@ -825,7 +826,7 @@ func (a *Auctioneer) orderFeeder(orderSubscription *subscribe.Client) {
 				continue
 			}
 
-			log.Infof("Dispatching %v orders from backlog",
+			log.Infof("Dispatching %v updates from backlog",
 				len(updateBacklog))
 
 			// Otherwise, we're going back to the delivery mode, so
@@ -1069,13 +1070,16 @@ func (a *Auctioneer) banTrader(trader matching.AccountID) {
 // removeIneligibleOrders attempts to remove a set of orders that are no longer
 // eligible for this batch from the
 func (a *Auctioneer) removeIneligibleOrders(orders []orderT.Nonce) {
-	for _, order := range orders {
-		_ = a.cfg.CallMarket.ForgetBids(order)
-		_ = a.cfg.CallMarket.ForgetAsks(order)
+	a.removedOrdersMtx.Lock()
+	defer a.removedOrdersMtx.Unlock()
 
-		a.removedOrders[order] = struct{}{}
+	for _, o := range orders {
+		_ = a.cfg.CallMarket.ForgetBids(o)
+		_ = a.cfg.CallMarket.ForgetAsks(o)
 
-		log.Debugf("Removing Order(%x) from Batch(%v)", order[:],
+		a.removedOrders[o] = struct{}{}
+
+		log.Debugf("Removing Order(%x) from Batch(%v)", o[:],
 			a.getPendingBatchID())
 	}
 }
@@ -1083,6 +1087,9 @@ func (a *Auctioneer) removeIneligibleOrders(orders []orderT.Nonce) {
 // restoreIneligibleOrders will re-add any orders we removed during our
 // execution loop to the main call market.
 func (a *Auctioneer) restoreIneligibleOrders() error {
+	a.removedOrdersMtx.Lock()
+	defer a.removedOrdersMtx.Unlock()
+
 	log.Infof("Restoring %v removed orders during Batch(%v) execution",
 		len(a.removedOrders), a.getPendingBatchID())
 
@@ -1597,7 +1604,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			log.Errorf("Failed creating execution context: %v", err)
 
 			// If this is an error because of lingering orders
-			// having their reserved value calvulated wrongly, we
+			// having their reserved value calculated wrongly, we
 			// remove ignore them and redo matchmaking.
 			if feeErr, ok := err.(*batchtx.ErrPoorTrader); ok {
 				// Get all nonces in the batch from the trader
