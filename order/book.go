@@ -193,6 +193,8 @@ func (b *Book) CancelOrderWithPreimage(ctx context.Context,
 // CancelOrder sets an order's state to canceled if it has not yet been archived
 // yet and is still pending.
 func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
+	log.Debugf("Canceling order %v", nonce)
+
 	o, err := b.cfg.Store.GetOrder(ctx, nonce)
 	if err != nil {
 		return err
