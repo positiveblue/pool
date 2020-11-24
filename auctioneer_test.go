@@ -1013,7 +1013,7 @@ func (a *auctioneerTestHarness) AssertSingleOrder(nonce orderT.Nonce,
 	a.t.Fatalf("nonce %x not found", nonce[:])
 }
 
-func (a *auctioneerTestHarness) AssertNoOrdersPreesnt() {
+func (a *auctioneerTestHarness) AssertNoOrdersPresent() {
 	a.t.Helper()
 
 	err := wait.NoError(func() error {
@@ -1357,7 +1357,7 @@ func TestAuctioneerOrderFeederStates(t *testing.T) {
 	testHarness.NotifyOrderCancel(
 		[]orderT.Nonce{askNonce}, []orderT.Nonce{bidNonce},
 	)
-	testHarness.AssertNoOrdersPreesnt()
+	testHarness.AssertNoOrdersPresent()
 
 	// We'll now flip the state to orderFeederPause.
 	testHarness.OrderFeederPause()
@@ -1371,6 +1371,83 @@ func TestAuctioneerOrderFeederStates(t *testing.T) {
 	// call market has these new orders.
 	testHarness.OrderFeederResume()
 	testHarness.AssertOrdersPresent(askNonce, bidNonce)
+}
+
+// TestAuctioneerOrderFeederCancel tests that when canceling an order, the order
+// feeder event also removes the order from the call market, even if a batch is
+// currently in process of being made.
+func TestAuctioneerOrderFeederCancel(t *testing.T) {
+	t.Parallel()
+
+	// First, we'll start up the auctioneer as normal.
+	testHarness := newAuctioneerTestHarness(t, false)
+
+	// Before we start things, we'll insert a master account so we can skip
+	// creating the master account and go straight to the order matching
+	// phase.
+	err := testHarness.db.UpdateAuctioneerAccount(
+		context.Background(), &account.Auctioneer{
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: pubKey,
+			},
+			BatchKey: toRawKey(pubKey),
+		},
+	)
+	require.NoErrorf(t, err, "unable to update auctioneer account: %v", err)
+
+	// Start the auctioneer now. Because we set bufferStateTransitions to
+	// false when creating the harness, this will block until we manually
+	// step through the state transitions. So we need to start it in a
+	// goroutine.
+	go testHarness.StartAuctioneer() // nolint:staticcheck
+	defer testHarness.StopAuctioneer()
+
+	testHarness.AssertStateTransitions(OrderSubmitState{})
+
+	// Add both an ask and a bid to the DB and call market.
+	orderPrice := uint32(100)
+	orderDuration := uint32(10)
+	ask := testHarness.AddDiskOrder(true, orderPrice, orderDuration)
+	err = testHarness.callMarket.ConsiderAsks(ask.(*order.Ask))
+	require.NoError(t, err)
+	bid := testHarness.AddDiskOrder(false, orderPrice, orderDuration)
+	err = testHarness.callMarket.ConsiderBids(bid.(*order.Bid))
+	require.NoError(t, err)
+	askNonce, bidNonce := ask.Nonce(), bid.Nonce()
+
+	testHarness.AssertOrdersPresent(askNonce, bidNonce)
+
+	// We simulate that no market is possible and go through a batch up to
+	// shortly before the actual matchmaking is completed.
+	testHarness.QueueNoMarketClear()
+	testHarness.ForceBatchTick()
+	testHarness.AssertStateTransitions(FeeEstimationState{})
+	testHarness.OrderFeederPause()
+
+	// In this state, because the actual execution can take a while, it is
+	// quite likely for an order to be canceled while it is being attempted
+	// to be matched. Because the order feeder is on pause, this should go
+	// into the queue.
+	testHarness.NotifyOrderCancel(
+		[]orderT.Nonce{askNonce}, []orderT.Nonce{bidNonce},
+	)
+
+	// Now comes the crucial part: Let's assume the asker had a problem and
+	// rejected the batch. That will cause their order to be removed from
+	// the actual set of considered order and placed on hold in the
+	// removedOrders map.
+	testHarness.auctioneer.removeIneligibleOrders([]orderT.Nonce{askNonce})
+
+	// Going through the rest of the steps, first the order feeder is
+	// started again, applying the queued cancel requests.
+	testHarness.AssertStateTransitions(
+		MatchMakingState{}, OrderSubmitState{},
+	)
+
+	// When starting the new batch, we expect no orders from the ineligible
+	// order map to be restored.
+	testHarness.ForceBatchTick()
+	testHarness.AssertNoOrdersPresent()
 }
 
 // TestAuctioneerLoadDiskOrders tests that if the database contains a set of
