@@ -5,7 +5,6 @@ import (
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // FulfillType is an enum-like variable that expresses the "nature" of a match.
@@ -211,13 +210,15 @@ func (o *OrderBatch) Copy() OrderBatch {
 // TODO(roasbeef): just pass in order book instead?
 //  * needs to be interface? other impl is the continuous variant?
 type BatchAuctioneer interface {
-	// MaybeClear attempts to clear a batch given the fee rate and a chain
-	// of match predicates to check. Note that it can happen that no match
-	// is possible, in which case an error will be returned.
+	// MaybeClear attempts to clear a batch given the order filter and a
+	// chain of match predicates to check. Note that it can happen that no
+	// match is possible, in which case an error will be returned.
 	//
-	// The fee rate provided will be used to exclude orders which had their
-	// max batch fee rate set lower.
-	MaybeClear(feeRate chainfee.SatPerKWeight, acctCacher AccountCacher,
+	// The order filters provided will be used to exclude orders which are
+	// currently not suitable to be included for matchmaking, for example
+	// because the estimated batch fee rate is higher than their set
+	// maximum.
+	MaybeClear(acctCacher AccountCacher, filterChain []OrderFilter,
 		predicateChain []MatchPredicate) (*OrderBatch, error)
 
 	// RemoveMatches updates the order book by subtracting the given

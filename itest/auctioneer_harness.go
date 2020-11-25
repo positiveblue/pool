@@ -6,6 +6,7 @@ import (
 	"io/ioutil"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"time"
 
@@ -232,6 +233,14 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 	}
 
 	return nil
+}
+
+// getLogFileContent returns the complete content of the auctioneer's log file.
+func (hs *auctioneerHarness) getLogFileContent() (string, error) {
+	content, err := ioutil.ReadFile(path.Join(
+		".", hs.cfg.NetParams.Name, "auctionserver.log",
+	))
+	return string(content), err
 }
 
 // dialServer creates a gRPC client connection to the given host using a default

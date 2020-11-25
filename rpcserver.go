@@ -1338,12 +1338,16 @@ func (s *rpcServer) Terms(ctx context.Context, _ *poolrpc.TermsRequest) (
 	}
 
 	durationBuckets := s.orderBook.DurationBuckets()
-	durationBuckets.IterBuckets(func(d uint32, s order.DurationBucketState) {
-		marketOpen := (s != order.BucketStateMarketClosed &&
-			s != order.BucketStateNoMarket)
+	_ = durationBuckets.IterBuckets(
+		func(d uint32, s order.DurationBucketState) error {
+			marketOpen := (s != order.BucketStateMarketClosed &&
+				s != order.BucketStateNoMarket)
 
-		resp.LeaseDurations[d] = marketOpen
-	})
+			resp.LeaseDurations[d] = marketOpen
+
+			return nil
+		},
+	)
 
 	return resp, nil
 }

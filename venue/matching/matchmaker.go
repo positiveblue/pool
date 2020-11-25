@@ -9,7 +9,6 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/order"
-	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
 // BatchID is a 33-byte identifier that uniquely identifies this batch. This ID
@@ -94,9 +93,9 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 // max batch fee rate set lower.
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
-func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
-	acctCacher AccountCacher, predicateChain []MatchPredicate) (*OrderBatch,
-	error) {
+func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
+	filterChain []OrderFilter,
+	predicateChain []MatchPredicate) (*OrderBatch, error) {
 
 	u.Lock()
 	defer u.Unlock()
@@ -121,9 +120,7 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 	for bid := u.bids.Front(); bid != nil; bid = bid.Next() {
 		b := bid.Value.(order.Bid)
 
-		if b.MaxBatchFeeRate < feeRate {
-			log.Debugf("Filtered out bid %v with max fee rate %v",
-				b.Nonce(), b.MaxBatchFeeRate)
+		if !SuitsFilterChain(&b, filterChain...) {
 			continue
 		}
 
@@ -132,9 +129,7 @@ func (u *UniformPriceCallMarket) MaybeClear(feeRate chainfee.SatPerKWeight,
 	for ask := u.asks.Front(); ask != nil; ask = ask.Next() {
 		a := ask.Value.(order.Ask)
 
-		if a.MaxBatchFeeRate < feeRate {
-			log.Debugf("Filtered out ask %v with max fee rate %v",
-				a.Nonce(), a.MaxBatchFeeRate)
+		if !SuitsFilterChain(&a, filterChain...) {
 			continue
 		}
 

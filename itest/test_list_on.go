@@ -68,4 +68,8 @@ var testCases = []*testCase{
 		name: "node rating agency and matching",
 		test: testNodeRatingAgencyAndMatching,
 	},
+	{
+		name: "batch matching conditions",
+		test: testBatchMatchingConditions,
+	},
 }

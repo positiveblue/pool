@@ -57,6 +57,8 @@ const (
 	// defaultTimeout is a timeout that will be used for various wait
 	// scenarios where no custom timeout value is defined.
 	defaultTimeout = time.Second * 5
+
+	defaultOrderDuration uint32 = 2016
 )
 
 // testCase is a struct that holds a single test case.
@@ -1017,28 +1019,37 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 	}
 }
 
+type bidModifier func(bid *poolrpc.SubmitOrderRequest_Bid)
+
 func submitBidOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration uint32, // nolint:unparam
-	version uint32) (orderT.Nonce, error) { // nolint:unparam
+	rate uint32, amt btcutil.Amount,
+	modifiers ...bidModifier) (orderT.Nonce, error) {
+
+	rpcBid := &poolrpc.SubmitOrderRequest_Bid{
+		Bid: &poolrpc.Bid{
+			Details: &poolrpc.Order{
+				TraderKey:               subKey,
+				RateFixed:               rate,
+				Amt:                     uint64(amt),
+				MinUnitsMatch:           1,
+				MaxBatchFeeRateSatPerKw: uint64(12500),
+			},
+			LeaseDurationBlocks: defaultOrderDuration,
+			Version: uint32(
+				orderT.VersionNodeTierMinMatch,
+			),
+			MinNodeTier: poolrpc.NodeTier_TIER_0,
+		},
+	}
+	for _, modifier := range modifiers {
+		modifier(rpcBid)
+	}
 
 	var nonce orderT.Nonce
 
 	ctx := context.Background()
 	resp, err := trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
-		Details: &poolrpc.SubmitOrderRequest_Bid{
-			Bid: &poolrpc.Bid{
-				Details: &poolrpc.Order{
-					TraderKey:               subKey,
-					RateFixed:               rate,
-					Amt:                     uint64(amt),
-					MinUnitsMatch:           1,
-					MaxBatchFeeRateSatPerKw: uint64(12500),
-				},
-				LeaseDurationBlocks: duration,
-				Version:             version,
-				MinNodeTier:         poolrpc.NodeTier_TIER_0,
-			},
-		},
+		Details: rpcBid,
 	})
 	if err != nil {
 		return nonce, err
@@ -1054,27 +1065,36 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 	return nonce, nil
 }
 
+type askModifier func(ask *poolrpc.SubmitOrderRequest_Ask)
+
 func submitAskOrder(trader *traderHarness, subKey []byte,
-	rate uint32, amt btcutil.Amount, duration uint32, // nolint:unparam
-	version uint32) (orderT.Nonce, error) { // nolint:unparam
+	rate uint32, amt btcutil.Amount,
+	modifiers ...askModifier) (orderT.Nonce, error) {
+
+	rpcAsk := &poolrpc.SubmitOrderRequest_Ask{
+		Ask: &poolrpc.Ask{
+			Details: &poolrpc.Order{
+				TraderKey:               subKey,
+				RateFixed:               rate,
+				Amt:                     uint64(amt),
+				MinUnitsMatch:           1,
+				MaxBatchFeeRateSatPerKw: uint64(12500),
+			},
+			LeaseDurationBlocks: defaultOrderDuration,
+			Version: uint32(
+				orderT.VersionNodeTierMinMatch,
+			),
+		},
+	}
+	for _, modifier := range modifiers {
+		modifier(rpcAsk)
+	}
 
 	var nonce orderT.Nonce
 
 	ctx := context.Background()
 	resp, err := trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
-		Details: &poolrpc.SubmitOrderRequest_Ask{
-			Ask: &poolrpc.Ask{
-				Details: &poolrpc.Order{
-					TraderKey:               subKey,
-					RateFixed:               rate,
-					Amt:                     uint64(amt),
-					MinUnitsMatch:           1,
-					MaxBatchFeeRateSatPerKw: uint64(12500),
-				},
-				LeaseDurationBlocks: duration,
-				Version:             version,
-			},
-		},
+		Details: rpcAsk,
 	})
 	if err != nil {
 		return nonce, err
@@ -1418,4 +1438,14 @@ func shutdownAndAssert(t *harnessTest, node *lntest.HarnessNode,
 	if err := t.lndHarness.ShutdownNode(node); err != nil {
 		t.Fatalf("unable to shutdown %v: %v", node.Name(), err)
 	}
+}
+
+// assertServerLogContains makes sure the current auction server log file
+// contains the given string.
+func assertServerLogContains(t *harnessTest, logStatement string,
+	args ...interface{}) {
+
+	content, err := t.auctioneer.getLogFileContent()
+	require.NoError(t.t, err)
+	require.Contains(t.t, content, fmt.Sprintf(logStatement, args...))
 }

@@ -78,30 +78,22 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 	// times.
 	_, err = submitAskOrder(
 		charlieTrader, charlieAccount.TraderKey, askRate, askSize,
-		durationBlocks, uint32(order.CurrentVersion),
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = durationBlocks
+		},
 	)
 	require.NoError(t.t, err)
 
 	// Next, we'll submit a bid order, but by NOT specifying a node tier,
 	// we'll be opting into only the highest tier.
-	_, err = daveTrader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
-		Details: &poolrpc.SubmitOrderRequest_Bid{
-			Bid: &poolrpc.Bid{
-				Details: &poolrpc.Order{
-					TraderKey:               daveAccount.TraderKey,
-					RateFixed:               askRate,
-					Amt:                     bidSize,
-					MinUnitsMatch:           1,
-					MaxBatchFeeRateSatPerKw: uint64(12500),
-				},
-				LeaseDurationBlocks: durationBlocks,
-				Version:             uint32(order.CurrentVersion),
-			},
+	_, err = submitBidOrder(
+		daveTrader, daveAccount.TraderKey, askRate, bidSize,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = durationBlocks
+			bid.Bid.MinNodeTier = 0
 		},
-	})
-	if err != nil {
-		t.Fatalf("unable to submit bid: %v", err)
-	}
+	)
+	require.NoError(t.t, err)
 
 	// If we try to clear a batch now, we should find that no batch is
 	// possible since Charlie (the one with the ask order) is still in the
@@ -114,9 +106,7 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 		NodeKey:     charlie.PubKey[:],
 		NewNodeTier: uint32(order.NodeTier1),
 	})
-	if err != nil {
-		t.Fatalf("unable to modify node ratings: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// We'll now re-run match making, and we should find that the two
 	// orders above were executed.

@@ -10,8 +10,16 @@ import (
 	"time"
 
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
+)
+
+var (
+	dummyFilterChain = []OrderFilter{
+		NewBatchFeeRateFilter(chainfee.FeePerKwFloor),
+	}
 )
 
 // TestCallMarketConsiderForgetOrders tests that we're able to properly add and
@@ -167,7 +175,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 	)
 
 	_, err := callMarket.MaybeClear(
-		chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, dummyFilterChain, predicates,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
@@ -202,7 +210,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 	// If we attempt to make a market, we should get the
 	// ErrNoMarketPossible error.
 	_, err := callMarket.MaybeClear(
-		chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, dummyFilterChain, predicates,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
@@ -263,7 +271,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		// We'll now attempt to make a market, if no market can be
 		// made, then we'll go to the next scenario.
 		orderBatch, err := callMarket.MaybeClear(
-			chainfee.FeePerKwFloor, acctCacher, predicates,
+			acctCacher, dummyFilterChain, predicates,
 		)
 		if err != nil {
 			fmt.Println("clear error: ", err)
@@ -479,7 +487,9 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	// If we attempt to make a market with a fee rate above all the orders'
 	// max fee rate, we should get the ErrNoMarketPossible error.
 	_, err := callMarket.MaybeClear(
-		7*chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, []OrderFilter{NewBatchFeeRateFilter(
+			7 * chainfee.FeePerKwFloor,
+		)}, predicates,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
@@ -488,7 +498,9 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	// Now make a market with a fee rate that should make exactly 3 matches
 	// possible.
 	orderBatch, err := callMarket.MaybeClear(
-		4*chainfee.FeePerKwFloor, acctCacher, predicates,
+		acctCacher, []OrderFilter{NewBatchFeeRateFilter(
+			4 * chainfee.FeePerKwFloor,
+		)}, predicates,
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -524,7 +536,7 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 		}
 
 		orderBatch, err := callMarket.MaybeClear(
-			chainfee.FeePerKwFloor, acctCacher, predicates,
+			acctCacher, dummyFilterChain, predicates,
 		)
 		switch {
 		case err == ErrNoMarketPossible:
@@ -584,4 +596,122 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 	}
 
 	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
+}
+
+// TestMatchingAccountNotReady ensures that accounts within a batch matching
+// attempt are ready to participate in the batch.
+func TestMatchingAccountNotReady(t *testing.T) {
+	t.Parallel()
+
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	acctDB, acctCacher, predicates := newAcctCacher()
+
+	ask := genRandAsk(r, acctDB)
+	asks := []*order.Ask{ask}
+
+	bid := genRandBid(
+		r,
+		acctDB,
+		staticUnitGen(ask.Units),
+		staticDurationGen(ask.LeaseDuration()),
+		staticRateGen(ask.FixedRate),
+		staticAccountState(account.StatePendingOpen),
+	)
+	bids := []*order.Bid{bid}
+
+	assertNotInBatch(t, acctCacher, predicates, asks, bids)
+}
+
+// TestMatchingAccountNotReadyCloseToExpiry tests that if an account is close
+// to being expired, then it's excluded from being cleared in a batch.
+func TestMatchingAccountNotReadyCloseToExpiry(t *testing.T) {
+	t.Parallel()
+
+	r := rand.New(rand.NewSource(time.Now().Unix()))
+	acctDB, acctCacher, predicates := newAcctCacher()
+	matchMaker := NewMultiUnitMatchMaker(acctCacher, predicates)
+
+	const accountExpiryOffset = 144
+	currentHeight := uint32(1000)
+	acctCacher.accountExpiryCutoff = currentHeight + accountExpiryOffset
+
+	// We'll create another set of bids that should match, however the
+	// account of the Bidder will be close to final expiry. This should
+	// result in no match being found.
+	askDuration := uint32(1000)
+	targetRate := uint32(1000)
+	askSupply := uint16(100)
+	ask := genRandAsk(
+		r, acctDB,
+		staticUnitGen(orderT.SupplyUnit(askSupply)),
+		staticMinUnitsMatchGen(1),
+		staticDurationGen(askDuration), staticRateGen(targetRate),
+	)
+	bid := genRandBid(
+		r,
+		acctDB,
+		staticUnitGen(orderT.SupplyUnit(askSupply)),
+		staticMinUnitsMatchGen(1),
+		staticDurationGen(askDuration), staticRateGen(targetRate),
+	)
+
+	asks := []*order.Ask{ask}
+	bids := []*order.Bid{bid}
+
+	// As the expiry is one block before the current height, it shouldn't
+	// be able to join the batch.
+	acctDB.accts[bid.NodeKey].Expiry = currentHeight - 1
+
+	assertNotInBatch(t, acctCacher, predicates, asks, bids)
+
+	// We'll invalidate the cache so we fetch the latest state for the next
+	// attempt.
+	matchMaker.accountCacher.(*AccountFilter).accountCache = make(
+		map[[33]byte]*account.Account,
+	)
+
+	// If we modify the expiry to be _right before_ our cut off, it still
+	// shouldn't be allowed in the batch due to the strictness of the
+	// check.
+	acctDB.accts[bid.NodeKey].Expiry = currentHeight + accountExpiryOffset
+
+	assertNotInBatch(t, acctCacher, predicates, asks, bids)
+
+	// Finally, if we set a height well ahead of our cut off, then we
+	// should have a match.
+	matchMaker.accountCacher.(*AccountFilter).accountCache = make(
+		map[[33]byte]*account.Account,
+	)
+	acctDB.accts[bid.NodeKey].Expiry = currentHeight + (accountExpiryOffset * 2)
+
+	matchSet, err := matchMaker.MatchBatch(bids, asks)
+	require.NoError(t, err)
+	require.NotEmpty(t, matchSet.MatchedOrders)
+}
+
+func assertNotInBatch(t *testing.T, acctCacher *AccountFilter,
+	predicates []MatchPredicate, asks []*order.Ask, bids []*order.Bid) {
+
+	// LastAcceptedBid is the clearing price model used.
+	callMarket := NewUniformPriceCallMarket(
+		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+	)
+	filterChain := []OrderFilter{acctCacher}
+
+	// Add all orders from the scenario to the call market, and
+	// clear the batch.
+	if err := callMarket.ConsiderBids(bids...); err != nil {
+		t.Fatalf("unable to add bids: %v", err)
+	}
+	if err := callMarket.ConsiderAsks(asks...); err != nil {
+		t.Fatalf("unable to add asks: %v", err)
+	}
+
+	orderBatch, err := callMarket.MaybeClear(
+		acctCacher, filterChain, predicates,
+	)
+
+	require.Error(t, err)
+	require.Equal(t, ErrNoMarketPossible, err)
+	require.Nil(t, orderBatch)
 }

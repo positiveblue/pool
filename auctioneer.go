@@ -1505,7 +1505,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// pass to be considered a potential match. Most predicates are
 		// stateless pure functions while others can retain a state.
 		expiryCutoff := a.BestHeight() + a.cfg.AccountExpiryOffset
-		accountPredicate := matching.NewAccountPredicate(
+		accountFilter := matching.NewAccountFilter(
 			a.cfg.AccountFetcher, expiryCutoff,
 			func(nodeKey, accountKey [33]byte) bool {
 				traderBanned, err := a.cfg.DB.IsTraderBanned(
@@ -1515,12 +1515,15 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				return err == nil && !traderBanned
 			},
 		)
+		filterChain := []matching.OrderFilter{
+			matching.NewBatchFeeRateFilter(s.batchFeeRate),
+			accountFilter,
+		}
 
 		// We pass in our two conflict handlers that also act as match
 		// predicates together with the default predicate chain.
 		predicateChain := []matching.MatchPredicate{
-			accountPredicate, a.cfg.FundingConflicts,
-			a.cfg.TraderRejected,
+			a.cfg.FundingConflicts, a.cfg.TraderRejected,
 		}
 
 		batchKey, err := a.cfg.DB.BatchKey(context.Background())
@@ -1554,7 +1557,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// the duration? then merge at the end? before execution?
 		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
-			s.batchFeeRate, accountPredicate, predicateChain,
+			accountFilter, filterChain, predicateChain,
 		)
 		matchLatency := time.Since(matchTimeStart)
 
