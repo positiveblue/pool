@@ -368,6 +368,7 @@ func testBatchExecution(t *harnessTest) {
 		t, secondBatchID, secondTrader, []uint64{uint64(bidAmt3)},
 		orderFixedRate,
 	)
+	assertNumFinalBatches(t, 2)
 	batchTXIDs = []*chainhash.Hash{firstBatchTXID, secondBatchTXID}
 	assertTraderAssets(t, t.trader, 3, batchTXIDs)
 	assertTraderAssets(t, secondTrader, 3, batchTXIDs)
@@ -640,6 +641,18 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	copy(serverbatchID[:], batchSnapshot.BatchId)
 
 	return serverbatchID
+}
+
+// assertNumFinalBatches makes sure the auctioneer has the given number of
+// finalized batches in its database.
+func assertNumFinalBatches(t *harnessTest, numTotalBatches int) {
+	resp, err := t.trader.BatchSnapshots(
+		context.Background(), &poolrpc.BatchSnapshotsRequest{
+			NumBatchesBack: 100,
+		},
+	)
+	require.NoError(t.t, err)
+	require.Len(t.t, resp.Batches, numTotalBatches)
 }
 
 // assertTraderAssets ensures that the given trader has the expected number of
