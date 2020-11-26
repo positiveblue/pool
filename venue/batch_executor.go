@@ -436,7 +436,7 @@ func (b *BatchExecutor) validateTradersOnline(batch *matching.OrderBatch) error 
 	}
 
 	log.Warnf("Cancelling batch, offline traders: %v",
-		spew.Sdump(offlineTraders))
+		traderKeysToString(offlineTraders))
 
 	// Otherwise, we'll return the set of missing traders along with all
 	// the order nonces involved.

@@ -4,7 +4,6 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/wire"
-	"github.com/davecgh/go-spew/spew"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
@@ -23,7 +22,24 @@ type ErrMissingTraders struct {
 // Error implements the error interface.
 func (e *ErrMissingTraders) Error() string {
 	return fmt.Sprintf("%v traders not online in venue: %v",
-		len(e.TraderKeys), spew.Sdump(e.TraderKeys))
+		len(e.TraderKeys), traderKeysToString(e.TraderKeys))
+}
+
+// traderKeysToString returns the trader keys as a string for printing.
+func traderKeysToString(keys map[matching.AccountID]struct{}) string {
+	s := "["
+	first := true
+	for k := range keys {
+		if first {
+			s += fmt.Sprintf("%x", k)
+			first = false
+			continue
+		}
+
+		s += fmt.Sprintf(", %x, ", k)
+	}
+	s += "]"
+	return s
 }
 
 // ErrMsgTimeout is returned if a trader doesn't send an expected response in

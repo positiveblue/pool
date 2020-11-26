@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
+	"github.com/lightninglabs/subasta/rejects"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -49,6 +50,7 @@ func init() {
 	addSubLogger(chanenforcement.Subsystem, chanenforcement.UseLogger)
 	addSubLogger(monitoring.Subsystem, monitoring.UseLogger)
 	addSubLogger(ratings.Subsystem, ratings.UseLogger)
+	addSubLogger(rejects.Subsystem, rejects.UseLogger)
 }
 
 // addSubLogger is a helper method to conveniently create and register the
