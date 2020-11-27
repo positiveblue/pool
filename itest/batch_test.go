@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -35,8 +34,7 @@ func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	lndArgs := []string{"--maxpendingchannels=2"}
-	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
 	if err != nil {
 		t.Fatalf("unable to set up charlie: %v", err)
 	}
@@ -79,7 +77,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// We'll add a third trader that we will shut down after placing an
 	// order, to ensure batch execution still can proceed.
-	dave, err := t.lndHarness.NewNode("dave", lndArgs)
+	dave, err := t.lndHarness.NewNode("dave", nil)
 	if err != nil {
 		t.Fatalf("unable to set up charlie: %v", err)
 	}
@@ -427,12 +425,8 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 	const unconfirmedBatches = 6
 
 	// We need a third lnd node, Charlie that is used for the second
-	// trader. We'll make sure to support all the pending channels that
-	// will be opened towards him.
-	lndArgs := []string{
-		fmt.Sprintf("--maxpendingchannels=%d", unconfirmedBatches),
-	}
-	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	// trader.
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
 	if err != nil {
 		t.Fatalf("unable to set up charlie: %v", err)
 	}
@@ -815,8 +809,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	lndArgs := []string{"--maxpendingchannels=2"}
-	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
 	if err != nil {
 		t.Fatalf("unable to set up charlie: %v", err)
 	}
@@ -940,8 +933,7 @@ func testConsecutiveBatches(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	lndArgs := []string{"--maxpendingchannels=2"}
-	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
 	require.NoError(t.t, err)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,

@@ -20,8 +20,7 @@ func testManualFeeBump(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	lndArgs := []string{"--maxpendingchannels=2"}
-	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
 	if err != nil {
 		t.Fatalf("unable to set up charlie: %v", err)
 	}
