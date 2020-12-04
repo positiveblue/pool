@@ -60,6 +60,15 @@ const (
 	// the multiplexing of multiple accounts through the same gRPC stream
 	// has an upper bound.
 	maxAccountsPerTrader = 50
+
+	// maxSnapshotsPerRequest is the maximum number of batch snapshots that
+	// we return in the answer for one request.
+	maxSnapshotsPerRequest = 100
+)
+
+var (
+	// zeroBatchID is the empty batch ID that consists of all zeros.
+	zeroBatchID orderT.BatchID
 )
 
 // TraderStream is a single long-lived connection between a trader client and
@@ -144,6 +153,9 @@ type rpcServer struct {
 
 	terms *terms.AuctioneerTerms
 
+	snapshotCache    map[orderT.BatchID]*subastadb.BatchSnapshot
+	snapshotCacheMtx sync.Mutex
+
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
 	// but can subscribe to updates for multiple accounts through the same
@@ -176,6 +188,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
+		snapshotCache:    make(map[orderT.BatchID]*subastadb.BatchSnapshot),
 		subscribeTimeout: subscribeTimeout,
 		ratingAgency:     ratingAgency,
 		ratingsDB:        ratingsDB,
@@ -1358,11 +1371,12 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	req *poolrpc.RelevantBatchRequest) (*poolrpc.RelevantBatch, error) {
 
 	// We'll start by retrieving the snapshot of the requested batch.
-	var batchID orderT.BatchID
-	copy(batchID[:], req.Id)
+	batchKey, err := btcec.ParsePubKey(req.Id, btcec.S256())
+	if err != nil {
+		return nil, err
+	}
 
-	// TODO(wilmer): Add caching layer? LRU?
-	batchSnapshot, err := s.store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := s.lookupSnapshot(ctx, batchKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1378,7 +1392,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	resp := &poolrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
 		Version:           uint32(orderT.CurrentVersion),
-		Id:                batchID[:],
+		Id:                batchKey.SerializeCompressed(),
 		ClearingPriceRate: uint32(batch.ClearingPrice),
 		ExecutionFee:      nil,
 		Transaction:       buf.Bytes(),
@@ -1948,33 +1962,153 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	// cleared batch, then walk that back one to get to the most recent
 	// batch.
 	var (
-		err error
-
-		zeroID orderT.BatchID
-
-		batchID     orderT.BatchID
-		batchKey    *btcec.PublicKey
-		prevBatchID []byte
+		err      error
+		batchKey *btcec.PublicKey
 	)
 
-	if len(req.BatchId) == 0 || bytes.Equal(zeroID[:], req.BatchId) {
-		currentBatchKey, err := s.store.BatchKey(context.Background())
+	if len(req.BatchId) == 0 || bytes.Equal(zeroBatchID[:], req.BatchId) {
+		currentBatchKey, err := s.store.BatchKey(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("unable to fetch latest "+
 				"batch key: %v", err)
 		}
 
 		batchKey = poolscript.DecrementKey(currentBatchKey)
-		batchID = orderT.NewBatchID(batchKey)
 	} else {
-		copy(batchID[:], req.BatchId)
-
 		batchKey, err = btcec.ParsePubKey(req.BatchId, btcec.S256())
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse "+
 				"batch ID (%x): %v", req.BatchId, err)
 		}
 	}
+
+	batchSnapshot, err := s.lookupSnapshot(ctx, batchKey)
+	if err != nil {
+		return nil, err
+	}
+
+	return marshallBatchSnapshot(batchKey, batchSnapshot)
+}
+
+// lookupSnapshot checks whether the batch snapshot with the given batch ID
+// already exists in the cache. If it does, it's returned directly, otherwise
+// it is fetched from the database and placed into the cache.
+func (s *rpcServer) lookupSnapshot(ctx context.Context,
+	batchKey *btcec.PublicKey) (*subastadb.BatchSnapshot, error) {
+
+	// Hold the mutex during the whole duration of this method to ensure
+	// that two parallel requests for the same batch ID will be serialized
+	// properly and the second one can be served from cache.
+	s.snapshotCacheMtx.Lock()
+	defer s.snapshotCacheMtx.Unlock()
+
+	// TODO(guggero): Use LRU cache instead of storing all batches in RAM?
+	batchID := orderT.NewBatchID(batchKey)
+	batchSnapshot, ok := s.snapshotCache[batchID]
+
+	// If we don't have that particular batch in the cache, let's fetch it
+	// once and populate the cache for future requests.
+	if !ok {
+		var err error
+		batchSnapshot, err = s.store.GetBatchSnapshot(ctx, batchID)
+		if err != nil {
+			return nil, err
+		}
+
+		s.snapshotCache[batchID] = batchSnapshot
+	}
+
+	return batchSnapshot, nil
+}
+
+// BatchSnapshots returns a list of batch snapshots starting at the start batch
+// ID and going back through the history of batches, returning at most the
+// number of specified batches. A maximum of 100 snapshots can be queried in
+// one call. If no start batch ID is provided, the most recent finalized batch
+// is used as the starting point to go back from.
+func (s *rpcServer) BatchSnapshots(ctx context.Context,
+	req *poolrpc.BatchSnapshotsRequest) (*poolrpc.BatchSnapshotsResponse,
+	error) {
+
+	rpcLog.Tracef("[BatchSnapshots] start_batch_id=%x, num_batches_back=%x",
+		req.StartBatchId, req.NumBatchesBack)
+
+	if req.NumBatchesBack == 0 || req.NumBatchesBack > maxSnapshotsPerRequest {
+		return nil, fmt.Errorf("invalid num batches back, must be "+
+			"between 1 and %d", maxSnapshotsPerRequest)
+	}
+
+	// If the passed start batch ID wasn't specified, or is nil, then we'll
+	// fetch the key for the current batch key (which isn't associated with
+	// a cleared batch, then walk that back one to get to the most recent
+	// batch.
+	var (
+		err           error
+		startBatchKey *btcec.PublicKey
+	)
+	if len(req.StartBatchId) == 0 ||
+		bytes.Equal(zeroBatchID[:], req.StartBatchId) {
+
+		currentBatchKey, err := s.store.BatchKey(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("unable to fetch latest batch "+
+				"key: %v", err)
+		}
+
+		// If there is no finalized batch yet, return an empty response.
+		if currentBatchKey.IsEqual(subastadb.InitialBatchKey) {
+			return &poolrpc.BatchSnapshotsResponse{}, nil
+		}
+
+		startBatchKey = poolscript.DecrementKey(currentBatchKey)
+	} else {
+		startBatchKey, err = btcec.ParsePubKey(
+			req.StartBatchId, btcec.S256(),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("unable to parse start batch "+
+				"ID (%x): %v", req.StartBatchId, err)
+		}
+	}
+
+	numBatches := int(req.NumBatchesBack)
+	resp := &poolrpc.BatchSnapshotsResponse{
+		Batches: make([]*poolrpc.BatchSnapshotResponse, 0, numBatches),
+	}
+	batchKey := startBatchKey
+	for i := 0; i < numBatches; i++ {
+		// Try to get the snapshot from the cache.
+		batchSnapshot, err := s.lookupSnapshot(ctx, batchKey)
+		if err != nil {
+			return nil, err
+		}
+
+		rpcBatch, err := marshallBatchSnapshot(batchKey, batchSnapshot)
+		if err != nil {
+			return nil, err
+		}
+		resp.Batches = append(resp.Batches, rpcBatch)
+
+		// We've reached the initial batch key, we can't continue any
+		// further and are done.
+		if batchKey.IsEqual(subastadb.InitialBatchKey) {
+			break
+		}
+
+		batchKey = poolscript.DecrementKey(batchKey)
+	}
+
+	return resp, nil
+}
+
+// marshallBatchSnapshot converts a batch snapshot into the RPC representation.
+func marshallBatchSnapshot(batchKey *btcec.PublicKey,
+	batchSnapshot *subastadb.BatchSnapshot) (*poolrpc.BatchSnapshotResponse,
+	error) {
+
+	batch := batchSnapshot.OrderBatch
+	batchTx := batchSnapshot.BatchTx
+	prevBatchID := zeroBatchID[:]
 
 	// Now that we have the batch key, we'll also derive the _prior_ batch
 	// key so the client can use this as a sort of linked list to navigate
@@ -1984,17 +2118,9 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 		prevBatchID = prevBatchKey.SerializeCompressed()
 	}
 
-	// Next, we'll fetch the targeted batch snapshot.
-	batchSnapshot, err := s.store.GetBatchSnapshot(ctx, batchID)
-	if err != nil {
-		return nil, err
-	}
-	batch := batchSnapshot.OrderBatch
-	batchTx := batchSnapshot.BatchTx
-
 	resp := &poolrpc.BatchSnapshotResponse{
 		Version:           uint32(orderT.CurrentVersion),
-		BatchId:           batchID[:],
+		BatchId:           batchKey.SerializeCompressed(),
 		PrevBatchId:       prevBatchID,
 		ClearingPriceRate: uint32(batch.ClearingPrice),
 	}
@@ -2005,10 +2131,10 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 	resp.MatchedOrders = make(
 		[]*poolrpc.MatchedOrderSnapshot, len(batch.Orders),
 	)
-	for i, order := range batch.Orders {
-		ask := order.Details.Ask
-		bid := order.Details.Bid
-		quote := order.Details.Quote
+	for i, o := range batch.Orders {
+		ask := o.Details.Ask
+		bid := o.Details.Bid
+		quote := o.Details.Quote
 
 		resp.MatchedOrders[i] = &poolrpc.MatchedOrderSnapshot{
 			Ask: &poolrpc.AskSnapshot{

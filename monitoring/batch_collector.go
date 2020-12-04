@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
@@ -303,29 +304,24 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 		return
 	}
 	batchKey := poolscript.DecrementKey(currentBatchKey)
-	batchID := orderT.NewBatchID(batchKey)
+	latestBatchID := orderT.NewBatchID(batchKey)
 
 	// Count the number of batches that happened so far by "counting down"
 	// until we're at the initial key. We start at 1 because if there wasn't
 	// one yet, we'd returned above.
-	numBatches := float64(1)
-	tempBatchKey := batchKey
 	var totalVolume, totalRevenue btcutil.Amount
-	for !tempBatchKey.IsEqual(subastadb.InitialBatchKey) {
-		numBatches++
-		tempBatchKey = poolscript.DecrementKey(tempBatchKey)
-
+	batchIDs := orderT.DecrementingBatchIDs(
+		batchKey, subastadb.InitialBatchKey,
+	)
+	for _, batchID := range batchIDs {
 		// For the set of metrics which want a cumulative value, we'll
 		// fetch the snapshot as well to be able to export the volume
 		// as well as the revenue.
-		//
-		// TODO(roasbeef): fetch all and do a single batch query
-		// instead?
-		batchID := orderT.NewBatchID(tempBatchKey)
-		batch, err := c.cfg.Store.GetBatchSnapshot(ctx, batchID)
+		batchKey, _ := btcec.ParsePubKey(batchID[:], btcec.S256())
+		batch, err := c.cfg.SnapshotSource(ctx, batchKey)
 		if err != nil {
-			log.Errorf("could not query batch snapshot with ID %v: %v",
-				batchID, err)
+			log.Errorf("could not query batch snapshot with ID "+
+				"%v: %v", batchID, err)
 		}
 
 		// Tally up the total volume in the batch as well as the amount
@@ -334,16 +330,8 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 			totalVolume += matchedOrder.Details.Quote.TotalSatsCleared
 		}
 		totalRevenue += batch.OrderBatch.FeeReport.AuctioneerFeesAccrued
-
-		// Unlikely to happen but in case we start from an invalid value
-		// we want to avoid an endless loop. Can't image we'd ever do
-		// more than a million batches before this code is replaced, so
-		// we take that as our safety net.
-		if numBatches > 1e6 {
-			break
-		}
 	}
-	c.g[batchCount].With(nil).Set(numBatches)
+	c.g[batchCount].With(nil).Set(float64(len(batchIDs)))
 
 	c.permGauges[batchTotalVolume].With(nil).Set(float64(totalVolume))
 	c.permGauges[batchTotalRevenue].With(nil).Set(float64(totalRevenue))
@@ -351,10 +339,10 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	// Fetch the batch by its ID.
 	ctx, cancel = context.WithTimeout(context.Background(), dbTimeout)
 	defer cancel()
-	batchSnapshot, err := c.cfg.Store.GetBatchSnapshot(ctx, batchID)
+	batchSnapshot, err := c.cfg.SnapshotSource(ctx, batchKey)
 	if err != nil {
 		log.Errorf("could not query batch snapshot with ID %v: %v",
-			batchID, err)
+			latestBatchID, err)
 		return
 	}
 	batch := batchSnapshot.OrderBatch
@@ -363,7 +351,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	// Record all metrics for the current batch. We don't need to collect
 	// the information about previous batches, Prometheus itself will add
 	// the time factor by querying these metrics periodically.
-	c.observeBatch(batchID, batch, tx)
+	c.observeBatch(latestBatchID, batch, tx)
 
 	feeRate, err := c.cfg.Lnd.WalletKit.EstimateFee(
 		ctx, c.cfg.BatchConfTarget,
