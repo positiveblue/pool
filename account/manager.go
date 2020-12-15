@@ -95,13 +95,6 @@ type Manager struct {
 	// This may be nil if the auctioneer hasn't created its account yet.
 	auctioneerKey *keychain.KeyDescriptor
 
-	// watchMtx guards access to watchingExpiry.
-	watchMtx sync.Mutex
-
-	// watchingExpiry is the set of accounts we're currently tracking the
-	// expiration of.
-	watchingExpiry map[[33]byte]struct{}
-
 	// modifyLocksMtx guards access to modifyLocks.
 	modifyLocksMtx sync.Mutex
 
@@ -121,10 +114,9 @@ type Manager struct {
 // NewManager instantiates a new Manager backed by the given config.
 func NewManager(cfg *ManagerConfig) (*Manager, error) {
 	m := &Manager{
-		cfg:            *cfg,
-		watchingExpiry: make(map[[33]byte]struct{}),
-		modifyLocks:    make(map[[33]byte]*sync.Mutex),
-		quit:           make(chan struct{}),
+		cfg:         *cfg,
+		modifyLocks: make(map[[33]byte]*sync.Mutex),
+		quit:        make(chan struct{}),
 	}
 
 	m.watcher = watcher.New(&watcher.Config{
@@ -416,21 +408,12 @@ func (m *Manager) resumeAccount(account *Account) error {
 		if err != nil {
 			return fmt.Errorf("unable to watch for spend: %v", err)
 		}
-
-		// Make sure we don't track the expiry again if we don't have
-		// to.
-		m.watchMtx.Lock()
-		if _, ok := m.watchingExpiry[account.TraderKeyRaw]; !ok {
-			err = m.watcher.WatchAccountExpiration(
-				traderKey, account.Expiry,
-			)
-			if err != nil {
-				m.watchMtx.Unlock()
-				return fmt.Errorf("unable to watch for "+
-					"expiration: %v", err)
-			}
+		err = m.watcher.WatchAccountExpiration(
+			traderKey, account.Expiry,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to watch for expiration: %v", err)
 		}
-		m.watchMtx.Unlock()
 
 	// If the account has already expired or has already been closed,
 	// there's nothing to be done.
