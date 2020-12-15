@@ -21,6 +21,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -168,7 +169,7 @@ func testAccountWithdrawal(t *harnessTest) {
 	_ = assertTxInBlock(t, block, withdrawTxid)
 	assertTraderAccount(
 		t, t.trader, account.TraderKey, valueAfterWithdrawal,
-		poolrpc.AccountState_OPEN,
+		account.ExpirationHeight, poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
 		t, account.TraderKey, valueAfterWithdrawal,
@@ -227,7 +228,7 @@ func testAccountDeposit(t *harnessTest) {
 	// trader and auctioneer while the deposit hasn't confirmed.
 	assertTraderAccount(
 		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
-		poolrpc.AccountState_PENDING_UPDATE,
+		account.ExpirationHeight, poolrpc.AccountState_PENDING_UPDATE,
 	)
 	assertAuctioneerAccount(
 		t, depositResp.Account.TraderKey, valueAfterDeposit,
@@ -258,7 +259,7 @@ func testAccountDeposit(t *harnessTest) {
 	_ = assertTxInBlock(t, block, depositTxid)
 	assertTraderAccount(
 		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
-		poolrpc.AccountState_OPEN,
+		account.ExpirationHeight, poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
 		t, depositResp.Account.TraderKey, valueAfterDeposit,
@@ -318,7 +319,8 @@ func testAccountDeposit(t *harnessTest) {
 	_ = assertTxInBlock(t, block, depositTxid)
 	assertTraderAccount(
 		t, t.trader, depositResp.Account.TraderKey,
-		valueAfterSecondDeposit, poolrpc.AccountState_OPEN,
+		valueAfterSecondDeposit, account.ExpirationHeight,
+		poolrpc.AccountState_OPEN,
 	)
 	assertAuctioneerAccount(
 		t, depositResp.Account.TraderKey, valueAfterSecondDeposit,
@@ -329,6 +331,114 @@ func testAccountDeposit(t *harnessTest) {
 	_ = closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
 	})
+}
+
+// testAccountRenewal ensures that we can renew an account in its confirmed
+// state and after it has expired.
+func testAccountRenewal(t *harnessTest) {
+	ctx := context.Background()
+
+	// Create an account for 500K sats that is valid for the next 1000
+	// blocks and validate its confirmation on-chain.
+	const initialAccountValue = 500_000
+	account := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
+		AccountValue: initialAccountValue,
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: 1_000,
+		},
+	})
+
+	// For our first case, we'll renew our account such that it expires in
+	// 144 blocks from now.
+	const newRelativeExpiry = 144
+	_, bestHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
+	require.NoError(t.t, err)
+	absoluteExpiry := uint32(bestHeight) + newRelativeExpiry
+
+	updateReq := &poolrpc.RenewAccountRequest{
+		AccountKey: account.TraderKey,
+		AccountExpiry: &poolrpc.RenewAccountRequest_RelativeExpiry{
+			RelativeExpiry: newRelativeExpiry,
+		},
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+	}
+	updateResp1, err := t.trader.RenewAccount(ctx, updateReq)
+	require.NoError(t.t, err)
+
+	// We'll define a helper closure to perform various assertions
+	// throughout the expiration state machine.
+	assertAccountState := func(valueBeforeUpdate btcutil.Amount) {
+		t.t.Helper()
+
+		// Assert that the account state is reflected correctly for both
+		// the trader and auctioneer while the update hasn't confirmed.
+		const multiSigUpdateFee = 153
+		valueAfterMultiSigUpdate := valueBeforeUpdate - multiSigUpdateFee
+		assertTraderAccount(
+			t, t.trader, account.TraderKey, valueAfterMultiSigUpdate,
+			absoluteExpiry, poolrpc.AccountState_PENDING_UPDATE,
+		)
+		assertAuctioneerAccount(
+			t, account.TraderKey, valueAfterMultiSigUpdate,
+			auctioneerAccount.StatePendingUpdate,
+		)
+
+		// Confirm the update transaction and continue to mine blocks up
+		// until one before the expiry is met. The account should be
+		// found open for both the trader and auctioneer.
+		_ = mineBlocks(t, t.lndHarness, newRelativeExpiry-1, 1)
+		assertTraderAccount(
+			t, t.trader, account.TraderKey, valueAfterMultiSigUpdate,
+			absoluteExpiry, poolrpc.AccountState_OPEN,
+		)
+		assertAuctioneerAccount(
+			t, account.TraderKey, valueAfterMultiSigUpdate,
+			auctioneerAccount.StateOpen,
+		)
+
+		// Finally, mine one more block, which should mark the account
+		// as expired.
+		_ = mineBlocks(t, t.lndHarness, 1, 0)
+		assertTraderAccount(
+			t, t.trader, account.TraderKey, valueAfterMultiSigUpdate,
+			absoluteExpiry, poolrpc.AccountState_EXPIRED,
+		)
+		assertAuctioneerAccount(
+			t, account.TraderKey, valueAfterMultiSigUpdate,
+			auctioneerAccount.StateExpired,
+		)
+	}
+
+	// We'll assert that that expiration update is successful on both the
+	// trader and auctioneer. We'll let the account expire to test the
+	// renewal case once again.
+	assertAccountState(initialAccountValue)
+
+	// We'll then process another renewal request, this time specifying the
+	// expiration (144 blocks) as an absolute height.
+	_, bestHeight, err = t.lndHarness.Miner.Node.GetBestBlock()
+	require.NoError(t.t, err)
+	absoluteExpiry = uint32(bestHeight) + newRelativeExpiry
+
+	updateReq.AccountExpiry = &poolrpc.RenewAccountRequest_AbsoluteExpiry{
+		AbsoluteExpiry: absoluteExpiry,
+	}
+	_, err = t.trader.RenewAccount(ctx, updateReq)
+	require.NoError(t.t, err)
+
+	// Once again, we'll assert that that expiration update is successful on
+	// both the trader and auctioneer.
+	assertAccountState(btcutil.Amount(updateResp1.Account.Value))
+
+	// Close the account now that it's expired.
+	_ = closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
+		TraderKey: account.TraderKey,
+	})
+
+	// Attempting another renewal request should fail as the account's been
+	// closed and the funds have left the multi-sig construct.
+	_, err = t.trader.RenewAccount(ctx, updateReq)
+	require.Error(t.t, err)
 }
 
 // testAccountSubscription tests that a trader registers for an account after
