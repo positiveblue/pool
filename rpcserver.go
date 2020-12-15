@@ -378,6 +378,10 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 			m := account.ValueModifier(value)
 			modifiers = append(modifiers, m)
 		}
+		if req.NewParams.Expiry != 0 {
+			m := account.ExpiryModifier(req.NewParams.Expiry)
+			modifiers = append(modifiers, m)
+		}
 	}
 
 	var rawTraderKey [33]byte
