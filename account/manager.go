@@ -415,9 +415,21 @@ func (m *Manager) resumeAccount(account *Account) error {
 			return fmt.Errorf("unable to watch for expiration: %v", err)
 		}
 
-	// If the account has already expired or has already been closed,
-	// there's nothing to be done.
-	case StateExpired, StateClosed:
+	// In StateExpired, we'll wait for a spend to determine if
+	// the account has been renewed or fully closed.
+	case StateExpired:
+		log.Infof("Watching expired account %x for spend",
+			account.TraderKeyRaw[:])
+		err := m.watcher.WatchAccountSpend(
+			traderKey, account.OutPoint, accountOutput.PkScript,
+			account.HeightHint,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to watch for spend: %v", err)
+		}
+
+	// If the account has already been closed, there's nothing to be done.
+	case StateClosed:
 		break
 
 	default:
