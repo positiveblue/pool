@@ -80,4 +80,8 @@ var testCases = []*testCase{
 		name: "distinct lease duration buckets",
 		test: testBatchExecutionDurationBuckets,
 	},
+	{
+		name: "batch sponsor",
+		test: testBatchSponsor,
+	},
 }
