@@ -464,10 +464,26 @@ func (m *Manager) resumeAccount(account *Account) error {
 func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 	confDetails *chainntnfs.TxConfirmation) error {
 
+	// Since we support account renewals for accounts in StatePendingBatch,
+	// we'll need to make sure the confirmation we're handling is for the
+	// correct state, as we can receive up to two confirmations, one for the
+	// batch, and another for the renewal transaction.
+	//
+	// TODO: Use a single call to retrieve both account states.
 	ctx := context.Background()
 	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
 		return err
+	}
+
+	// If the confirmation does not correspond to the account's diff (the
+	// state after the renewal), we'll look at its main state instead (the
+	// state after the batch).
+	if account.OutPoint.Hash != confDetails.Tx.TxHash() {
+		account, err = m.cfg.Store.Account(ctx, traderKey, false)
+		if err != nil {
+			return err
+		}
 	}
 
 	// Ensure the client provided us with the correct output.
@@ -774,13 +790,13 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	}
 
 	// Otherwise, the trader wishes to modify their account. It can only be
-	// modified in StateOpen or StateExpired if the expiration is being
-	// updated.
+	// modified in StateOpen, and StatePendingBatch or StateExpired if the
+	// expiration is being updated.
 	switch account.State {
-	case StateOpen, StateExpired:
+	case StateOpen, StatePendingBatch, StateExpired:
 	default:
 		return nil, fmt.Errorf("account must be in %v to be modified",
-			[]State{StateOpen, StateExpired})
+			[]State{StateOpen, StatePendingBatch, StateExpired})
 	}
 
 	// Create the spending transaction for the account including any
@@ -835,10 +851,11 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	if len(modifiers) > 0 {
 		modifiedAccount = account.Copy(modifiers...)
 
-		// If the account has expired, we should only allow another
-		// update if its expiry is being updated as well.
+		// If the account has expired or has participated in a batch
+		// that has yet to confirm, we should only allow another update
+		// if its expiry is being updated as well.
 		switch account.State {
-		case StateExpired:
+		case StatePendingBatch, StateExpired:
 			if account.Expiry == modifiedAccount.Expiry {
 				return nil, nil, nil, fmt.Errorf("cannot " +
 					"process update for expired account " +
