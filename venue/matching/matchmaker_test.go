@@ -311,6 +311,11 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 			return nil
 		}
 
+		// We check that the OrderBatch's copy method properly copies
+		// all data.
+		batchCopy := orderBatch.Copy()
+		require.Equal(t, orderBatch, &batchCopy)
+
 		if err := checkEqual(bidNonces, callMarket.bidIndex); err != nil {
 			t.Logf("not equal: %v", err)
 			return false
