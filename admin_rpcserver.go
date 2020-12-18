@@ -3,6 +3,7 @@ package subasta
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -15,7 +16,9 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
@@ -50,13 +53,24 @@ type adminRPCServer struct {
 	store         *subastadb.EtcdStore
 
 	durationBuckets *order.DurationBuckets
+
+	wallet lndclient.WalletKitClient
+	lockID wtxmgr.LockID
 }
 
 // newAdminRPCServer creates a new adminRPCServer.
 func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 	listener net.Listener, serverOpts []grpc.ServerOption,
 	auctioneer *Auctioneer, store *subastadb.EtcdStore,
-	durationBuckets *order.DurationBuckets) *adminRPCServer {
+	durationBuckets *order.DurationBuckets,
+	wallet lndclient.WalletKitClient) (*adminRPCServer, error) {
+
+	// Generate a lock ID for the utxo leases that this instance is going to
+	// request.
+	var lockID wtxmgr.LockID
+	if _, err := rand.Read(lockID[:]); err != nil {
+		return nil, err
+	}
 
 	return &adminRPCServer{
 		network:         network,
@@ -67,7 +81,9 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 		auctioneer:      auctioneer,
 		store:           store,
 		durationBuckets: durationBuckets,
-	}
+		wallet:          wallet,
+		lockID:          lockID,
+	}, nil
 }
 
 // Start starts the adminRPCServer, making it ready to accept incoming requests.
@@ -1037,7 +1053,33 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 
 	}
 
+	// Now that we have created the request we want to include in the next
+	// batch, go through and lease all outputs. If this fails for any
+	// output, we'll release them again.
+	releaseOutputs := func(lastIndex int) {
+		for i := 0; i < lastIndex; i++ {
+			in := io.Inputs[i]
+			err := s.wallet.ReleaseOutput(
+				ctx, s.lockID, in.PrevOutPoint,
+			)
+			if err != nil {
+				log.Warnf("Unable to release output %v: %v",
+					in.PrevOutPoint, err)
+			}
+		}
+	}
+
+	for i, in := range io.Inputs {
+		_, err := s.wallet.LeaseOutput(ctx, s.lockID, in.PrevOutPoint)
+		if err != nil {
+			releaseOutputs(i)
+			return nil, fmt.Errorf("unable to lease output %v: %v",
+				in.PrevOutPoint, err)
+		}
+	}
+
 	if err := s.auctioneer.RequestIO(io); err != nil {
+		releaseOutputs(len(io.Inputs))
 		return nil, err
 	}
 

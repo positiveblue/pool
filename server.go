@@ -443,11 +443,16 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 
-	server.adminServer = newAdminRPCServer(
+	server.adminServer, err = newAdminRPCServer(
 		chainParams, auctioneerServer, adminListener, adminServerOpts,
-		server.auctioneer, store, durationBuckets,
+		server.auctioneer, store, durationBuckets, lnd.WalletKit,
 	)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg.Prometheus.AdminRPCServer = server.adminServer.grpcServer
+
 	adminrpc.RegisterAuctionAdminServer(
 		server.adminServer.grpcServer, server.adminServer,
 	)
