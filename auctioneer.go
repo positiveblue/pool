@@ -1611,8 +1611,11 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			// If we have pending batches, we might want to make an
 			// empty batch in order to bump the fee of the pending
-			// one.
-			if len(pendingBatches) == 0 || !s.feeBumping {
+			// one. If we have have a batch IO request pending, we
+			// will also attempt an empty batch.
+			if !(len(pendingBatches) > 0 && s.feeBumping) &&
+				a.batchIOReq == nil {
+
 				a.resumeBatchTicker()
 				a.resumeOrderFeeder()
 
