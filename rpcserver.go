@@ -1392,19 +1392,29 @@ func (s *rpcServer) Terms(ctx context.Context, _ *poolrpc.TermsRequest) (
 		NextBatchConfTarget:      uint32(s.auctioneer.cfg.ConfTarget),
 		NextBatchFeeRateSatPerKw: uint64(nextBatchFeeRate),
 		NextBatchClearTimestamp:  uint64(nextBatchClear.Unix()),
+		LeaseDurationBuckets:     make(map[uint32]poolrpc.DurationBucketState),
 	}
 
 	durationBuckets := s.orderBook.DurationBuckets()
-	_ = durationBuckets.IterBuckets(
+	err = durationBuckets.IterBuckets(
 		func(d uint32, s order.DurationBucketState) error {
 			marketOpen := (s != order.BucketStateMarketClosed &&
 				s != order.BucketStateNoMarket)
 
+			rpcState, err := marshallDurationBucketState(s)
+			if err != nil {
+				return err
+			}
+
 			resp.LeaseDurations[d] = marketOpen
+			resp.LeaseDurationBuckets[d] = rpcState
 
 			return nil
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	return resp, nil
 }
@@ -1484,29 +1494,49 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 		resp.ChargedAccounts = append(resp.ChargedAccounts, accountDiff)
 	}
 
+	resp.MatchedMarkets = make(map[uint32]*poolrpc.MatchedMarket)
+	for duration := range batch.SubBatches {
+		resp.MatchedMarkets[duration] = &poolrpc.MatchedMarket{
+			MatchedOrders:     make(map[string]*poolrpc.MatchedOrder),
+			ClearingPriceRate: uint32(batch.ClearingPrices[duration]),
+		}
+	}
+
 	// An order can be fulfilled by multiple orders of the opposing type, so
 	// make sure we take that into notice.
-	resp.MatchedOrders = make(map[string]*poolrpc.MatchedOrder)
-	for _, order := range batch.Orders {
-		if _, ok := accounts[order.Asker.AccountKey]; ok {
-			nonce := order.Details.Ask.Nonce().String()
-			matchedBid := marshallMatchedBid(
-				order.Details.Bid, order.Details.Quote.UnitsMatched,
-			)
-			resp.MatchedOrders[nonce].MatchedBids = append(
-				resp.MatchedOrders[nonce].MatchedBids, matchedBid,
-			)
-			continue
-		}
+	for duration, subBatch := range batch.SubBatches {
+		matchedOrders := resp.MatchedMarkets[duration].MatchedOrders
+		for _, o := range subBatch {
+			if _, ok := accounts[o.Asker.AccountKey]; ok {
+				nonce := o.Details.Ask.Nonce().String()
+				matchedBid := marshallMatchedBid(
+					o.Details.Bid,
+					o.Details.Quote.UnitsMatched,
+				)
+				resp.MatchedOrders[nonce].MatchedBids = append(
+					resp.MatchedOrders[nonce].MatchedBids, matchedBid,
+				)
+				matchedOrders[nonce].MatchedBids = append(
+					matchedOrders[nonce].MatchedBids,
+					matchedBid,
+				)
+				continue
+			}
 
-		if _, ok := accounts[order.Bidder.AccountKey]; ok {
-			nonce := order.Details.Bid.Nonce().String()
-			matchedAsk := marshallMatchedAsk(
-				order.Details.Ask, order.Details.Quote.UnitsMatched,
-			)
-			resp.MatchedOrders[nonce].MatchedAsks = append(
-				resp.MatchedOrders[nonce].MatchedAsks, matchedAsk,
-			)
+			if _, ok := accounts[o.Bidder.AccountKey]; ok {
+				nonce := o.Details.Bid.Nonce().String()
+				matchedAsk := marshallMatchedAsk(
+					o.Details.Ask,
+					o.Details.Quote.UnitsMatched,
+				)
+				resp.MatchedOrders[nonce].MatchedAsks = append(
+					resp.MatchedOrders[nonce].MatchedAsks, matchedAsk,
+				)
+				matchedOrders[nonce].MatchedAsks = append(
+					matchedOrders[nonce].MatchedAsks,
+					matchedAsk,
+				)
+			}
 		}
 	}
 
@@ -2169,35 +2199,52 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 		PrevBatchId:         prevBatchID,
 		ClearingPriceRate:   uint32(batch.ClearingPrice),
 		CreationTimestampNs: uint64(batch.CreationTimestamp.UnixNano()),
+		MatchedOrders: make(
+			[]*poolrpc.MatchedOrderSnapshot, len(batch.Orders),
+		),
+		MatchedMarkets: make(map[uint32]*poolrpc.MatchedMarketSnapshot),
+	}
+
+	for duration, subBatch := range batch.SubBatches {
+		resp.MatchedMarkets[duration] = &poolrpc.MatchedMarketSnapshot{
+			MatchedOrders: make(
+				[]*poolrpc.MatchedOrderSnapshot, len(subBatch),
+			),
+			ClearingPriceRate: uint32(batch.ClearingPrices[duration]),
+		}
 	}
 
 	// The response for this call is a bit simpler than the
 	// RelevantBatchSnapshot call, in that we only need to return the set
 	// of orders, and not also the accounts diffs.
-	resp.MatchedOrders = make(
-		[]*poolrpc.MatchedOrderSnapshot, len(batch.Orders),
-	)
-	for i, o := range batch.Orders {
-		ask := o.Details.Ask
-		bid := o.Details.Bid
-		quote := o.Details.Quote
+	orderIdx := 0
+	for duration, subBatch := range batch.SubBatches {
+		market := resp.MatchedMarkets[duration]
+		for i, o := range subBatch {
+			ask := o.Details.Ask
+			bid := o.Details.Bid
+			quote := o.Details.Quote
 
-		resp.MatchedOrders[i] = &poolrpc.MatchedOrderSnapshot{
-			Ask: &poolrpc.AskSnapshot{
-				Version:             uint32(ask.Version),
-				LeaseDurationBlocks: ask.LeaseDuration(),
-				RateFixed:           ask.Details().FixedRate,
-				ChanType:            uint32(ask.ServerDetails().ChanType),
-			},
-			Bid: &poolrpc.BidSnapshot{
-				Version:             uint32(bid.Version),
-				LeaseDurationBlocks: bid.LeaseDuration(),
-				RateFixed:           bid.Details().FixedRate,
-				ChanType:            uint32(bid.ServerDetails().ChanType),
-			},
-			MatchingRate:     uint32(quote.MatchingRate),
-			TotalSatsCleared: uint64(quote.TotalSatsCleared),
-			UnitsMatched:     uint32(quote.UnitsMatched),
+			rpcSnapshot := &poolrpc.MatchedOrderSnapshot{
+				Ask: &poolrpc.AskSnapshot{
+					Version:             uint32(ask.Version),
+					LeaseDurationBlocks: ask.LeaseDuration(),
+					RateFixed:           ask.Details().FixedRate,
+					ChanType:            uint32(ask.ServerDetails().ChanType),
+				},
+				Bid: &poolrpc.BidSnapshot{
+					Version:             uint32(bid.Version),
+					LeaseDurationBlocks: bid.LeaseDuration(),
+					RateFixed:           bid.Details().FixedRate,
+					ChanType:            uint32(bid.ServerDetails().ChanType),
+				},
+				MatchingRate:     uint32(quote.MatchingRate),
+				TotalSatsCleared: uint64(quote.TotalSatsCleared),
+				UnitsMatched:     uint32(quote.UnitsMatched),
+			}
+			market.MatchedOrders[i] = rpcSnapshot
+			resp.MatchedOrders[orderIdx] = rpcSnapshot
+			orderIdx++
 		}
 	}
 
@@ -2308,5 +2355,28 @@ func marshallNodeTier(nodeTier orderT.NodeTier) (poolrpc.NodeTier, error) {
 
 	default:
 		return 0, fmt.Errorf("unknown node tier: %v", nodeTier)
+	}
+}
+
+// marshallDurationBucketState maps the duration bucket state integer into the
+// enum used on the RPC interface.
+func marshallDurationBucketState(
+	state order.DurationBucketState) (poolrpc.DurationBucketState, error) {
+
+	switch state {
+	case order.BucketStateNoMarket:
+		return poolrpc.DurationBucketState_NO_MARKET, nil
+
+	case order.BucketStateMarketClosed:
+		return poolrpc.DurationBucketState_MARKET_CLOSED, nil
+
+	case order.BucketStateAcceptingOrders:
+		return poolrpc.DurationBucketState_ACCEPTING_ORDERS, nil
+
+	case order.BucketStateClearingMarket:
+		return poolrpc.DurationBucketState_MARKET_OPEN, nil
+
+	default:
+		return 0, fmt.Errorf("unknown duration bucket state: %v", state)
 	}
 }
