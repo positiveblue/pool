@@ -811,7 +811,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *poolrpc.ClientAuctionMessage,
 		// batch execution protocol. If not, they need to update. Better
 		// reject them now instead of waiting for a batch to be prepared
 		// and then everybody bailing out because of a version mismatch.
-		if commit.BatchVersion != uint32(orderT.CurrentVersion) {
+		if commit.BatchVersion != uint32(orderT.CurrentBatchVersion) {
 			comms.err <- orderT.ErrVersionMismatch
 			return
 		}
@@ -1338,8 +1338,12 @@ func (s *rpcServer) Terms(ctx context.Context, _ *poolrpc.TermsRequest) (
 	nextBatchClear := time.Now().Add(s.auctioneer.cfg.BatchTicker.NextTickIn())
 
 	resp := &poolrpc.TermsResponse{
-		MaxAccountValue:        uint64(s.terms.MaxAccountValue),
-		MaxOrderDurationBlocks: s.terms.MaxOrderDuration,
+		MaxAccountValue: uint64(s.terms.MaxAccountValue),
+		// The max order duration is now deprecated, but old clients
+		// will still use it to validate their orders so we need to set
+		// it to a very high value. We'll make sure we don't accept
+		// orders outside of the duration buckets in later commits.
+		MaxOrderDurationBlocks: 365 * 144,
 		ExecutionFee: &poolrpc.ExecutionFee{
 			BaseFee: uint64(s.terms.OrderExecBaseFee),
 			FeeRate: uint64(s.terms.OrderExecFeeRate),
@@ -1391,7 +1395,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 
 	resp := &poolrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
-		Version:           uint32(orderT.CurrentVersion),
+		Version:           uint32(orderT.CurrentBatchVersion),
 		Id:                batchKey.SerializeCompressed(),
 		ClearingPriceRate: uint32(batch.ClearingPrice),
 		ExecutionFee:      nil,
@@ -2119,7 +2123,7 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 	}
 
 	resp := &poolrpc.BatchSnapshotResponse{
-		Version:           uint32(orderT.CurrentVersion),
+		Version:           uint32(orderT.CurrentBatchVersion),
 		BatchId:           batchKey.SerializeCompressed(),
 		PrevBatchId:       prevBatchID,
 		ClearingPriceRate: uint32(batch.ClearingPrice),

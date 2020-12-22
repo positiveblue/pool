@@ -509,7 +509,7 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	batch := batchSnapshot.OrderBatch
 
 	resp := &adminrpc.AdminBatchSnapshotResponse{
-		Version:           uint32(orderT.CurrentVersion),
+		Version:           uint32(orderT.CurrentBatchVersion),
 		BatchId:           batchID[:],
 		PrevBatchId:       prevBatchID,
 		ClearingPriceRate: uint32(batch.ClearingPrice),

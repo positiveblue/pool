@@ -20,7 +20,7 @@ import (
 )
 
 // batchVesion is the current version for batch transactions.
-const batchVersion = uint32(orderT.CurrentVersion)
+const batchVersion = uint32(orderT.CurrentBatchVersion)
 
 // multiplexMessage is a helper struct that holds all data that is multi-plexed
 // from multiple venue traders to a single trader daemon/connection identified

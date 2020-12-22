@@ -625,7 +625,9 @@ func (m *Manager) WatchMatchedAccounts(ctx context.Context,
 }
 
 // handleAccountExpiry handles the expiration of an account.
-func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey) error {
+func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey,
+	height uint32) error {
+
 	// Mark the account as expired.
 	//
 	// TODO(wilmer): Cancel any remaining active orders at this point?

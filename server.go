@@ -195,7 +195,6 @@ func NewServer(cfg *Config) (*Server, error) {
 	// by different parts during the batch execution.
 	auctionTerms := &terms.AuctioneerTerms{
 		MaxAccountValue:  btcutil.Amount(cfg.MaxAcctValue),
-		MaxOrderDuration: cfg.MaxDuration,
 		OrderExecBaseFee: btcutil.Amount(cfg.ExecFeeBase),
 		OrderExecFeeRate: btcutil.Amount(cfg.ExecFeeRate),
 	}
