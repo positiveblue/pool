@@ -1395,12 +1395,13 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 
 	resp := &poolrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
-		Version:           uint32(orderT.CurrentBatchVersion),
-		Id:                batchKey.SerializeCompressed(),
-		ClearingPriceRate: uint32(batch.ClearingPrice),
-		ExecutionFee:      nil,
-		Transaction:       buf.Bytes(),
-		FeeRateSatPerKw:   0,
+		Version:             uint32(batch.Version),
+		Id:                  batchKey.SerializeCompressed(),
+		ClearingPriceRate:   uint32(batch.ClearingPrice),
+		ExecutionFee:        nil,
+		Transaction:         buf.Bytes(),
+		FeeRateSatPerKw:     0,
+		CreationTimestampNs: uint64(batch.CreationTimestamp.UnixNano()),
 	}
 
 	// With the batch obtained, we'll filter it for the requested accounts.
@@ -2123,10 +2124,11 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 	}
 
 	resp := &poolrpc.BatchSnapshotResponse{
-		Version:           uint32(orderT.CurrentBatchVersion),
-		BatchId:           batchKey.SerializeCompressed(),
-		PrevBatchId:       prevBatchID,
-		ClearingPriceRate: uint32(batch.ClearingPrice),
+		Version:             uint32(batch.Version),
+		BatchId:             batchKey.SerializeCompressed(),
+		PrevBatchId:         prevBatchID,
+		ClearingPriceRate:   uint32(batch.ClearingPrice),
+		CreationTimestampNs: uint64(batch.CreationTimestamp.UnixNano()),
 	}
 
 	// The response for this call is a bit simpler than the

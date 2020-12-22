@@ -19,7 +19,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
-// batchVesion is the current version for batch transactions.
+// batchVersion is the current version for batch transactions.
 const batchVersion = uint32(orderT.CurrentBatchVersion)
 
 // multiplexMessage is a helper struct that holds all data that is multi-plexed

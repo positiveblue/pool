@@ -1,6 +1,8 @@
 package matching
 
 import (
+	"time"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
@@ -136,6 +138,9 @@ type PriceClearer interface {
 // TradingFeeReport instance is essentially an accounting report detailing how
 // money exchanged hands in the batch.
 type OrderBatch struct {
+	// Version is the version of the batch execution protocol.
+	Version orderT.BatchVersion
+
 	// Orders is the set of matched orders in this batch.
 	Orders []MatchedOrder
 
@@ -148,22 +153,33 @@ type OrderBatch struct {
 	// ClearingPrice is the single clearing price that all traders in the
 	// batch will pay as computed within the FeeReport above.
 	ClearingPrice orderT.FixedRatePremium
+
+	// CreationTimestamp is the timestamp at which the batch was first
+	// persisted.
+	CreationTimestamp time.Time
 }
 
-// NewBatch returns a new batch with the given match data.
+// NewBatch returns a new batch with the given match data, the latest batch
+// version and the current timestamp.
 func NewBatch(orders []MatchedOrder, feeReport TradingFeeReport,
 	price orderT.FixedRatePremium) *OrderBatch {
 
 	return &OrderBatch{
-		Orders:        orders,
-		FeeReport:     feeReport,
-		ClearingPrice: price,
+		Version:           orderT.CurrentBatchVersion,
+		Orders:            orders,
+		FeeReport:         feeReport,
+		ClearingPrice:     price,
+		CreationTimestamp: time.Now(),
 	}
 }
 
-// EmptyBatch returns an empty batch.
+// EmptyBatch returns a batch that has only the version set to the latest batch
+// version and the creation timestamp with the current time.
 func EmptyBatch() *OrderBatch {
-	return &OrderBatch{}
+	return &OrderBatch{
+		Version:           orderT.CurrentBatchVersion,
+		CreationTimestamp: time.Now(),
+	}
 }
 
 // Copy performs a deep copy of the passed OrderBatch instance.
@@ -212,9 +228,11 @@ func (o *OrderBatch) Copy() OrderBatch {
 	}
 
 	return OrderBatch{
-		Orders:        orders,
-		FeeReport:     feeReport,
-		ClearingPrice: o.ClearingPrice,
+		Version:           o.Version,
+		Orders:            orders,
+		ClearingPrice:     o.ClearingPrice,
+		FeeReport:         feeReport,
+		CreationTimestamp: o.CreationTimestamp,
 	}
 }
 

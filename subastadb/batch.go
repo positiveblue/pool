@@ -390,7 +390,6 @@ func (s *EtcdStore) fetchMinUnitsMatchSTM(stm conc.STM,
 // serializeBatchSnapshot binary serializes a batch snapshot by using the LN
 // wire format.
 func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
-
 	// First, we'll encode the finalized batch tx itself.
 	if err := b.BatchTx.Serialize(w); err != nil {
 		return err
@@ -412,7 +411,15 @@ func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
 			return err
 		}
 	}
-	return serializeTradingFeeReport(w, &b.OrderBatch.FeeReport)
+	err = serializeTradingFeeReport(w, &b.OrderBatch.FeeReport)
+	if err != nil {
+		return err
+	}
+
+	// For new batches, we also store its version and timestamp.
+	return WriteElements(
+		w, b.OrderBatch.Version, b.OrderBatch.CreationTimestamp,
+	)
 }
 
 // serializeMatchedOrder binary serializes a matched order by using the LN wire
@@ -519,7 +526,6 @@ func serializeAccountTally(w io.Writer, t *orderT.AccountTally) error {
 // deserializeBatchSnapshot reconstructs a batch snapshot from binary data in
 // the LN wire format.
 func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
-
 	var (
 		txFee            btcutil.Amount
 		b                = &matching.OrderBatch{}
@@ -555,6 +561,26 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 		return nil, err
 	}
 	b.FeeReport = *feeReport
+
+	// New snapshots also have a version number and timestamp stored that
+	// can be used to decide further de-serialization logic. If no further
+	// bytes can be read (EOF), then it means we have a version 0 snapshot
+	// that didn't yet store its version and creation timestamp.
+	err = ReadElements(r, &b.Version, &b.CreationTimestamp)
+	switch err {
+	// Successful read, return the batch with the version set.
+	case nil:
+		break
+
+	// If it wasn't found in the database, then we'll assume the default
+	// value.
+	case io.EOF, io.ErrUnexpectedEOF:
+		b.Version = orderT.DefaultBatchVersion
+
+	// Unexpected error, return.
+	default:
+		return nil, err
+	}
 
 	return &BatchSnapshot{
 		BatchTx:    batchTx,
