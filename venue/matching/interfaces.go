@@ -87,6 +87,25 @@ type MatchedOrder struct {
 	Details OrderPair
 }
 
+// copyMatchedOrder creates a deep copy of a MatchedOrder struct.
+func copyMatchedOrder(original *MatchedOrder) MatchedOrder {
+	return MatchedOrder{
+		Asker:  original.Asker,
+		Bidder: original.Bidder,
+		Details: OrderPair{
+			Ask: &order.Ask{
+				Ask: original.Details.Ask.Ask,
+				Kit: original.Details.Ask.Kit,
+			},
+			Bid: &order.Bid{
+				Bid: original.Details.Bid.Bid,
+				Kit: original.Details.Bid.Kit,
+			},
+			Quote: original.Details.Quote,
+		},
+	}
+}
+
 // MatchSet is the final output of a match making session. This packages all
 // the orders that have been matched in the past batch, along with the set of
 // unmatched orders as those may be used for determining the final clearing
@@ -144,6 +163,12 @@ type OrderBatch struct {
 	// Orders is the set of matched orders in this batch.
 	Orders []MatchedOrder
 
+	// SubBatches is the set of matched orders in this batch mapped to the
+	// distinct lease duration that was used for the sub-batches. It
+	// contains the exact same number of orders as Orders but split into the
+	// different lease duration markets.
+	SubBatches map[uint32][]MatchedOrder
+
 	// FeeReport is a report describing all the fees paid in the batch.
 	// Note that these are only _trading_ fees and don't yet included any
 	// fee that need to be paid on chain within the batch execution
@@ -157,6 +182,11 @@ type OrderBatch struct {
 	// CreationTimestamp is the timestamp at which the batch was first
 	// persisted.
 	CreationTimestamp time.Time
+
+	// ClearingPrices is the clearing price mapped to the distinct lease
+	// durations of the sub-batches that the traders in the individual
+	// sub-batches will pay as computed within the FeeReport above.
+	ClearingPrices map[uint32]orderT.FixedRatePremium
 }
 
 // NewBatch returns a new batch with the given match data, the latest batch
@@ -165,11 +195,15 @@ func NewBatch(orders []MatchedOrder, feeReport TradingFeeReport,
 	price orderT.FixedRatePremium) *OrderBatch {
 
 	return &OrderBatch{
-		Version:           orderT.CurrentBatchVersion,
-		Orders:            orders,
+		Version: orderT.CurrentBatchVersion,
+		Orders:  orders,
+		// TODO(guggero): replace with actual batches in next commit.
+		SubBatches:        make(map[uint32][]MatchedOrder),
 		FeeReport:         feeReport,
 		ClearingPrice:     price,
 		CreationTimestamp: time.Now(),
+		// TODO(guggero): replace with actual prices in next commit.
+		ClearingPrices: make(map[uint32]orderT.FixedRatePremium),
 	}
 }
 
@@ -178,7 +212,9 @@ func NewBatch(orders []MatchedOrder, feeReport TradingFeeReport,
 func EmptyBatch() *OrderBatch {
 	return &OrderBatch{
 		Version:           orderT.CurrentBatchVersion,
+		SubBatches:        make(map[uint32][]MatchedOrder),
 		CreationTimestamp: time.Now(),
+		ClearingPrices:    make(map[uint32]orderT.FixedRatePremium),
 	}
 }
 
@@ -186,24 +222,18 @@ func EmptyBatch() *OrderBatch {
 func (o *OrderBatch) Copy() OrderBatch {
 	orders := make([]MatchedOrder, 0, len(o.Orders))
 	for _, matchedOrder := range o.Orders {
-		ask := order.Ask{
-			Ask: matchedOrder.Details.Ask.Ask,
-			Kit: matchedOrder.Details.Ask.Kit,
-		}
-		bid := order.Bid{
-			Bid: matchedOrder.Details.Bid.Bid,
-			Kit: matchedOrder.Details.Bid.Kit,
-		}
+		mo := matchedOrder
+		orders = append(orders, copyMatchedOrder(&mo))
+	}
 
-		orders = append(orders, MatchedOrder{
-			Asker:  matchedOrder.Asker,
-			Bidder: matchedOrder.Bidder,
-			Details: OrderPair{
-				Ask:   &ask,
-				Bid:   &bid,
-				Quote: matchedOrder.Details.Quote,
-			},
-		})
+	subBatches := make(map[uint32][]MatchedOrder)
+	for duration, subBatch := range o.SubBatches {
+		orders := make([]MatchedOrder, 0, len(subBatch))
+		for _, matchedOrder := range subBatch {
+			mo := matchedOrder
+			orders = append(orders, copyMatchedOrder(&mo))
+		}
+		subBatches[duration] = orders
 	}
 
 	feeReport := TradingFeeReport{
@@ -227,12 +257,19 @@ func (o *OrderBatch) Copy() OrderBatch {
 		}
 	}
 
+	clearingPrices := make(map[uint32]orderT.FixedRatePremium)
+	for duration, price := range o.ClearingPrices {
+		clearingPrices[duration] = price
+	}
+
 	return OrderBatch{
 		Version:           o.Version,
 		Orders:            orders,
 		ClearingPrice:     o.ClearingPrice,
+		SubBatches:        subBatches,
 		FeeReport:         feeReport,
 		CreationTimestamp: o.CreationTimestamp,
+		ClearingPrices:    clearingPrices,
 	}
 }
 

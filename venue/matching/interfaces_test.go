@@ -46,11 +46,17 @@ var (
 // TestOrderBatchCopy makes sure the copy method copies all fields correctly.
 func TestOrderBatchCopy(t *testing.T) {
 	orderBatch := &OrderBatch{
-		Version:           99,
-		Orders:            orders,
+		Version: 99,
+		Orders:  orders,
+		SubBatches: map[uint32][]MatchedOrder{
+			orderT.LegacyLeaseDurationBucket: orders,
+		},
 		FeeReport:         feeReport,
 		ClearingPrice:     1234,
 		CreationTimestamp: time.Unix(123_456_789, 0),
+		ClearingPrices: map[uint32]orderT.FixedRatePremium{
+			orderT.LegacyLeaseDurationBucket: 1234,
+		},
 	}
 	batchCopy := orderBatch.Copy()
 

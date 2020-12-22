@@ -3,7 +3,6 @@ package subastadb
 import (
 	"bytes"
 	"context"
-	"reflect"
 	"strings"
 	"testing"
 
@@ -11,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
-	"github.com/davecgh/go-spew/spew"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -334,8 +332,14 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	defer cleanup()
 
 	// Create an order batch that contains dummy data.
-	askClientKit := dummyClientOrder(t, 123_456, 12345)
-	bidClientKit := dummyClientOrder(t, 123_456, 54321)
+	askLegacyClientKit := dummyClientOrder(
+		t, 123_456, orderT.LegacyLeaseDurationBucket,
+	)
+	bidLegacyClientKit := dummyClientOrder(
+		t, 123_456, orderT.LegacyLeaseDurationBucket,
+	)
+	askNewClientKit := dummyClientOrder(t, 123_456, 12345)
+	bidNewClientKit := dummyClientOrder(t, 123_456, 12345)
 	serverKit := dummyOrder(t)
 	trader1 := matching.Trader{
 		AccountKey: matching.AccountID{
@@ -373,19 +377,45 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		},
 		AccountBalance: 18,
 	}
-	orders := []matching.MatchedOrder{{
+	legacyOrders := []matching.MatchedOrder{{
 		Asker:  trader1,
 		Bidder: trader2,
 		Details: matching.OrderPair{
 			Ask: &order.Ask{
 				Ask: orderT.Ask{
-					Kit: *askClientKit,
+					Kit: *askLegacyClientKit,
 				},
 				Kit: *serverKit,
 			},
 			Bid: &order.Bid{
 				Bid: orderT.Bid{
-					Kit:         *bidClientKit,
+					Kit:         *bidLegacyClientKit,
+					MinNodeTier: 10,
+				},
+				Kit: *serverKit,
+			},
+			Quote: matching.PriceQuote{
+				MatchingRate:     9,
+				TotalSatsCleared: 8,
+				UnitsMatched:     7,
+				UnitsUnmatched:   6,
+				Type:             5,
+			},
+		},
+	}}
+	newOrders := []matching.MatchedOrder{{
+		Asker:  trader1,
+		Bidder: trader2,
+		Details: matching.OrderPair{
+			Ask: &order.Ask{
+				Ask: orderT.Ask{
+					Kit: *askNewClientKit,
+				},
+				Kit: *serverKit,
+			},
+			Bid: &order.Bid{
+				Bid: orderT.Bid{
+					Kit:         *bidNewClientKit,
 					MinNodeTier: 10,
 				},
 				Kit: *serverKit,
@@ -429,22 +459,53 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		},
 		AuctioneerFeesAccrued: 1337,
 	}
-	batch := matching.NewBatch(orders, feeReport, 123)
 
 	// All the orders above also need to be inserted as normal orders to
 	// ensure we're able to retrieve all the supplemental data we need.
-	for _, order := range batch.Orders {
-		err := store.SubmitOrder(ctx, order.Details.Ask)
-		if err != nil {
-			t.Fatalf("unable to submit order: %v", err)
-		}
+	for _, o := range legacyOrders {
+		err := store.SubmitOrder(ctx, o.Details.Ask)
+		require.NoError(t, err)
 
-		err = store.SubmitOrder(ctx, order.Details.Bid)
-		if err != nil {
-			t.Fatalf("unable to submit order: %v", err)
-		}
+		err = store.SubmitOrder(ctx, o.Details.Bid)
+		require.NoError(t, err)
+	}
+	for _, o := range newOrders {
+		err := store.SubmitOrder(ctx, o.Details.Ask)
+		require.NoError(t, err)
+
+		err = store.SubmitOrder(ctx, o.Details.Bid)
+		require.NoError(t, err)
 	}
 
+	batchV0 := matching.NewBatch(legacyOrders, feeReport, 0)
+	batchV0.SubBatches = map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: legacyOrders,
+	}
+	batchV0.ClearingPrices = map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: 123,
+	}
+	assertBatchSerialization(t, store, batchV0)
+
+	batchV1 := matching.NewBatch(
+		append(legacyOrders, newOrders...), feeReport, 0,
+	)
+	batchV1.SubBatches = map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: legacyOrders,
+		12345:                            newOrders,
+	}
+	batchV1.ClearingPrices = map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: 123,
+		12345:                            321,
+	}
+	assertBatchSerialization(t, store, batchV1)
+}
+
+func assertBatchSerialization(t *testing.T, store *EtcdStore,
+	batch *matching.OrderBatch) {
+
+	t.Helper()
+
+	ctx := context.Background()
 	txFee := btcutil.Amount(911)
 	batchSnapshot := &BatchSnapshot{
 		BatchTx:    batchTx,
@@ -470,14 +531,10 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		ctx, nil, nil, nil, nil, ma1, batchID, batchSnapshot,
 		nextBatchKey, nil,
 	)
-	if err != nil {
-		t.Fatalf("error persisting batch result: %v", err)
-	}
+	require.NoError(t, err)
 
 	snapshot, err := store.GetBatchSnapshot(ctx, batchID)
-	if err != nil {
-		t.Fatalf("could not read batch snapshot: %v", err)
-	}
+	require.NoError(t, err)
 
 	dbBatch := snapshot.OrderBatch
 	dbBatchTx := snapshot.BatchTx
@@ -490,15 +547,8 @@ func TestPersistBatchSnapshot(t *testing.T) {
 
 	// We'll also ensure that we get the exact same batch transaction as
 	// well.
-	if !reflect.DeepEqual(dbBatchTx, batchTx) {
-		t.Fatalf("batch tx mismatch: expected %v, got %v",
-			spew.Sdump(batchTx), spew.Sdump(dbBatchTx))
-	}
-
-	if dbFee != txFee {
-		t.Fatalf("batch tx fee mismatch: expected %v, got %v",
-			txFee, dbFee)
-	}
+	require.Equal(t, batchTx, dbBatchTx)
+	require.Equal(t, txFee, dbFee)
 }
 
 func toRawKey(pubkey *btcec.PublicKey) [33]byte {
