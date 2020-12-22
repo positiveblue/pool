@@ -106,7 +106,12 @@ func TestBookPrepareOrder(t *testing.T) {
 	feeSchedule := terms.NewLinearFeeSchedule(1, 100)
 	durations := order.NewDurationBuckets()
 
-	durations.AddNewMarket(1024, order.BucketStateAcceptingOrders)
+	durations.AddNewMarket(
+		orderT.LegacyLeaseDurationBucket,
+		order.BucketStateAcceptingOrders,
+	)
+	durations.AddNewMarket(145, order.BucketStateNoMarket)
+	durations.AddNewMarket(4032, order.BucketStateClearingMarket)
 
 	book := order.NewBook(&order.BookConfig{
 		Store:           store,
@@ -144,7 +149,7 @@ func TestBookPrepareOrder(t *testing.T) {
 		},
 	}, {
 		name:        "ask duration 0",
-		expectedErr: "bucket for duration 0 is in state",
+		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
 			o := &order.Ask{
 				Ask: orderT.Ask{
@@ -163,7 +168,7 @@ func TestBookPrepareOrder(t *testing.T) {
 		},
 	}, {
 		name:        "ask invalid duration",
-		expectedErr: "bucket for duration 143 is in state",
+		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
 			o := &order.Ask{
 				Ask: orderT.Ask{
@@ -182,7 +187,7 @@ func TestBookPrepareOrder(t *testing.T) {
 		},
 	}, {
 		name:        "bid duration 0",
-		expectedErr: "bucket for duration 0 is in state",
+		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
 			o := &order.Bid{
 				Bid: orderT.Bid{
@@ -201,7 +206,7 @@ func TestBookPrepareOrder(t *testing.T) {
 		},
 	}, {
 		name:        "bid invalid duration",
-		expectedErr: "bucket for duration 143 is in state",
+		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
 			o := &order.Bid{
 				Bid: orderT.Bid{
@@ -230,7 +235,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(0),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -249,7 +254,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  0,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -268,7 +273,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor - 1,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -287,7 +292,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(500_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -308,6 +313,27 @@ func TestBookPrepareOrder(t *testing.T) {
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    145,
 						MinUnitsMatch:    1,
+						Version:          orderT.VersionLeaseDurationBuckets,
+					},
+				},
+			}
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name:        "invalid version for duration",
+		expectedErr: "cannot submit order outside of default 2016 duration bucket",
+		run: func() error {
+			o := &order.Ask{
+				Ask: orderT.Ask{
+					Kit: orderT.Kit{
+						Amt:              100_000,
+						Units:            orderT.NewSupplyFromSats(100_000),
+						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+						AcctKey:          toRawKey(testTraderKey),
+						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+						LeaseDuration:    4032,
+						MinUnitsMatch:    1,
+						Version:          orderT.VersionNodeTierMinMatch,
 					},
 				},
 			}
@@ -325,7 +351,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(200_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -345,7 +371,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						FixedRate:        100_000,
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -364,7 +390,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -395,7 +421,7 @@ func TestBookPrepareOrder(t *testing.T) {
 						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1024,
+						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -428,7 +454,7 @@ func TestBookPrepareOrder(t *testing.T) {
 							UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
 							AcctKey:          toRawKey(testAuctioneerKey),
 							MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-							LeaseDuration:    1024,
+							LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 							MinUnitsMatch:    1,
 						},
 					},

@@ -353,11 +353,20 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 		leaseDuration = o.LeaseDuration()
 	}
 
+	// Only clients that understand multiple lease buckets are allowed to
+	// create orders outside of the default/legacy bucket. Otherwise they
+	// wouldn't know how to validate those batches.
+	if srvOrder.Details().Version < order.VersionLeaseDurationBuckets &&
+		leaseDuration != order.LegacyLeaseDurationBucket {
+
+		return fmt.Errorf("cannot submit order outside of default %d "+
+			"duration bucket with old trader client, please "+
+			"update your software", order.LegacyLeaseDurationBucket)
+	}
+
 	// Next, we'll ensure that the duration is actual part of the current
 	// set of duration buckets, and also that this market isn't closed and
 	// is currently accepting orders.
-	//
-	// TODO(roasbeef): only attempt to enforce if non-nil?
 	marketState := b.DurationBuckets().QueryMarketState(leaseDuration)
 	switch marketState {
 	case BucketStateAcceptingOrders, BucketStateClearingMarket:
