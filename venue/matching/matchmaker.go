@@ -52,17 +52,23 @@ type UniformPriceCallMarket struct {
 	feeSchedule terms.FeeSchedule
 
 	sync.Mutex
+
+	// durationBuckets holds all available lease duration buckets and their
+	// current state and grants access to them in a concurrency-safe way.
+	durationBuckets *order.DurationBuckets
 }
 
 // NewUniformPriceCallMarket returns a new instance of the
 // UniformPriceCallMarket struct given the price clearer and fee schedule for
 // this current batch epoch.
 func NewUniformPriceCallMarket(priceClearer PriceClearer,
-	feeSchedule terms.FeeSchedule) *UniformPriceCallMarket {
+	feeSchedule terms.FeeSchedule,
+	durationBuckets *order.DurationBuckets) *UniformPriceCallMarket {
 
 	u := &UniformPriceCallMarket{
-		priceClearer: priceClearer,
-		feeSchedule:  feeSchedule,
+		priceClearer:    priceClearer,
+		feeSchedule:     feeSchedule,
+		durationBuckets: durationBuckets,
 	}
 
 	u.Lock()

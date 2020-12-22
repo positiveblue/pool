@@ -290,7 +290,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{},
-				auctionTerms.FeeSchedule(),
+				auctionTerms.FeeSchedule(), durationBuckets,
 			),
 			OrderFeed:           orderBook,
 			BatchExecutor:       batchExecutor,

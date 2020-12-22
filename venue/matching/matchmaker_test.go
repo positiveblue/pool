@@ -20,7 +20,14 @@ var (
 	dummyFilterChain = []OrderFilter{
 		NewBatchFeeRateFilter(chainfee.FeePerKwFloor),
 	}
+	testDuration = orderT.LegacyLeaseDurationBucket
 )
+
+func defaultBuckets() *order.DurationBuckets {
+	buckets := order.NewDurationBuckets()
+	buckets.AddNewMarket(testDuration, order.BucketStateClearingMarket)
+	return buckets
+}
 
 // TestCallMarketConsiderForgetOrders tests that we're able to properly add and
 // remove orders from the uniform price call market.
@@ -36,6 +43,7 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 	scenario := func(orders orderSet) bool {
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			defaultBuckets(),
 		)
 
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
@@ -172,6 +180,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 	_, acctCacher, predicates := newAcctCacher()
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		defaultBuckets(),
 	)
 
 	_, err := callMarket.MaybeClear(
@@ -199,6 +208,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 	// orders.
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		defaultBuckets(),
 	)
 	if err := callMarket.ConsiderBids(bid); err != nil {
 		t.Fatalf("unable to add bids")
@@ -239,6 +249,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		// We'll start with making a new call market,
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			defaultBuckets(),
 		)
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
 			t.Logf("unable to add bids")
@@ -476,6 +487,7 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	// Next, we'll create our call market, and add the orders.
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		defaultBuckets(),
 	)
 	if err := callMarket.ConsiderBids(bids...); err != nil {
 		t.Fatalf("unable to add bids")
@@ -524,6 +536,7 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 		// LastAcceptedBid is the clearing price model used.
 		callMarket := NewUniformPriceCallMarket(
 			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			defaultBuckets(),
 		)
 
 		// Add all orders from the scenario to the call market, and
@@ -695,6 +708,7 @@ func assertNotInBatch(t *testing.T, acctCacher *AccountFilter,
 	// LastAcceptedBid is the clearing price model used.
 	callMarket := NewUniformPriceCallMarket(
 		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		defaultBuckets(),
 	)
 	filterChain := []OrderFilter{acctCacher}
 
