@@ -27,7 +27,8 @@ const batchVersion = uint32(orderT.CurrentBatchVersion)
 // by an LSAT.
 type multiplexMessage struct {
 	commLine         *DuplexLine
-	matchedOrders    map[orderT.Nonce][]*matching.MatchedOrder
+	matchedOrders    map[uint32]map[orderT.Nonce][]*matching.MatchedOrder
+	clearingPrices   map[uint32]orderT.FixedRatePremium
 	chargedAccounts  []matching.AccountDiff
 	accountOutpoints []wire.OutPoint
 }
@@ -167,37 +168,64 @@ func (e *environment) sendPrepareMsg() error {
 	if err := e.exeCtx.ExeTx.Serialize(&batchTxBuf); err != nil {
 		return err
 	}
+	batch := e.exeCtx.OrderBatch
 
 	// What the venue sees as a trader is only one account of a trader's
 	// daemon that might manage multiple accounts. The prepare message must
 	// only be sent once per daemon/connection, otherwise the daemon will
 	// only sign for the latest message. To identify which accounts (venue
 	// "traders") belong together, we can use the LSAT ID.
-	var (
-		msgs = make(map[lsat.TokenID]*multiplexMessage)
-		msg  *multiplexMessage
-		ok   bool
-	)
+	msgs := make(map[lsat.TokenID]*multiplexMessage)
+
+	// Before we start adding orders to the messages, we need to make sure
+	// that all the maps are properly initialized all the way down. This is
+	// mostly necessary because we create one message per trader daemon that
+	// can contain orders for multiple accounts of that daemon (=same LSAT).
+	// Those orders can be for the same durations but also for distinct
+	// ones. So we don't fully know what durations to create sub maps for.
+	// That's why we just go ahead and create them for all durations, even
+	// if some of them won't be filled with orders.
+	for _, trader := range e.traders {
+		// Multiple traders can have the same token ID (meaning they
+		// belong to the same trader daemon). We'll only create and send
+		// one message per daemon (=one token).
+		_, ok := msgs[trader.TokenID]
+		if ok {
+			// The message is already set up.
+			continue
+		}
+
+		// Let's make sure we have the matched orders initialized with a
+		// sub map for every possible duration in the message. If this
+		// particular trader doesn't have any orders matched for that
+		// duration, this will create an empty map anyway. But that
+		// should be handled correctly by the trader.
+		matchedOrders := make(
+			map[uint32]map[orderT.Nonce][]*matching.MatchedOrder,
+		)
+		for duration := range batch.SubBatches {
+			matchedOrders[duration] = make(
+				map[orderT.Nonce][]*matching.MatchedOrder,
+			)
+		}
+
+		// We haven't seen the daemon with this token yet. Create a new
+		// multi-plex message now. All venue traders (=accounts) for
+		// this token are hooked up to the same comm line so we only
+		// need to pick one, so we pick the first one we come across.
+		msgs[trader.TokenID] = &multiplexMessage{
+			commLine:      trader.CommLine,
+			matchedOrders: matchedOrders,
+			clearingPrices: make(
+				map[uint32]orderT.FixedRatePremium,
+			),
+		}
+	}
 
 	// For each venue trader, we'll collect all the matched orders it
 	// belongs to, along with the other required information.
 	for _, trader := range e.traders {
-		msg, ok = msgs[trader.TokenID]
-		if !ok {
-			// We haven't seen the daemon with this token yet.
-			// Create a new multi-plex message now. All venue
-			// traders for this token are hooked up to the same comm
-			// line so we only need to pick one, so we pick the
-			// first one we come across.
-			msg = &multiplexMessage{
-				commLine: trader.CommLine,
-				matchedOrders: make(
-					map[orderT.Nonce][]*matching.MatchedOrder,
-				),
-			}
-			msgs[trader.TokenID] = msg
-		}
-
+		msg := msgs[trader.TokenID]
 		traderKey := trader.AccountKey
 		msg.chargedAccounts = append(
 			msg.chargedAccounts, accountDiffs[traderKey],
@@ -211,32 +239,38 @@ func (e *environment) sendPrepareMsg() error {
 		// belongs to, and also update our map tracking the order for
 		// each trader.
 		e.traderToOrders = make(map[matching.AccountID][]orderT.Nonce)
-		for _, order := range e.exeCtx.OrderBatch.Orders {
-			order := order
+		for duration, subBatch := range batch.SubBatches {
+			matchedOrders := msg.matchedOrders[duration]
+			for _, o := range subBatch {
+				o := o
 
-			var orderNonce orderT.Nonce
+				var orderNonce orderT.Nonce
 
-			switch {
-			case order.Asker.AccountKey == traderKey:
-				orderNonce = order.Details.Ask.Nonce()
+				switch {
+				case o.Asker.AccountKey == traderKey:
+					orderNonce = o.Details.Ask.Nonce()
 
-			case order.Bidder.AccountKey == traderKey:
-				orderNonce = order.Details.Bid.Nonce()
+				case o.Bidder.AccountKey == traderKey:
+					orderNonce = o.Details.Bid.Nonce()
 
-			default:
-				// The trader isn't a part of this order, so
-				// we'll go onto the next one.
-				continue
+				default:
+					// The trader isn't a part of this
+					// order, so we'll go onto the next one.
+					continue
+				}
+
+				matchedOrders[orderNonce] = append(
+					matchedOrders[orderNonce], &o,
+				)
+
+				e.traderToOrders[traderKey] = append(
+					e.traderToOrders[traderKey],
+					orderNonce,
+				)
 			}
 
-			msg.matchedOrders[orderNonce] = append(
-				msg.matchedOrders[orderNonce], &order,
-			)
-
-			e.traderToOrders[traderKey] = append(
-				e.traderToOrders[traderKey],
-				orderNonce,
-			)
+			msg.matchedOrders[duration] = matchedOrders
+			msg.clearingPrices[duration] = batch.ClearingPrices[duration]
 		}
 	}
 
@@ -245,7 +279,7 @@ func (e *environment) sendPrepareMsg() error {
 		select {
 		case msg.commLine.Send <- &PrepareMsg{
 			MatchedOrders:    msg.matchedOrders,
-			ClearingPrice:    e.exeCtx.OrderBatch.ClearingPrice,
+			ClearingPrices:   msg.clearingPrices,
 			ChargedAccounts:  msg.chargedAccounts,
 			AccountOutPoints: msg.accountOutpoints,
 			ExecutionFee:     e.exeCtx.FeeSchedule,

@@ -1161,76 +1161,104 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*poolrpc.ServerAuctionMessage,
 			m.ExecutionFee)
 	}
 
+	// Orders and prices are grouped by the distinct lease duration markets.
+	markets := make(map[uint32]*poolrpc.MatchedMarket)
+
 	// Each order the user submitted may be matched to one or more
 	// corresponding orders, so we'll map the in-memory representation we
 	// use to the proto representation that we need to send to the client.
-	matchedOrders := make(map[string]*poolrpc.MatchedOrder)
-	for traderOrderNonce, orderMatches := range m.MatchedOrders {
-		rpcLog.Debugf("Order(%x) matched w/ %v orders",
-			traderOrderNonce[:], len(m.MatchedOrders))
+	for duration, subBatches := range m.MatchedOrders {
+		matchedOrders := make(map[string]*poolrpc.MatchedOrder)
+		for traderOrderNonce, orderMatches := range subBatches {
+			rpcLog.Debugf("Order(%x) matched w/ %v orders",
+				traderOrderNonce[:], len(m.MatchedOrders))
 
-		nonceStr := hex.EncodeToString(traderOrderNonce[:])
-		matchedOrders[nonceStr] = &poolrpc.MatchedOrder{}
-		mo := matchedOrders[nonceStr]
+			nonceStr := hex.EncodeToString(traderOrderNonce[:])
+			matchedOrders[nonceStr] = &poolrpc.MatchedOrder{}
+			mo := matchedOrders[nonceStr]
 
-		// As we support partial patches, this trader nonce might be
-		// matched with a set of other orders, so we'll unroll this here
-		// now.
-		for _, o := range orderMatches {
-			// Find out if the recipient of the message is the asker
-			// or bidder. Traders with the same token can't be
-			// matched so we know that if the asker's account is in
-			// the list of charged accounts, the trader is the
-			// asker.
-			isAsk := false
-			for _, acct := range m.ChargedAccounts {
-				acctKey := acct.StartingState.AccountKey
-				if o.Asker.AccountKey == acctKey {
-					isAsk = true
-					break
+			// As we support partial patches, this trader nonce
+			// might be matched with a set of other orders, so we'll
+			// unroll this here now.
+			for _, o := range orderMatches {
+				// Find out if the recipient of the message is
+				// the asker or bidder. Traders with the same
+				// token can't be matched so we know that if the
+				// asker's account is in the list of charged
+				// accounts, the trader is the asker.
+				isAsk := false
+				for _, acct := range m.ChargedAccounts {
+					acctKey := acct.StartingState.AccountKey
+					if o.Asker.AccountKey == acctKey {
+						isAsk = true
+						break
+					}
+				}
+
+				unitsFilled := o.Details.Quote.UnitsMatched
+
+				// If the client had their bid matched, then
+				// we'll send over the ask information and the
+				// other way around if it's a bid.
+				ask, bid := o.Details.Ask, o.Details.Bid
+				if !isAsk {
+					mo.MatchedAsks = append(
+						mo.MatchedAsks,
+						marshallMatchedAsk(
+							ask, unitsFilled,
+						),
+					)
+				} else {
+					mo.MatchedBids = append(
+						mo.MatchedBids,
+						marshallMatchedBid(
+							bid, unitsFilled,
+						),
+					)
 				}
 			}
+		}
 
-			unitsFilled := o.Details.Quote.UnitsMatched
-
-			// If the client had their bid matched, then we'll send
-			// over the ask information and the other way around if
-			// it's a bid.
-			ask, bid := o.Details.Ask, o.Details.Bid
-			if !isAsk {
-				mo.MatchedAsks = append(
-					mo.MatchedAsks,
-					marshallMatchedAsk(ask, unitsFilled),
-				)
-			} else {
-				mo.MatchedBids = append(
-					mo.MatchedBids,
-					marshallMatchedBid(bid, unitsFilled),
-				)
-			}
+		markets[duration] = &poolrpc.MatchedMarket{
+			MatchedOrders:     matchedOrders,
+			ClearingPriceRate: uint32(m.ClearingPrices[duration]),
 		}
 	}
 
 	// Next, for each account that the user had in this batch, we'll
 	// generate a similar RPC account diff so they can verify their portion
 	// of the batch.
-	var accountDiffs []*poolrpc.AccountDiff
+	accountDiffs := make([]*poolrpc.AccountDiff, len(m.ChargedAccounts))
 	for idx, acctDiff := range m.ChargedAccounts {
-		acctDiff, err := marshallAccountDiff(
+		var err error
+		accountDiffs[idx], err = marshallAccountDiff(
 			acctDiff, m.AccountOutPoints[idx],
 		)
 		if err != nil {
 			return nil, err
 		}
-
-		accountDiffs = append(accountDiffs, acctDiff)
 	}
 
+	// To accommodate any legacy node participating in a batch, we need to
+	// also send the orders in the deprecated fields. This assumes the
+	// trader was matched with a 2016 block duration order, otherwise
+	// something would be quite wrong.
+	var (
+		legacyMatchedOrders map[string]*poolrpc.MatchedOrder
+		legacyClearingPrice uint32
+	)
+	legacyMarket, ok := markets[orderT.LegacyLeaseDurationBucket]
+	if ok {
+		legacyMatchedOrders = legacyMarket.MatchedOrders
+		legacyClearingPrice = legacyMarket.ClearingPriceRate
+	}
+
+	// Last, group the matched orders by their lease duration markets.
 	return &poolrpc.ServerAuctionMessage{
 		Msg: &poolrpc.ServerAuctionMessage_Prepare{
 			Prepare: &poolrpc.OrderMatchPrepare{
-				MatchedOrders:     matchedOrders,
-				ClearingPriceRate: uint32(m.ClearingPrice),
+				MatchedOrders:     legacyMatchedOrders,
+				ClearingPriceRate: legacyClearingPrice,
 				ChargedAccounts:   accountDiffs,
 				ExecutionFee: &poolrpc.ExecutionFee{
 					BaseFee: uint64(m.ExecutionFee.BaseFee()),
@@ -1240,6 +1268,7 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*poolrpc.ServerAuctionMessage,
 				FeeRateSatPerKw:  uint64(m.FeeRate),
 				BatchId:          m.BatchID[:],
 				BatchVersion:     m.BatchVersion,
+				MatchedMarkets:   markets,
 			},
 		},
 	}, nil
