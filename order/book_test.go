@@ -106,12 +106,12 @@ func TestBookPrepareOrder(t *testing.T) {
 	feeSchedule := terms.NewLinearFeeSchedule(1, 100)
 	durations := order.NewDurationBuckets()
 
-	durations.AddNewMarket(
+	durations.PutMarket(
 		orderT.LegacyLeaseDurationBucket,
 		order.BucketStateAcceptingOrders,
 	)
-	durations.AddNewMarket(145, order.BucketStateNoMarket)
-	durations.AddNewMarket(4032, order.BucketStateClearingMarket)
+	durations.PutMarket(145, order.BucketStateNoMarket)
+	durations.PutMarket(4032, order.BucketStateClearingMarket)
 
 	book := order.NewBook(&order.BookConfig{
 		Store:           store,
@@ -499,7 +499,7 @@ func TestCancelOrderWithPreimage(t *testing.T) {
 	signer := &mockSigner{shouldVerify: true}
 
 	durations := order.NewDurationBuckets()
-	durations.AddNewMarket(1024, order.BucketStateAcceptingOrders)
+	durations.PutMarket(1024, order.BucketStateAcceptingOrders)
 
 	book := order.NewBook(&order.BookConfig{
 		Store:           store,

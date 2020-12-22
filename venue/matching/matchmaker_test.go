@@ -25,7 +25,7 @@ var (
 
 func defaultBuckets() *order.DurationBuckets {
 	buckets := order.NewDurationBuckets()
-	buckets.AddNewMarket(testDuration, order.BucketStateClearingMarket)
+	buckets.PutMarket(testDuration, order.BucketStateClearingMarket)
 	return buckets
 }
 

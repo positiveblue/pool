@@ -475,7 +475,7 @@ func (s *Server) Start() error {
 			return
 		}
 		for duration, marketState := range buckets {
-			s.durationBuckets.AddNewMarket(duration, marketState)
+			s.durationBuckets.PutMarket(duration, marketState)
 		}
 
 		if s.ratingsDB != nil {

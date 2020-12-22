@@ -77,9 +77,10 @@ func (d *DurationBuckets) QueryMarketState(durationBlocks uint32,
 	return marketState
 }
 
-// AddNewMarket adds a new duration market with the given state to the set of
-// duration buckets.
-func (d *DurationBuckets) AddNewMarket(durationBlocks uint32,
+// PutMarket adds a new duration market with the given state to the set of
+// duration buckets or updates the state of the existing bucket if it already
+// exists.
+func (d *DurationBuckets) PutMarket(durationBlocks uint32,
 	state DurationBucketState) {
 
 	d.RLock()
@@ -117,4 +118,12 @@ func (d *DurationBuckets) IterBuckets(f func(durationBlocks uint32,
 	}
 
 	return nil
+}
+
+// RemoveMarket completely removes the market with the given duration.
+func (d *DurationBuckets) RemoveMarket(durationBlocks uint32) {
+	d.RLock()
+	defer d.RUnlock()
+
+	delete(d.buckets, durationBlocks)
 }
