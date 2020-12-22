@@ -1532,9 +1532,15 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// We pass in our two conflict handlers that also act as match
 		// predicates together with the default predicate chain.
-		predicateChain := []matching.MatchPredicate{
-			a.cfg.FundingConflicts, a.cfg.TraderRejected,
-		}
+		predicateChain := make(
+			[]matching.MatchPredicate,
+			len(matching.DefaultPredicateChain),
+		)
+		copy(predicateChain, matching.DefaultPredicateChain)
+		predicateChain = append(
+			predicateChain, a.cfg.FundingConflicts,
+			a.cfg.TraderRejected,
+		)
 
 		batchKey, err := a.cfg.DB.BatchKey(context.Background())
 		if err != nil {
@@ -1554,10 +1560,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 				predicateChain, ratingAgencyPredicate,
 			)
 		}
-
-		predicateChain = append(
-			predicateChain, matching.DefaultPredicateChain...,
-		)
 
 		log.Debugf("Using fee rate %v for match making", s.batchFeeRate)
 
