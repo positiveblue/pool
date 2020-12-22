@@ -607,11 +607,22 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	)
 	require.NoError(t.t, err)
 
+	// There must be at least one lease duration, even for older versions of
+	// batches.
+	require.Len(t.t, batchSnapshot.MatchedMarkets, 1)
+	var duration uint32
+	for key := range batchSnapshot.MatchedMarkets {
+		duration = key
+		break
+	}
+	market := batchSnapshot.MatchedMarkets[duration]
+	require.NotNil(t.t, market)
+
 	// The final clearing price should match the expected fixed rate passed
 	// in and the creation timestamp should be within one minute of the
 	// current time.
 	require.Equal(
-		t.t, uint32(clearingPrice), batchSnapshot.ClearingPriceRate,
+		t.t, uint32(clearingPrice), market.ClearingPriceRate,
 	)
 	require.InDelta(
 		t.t, uint64(time.Now().UnixNano()),
@@ -621,8 +632,8 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	// Next we'll compile a map of the included ask and bid orders so we
 	// can assert the existence of the orders we created above.
 	matchedOrderAmts := make(map[uint64]struct{})
-	for _, order := range batchSnapshot.MatchedOrders {
-		matchedOrderAmts[order.TotalSatsCleared] = struct{}{}
+	for _, o := range market.MatchedOrders {
+		matchedOrderAmts[o.TotalSatsCleared] = struct{}{}
 	}
 
 	// Next we'll assert that all the expected orders have been found in
@@ -847,15 +858,15 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// premium, in order to make what's left on the bidders account into
 	// dust.
 	//
-	// 635_000 per billion of 100_000 sats for 1440 blocks is 91_440 sats,
-	// so the trader will only have 8560 sats left to pay for chain fees
+	// 453_500 per billion of 100_000 sats for 2016 blocks is 91_425 sats,
+	// so the trader will only have 8575 sats left to pay for chain fees
 	// and execution fees.
 	//
 	// The execution fee is 101 sats, chain fee 8162 sats (at the static
 	// fee rate of 12500 s/kw), so what is left will be dust (< 678 sats).
 	const orderSize = 100_000
-	const matchRate = 635_000
-	const durationBlocks = 1440
+	const matchRate = 453_500
+	const durationBlocks = 2016
 
 	// Submit an ask an bid which will match exactly.
 	_, err = submitAskOrder(
@@ -1115,7 +1126,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// First, Charlie will buy half of that ask in batch 1.
 	const askSize = 400_000
 	const askRate = 2000
-	const durationBlocks = 1440
+	const durationBlocks = 2016
 
 	// Submit an ask an bid that matches half of the ask.
 	_, err = submitAskOrder(
@@ -1247,7 +1258,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	const bidSize1 = 300_000
 	const bidSize2 = 200_000
 	const askRate = 2000
-	const durationBlocks = 1440
+	const durationBlocks = 2016
 
 	// Submit an ask order that is large enough to be matched multiple
 	// times.
