@@ -109,7 +109,6 @@ func TestBookPrepareOrder(t *testing.T) {
 	durations.AddNewMarket(1024, order.BucketStateAcceptingOrders)
 
 	book := order.NewBook(&order.BookConfig{
-		MaxDuration:     1234,
 		Store:           store,
 		Signer:          signer,
 		DurationBuckets: durations,
@@ -144,8 +143,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
-		name:        "ask max duration 0",
-		expectedErr: "invalid max duration",
+		name:        "ask duration 0",
+		expectedErr: "bucket for duration 0 is in state",
 		run: func() error {
 			o := &order.Ask{
 				Ask: orderT.Ask{
@@ -163,8 +162,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
-		name:        "ask max duration low",
-		expectedErr: "invalid max duration",
+		name:        "ask invalid duration",
+		expectedErr: "bucket for duration 143 is in state",
 		run: func() error {
 			o := &order.Ask{
 				Ask: orderT.Ask{
@@ -182,27 +181,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
-		name:        "ask max duration too large",
-		expectedErr: "maximum allowed value for max duration is 1234",
-		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1235,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
-			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
-		},
-	}, {
-		name:        "bid min duration 0",
-		expectedErr: "invalid min duration",
+		name:        "bid duration 0",
+		expectedErr: "bucket for duration 0 is in state",
 		run: func() error {
 			o := &order.Bid{
 				Bid: orderT.Bid{
@@ -220,8 +200,8 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
-		name:        "bid min duration low",
-		expectedErr: "invalid min duration",
+		name:        "bid invalid duration",
+		expectedErr: "bucket for duration 143 is in state",
 		run: func() error {
 			o := &order.Bid{
 				Bid: orderT.Bid{
@@ -251,25 +231,6 @@ func TestBookPrepareOrder(t *testing.T) {
 						AcctKey:          toRawKey(testTraderKey),
 						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 						LeaseDuration:    1024,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
-			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
-		},
-	}, {
-		name:        "bid min duration too large",
-		expectedErr: "maximum allowed value for min duration is 1234",
-		run: func() error {
-			o := &order.Bid{
-				Bid: orderT.Bid{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    1235,
 						MinUnitsMatch:    1,
 					},
 				},
@@ -515,7 +476,6 @@ func TestCancelOrderWithPreimage(t *testing.T) {
 	durations.AddNewMarket(1024, order.BucketStateAcceptingOrders)
 
 	book := order.NewBook(&order.BookConfig{
-		MaxDuration:     1234,
 		Store:           store,
 		Signer:          signer,
 		DurationBuckets: durations,

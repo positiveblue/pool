@@ -48,10 +48,6 @@ type BookConfig struct {
 	// Signer is used to verify order signatures.
 	Signer lndclient.SignerClient
 
-	// MaxDuration is the maximum value for a bid's min duration or an ask's
-	// max duration.
-	MaxDuration uint32
-
 	// DurationBuckets should point to the set of active duration buckets
 	// for this market.
 	DurationBuckets *DurationBuckets
@@ -351,27 +347,9 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	var leaseDuration uint32
 	switch o := srvOrder.(type) {
 	case *Ask:
-		if o.LeaseDuration() < order.MinimumOrderDurationBlocks {
-			return fmt.Errorf("invalid max duration, must be at "+
-				"least %d", order.MinimumOrderDurationBlocks)
-		}
-		if o.LeaseDuration() > b.cfg.MaxDuration {
-			return fmt.Errorf("maximum allowed value for max "+
-				"duration is %d", b.cfg.MaxDuration)
-		}
-
 		leaseDuration = o.LeaseDuration()
 
 	case *Bid:
-		if o.LeaseDuration() < order.MinimumOrderDurationBlocks {
-			return fmt.Errorf("invalid min duration, must be at "+
-				"least %d", order.MinimumOrderDurationBlocks)
-		}
-		if o.LeaseDuration() > b.cfg.MaxDuration {
-			return fmt.Errorf("maximum allowed value for min "+
-				"duration is %d", b.cfg.MaxDuration)
-		}
-
 		leaseDuration = o.LeaseDuration()
 	}
 

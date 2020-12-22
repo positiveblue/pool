@@ -92,7 +92,6 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
 			BatchConfTarget:   6,
 			MaxAcctValue:      10 * btcutil.SatoshiPerBitcoin,
-			MaxDuration:       365 * 144,
 			SubscribeTimeout:  500 * time.Millisecond,
 			Lnd: &subasta.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),

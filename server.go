@@ -227,7 +227,6 @@ func NewServer(cfg *Config) (*Server, error) {
 	orderBook := order.NewBook(&order.BookConfig{
 		Store:           store,
 		Signer:          lnd.Signer,
-		MaxDuration:     cfg.MaxDuration,
 		DurationBuckets: durationBuckets,
 	})
 

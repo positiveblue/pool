@@ -85,11 +85,6 @@ const (
 	// if no other configuration value is set.
 	defaultMaxAcctValue int64 = btcutil.SatoshiPerBitcoin
 
-	// defaultMaxDuration is the default maximum value for an order's min
-	// duration (bid) or max duration (ask). The default is equal to the
-	// number of blocks in a year.
-	defaultMaxDuration uint32 = 365 * 144
-
 	// defaultAccountExpiryOffset is a value expressed in blocks that subtracted
 	// from the expiry of an account in order to determine if it expires
 	// "too soon". This value should essentially represent an upper bound
@@ -223,7 +218,6 @@ var DefaultConfig = &Config{
 	ExecFeeRate:      DefaultExecutionFeeRate,
 	BatchConfTarget:  defaultBatchConfTarget,
 	MaxAcctValue:     defaultMaxAcctValue,
-	MaxDuration:      defaultMaxDuration,
 	SubscribeTimeout: defaultSubscribeTimeout,
 	ServerName:       "auction.lightning.today",
 	Insecure:         false,
