@@ -438,7 +438,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	server.adminServer = newAdminRPCServer(
 		auctioneerServer, adminListener, adminServerOpts,
-		server.auctioneer, store,
+		server.auctioneer, store, durationBuckets,
 	)
 	cfg.Prometheus.AdminRPCServer = server.adminServer.grpcServer
 	adminrpc.RegisterAuctionAdminServer(

@@ -43,20 +43,24 @@ type adminRPCServer struct {
 	mainRPCServer *rpcServer
 	auctioneer    *Auctioneer
 	store         *subastadb.EtcdStore
+
+	durationBuckets *order.DurationBuckets
 }
 
 // newAdminRPCServer creates a new adminRPCServer.
 func newAdminRPCServer(mainRPCServer *rpcServer, listener net.Listener,
 	serverOpts []grpc.ServerOption, auctioneer *Auctioneer,
-	store *subastadb.EtcdStore) *adminRPCServer {
+	store *subastadb.EtcdStore,
+	durationBuckets *order.DurationBuckets) *adminRPCServer {
 
 	return &adminRPCServer{
-		grpcServer:    grpc.NewServer(serverOpts...),
-		listener:      listener,
-		quit:          make(chan struct{}),
-		mainRPCServer: mainRPCServer,
-		auctioneer:    auctioneer,
-		store:         store,
+		grpcServer:      grpc.NewServer(serverOpts...),
+		listener:        listener,
+		quit:            make(chan struct{}),
+		mainRPCServer:   mainRPCServer,
+		auctioneer:      auctioneer,
+		store:           store,
+		durationBuckets: durationBuckets,
 	}
 }
 
@@ -395,15 +399,29 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 		return nil, err
 	}
 
+	durationBuckets, err := s.store.LeaseDurations(ctx)
+	if err != nil {
+		return nil, err
+	}
+	rpcDurationBuckets := make(map[uint32]poolrpc.DurationBucketState)
+	for duration, state := range durationBuckets {
+		rpcState, err := marshallDurationBucketState(state)
+		if err != nil {
+			return nil, err
+		}
+		rpcDurationBuckets[duration] = rpcState
+	}
+
 	batchTicker := s.auctioneer.cfg.BatchTicker
 	pendingID := s.auctioneer.getPendingBatchID()
 	result := &adminrpc.AuctionStatusResponse{
-		PendingBatchId:    pendingID[:],
-		CurrentBatchId:    currentBatchKey.SerializeCompressed(),
-		BatchTickerActive: batchTicker.IsActive(),
-		LastTimedTick:     uint64(batchTicker.LastTimedTick().Unix()),
-		SecondsToNextTick: uint64(batchTicker.NextTickIn().Seconds()),
-		AuctionState:      state.String(),
+		PendingBatchId:       pendingID[:],
+		CurrentBatchId:       currentBatchKey.SerializeCompressed(),
+		BatchTickerActive:    batchTicker.IsActive(),
+		LastTimedTick:        uint64(batchTicker.LastTimedTick().Unix()),
+		SecondsToNextTick:    uint64(batchTicker.NextTickIn().Seconds()),
+		AuctionState:         state.String(),
+		LeaseDurationBuckets: rpcDurationBuckets,
 	}
 
 	// Don't calculate the last key if the current one is the initial one as
@@ -831,4 +849,86 @@ func (s *adminRPCServer) ListNodeRatings(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+func (s *adminRPCServer) StoreLeaseDuration(ctx context.Context,
+	in *adminrpc.LeaseDuration) (*adminrpc.EmptyResponse, error) {
+
+	// Sanity check to avoid adding invalid buckets by accident.
+	if in.Duration == 0 ||
+		in.Duration%orderT.MinimumOrderDurationBlocks != 0 {
+
+		return nil, fmt.Errorf("invalid duration %d, must be non-zero "+
+			"and multiple of %d", in.Duration,
+			orderT.MinimumOrderDurationBlocks)
+	}
+
+	marketState, err := parseRPCDurationBucketState(in.BucketState)
+	if err != nil {
+		return nil, fmt.Errorf("error parsing bucket state: %v", err)
+	}
+
+	err = s.store.StoreLeaseDuration(ctx, in.Duration, marketState)
+	if err != nil {
+		return nil, fmt.Errorf("error storing duration: %v", err)
+	}
+
+	// We've updated the database, let's now also update the in-memory state
+	// of the bucket instance that the order book also uses. If that market
+	// already exists, it will just be updated to the new state.
+	s.durationBuckets.PutMarket(in.Duration, marketState)
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
+func (s *adminRPCServer) RemoveLeaseDuration(ctx context.Context,
+	in *adminrpc.LeaseDuration) (*adminrpc.EmptyResponse, error) {
+
+	// Make sure the bucket we're about to remove doesn't have any active
+	// orders.
+	activeOrders, err := s.store.GetOrders(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error getting active orders: %v", err)
+	}
+	for _, activeOrder := range activeOrders {
+		if activeOrder.Details().LeaseDuration == in.Duration {
+			return nil, fmt.Errorf("market with duration %d still "+
+				"has active order %v", in.Duration,
+				activeOrder.Nonce())
+		}
+	}
+
+	err = s.store.RemoveLeaseDuration(ctx, in.Duration)
+	if err != nil {
+		return nil, fmt.Errorf("error removing duration: %v", err)
+	}
+
+	// We've updated the database, let's now also update the in-memory state
+	// of the bucket instance that the order book also uses.
+	s.durationBuckets.RemoveMarket(in.Duration)
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
+func parseRPCDurationBucketState(
+	rpcState poolrpc.DurationBucketState) (order.DurationBucketState,
+	error) {
+
+	switch rpcState {
+	case poolrpc.DurationBucketState_NO_MARKET:
+		return order.BucketStateNoMarket, nil
+
+	case poolrpc.DurationBucketState_MARKET_CLOSED:
+		return order.BucketStateMarketClosed, nil
+
+	case poolrpc.DurationBucketState_ACCEPTING_ORDERS:
+		return order.BucketStateAcceptingOrders, nil
+
+	case poolrpc.DurationBucketState_MARKET_OPEN:
+		return order.BucketStateClearingMarket, nil
+
+	default:
+		return 0, fmt.Errorf("unknown duration bucket state: %v",
+			rpcState)
+	}
 }
