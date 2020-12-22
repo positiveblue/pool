@@ -1599,7 +1599,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			log.Infof("Have pending batches, attempting " +
 				"empty batch")
-			orderBatch = &matching.OrderBatch{}
+			orderBatch = matching.EmptyBatch()
 
 		case err != nil:
 			return nil, err

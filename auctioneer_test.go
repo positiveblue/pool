@@ -460,13 +460,10 @@ func (m *mockCallMarket) MaybeClear(_ matching.AccountCacher,
 			err)
 	}
 
-	return &matching.OrderBatch{
-		Orders: matches,
-		FeeReport: matching.NewTradingFeeReport(
-			matches, defaultFeeSchedule, clearingPrice,
-		),
-		ClearingPrice: clearingPrice,
-	}, nil
+	feeReport := matching.NewTradingFeeReport(
+		matches, defaultFeeSchedule, clearingPrice,
+	)
+	return matching.NewBatch(matches, feeReport, clearingPrice), nil
 }
 
 func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {

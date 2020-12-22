@@ -187,11 +187,7 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	// easily update all the order/account state in a single atomic
 	// transaction.
 	feeReport := NewTradingFeeReport(matches, u.feeSchedule, clearingPrice)
-	return &OrderBatch{
-		Orders:        matches,
-		FeeReport:     feeReport,
-		ClearingPrice: clearingPrice,
-	}, nil
+	return NewBatch(matches, feeReport, clearingPrice), nil
 }
 
 // filterAnomalies filters our any order among the matched orders for which the

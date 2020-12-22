@@ -54,7 +54,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	acctValue := btcutil.SatoshiPerBitcoin
 	numRandTraders := 10
 
-	orderBatch := &matching.OrderBatch{}
+	orderBatch := matching.EmptyBatch()
 
 	// First, we'll generate a series of random traders. Each trader will
 	// have the same account size to make our calculations below much
@@ -442,7 +442,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	orderSize := (acctValue - 1500) / 2
 
 	// We let one trader get two asks filled, and one trader get one fill.
-	orderBatch := &matching.OrderBatch{}
+	orderBatch := matching.EmptyBatch()
 	for i := 0; i < numRandTraders/2; i++ {
 		numChans := uint32(i)
 		asker := traders[i]
@@ -613,7 +613,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	acctValue := btcutil.Amount(btcutil.SatoshiPerBitcoin)
 	numRandTraders := 2
 
-	orderBatch := &matching.OrderBatch{}
+	orderBatch := matching.EmptyBatch()
 
 	// Genarate the two traders.
 	traders := make([]*account.Account, numRandTraders)

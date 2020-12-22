@@ -150,6 +150,22 @@ type OrderBatch struct {
 	ClearingPrice orderT.FixedRatePremium
 }
 
+// NewBatch returns a new batch with the given match data.
+func NewBatch(orders []MatchedOrder, feeReport TradingFeeReport,
+	price orderT.FixedRatePremium) *OrderBatch {
+
+	return &OrderBatch{
+		Orders:        orders,
+		FeeReport:     feeReport,
+		ClearingPrice: price,
+	}
+}
+
+// EmptyBatch returns an empty batch.
+func EmptyBatch() *OrderBatch {
+	return &OrderBatch{}
+}
+
 // Copy performs a deep copy of the passed OrderBatch instance.
 func (o *OrderBatch) Copy() OrderBatch {
 	orders := make([]MatchedOrder, 0, len(o.Orders))
@@ -197,8 +213,8 @@ func (o *OrderBatch) Copy() OrderBatch {
 
 	return OrderBatch{
 		Orders:        orders,
-		ClearingPrice: o.ClearingPrice,
 		FeeReport:     feeReport,
+		ClearingPrice: o.ClearingPrice,
 	}
 }
 

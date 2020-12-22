@@ -151,7 +151,7 @@ func TestPersistBatchResult(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{testTraderKey}, accountModifiers,
-		ma1, batchID, &BatchSnapshot{batchTx, 0, &matching.OrderBatch{}},
+		ma1, batchID, &BatchSnapshot{batchTx, 0, matching.EmptyBatch()},
 		nextBatchKey, lifetimePkgs,
 	)
 	if err != nil {
@@ -292,7 +292,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{invalidAccountKey}, accountModifiers,
-		ma1, batchID, &BatchSnapshot{batchTx, 0, &matching.OrderBatch{}},
+		ma1, batchID, &BatchSnapshot{batchTx, 0, matching.EmptyBatch()},
 		testTraderKey, nil,
 	)
 	if err == nil {
@@ -373,67 +373,63 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		},
 		AccountBalance: 18,
 	}
-	batch := &matching.OrderBatch{
-		Orders: []matching.MatchedOrder{
-			{
-				Asker:  trader1,
-				Bidder: trader2,
-				Details: matching.OrderPair{
-					Ask: &order.Ask{
-						Ask: orderT.Ask{
-							Kit: *askClientKit,
-						},
-						Kit: *serverKit,
-					},
-					Bid: &order.Bid{
-						Bid: orderT.Bid{
-							Kit:         *bidClientKit,
-							MinNodeTier: 10,
-						},
-						Kit: *serverKit,
-					},
-					Quote: matching.PriceQuote{
-						MatchingRate:     9,
-						TotalSatsCleared: 8,
-						UnitsMatched:     7,
-						UnitsUnmatched:   6,
-						Type:             5,
-					},
+	orders := []matching.MatchedOrder{{
+		Asker:  trader1,
+		Bidder: trader2,
+		Details: matching.OrderPair{
+			Ask: &order.Ask{
+				Ask: orderT.Ask{
+					Kit: *askClientKit,
+				},
+				Kit: *serverKit,
+			},
+			Bid: &order.Bid{
+				Bid: orderT.Bid{
+					Kit:         *bidClientKit,
+					MinNodeTier: 10,
+				},
+				Kit: *serverKit,
+			},
+			Quote: matching.PriceQuote{
+				MatchingRate:     9,
+				TotalSatsCleared: 8,
+				UnitsMatched:     7,
+				UnitsUnmatched:   6,
+				Type:             5,
+			},
+		},
+	}}
+	feeReport := matching.TradingFeeReport{
+		AccountDiffs: map[matching.AccountID]matching.AccountDiff{
+			{1, 2, 3}: {
+				AccountTally: &orderT.AccountTally{
+					EndingBalance:          123,
+					TotalExecutionFeesPaid: 234,
+					TotalTakerFeesPaid:     345,
+					TotalMakerFeesAccrued:  456,
+					NumChansCreated:        567,
+				},
+				StartingState:   &trader2,
+				RecreatedOutput: nil,
+			},
+			{99, 88, 77, 66, 55, 44}: {
+				AccountTally: &orderT.AccountTally{
+					EndingBalance:          99,
+					TotalExecutionFeesPaid: 88,
+					TotalTakerFeesPaid:     77,
+					TotalMakerFeesAccrued:  66,
+					NumChansCreated:        55,
+				},
+				StartingState: &trader1,
+				RecreatedOutput: &wire.TxOut{
+					Value:    987654,
+					PkScript: []byte{77, 88, 99},
 				},
 			},
 		},
-		FeeReport: matching.TradingFeeReport{
-			AccountDiffs: map[matching.AccountID]matching.AccountDiff{
-				{1, 2, 3}: {
-					AccountTally: &orderT.AccountTally{
-						EndingBalance:          123,
-						TotalExecutionFeesPaid: 234,
-						TotalTakerFeesPaid:     345,
-						TotalMakerFeesAccrued:  456,
-						NumChansCreated:        567,
-					},
-					StartingState:   &trader2,
-					RecreatedOutput: nil,
-				},
-				{99, 88, 77, 66, 55, 44}: {
-					AccountTally: &orderT.AccountTally{
-						EndingBalance:          99,
-						TotalExecutionFeesPaid: 88,
-						TotalTakerFeesPaid:     77,
-						TotalMakerFeesAccrued:  66,
-						NumChansCreated:        55,
-					},
-					StartingState: &trader1,
-					RecreatedOutput: &wire.TxOut{
-						Value:    987654,
-						PkScript: []byte{77, 88, 99},
-					},
-				},
-			},
-			AuctioneerFeesAccrued: 1337,
-		},
-		ClearingPrice: 123,
+		AuctioneerFeesAccrued: 1337,
 	}
+	batch := matching.NewBatch(orders, feeReport, 123)
 
 	// All the orders above also need to be inserted as normal orders to
 	// ensure we're able to retrieve all the supplemental data we need.
