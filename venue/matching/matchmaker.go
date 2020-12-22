@@ -110,6 +110,44 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	// match maker for usage below.
 	matchMaker := NewMultiUnitMatchMaker(acctCacher, predicateChain)
 
+	// We try to clear a batch with the given filter chain.
+	matches, clearingPrice, err := u.clearBatch(matchMaker, filterChain)
+	if err != nil {
+		return nil, err
+	}
+
+	logMatches := func(matches []MatchedOrder) string {
+		s := ""
+		for _, m := range matches {
+			d := m.Details
+			s += fmt.Sprintf("ask=%v, bid=%v, units=%v\n",
+				d.Ask.Nonce(), d.Bid.Nonce(), d.Quote.UnitsMatched)
+		}
+
+		return s
+	}
+
+	log.Debugf("Final matches at clearing price %v: \n%v",
+		clearingPrice, logMatches(matches))
+
+	// As a final step, we'll compute the diff for each trader's account.
+	// With this final piece of information, the caller will be able to
+	// easily update all the order/account state in a single atomic
+	// transaction.
+	feeReport := NewTradingFeeReport(matches, u.feeSchedule, clearingPrice)
+	return NewBatch(matches, feeReport, clearingPrice), nil
+}
+
+// clearBatch tries to clear a batch given the matchmaker and filter chain. This
+// method can be called multiple times on the same set of batches, as long as
+// the filter chain makes sure the individual calls operate on distinct subsets
+// of the orders! For example filtering by distinct lease durations for each
+// invocation makes sure the different sub-batches are cleared for distinct
+// buckets of orders.
+func (u *UniformPriceCallMarket) clearBatch(matchMaker *MultiUnitMatchMaker,
+	filterChain []OrderFilter) ([]MatchedOrder, orderT.FixedRatePremium,
+	error) {
+
 	// At this point, there's may be at least a single order that we can
 	// execute, so we'll attempt to match the entire pending batch.
 	//
@@ -148,13 +186,13 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	matchSet, err := matchMaker.MatchBatch(bids, asks)
 	if err != nil {
 		// TODO(roasbeef): wrapped errors thru the entire codebase?
-		return nil, err
+		return nil, 0, err
 	}
 
 	// If we have no matched orders at all, then we can exit early here, as
 	// there's no market to make.
 	if len(matchSet.MatchedOrders) == 0 {
-		return nil, ErrNoMarketPossible
+		return nil, 0, ErrNoMarketPossible
 	}
 
 	// Now that we know all the orders to be executed for this batch (and
@@ -162,7 +200,7 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	// current price clearer instance.
 	clearingPrice, err := u.priceClearer.ExtractClearingPrice(matchSet)
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
 
 	// To ensure clearing price consistency within the batch, we filter out
@@ -170,30 +208,11 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	// otherwise something is off with how we extract the clearing price.
 	matches := filterAnomalies(matchSet.MatchedOrders, clearingPrice)
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("filtering match set of %d resulted "+
+		return nil, 0, fmt.Errorf("filtering match set of %d resulted "+
 			"in empty set", len(matchSet.MatchedOrders))
 	}
 
-	logMatches := func(matches []MatchedOrder) string {
-		s := ""
-		for _, m := range matches {
-			d := m.Details
-			s += fmt.Sprintf("ask=%v, bid=%v, units=%v\n",
-				d.Ask.Nonce(), d.Bid.Nonce(), d.Quote.UnitsMatched)
-		}
-
-		return s
-	}
-
-	log.Debugf("Final matches at clearing price %v: \n%v",
-		clearingPrice, logMatches(matches))
-
-	// As a final step, we'll compute the diff for each trader's account.
-	// With this final piece of information, the caller will be able to
-	// easily update all the order/account state in a single atomic
-	// transaction.
-	feeReport := NewTradingFeeReport(matches, u.feeSchedule, clearingPrice)
-	return NewBatch(matches, feeReport, clearingPrice), nil
+	return matches, clearingPrice, nil
 }
 
 // filterAnomalies filters our any order among the matched orders for which the
