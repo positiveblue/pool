@@ -175,10 +175,6 @@ type OrderBatch struct {
 	// transaction.
 	FeeReport TradingFeeReport
 
-	// ClearingPrice is the single clearing price that all traders in the
-	// batch will pay as computed within the FeeReport above.
-	ClearingPrice orderT.FixedRatePremium
-
 	// CreationTimestamp is the timestamp at which the batch was first
 	// persisted.
 	CreationTimestamp time.Time
@@ -269,7 +265,6 @@ func (o *OrderBatch) Copy() OrderBatch {
 	return OrderBatch{
 		Version:           o.Version,
 		Orders:            orders,
-		ClearingPrice:     o.ClearingPrice,
 		SubBatches:        subBatches,
 		FeeReport:         feeReport,
 		CreationTimestamp: o.CreationTimestamp,

@@ -52,7 +52,6 @@ func TestOrderBatchCopy(t *testing.T) {
 			orderT.LegacyLeaseDurationBucket: orders,
 		},
 		FeeReport:         feeReport,
-		ClearingPrice:     1234,
 		CreationTimestamp: time.Unix(123_456_789, 0),
 		ClearingPrices: map[uint32]orderT.FixedRatePremium{
 			orderT.LegacyLeaseDurationBucket: 1234,
