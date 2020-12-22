@@ -509,38 +509,55 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	batch := batchSnapshot.OrderBatch
 
 	resp := &adminrpc.AdminBatchSnapshotResponse{
-		Version:           uint32(batch.Version),
-		BatchId:           batchID[:],
-		PrevBatchId:       prevBatchID,
-		ClearingPriceRate: uint32(batch.ClearingPrice),
+		Version: uint32(batch.Version),
+		MatchedOrders: make(
+			map[uint32]*adminrpc.AdminMatchedOrderSnapshots,
+		),
+		BatchId:             batchID[:],
+		PrevBatchId:         prevBatchID,
+		ClearingPriceRate:   make(map[uint32]uint32),
+		CreationTimestampNs: uint64(batch.CreationTimestamp.UnixNano()),
 	}
 
 	// The response for this call is a bit simpler than the
 	// RelevantBatchSnapshot call, in that we only need to return the set
 	// of orders, and not also the accounts diffs.
-	resp.MatchedOrders = make(
-		[]*adminrpc.AdminMatchedOrderSnapshot, len(batch.Orders),
-	)
-	for i, o := range batch.Orders {
-		ask := o.Details.Ask
-		bid := o.Details.Bid
-		quote := o.Details.Quote
+	for duration, subBatch := range batch.SubBatches {
+		snapshots := make(
+			[]*adminrpc.AdminMatchedOrderSnapshot, len(subBatch),
+		)
+		for i, o := range subBatch {
+			ask := o.Details.Ask
+			bid := o.Details.Bid
+			quote := o.Details.Quote
 
-		resp.MatchedOrders[i] = &adminrpc.AdminMatchedOrderSnapshot{
-			Ask: &poolrpc.ServerAsk{
-				Details:             marshallServerOrder(ask),
-				LeaseDurationBlocks: ask.LeaseDuration(),
-				Version:             uint32(ask.Version),
-			},
-			Bid: &poolrpc.ServerBid{
-				Details:             marshallServerOrder(bid),
-				LeaseDurationBlocks: bid.LeaseDuration(),
-				Version:             uint32(bid.Version),
-			},
-			MatchingRate:     uint32(quote.MatchingRate),
-			TotalSatsCleared: uint64(quote.TotalSatsCleared),
-			UnitsMatched:     uint32(quote.UnitsMatched),
+			snapshots[i] = &adminrpc.AdminMatchedOrderSnapshot{
+				Ask: &poolrpc.ServerAsk{
+					Details: marshallServerOrder(
+						ask,
+					),
+					LeaseDurationBlocks: ask.LeaseDuration(),
+					Version:             uint32(ask.Version),
+				},
+				Bid: &poolrpc.ServerBid{
+					Details: marshallServerOrder(
+						bid,
+					),
+					LeaseDurationBlocks: bid.LeaseDuration(),
+					Version:             uint32(bid.Version),
+				},
+				MatchingRate:     uint32(quote.MatchingRate),
+				TotalSatsCleared: uint64(quote.TotalSatsCleared),
+				UnitsMatched:     uint32(quote.UnitsMatched),
+			}
 		}
+
+		resp.MatchedOrders[duration] = &adminrpc.AdminMatchedOrderSnapshots{
+			Snapshots: snapshots,
+		}
+		resp.ClearingPriceRate[duration] = uint32(
+			batch.ClearingPrices[duration],
+		)
 	}
 
 	// Finally, we'll serialize the batch transaction, which completes our
