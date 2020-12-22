@@ -605,16 +605,18 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 			BatchId: batchID,
 		},
 	)
-	if err != nil {
-		t.Fatalf("unable to obtain batch snapshot: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// The final clearing price should match the expected fixed rate passed
-	// in.
-	if batchSnapshot.ClearingPriceRate != uint32(clearingPrice) {
-		t.Fatalf("wrong clearing price: expected %v, got %v",
-			clearingPrice, batchSnapshot.ClearingPriceRate)
-	}
+	// in and the creation timestamp should be within one minute of the
+	// current time.
+	require.Equal(
+		t.t, uint32(clearingPrice), batchSnapshot.ClearingPriceRate,
+	)
+	require.InDelta(
+		t.t, uint64(time.Now().UnixNano()),
+		batchSnapshot.CreationTimestampNs, float64(time.Minute),
+	)
 
 	// Next we'll compile a map of the included ask and bid orders so we
 	// can assert the existence of the orders we created above.
@@ -626,9 +628,7 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	// Next we'll assert that all the expected orders have been found in
 	// this batch.
 	for _, orderAmt := range expectedOrderAmts {
-		if _, ok := matchedOrderAmts[orderAmt]; !ok {
-			t.Fatalf("order amt %v not found in batch", orderAmt)
-		}
+		require.Contains(t.t, matchedOrderAmts, orderAmt)
 	}
 
 	var serverbatchID order.BatchID
