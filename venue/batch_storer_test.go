@@ -37,6 +37,8 @@ var (
 		acctIDSmall: acctSmallPriv,
 		acctIDMed:   acctMedPriv,
 	}
+
+	testLeaseDuration = orderT.LegacyLeaseDurationBucket
 )
 
 // As set up for all tests in this package, we'll create two accounts: A
@@ -182,7 +184,13 @@ var (
 	feeReport = matching.TradingFeeReport{
 		AccountDiffs: accountDiffs,
 	}
-	orderBatch = matching.NewBatch(orders, feeReport, 123)
+	orderBatch = matching.NewBatch(
+		map[uint32][]matching.MatchedOrder{
+			testLeaseDuration: orders,
+		}, feeReport, map[uint32]orderT.FixedRatePremium{
+			testLeaseDuration: 1234,
+		},
+	)
 )
 
 // TestBatchStorer makes sure a batch is prepared correctly for serialization by

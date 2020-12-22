@@ -191,19 +191,23 @@ type OrderBatch struct {
 
 // NewBatch returns a new batch with the given match data, the latest batch
 // version and the current timestamp.
-func NewBatch(orders []MatchedOrder, feeReport TradingFeeReport,
-	price orderT.FixedRatePremium) *OrderBatch {
+func NewBatch(subBatches map[uint32][]MatchedOrder, feeReport TradingFeeReport,
+	prices map[uint32]orderT.FixedRatePremium) *OrderBatch {
+
+	// For quick access to all orders, we also copy them along in a flat
+	// slice that contains the same data as the bucketed map.
+	allOrders := make([]MatchedOrder, 0)
+	for _, subBatch := range subBatches {
+		allOrders = append(allOrders, subBatch...)
+	}
 
 	return &OrderBatch{
-		Version: orderT.CurrentBatchVersion,
-		Orders:  orders,
-		// TODO(guggero): replace with actual batches in next commit.
-		SubBatches:        make(map[uint32][]MatchedOrder),
+		Version:           orderT.CurrentBatchVersion,
+		Orders:            allOrders,
+		SubBatches:        subBatches,
 		FeeReport:         feeReport,
-		ClearingPrice:     price,
 		CreationTimestamp: time.Now(),
-		// TODO(guggero): replace with actual prices in next commit.
-		ClearingPrices: make(map[uint32]orderT.FixedRatePremium),
+		ClearingPrices:    prices,
 	}
 }
 

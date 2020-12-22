@@ -477,26 +477,24 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	batchV0 := matching.NewBatch(legacyOrders, feeReport, 0)
-	batchV0.SubBatches = map[uint32][]matching.MatchedOrder{
-		orderT.LegacyLeaseDurationBucket: legacyOrders,
-	}
-	batchV0.ClearingPrices = map[uint32]orderT.FixedRatePremium{
-		orderT.LegacyLeaseDurationBucket: 123,
-	}
+	batchV0 := matching.NewBatch(
+		map[uint32][]matching.MatchedOrder{
+			orderT.LegacyLeaseDurationBucket: legacyOrders,
+		}, feeReport, map[uint32]orderT.FixedRatePremium{
+			orderT.LegacyLeaseDurationBucket: 123,
+		},
+	)
 	assertBatchSerialization(t, store, batchV0)
 
 	batchV1 := matching.NewBatch(
-		append(legacyOrders, newOrders...), feeReport, 0,
+		map[uint32][]matching.MatchedOrder{
+			orderT.LegacyLeaseDurationBucket: legacyOrders,
+			12345:                            newOrders,
+		}, feeReport, map[uint32]orderT.FixedRatePremium{
+			orderT.LegacyLeaseDurationBucket: 123,
+			12345:                            321,
+		},
 	)
-	batchV1.SubBatches = map[uint32][]matching.MatchedOrder{
-		orderT.LegacyLeaseDurationBucket: legacyOrders,
-		12345:                            newOrders,
-	}
-	batchV1.ClearingPrices = map[uint32]orderT.FixedRatePremium{
-		orderT.LegacyLeaseDurationBucket: 123,
-		12345:                            321,
-	}
 	assertBatchSerialization(t, store, batchV1)
 }
 

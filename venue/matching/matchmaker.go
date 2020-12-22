@@ -107,35 +107,106 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	defer u.Unlock()
 
 	// At this point we know we have a set of orders, so we'll create the
-	// match maker for usage below.
+	// match maker and the maps that hold the sub-batches for usage below.
 	matchMaker := NewMultiUnitMatchMaker(acctCacher, predicateChain)
+	subBatches := make(map[uint32][]MatchedOrder)
+	prices := make(map[uint32]orderT.FixedRatePremium)
 
-	// We try to clear a batch with the given filter chain.
-	matches, clearingPrice, err := u.clearBatch(matchMaker, filterChain)
+	// We create distinct sub-batches for each of the active lease duration
+	// buckets.
+	err := u.durationBuckets.IterBuckets(func(duration uint32,
+		state order.DurationBucketState) error {
+
+		// Only clear for active markets.
+		if state != order.BucketStateClearingMarket {
+			return nil
+		}
+
+		// Clear the sub batch now.
+		// TODO(guggero): Optimize by using errgroup.Group to run in
+		// parallel (need to make sure u.clearBatch is fully concurrency
+		// safe first).
+		matches, clearingPrice, err := u.clearSubBatch(
+			matchMaker, filterChain, duration,
+		)
+
+		// If no market can be made for this duration bucket, we still
+		// want to give the other durations a chance.
+		if err == ErrNoMarketPossible {
+			log.Debugf("No market possible for duration %d",
+				duration)
+
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+
+		subBatches[duration] = matches
+		prices[duration] = clearingPrice
+
+		return nil
+	})
 	if err != nil {
 		return nil, err
 	}
 
-	logMatches := func(matches []MatchedOrder) string {
-		s := ""
-		for _, m := range matches {
-			d := m.Details
-			s += fmt.Sprintf("ask=%v, bid=%v, units=%v\n",
-				d.Ask.Nonce(), d.Bid.Nonce(), d.Quote.UnitsMatched)
-		}
-
-		return s
+	// If none of the sub batches resulted in any matches, we give up.
+	numMatches := 0
+	for duration := range subBatches {
+		numMatches += len(subBatches[duration])
 	}
-
-	log.Debugf("Final matches at clearing price %v: \n%v",
-		clearingPrice, logMatches(matches))
+	if numMatches == 0 {
+		return nil, ErrNoMarketPossible
+	}
 
 	// As a final step, we'll compute the diff for each trader's account.
 	// With this final piece of information, the caller will be able to
 	// easily update all the order/account state in a single atomic
 	// transaction.
-	feeReport := NewTradingFeeReport(matches, u.feeSchedule, clearingPrice)
-	return NewBatch(matches, feeReport, clearingPrice), nil
+	feeReport := NewTradingFeeReport(subBatches, u.feeSchedule, prices)
+	return NewBatch(subBatches, feeReport, prices), nil
+}
+
+// clearSubBatch creates a new filter chain to clear a sub batch and reports
+// back the result to the given reporter function.
+func (u *UniformPriceCallMarket) clearSubBatch(matchMaker *MultiUnitMatchMaker,
+	filterChain []OrderFilter, duration uint32) ([]MatchedOrder,
+	orderT.FixedRatePremium, error) {
+
+	// Create a copy of the original filter chain to make sure the
+	// append doesn't alter the original slice in some situations.
+	durationFilter := NewLeaseDurationFilter(duration)
+	chain := make([]OrderFilter, len(filterChain))
+	copy(chain, filterChain)
+	chain = append(chain, durationFilter)
+
+	// We try to clear a batch with the given filter chain. If no match is
+	// possible for this duration, an ErrNoMarketPossible error is returned.
+	// The caller will handle this though.
+	matches, clearingPrice, err := u.clearBatch(matchMaker, chain)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	// We have a successful set of matches for a sub batch of this duration.
+	// Let's log them in an easy to read manner.
+	logMatches := func(matches []MatchedOrder) string {
+		s := ""
+		for _, m := range matches {
+			d := m.Details
+			s += fmt.Sprintf("ask=%v, bid=%v, units=%v\n",
+				d.Ask.Nonce(), d.Bid.Nonce(),
+				d.Quote.UnitsMatched)
+		}
+
+		return s
+	}
+
+	log.Debugf("Final matches at clearing price %v: \n%v", clearingPrice,
+		logMatches(matches))
+
+	return matches, clearingPrice, nil
 }
 
 // clearBatch tries to clear a batch given the matchmaker and filter chain. This

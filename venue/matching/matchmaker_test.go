@@ -400,10 +400,11 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		// least one of the matched pairs. We use this type of
 		// assertion as it makes it generic w.r.t the clearing price
 		// algo used.
+		resultClearingPrice := orderBatch.ClearingPrices[testDuration]
 		var clearingPriceFound bool
 		for _, orderMatch := range matchedOrders {
 			quote := orderMatch.Details.Quote
-			if quote.MatchingRate == orderBatch.ClearingPrice {
+			if quote.MatchingRate == resultClearingPrice {
 				clearingPriceFound = true
 				break
 			}
@@ -411,7 +412,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 
 		if !clearingPriceFound {
 			t.Logf("clearing price of %v not found in set of "+
-				"matched orders", orderBatch.ClearingPrice)
+				"matched orders", resultClearingPrice)
 			return false
 		}
 
@@ -469,11 +470,11 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	for i := 0; i < 6; i++ {
 		bid := genRandBid(
 			r, acctDB, staticRateGen(1000), staticUnitGen(10),
-			staticMinUnitsMatchGen(1), staticDurationGen(144),
+			staticMinUnitsMatchGen(1), staticDurationGen(2016),
 		)
 		ask := genRandAsk(
 			r, acctDB, staticRateGen(1000), staticUnitGen(10),
-			staticMinUnitsMatchGen(1), staticDurationGen(144),
+			staticMinUnitsMatchGen(1), staticDurationGen(2016),
 		)
 
 		feeRate := chainfee.FeePerKwFloor * chainfee.SatPerKWeight(i+1)
@@ -562,7 +563,7 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 		}
 
 		matchedOrders := orderBatch.Orders
-		clearingPrice := orderBatch.ClearingPrice
+		clearingPrice := orderBatch.ClearingPrices[testDuration]
 
 		// If there's no match, ErrNoMarketPossible should have been
 		// returned, so we consider this a failure.

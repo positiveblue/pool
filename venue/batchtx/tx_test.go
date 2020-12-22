@@ -180,10 +180,16 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	// To complete our test batch, we'll generate an actual trading report,
 	// and also supply the clearing price of 1% that we use in our tests to
 	// make things easy.
+	clearingPrices := map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: clearingPrice,
+	}
+	subBatches := map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
+	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		orderBatch.Orders, &feeSchedule, clearingPrice,
+		subBatches, &feeSchedule, clearingPrices,
 	)
-	orderBatch.ClearingPrice = clearingPrice
+	orderBatch.ClearingPrices = clearingPrices
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.
@@ -454,22 +460,29 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 				t.Fatalf("unable to create match: %v", err)
 			}
 
-			orderBatch.Orders = append(orderBatch.Orders,
-				matching.MatchedOrder{
+			orderBatch.Orders = append(
+				orderBatch.Orders, matching.MatchedOrder{
 					Asker:   matching.NewTraderFromAccount(asker),
 					Bidder:  matching.NewTraderFromAccount(bidder),
 					Details: *match,
-				})
+				},
+			)
 		}
 	}
 
 	// To complete our test batch, we'll generate an actual trading report,
 	// and also supply the clearing price of 1% that we use in our tests to
 	// make things easy.
+	clearingPrices := map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: clearingPrice,
+	}
+	subBatches := map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
+	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		orderBatch.Orders, &feeSchedule, clearingPrice,
+		subBatches, &feeSchedule, clearingPrices,
 	)
-	orderBatch.ClearingPrice = clearingPrice
+	orderBatch.ClearingPrices = clearingPrices
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.
@@ -695,10 +708,16 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	// To complete our test batch, we'll generate an actual trading report,
 	// and also supply the clearing price of 1% that we use in our tests to
 	// make things easy.
+	clearingPrices := map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: clearingPrice,
+	}
+	subBatches := map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
+	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		orderBatch.Orders, &feeSchedule, clearingPrice,
+		subBatches, &feeSchedule, clearingPrices,
 	)
-	orderBatch.ClearingPrice = clearingPrice
+	orderBatch.ClearingPrices = clearingPrices
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.

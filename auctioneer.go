@@ -1564,9 +1564,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		log.Debugf("Using fee rate %v for match making", s.batchFeeRate)
 
 		// We'll attempt to make this market.
-		//
-		// TODO(roasbeef): iterate over then clear each market based on
-		// the duration? then merge at the end? before execution?
 		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
 			accountFilter, filterChain, predicateChain,
