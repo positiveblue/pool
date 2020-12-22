@@ -369,5 +369,12 @@ func (s *StoreMock) IsAccountBanned(_ context.Context,
 	return bestHeight < expiration, expiration, nil
 }
 
+// LeaseDurations retrieves all lease duration buckets.
+func (s *StoreMock) LeaseDurations(ctx context.Context) (
+	map[uint32]order.DurationBucketState, error) {
+
+	return nil, nil
+}
+
 // A compile-time check to make sure StoreMock implements the Store interface.
 var _ Store = (*StoreMock)(nil)

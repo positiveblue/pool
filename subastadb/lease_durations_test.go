@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/stretchr/testify/require"
 )
@@ -41,23 +42,32 @@ func TestLeaseDurations(t *testing.T) {
 		}
 	}
 
-	// We'll start by storing a sample lease duration.
+	// After the DB is initialized, we expect the default value to be added.
+	assertDurationInStore(
+		1, orderT.LegacyLeaseDurationBucket,
+		order.BucketStateClearingMarket,
+	)
+
+	// We'll then continue by storing a sample lease duration.
 	err := store.StoreLeaseDuration(
 		ctx, testDuration, order.BucketStateClearingMarket,
 	)
 	require.NoError(t, err)
 
 	// We should be able to retrieve it from store.
-	assertDurationInStore(1, testDuration, order.BucketStateClearingMarket)
+	assertDurationInStore(2, testDuration, order.BucketStateClearingMarket)
 
 	// We should also be able to remove it.
 	require.NoError(t, store.RemoveLeaseDuration(ctx, testDuration))
-	assertDurationInStore(0, 0, 0)
+	assertDurationInStore(
+		1, orderT.LegacyLeaseDurationBucket,
+		order.BucketStateClearingMarket,
+	)
 
 	// We'll then store the package again with a different state.
 	err = store.StoreLeaseDuration(
 		ctx, testDuration, order.BucketStateAcceptingOrders,
 	)
 	require.NoError(t, err)
-	assertDurationInStore(1, testDuration, order.BucketStateAcceptingOrders)
+	assertDurationInStore(2, testDuration, order.BucketStateAcceptingOrders)
 }
