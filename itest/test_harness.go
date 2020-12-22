@@ -1036,7 +1036,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
 			Version: uint32(
-				orderT.VersionNodeTierMinMatch,
+				orderT.VersionLeaseDurationBuckets,
 			),
 			MinNodeTier: poolrpc.NodeTier_TIER_0,
 		},
@@ -1082,7 +1082,7 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
 			Version: uint32(
-				orderT.VersionNodeTierMinMatch,
+				orderT.VersionLeaseDurationBuckets,
 			),
 		},
 	}

@@ -29,7 +29,7 @@ import (
 // then submit orders we know will match, causing us to trigger a manual batch
 // tick. From there the batch should proceed all the way to broadcasting the
 // batch execution transaction. From there, all channels created should be
-// operational and useable.
+// operational and usable.
 func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
@@ -312,8 +312,11 @@ func testBatchExecution(t *harnessTest) {
 	// batch created atm, we pass a nil batch ID so it'll look up the prior
 	// batch.
 	firstBatchID := assertBatchSnapshot(
-		t, nil, secondTrader,
-		[]uint64{uint64(bidAmt), uint64(bidAmt2)}, orderFixedRate,
+		t, nil, secondTrader, map[uint32][]uint64{
+			defaultOrderDuration: {uint64(bidAmt), uint64(bidAmt2)},
+		}, map[uint32]order.FixedRatePremium{
+			defaultOrderDuration: orderFixedRate,
+		},
 	)
 	assertTraderAssets(t, t.trader, 2, []*chainhash.Hash{firstBatchTXID})
 	assertTraderAssets(t, secondTrader, 2, []*chainhash.Hash{firstBatchTXID})
@@ -363,8 +366,11 @@ func testBatchExecution(t *harnessTest) {
 	secondBatchKey := poolscript.IncrementKey(firstBatchKey)
 	secondBatchID := secondBatchKey.SerializeCompressed()
 	assertBatchSnapshot(
-		t, secondBatchID, secondTrader, []uint64{uint64(bidAmt3)},
-		orderFixedRate,
+		t, secondBatchID, secondTrader, map[uint32][]uint64{
+			defaultOrderDuration: {uint64(bidAmt3)},
+		}, map[uint32]order.FixedRatePremium{
+			defaultOrderDuration: orderFixedRate,
+		},
 	)
 	assertNumFinalBatches(t, 2)
 	batchTXIDs = []*chainhash.Hash{firstBatchTXID, secondBatchTXID}
@@ -376,7 +382,7 @@ func testBatchExecution(t *harnessTest) {
 	closeAllChannels(ctx, t, charlie)
 }
 
-// closeAllChannals closes and asserts all channels to node are closed.
+// closeAllChannels closes and asserts all channels to node are closed.
 func closeAllChannels(ctx context.Context, t *harnessTest,
 	node *lntest.HarnessNode) {
 
@@ -595,51 +601,44 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 // TODO(roasbeef): update to assert order nonce and other info once the admin
 // RPC stuff is in
 func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
-	expectedOrderAmts []uint64,
-	clearingPrice order.FixedRatePremium) order.BatchID {
+	expectedOrderAmts map[uint32][]uint64,
+	clearingPrices map[uint32]order.FixedRatePremium) order.BatchID {
 
 	ctxb := context.Background()
 	batchSnapshot, err := trader.BatchSnapshot(
-		ctxb,
-		&poolrpc.BatchSnapshotRequest{
+		ctxb, &poolrpc.BatchSnapshotRequest{
 			BatchId: batchID,
 		},
 	)
 	require.NoError(t.t, err)
 
-	// There must be at least one lease duration, even for older versions of
-	// batches.
-	require.Len(t.t, batchSnapshot.MatchedMarkets, 1)
-	var duration uint32
-	for key := range batchSnapshot.MatchedMarkets {
-		duration = key
-		break
-	}
-	market := batchSnapshot.MatchedMarkets[duration]
-	require.NotNil(t.t, market)
-
-	// The final clearing price should match the expected fixed rate passed
-	// in and the creation timestamp should be within one minute of the
-	// current time.
-	require.Equal(
-		t.t, uint32(clearingPrice), market.ClearingPriceRate,
-	)
+	// The creation timestamp should be within one minute of the current
+	// time.
 	require.InDelta(
 		t.t, uint64(time.Now().UnixNano()),
 		batchSnapshot.CreationTimestampNs, float64(time.Minute),
 	)
 
-	// Next we'll compile a map of the included ask and bid orders so we
-	// can assert the existence of the orders we created above.
-	matchedOrderAmts := make(map[uint64]struct{})
-	for _, o := range market.MatchedOrders {
-		matchedOrderAmts[o.TotalSatsCleared] = struct{}{}
-	}
+	// Verify there is a distinct clearing price and orders for each sub
+	// batch.
+	for duration, market := range batchSnapshot.MatchedMarkets {
+		expectedAmts := expectedOrderAmts[duration]
+		expectedPrice := uint32(clearingPrices[duration])
 
-	// Next we'll assert that all the expected orders have been found in
-	// this batch.
-	for _, orderAmt := range expectedOrderAmts {
-		require.Contains(t.t, matchedOrderAmts, orderAmt)
+		require.Equal(t.t, expectedPrice, market.ClearingPriceRate)
+
+		// Next we'll compile a map of the included ask and bid orders so we
+		// can assert the existence of the orders we created above.
+		matchedOrderAmts := make(map[uint64]struct{})
+		for _, o := range market.MatchedOrders {
+			matchedOrderAmts[o.TotalSatsCleared] = struct{}{}
+		}
+
+		// Next we'll assert that all the expected orders have been found in
+		// this batch.
+		for _, orderAmt := range expectedAmts {
+			require.Contains(t.t, matchedOrderAmts, orderAmt)
+		}
 	}
 
 	var serverbatchID order.BatchID
@@ -1523,4 +1522,321 @@ func testBatchMatchingConditions(t *harnessTest) {
 	assertServerLogContains(
 		t, "Filtered out order %v with max fee rate %v", bid2Nonce, 255,
 	)
+}
+
+// testBatchExecutionDurationBuckets tests that we can clear multiple markets
+// with distinct lease durations in the same batch.
+func testBatchExecutionDurationBuckets(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader.
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	require.NoError(t.t, err)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	err = t.lndHarness.SendCoins(ctx, 40_000_000, charlie)
+	require.NoError(t.t, err)
+
+	// We'll create orders in three distinct lease duration buckets: The
+	// default 2016 block bucket that is already available on startup and
+	// the multiples 4032 and 6048 that we explicitly add now.
+	_, err = t.auctioneer.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
+		Duration:    4032,
+		BucketState: poolrpc.DurationBucketState_MARKET_OPEN,
+	})
+	require.NoError(t.t, err)
+	_, err = t.auctioneer.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
+		Duration:    6048,
+		BucketState: poolrpc.DurationBucketState_MARKET_OPEN,
+	})
+	require.NoError(t.t, err)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders. To test the message multi-plexing between token IDs
+	// and accounts, we add a secondary account to the second trader.
+	account1 := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue * 8,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue * 8,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account3 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue * 8,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, we can start submitting orders.
+	// We first make sure that we cannot submit an order outside of the
+	// legacy duration bucket if we're not on the correct order version.
+	const orderFixedRate = 100
+	askAmt := btcutil.Amount(1_500_000)
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, orderFixedRate, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = defaultOrderDuration * 2
+			ask.Ask.Version = uint32(order.VersionNodeTierMinMatch)
+		},
+	)
+	require.Error(t.t, err)
+	require.Contains(t.t, err.Error(), "outside of default 2016 duration")
+
+	// Now that the accounts are confirmed, submit ask orders from our
+	// default trader, selling 15 units (1.5M sats) of liquidity in each
+	// duration bucket.
+	ask1aNonce, err := submitAskOrder(
+		t.trader, account1.TraderKey, orderFixedRate, askAmt,
+	)
+	require.NoError(t.t, err)
+	ask1bNonce, err := submitAskOrder(
+		t.trader, account1.TraderKey, orderFixedRate*2, askAmt*2,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = defaultOrderDuration * 2
+		},
+	)
+	require.NoError(t.t, err)
+	ask1cNonce, err := submitAskOrder(
+		t.trader, account1.TraderKey, orderFixedRate*3, askAmt*3,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.LeaseDurationBlocks = defaultOrderDuration * 3
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Our second trader, connected to Charlie, wants to buy 8 units of
+	// liquidity for each duration. So let's submit orders for that.
+	bidAmt := btcutil.Amount(800_000)
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate*2, bidAmt*2,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = defaultOrderDuration * 2
+		},
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate*3, bidAmt*3,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = defaultOrderDuration * 3
+		},
+	)
+	require.NoError(t.t, err)
+
+	// From the secondary account of the second trader, we also create an
+	// order to buy some units. The order should also make it into the same
+	// batch and the second trader should sign a message for both orders at
+	// the same time.
+	bidAmt2 := btcutil.Amount(300_000)
+	_, err = submitBidOrder(
+		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		secondTrader, account3.TraderKey, orderFixedRate*2, bidAmt2*2,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = defaultOrderDuration * 2
+		},
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		secondTrader, account3.TraderKey, orderFixedRate*3, bidAmt2*3,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.LeaseDurationBlocks = defaultOrderDuration * 3
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Let's kick the auctioneer to try and make a batch with three sub
+	// batches for the different durations.
+	_, batchTXIDs := executeBatch(t, 1)
+	firstBatchTXID := batchTXIDs[0]
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidAmt, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidAmt*2, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidAmt*3, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt*2, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt*3, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt2, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt2*2, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt2*3, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// We'll also make sure that the account now is in the special state
+	// where it is allowed to participate in the next batch without on-chain
+	// confirmation.
+	assertAuctioneerAccountState(
+		t, account1.TraderKey, account.StatePendingBatch,
+	)
+
+	// We'll now mine a block to confirm the channel. We should find the
+	// channel in the listchannels output for both nodes, and the
+	// thaw_height should be set accordingly.
+	blocks := mineBlocks(t, t.lndHarness, 1, 1)
+
+	// The block above should contain the batch transaction found in the
+	// mempool above.
+	assertTxInBlock(t, blocks[0], firstBatchTXID)
+
+	// The master account from the server's PoV should have the same txid
+	// hash as this mined block.
+	ctxb := context.Background()
+	masterAcct, err := t.auctioneer.AuctionAdminClient.MasterAccount(
+		ctxb, &adminrpc.EmptyRequest{},
+	)
+	require.NoError(t.t, err)
+	acctOutPoint := masterAcct.Outpoint
+	require.Equal(t.t, firstBatchTXID[:], acctOutPoint.Txid)
+
+	// We'll now mine another 3 blocks to ensure the channel itself is
+	// fully confirmed.
+	_ = mineBlocks(t, t.lndHarness, 3, 0)
+
+	// Now that the channels are confirmed, they should both be active, and
+	// we should be able to make a payment between this new channel
+	// established.
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt*2), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration*2,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt*3), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration*3,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt2), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt2*2), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration*2,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt2*3), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration*3,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt*2), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration*2,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt*3), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration*3,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt2*2), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration*2,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt2*3), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration*3,
+	)
+
+	// To make sure the channels works as expected, we'll send a payment
+	// from Bob (the maker) to Charlie (the taker).
+	payAmt := btcutil.Amount(100)
+	invoice := &lnrpc.Invoice{
+		Memo:  "testing",
+		Value: int64(payAmt),
+	}
+	ctxt, cancel := context.WithTimeout(ctxb, defaultWaitTimeout)
+	defer cancel()
+	resp, err := charlie.AddInvoice(ctxt, invoice)
+	require.NoError(t.t, err)
+
+	ctxt, cancel = context.WithTimeout(ctxb, defaultWaitTimeout)
+	defer cancel()
+	err = completePaymentRequests(
+		ctxt, t.trader.cfg.LndNode, []string{resp.PaymentRequest}, true,
+	)
+	require.NoError(t.t, err)
+
+	// Now that the batch has been fully executed, we'll ensure that all
+	// the expected state has been updated from the client's PoV.
+	//
+	// Charlie, the trader that just bought a channel should have no
+	// present orders.
+	assertNoOrders(t, secondTrader)
+
+	// The party with the sell orders open should still have all open ask
+	// orders with 300k unfilled (3 units).
+	assertAskOrderState(t, t.trader, 4, ask1aNonce)
+	assertAskOrderState(t, t.trader, 8, ask1bNonce)
+	assertAskOrderState(t, t.trader, 12, ask1cNonce)
+
+	// We should now be able to find this snapshot. As this is the only
+	// batch created atm, we pass a nil batch ID so it'll look up the prior
+	// batch.
+	_ = assertBatchSnapshot(
+		t, nil, secondTrader, map[uint32][]uint64{
+			defaultOrderDuration: {
+				uint64(bidAmt), uint64(bidAmt2),
+			},
+			defaultOrderDuration * 2: {
+				uint64(bidAmt * 2), uint64(bidAmt2 * 2),
+			},
+			defaultOrderDuration * 3: {
+				uint64(bidAmt * 3), uint64(bidAmt2 * 3),
+			},
+		}, map[uint32]order.FixedRatePremium{
+			defaultOrderDuration:     orderFixedRate,
+			defaultOrderDuration * 2: orderFixedRate * 2,
+			defaultOrderDuration * 3: orderFixedRate * 3,
+		},
+	)
+	assertTraderAssets(t, t.trader, 6, []*chainhash.Hash{firstBatchTXID})
+	assertTraderAssets(t, secondTrader, 6, []*chainhash.Hash{firstBatchTXID})
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
 }

@@ -72,4 +72,8 @@ var testCases = []*testCase{
 		name: "batch matching conditions",
 		test: testBatchMatchingConditions,
 	},
+	{
+		name: "distinct lease duration buckets",
+		test: testBatchExecutionDurationBuckets,
+	},
 }
