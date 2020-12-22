@@ -1118,96 +1118,12 @@ func (s *rpcServer) sendToTrader(
 
 	switch m := msg.(type) {
 	case *venue.PrepareMsg:
-		feeSchedule, ok := m.ExecutionFee.(*terms.LinearFeeSchedule)
-		if !ok {
-			return fmt.Errorf("FeeSchedule w/o fee rate used: %T",
-				m.ExecutionFee)
+		prepareMsg, err := marshallPrepareMsg(m)
+		if err != nil {
+			return fmt.Errorf("unable to marshall prepare msg: %v",
+				err)
 		}
-
-		// Each order the user submitted may be matched to one or more
-		// corresponding orders, so we'll map the in-memory
-		// representation we use to the proto representation that we
-		// need to send to the client.
-		matchedOrders := make(map[string]*poolrpc.MatchedOrder)
-		for traderOrderNonce, orderMatches := range m.MatchedOrders {
-			rpcLog.Debugf("Order(%x) matched w/ %v orders",
-				traderOrderNonce[:], len(m.MatchedOrders))
-
-			nonceStr := hex.EncodeToString(
-				traderOrderNonce[:],
-			)
-			matchedOrders[nonceStr] = &poolrpc.MatchedOrder{}
-
-			// As we support partial patches, this trader nonce
-			// might be matched with a set of other orders, so
-			// we'll unroll this here now.
-			for _, o := range orderMatches {
-				// Find out if the recipient of the message is
-				// the asker or bidder. Traders with the same
-				// token can't be matched so we know that if the
-				// asker's account is in the list of charged
-				// accounts, the trader is the asker.
-				isAsk := false
-				for _, acct := range m.ChargedAccounts {
-					acctKey := acct.StartingState.AccountKey
-					if o.Asker.AccountKey == acctKey {
-						isAsk = true
-						break
-					}
-				}
-
-				unitsFilled := o.Details.Quote.UnitsMatched
-
-				// If the client had their bid matched, then
-				// we'll send over the ask information and the
-				// other way around if it's a bid.
-				ask, bid := o.Details.Ask, o.Details.Bid
-				if !isAsk {
-					matchedOrders[nonceStr].MatchedAsks = append(
-						matchedOrders[nonceStr].MatchedAsks,
-						marshallMatchedAsk(ask, unitsFilled),
-					)
-				} else {
-					matchedOrders[nonceStr].MatchedBids = append(
-						matchedOrders[nonceStr].MatchedBids,
-						marshallMatchedBid(bid, unitsFilled),
-					)
-				}
-			}
-		}
-
-		// Next, for each account that the user had in this batch,
-		// we'll generate a similar RPC account diff so they can verify
-		// their portion of the batch.
-		var accountDiffs []*poolrpc.AccountDiff
-		for idx, acctDiff := range m.ChargedAccounts {
-			acctDiff, err := marshallAccountDiff(
-				acctDiff, m.AccountOutPoints[idx],
-			)
-			if err != nil {
-				return err
-			}
-
-			accountDiffs = append(accountDiffs, acctDiff)
-		}
-
-		return stream.Send(&poolrpc.ServerAuctionMessage{
-			Msg: &poolrpc.ServerAuctionMessage_Prepare{
-				Prepare: &poolrpc.OrderMatchPrepare{
-					MatchedOrders:     matchedOrders,
-					ClearingPriceRate: uint32(m.ClearingPrice),
-					ChargedAccounts:   accountDiffs,
-					ExecutionFee: &poolrpc.ExecutionFee{
-						BaseFee: uint64(m.ExecutionFee.BaseFee()),
-						FeeRate: uint64(feeSchedule.FeeRate()),
-					},
-					BatchTransaction: m.BatchTx,
-					FeeRateSatPerKw:  uint64(m.FeeRate),
-					BatchId:          m.BatchID[:],
-					BatchVersion:     m.BatchVersion,
-				},
-			},
-		})
+		return stream.Send(prepareMsg)
 
 	case *venue.SignBeginMsg:
 		return stream.Send(&poolrpc.ServerAuctionMessage{
@@ -1232,6 +1148,101 @@ func (s *rpcServer) sendToTrader(
 	default:
 		return fmt.Errorf("unknown message type: %v", msg)
 	}
+}
+
+// marshallPrepareMsg translates the venue's prepare message struct into the
+// RPC representation.
+func marshallPrepareMsg(m *venue.PrepareMsg) (*poolrpc.ServerAuctionMessage,
+	error) {
+
+	feeSchedule, ok := m.ExecutionFee.(*terms.LinearFeeSchedule)
+	if !ok {
+		return nil, fmt.Errorf("FeeSchedule w/o fee rate used: %T",
+			m.ExecutionFee)
+	}
+
+	// Each order the user submitted may be matched to one or more
+	// corresponding orders, so we'll map the in-memory representation we
+	// use to the proto representation that we need to send to the client.
+	matchedOrders := make(map[string]*poolrpc.MatchedOrder)
+	for traderOrderNonce, orderMatches := range m.MatchedOrders {
+		rpcLog.Debugf("Order(%x) matched w/ %v orders",
+			traderOrderNonce[:], len(m.MatchedOrders))
+
+		nonceStr := hex.EncodeToString(traderOrderNonce[:])
+		matchedOrders[nonceStr] = &poolrpc.MatchedOrder{}
+		mo := matchedOrders[nonceStr]
+
+		// As we support partial patches, this trader nonce might be
+		// matched with a set of other orders, so we'll unroll this here
+		// now.
+		for _, o := range orderMatches {
+			// Find out if the recipient of the message is the asker
+			// or bidder. Traders with the same token can't be
+			// matched so we know that if the asker's account is in
+			// the list of charged accounts, the trader is the
+			// asker.
+			isAsk := false
+			for _, acct := range m.ChargedAccounts {
+				acctKey := acct.StartingState.AccountKey
+				if o.Asker.AccountKey == acctKey {
+					isAsk = true
+					break
+				}
+			}
+
+			unitsFilled := o.Details.Quote.UnitsMatched
+
+			// If the client had their bid matched, then we'll send
+			// over the ask information and the other way around if
+			// it's a bid.
+			ask, bid := o.Details.Ask, o.Details.Bid
+			if !isAsk {
+				mo.MatchedAsks = append(
+					mo.MatchedAsks,
+					marshallMatchedAsk(ask, unitsFilled),
+				)
+			} else {
+				mo.MatchedBids = append(
+					mo.MatchedBids,
+					marshallMatchedBid(bid, unitsFilled),
+				)
+			}
+		}
+	}
+
+	// Next, for each account that the user had in this batch, we'll
+	// generate a similar RPC account diff so they can verify their portion
+	// of the batch.
+	var accountDiffs []*poolrpc.AccountDiff
+	for idx, acctDiff := range m.ChargedAccounts {
+		acctDiff, err := marshallAccountDiff(
+			acctDiff, m.AccountOutPoints[idx],
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		accountDiffs = append(accountDiffs, acctDiff)
+	}
+
+	return &poolrpc.ServerAuctionMessage{
+		Msg: &poolrpc.ServerAuctionMessage_Prepare{
+			Prepare: &poolrpc.OrderMatchPrepare{
+				MatchedOrders:     matchedOrders,
+				ClearingPriceRate: uint32(m.ClearingPrice),
+				ChargedAccounts:   accountDiffs,
+				ExecutionFee: &poolrpc.ExecutionFee{
+					BaseFee: uint64(m.ExecutionFee.BaseFee()),
+					FeeRate: uint64(feeSchedule.FeeRate()),
+				},
+				BatchTransaction: m.BatchTx,
+				FeeRateSatPerKw:  uint64(m.FeeRate),
+				BatchId:          m.BatchID[:],
+				BatchVersion:     m.BatchVersion,
+			},
+		},
+	}, nil
 }
 
 // addStreamSubscription adds an account subscription to the stream that is
