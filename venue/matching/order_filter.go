@@ -212,3 +212,35 @@ func isAccountReady(acct *account.Account, expiryHeightCutoff uint32) bool {
 		return false
 	}
 }
+
+// TraderOnlineFilter is a filter that filters out orders for offline traders.
+type TraderOnlineFilter struct {
+	isOnline func([33]byte) bool
+}
+
+// A compile time check to make sure TraderOnlineFilter implements the
+// OrderFilter interface.
+var _ OrderFilter = (*TraderOnlineFilter)(nil)
+
+// NewTraderOnlineFilter creates a new order filter using the passed method
+// checking whether a trader is online.
+func NewTraderOnlineFilter(isOnline func([33]byte) bool) *TraderOnlineFilter {
+	return &TraderOnlineFilter{
+		isOnline: isOnline,
+	}
+}
+
+// IsSuitable returns true if this specific predicate doesn't have any objection
+// about an order being included in the matchmaking process.
+//
+// NOTE: This is part of the OrderFilter interface.
+func (p *TraderOnlineFilter) IsSuitable(o order.ServerOrder) bool {
+	if !p.isOnline(o.Details().AcctKey) {
+		log.Debugf("Filtered out order %v with offline trader ("+
+			"node=%x, acct=%x)", o.Nonce(),
+			o.ServerDetails().NodeKey[:], o.Details().AcctKey[:])
+		return false
+	}
+
+	return true
+}

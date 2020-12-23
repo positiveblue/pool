@@ -250,6 +250,10 @@ type AuctioneerConfig struct {
 	// automatically clear the above TraderRejected map.
 	TraderRejectResetInterval time.Duration
 
+	// TraderOnline is an order filter that is used to filter out offline
+	// traders before we start match making.
+	TraderOnline matching.OrderFilter
+
 	// RatingsAgency if non-nil, will be used as an extract matching
 	// predicate when doing match making.
 	RatingsAgency ratings.Agency
@@ -1554,7 +1558,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		)
 		filterChain := []matching.OrderFilter{
 			matching.NewBatchFeeRateFilter(s.batchFeeRate),
-			accountFilter,
+			accountFilter, a.cfg.TraderOnline,
 		}
 
 		// We pass in our two conflict handlers that also act as match

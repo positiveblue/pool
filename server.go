@@ -166,6 +166,15 @@ func (a *activeTradersMap) UnregisterTrader(t *venue.ActiveTrader) error {
 	return nil
 }
 
+// IsActive returns true if the given key is among the active traders.
+func (a *activeTradersMap) IsActive(acctKey [33]byte) bool {
+	a.RLock()
+	defer a.RUnlock()
+
+	_, ok := a.activeTraders[acctKey]
+	return ok
+}
+
 // GetTrades returns the current set of active traders.
 func (a *activeTradersMap) GetTraders() map[matching.AccountID]*venue.ActiveTrader {
 	a.RLock()
@@ -404,6 +413,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			FundingConflictsResetInterval: cfg.FundingConflictResetInterval,
 			TraderRejected:                traderRejected,
 			TraderRejectResetInterval:     cfg.TraderRejectResetInterval,
+			TraderOnline:                  matching.NewTraderOnlineFilter(activeTraders.IsActive),
 			RatingsAgency:                 ratingsAgency,
 		}),
 		channelEnforcer: channelEnforcer,
