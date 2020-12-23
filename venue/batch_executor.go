@@ -793,10 +793,6 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchTempError, env, nil
 			}
 
-			b.RLock()
-			trader := b.activeTraders[src]
-			b.RUnlock()
-
 			signMsg := msgRecv.msg.(*TraderSignMsg)
 			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
 			if !ok {
@@ -808,6 +804,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// generate our own signature for his input to ensure
 			// we can properly spend it with broadcast of the batch
 			// transaction.
+			trader := env.traders[src]
 			traderAcctInput, ok := env.exeCtx.AcctInputForTrader(
 				trader.AccountKey,
 			)
