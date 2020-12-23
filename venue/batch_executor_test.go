@@ -128,6 +128,8 @@ type executorTestHarness struct {
 
 	outgoingChans map[matching.AccountID]chan ExecutionMsg
 
+	activeTraders map[matching.AccountID]*ActiveTrader
+
 	batchTx *wire.MsgTx
 }
 
@@ -137,17 +139,23 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		PrivKeys: []*btcec.PrivateKey{batchPriv},
 	}
 
+	activeTraders := make(map[matching.AccountID]*ActiveTrader)
+
 	watcher := &mockAccountWatcher{}
 	return &executorTestHarness{
 		t:             t,
 		store:         store,
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
+		activeTraders: activeTraders,
 		executor: NewBatchExecutor(&ExecutorConfig{
 			Store:            store,
 			Signer:           signer,
 			BatchStorer:      NewExeBatchStorer(store),
 			AccountWatcher:   watcher,
 			TraderMsgTimeout: msgTimeout,
+			ActiveTraders: func() map[matching.AccountID]*ActiveTrader {
+				return activeTraders
+			},
 		}),
 		watcher: watcher,
 	}
@@ -203,10 +211,7 @@ func (e *executorTestHarness) RegisterTrader(acct *account.Account) {
 		TokenID: randomTokenID(),
 	}
 
-	err := e.executor.RegisterTrader(activeTrader)
-	if err != nil {
-		e.t.Fatalf("unable to register trader: %v", err)
-	}
+	e.activeTraders[trader.AccountKey] = activeTrader
 }
 
 func (e *executorTestHarness) SubmitBatch(batch *matching.OrderBatch,
