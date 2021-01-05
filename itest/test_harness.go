@@ -387,7 +387,8 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 // assertTraderAccount asserts that the account with the corresponding trader
 // key is found in the given state.
 func assertTraderAccount(t *harnessTest, trader *traderHarness,
-	traderKey []byte, value btcutil.Amount, state poolrpc.AccountState) {
+	traderKey []byte, value btcutil.Amount, expiry uint32,
+	state poolrpc.AccountState) {
 
 	ctx := context.Background()
 	err := wait.NoError(func() error {
@@ -405,6 +406,10 @@ func assertTraderAccount(t *harnessTest, trader *traderHarness,
 			if btcutil.Amount(a.Value) != value {
 				return fmt.Errorf("expected account value %v, "+
 					"got %v", value, btcutil.Amount(a.Value))
+			}
+			if a.ExpirationHeight != expiry {
+				return fmt.Errorf("expected account expiry %v, "+
+					"got %v", expiry, a.ExpirationHeight)
 			}
 			if a.State != state {
 				return fmt.Errorf("expected account state %v, "+
@@ -490,9 +495,9 @@ func assertAuctioneerAccount(t *harnessTest, rawTraderKey []byte,
 }
 
 // assertAuctioneerAccountState asserts that the account with the corresponding
-// trader key is found in the given state from the PoV of the auctioneer.
+// trader key is found in any of the given states from the PoV of the auctioneer.
 func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
-	state auctioneerAccount.State) {
+	states ...auctioneerAccount.State) {
 
 	traderKey, err := btcec.ParsePubKey(rawTraderKey, btcec.S256())
 	if err != nil {
@@ -506,9 +511,15 @@ func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 			return fmt.Errorf("unable to retrieve account: %v", err)
 		}
 
-		if account.State != state {
+		foundState := false
+		for _, state := range states {
+			if account.State == state {
+				foundState = true
+			}
+		}
+		if !foundState {
 			return fmt.Errorf("expected account state %v, got %v",
-				state, account.State)
+				states, account.State)
 		}
 
 		return nil
@@ -629,6 +640,7 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 	)
 	assertAuctioneerAccountState(
 		t, req.TraderKey, auctioneerAccount.StateOpen,
+		auctioneerAccount.StateExpired,
 	)
 
 	// Mine the closing transaction and make sure it was included in a
@@ -1036,7 +1048,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
 			Version: uint32(
-				orderT.VersionNodeTierMinMatch,
+				orderT.VersionLeaseDurationBuckets,
 			),
 			MinNodeTier: poolrpc.NodeTier_TIER_0,
 		},
@@ -1082,7 +1094,7 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
 			Version: uint32(
-				orderT.VersionNodeTierMinMatch,
+				orderT.VersionLeaseDurationBuckets,
 			),
 		},
 	}
@@ -1414,6 +1426,7 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 		btcutil.Amount(withdrawValue) - withdrawalFee
 	assertTraderAccount(
 		t, trader, withdrawResp.Account.TraderKey, valueAfterWithdrawal,
+		withdrawResp.Account.ExpirationHeight,
 		poolrpc.AccountState_PENDING_UPDATE,
 	)
 	assertAuctioneerAccount(

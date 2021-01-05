@@ -54,7 +54,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	acctValue := btcutil.SatoshiPerBitcoin
 	numRandTraders := 10
 
-	orderBatch := &matching.OrderBatch{}
+	orderBatch := matching.EmptyBatch()
 
 	// First, we'll generate a series of random traders. Each trader will
 	// have the same account size to make our calculations below much
@@ -180,10 +180,16 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	// To complete our test batch, we'll generate an actual trading report,
 	// and also supply the clearing price of 1% that we use in our tests to
 	// make things easy.
+	clearingPrices := map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: clearingPrice,
+	}
+	subBatches := map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
+	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		orderBatch.Orders, &feeSchedule, clearingPrice,
+		subBatches, &feeSchedule, clearingPrices,
 	)
-	orderBatch.ClearingPrice = clearingPrice
+	orderBatch.ClearingPrices = clearingPrices
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.
@@ -442,7 +448,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	orderSize := (acctValue - 1500) / 2
 
 	// We let one trader get two asks filled, and one trader get one fill.
-	orderBatch := &matching.OrderBatch{}
+	orderBatch := matching.EmptyBatch()
 	for i := 0; i < numRandTraders/2; i++ {
 		numChans := uint32(i)
 		asker := traders[i]
@@ -454,22 +460,29 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 				t.Fatalf("unable to create match: %v", err)
 			}
 
-			orderBatch.Orders = append(orderBatch.Orders,
-				matching.MatchedOrder{
+			orderBatch.Orders = append(
+				orderBatch.Orders, matching.MatchedOrder{
 					Asker:   matching.NewTraderFromAccount(asker),
 					Bidder:  matching.NewTraderFromAccount(bidder),
 					Details: *match,
-				})
+				},
+			)
 		}
 	}
 
 	// To complete our test batch, we'll generate an actual trading report,
 	// and also supply the clearing price of 1% that we use in our tests to
 	// make things easy.
+	clearingPrices := map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: clearingPrice,
+	}
+	subBatches := map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
+	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		orderBatch.Orders, &feeSchedule, clearingPrice,
+		subBatches, &feeSchedule, clearingPrices,
 	)
-	orderBatch.ClearingPrice = clearingPrice
+	orderBatch.ClearingPrices = clearingPrices
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.
@@ -613,7 +626,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	acctValue := btcutil.Amount(btcutil.SatoshiPerBitcoin)
 	numRandTraders := 2
 
-	orderBatch := &matching.OrderBatch{}
+	orderBatch := matching.EmptyBatch()
 
 	// Genarate the two traders.
 	traders := make([]*account.Account, numRandTraders)
@@ -695,10 +708,16 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	// To complete our test batch, we'll generate an actual trading report,
 	// and also supply the clearing price of 1% that we use in our tests to
 	// make things easy.
+	clearingPrices := map[uint32]orderT.FixedRatePremium{
+		orderT.LegacyLeaseDurationBucket: clearingPrice,
+	}
+	subBatches := map[uint32][]matching.MatchedOrder{
+		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
+	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		orderBatch.Orders, &feeSchedule, clearingPrice,
+		subBatches, &feeSchedule, clearingPrices,
 	)
-	orderBatch.ClearingPrice = clearingPrice
+	orderBatch.ClearingPrices = clearingPrices
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.

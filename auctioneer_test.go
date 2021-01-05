@@ -460,13 +460,18 @@ func (m *mockCallMarket) MaybeClear(_ matching.AccountCacher,
 			err)
 	}
 
-	return &matching.OrderBatch{
-		Orders: matches,
-		FeeReport: matching.NewTradingFeeReport(
-			matches, defaultFeeSchedule, clearingPrice,
-		),
-		ClearingPrice: clearingPrice,
-	}, nil
+	subBatches := make(map[uint32][]matching.MatchedOrder)
+	clearingPrices := make(map[uint32]orderT.FixedRatePremium)
+	for _, o := range matches {
+		duration := o.Details.Ask.LeaseDuration()
+		subBatches[duration] = append(subBatches[duration], o)
+		clearingPrices[duration] = clearingPrice
+	}
+	feeReport := matching.NewTradingFeeReport(
+		subBatches, defaultFeeSchedule, clearingPrices,
+	)
+
+	return matching.NewBatch(subBatches, feeReport, clearingPrices), nil
 }
 
 func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {

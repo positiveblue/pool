@@ -81,8 +81,14 @@ func TestTradingReportCompletion(t *testing.T) {
 	}
 	n, y := 0, 0
 	scenario := func(matchedOrders []MatchedOrder) bool {
+		clearingPrices := map[uint32]orderT.FixedRatePremium{
+			orderT.LegacyLeaseDurationBucket: clearingPrice,
+		}
+		subBatches := map[uint32][]MatchedOrder{
+			orderT.LegacyLeaseDurationBucket: matchedOrders,
+		}
 		report := NewTradingFeeReport(
-			matchedOrders, &feeSchedule, clearingPrice,
+			subBatches, &feeSchedule, clearingPrices,
 		)
 
 		// First, we'll gather up all the traders that were in this
@@ -133,8 +139,14 @@ func TestTradingReportGeneration(t *testing.T) {
 	}
 	n, y := 0, 0
 	scenario := func(matchedOrders []MatchedOrder) bool {
+		clearingPrices := map[uint32]orderT.FixedRatePremium{
+			orderT.LegacyLeaseDurationBucket: clearingPrice,
+		}
+		subBatches := map[uint32][]MatchedOrder{
+			orderT.LegacyLeaseDurationBucket: matchedOrders,
+		}
 		report := NewTradingFeeReport(
-			matchedOrders, &feeSchedule, clearingPrice,
+			subBatches, &feeSchedule, clearingPrices,
 		)
 
 		// The total amount of fees that each trader paid should

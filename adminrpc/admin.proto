@@ -28,6 +28,8 @@ service AuctionAdmin {
     rpc QueryNodeRating (RatingQueryRequest) returns (RatingQueryResponse);
     rpc ModifyNodeRatings (ModifyRatingRequest) returns (ModifyRatingResponse);
     rpc ListNodeRatings (EmptyRequest) returns (ListNodeRatingsResponse);
+    rpc StoreLeaseDuration (LeaseDuration) returns (EmptyResponse);
+    rpc RemoveLeaseDuration (LeaseDuration) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -256,6 +258,12 @@ message AuctionStatusResponse {
     The string representation of the current auctioneer's state.
     */
     string auction_state = 7;
+
+    /*
+    The set of lease durations the market is currently accepting and the state
+    the duration buckets currently are in.
+    */
+    map<uint32, poolrpc.DurationBucketState> lease_duration_buckets = 8;
 }
 
 message ListBatchesResponse {
@@ -352,6 +360,11 @@ message BanRequest {
     uint32 duration = 3;
 }
 
+message AdminMatchedOrderSnapshots {
+    // The list of matched order snapshots.
+    repeated AdminMatchedOrderSnapshot snapshots = 1;
+}
+
 message AdminMatchedOrderSnapshot {
     // The full ask order that was matched.
     poolrpc.ServerAsk ask = 1;
@@ -379,17 +392,23 @@ message AdminBatchSnapshotResponse {
     // The unique identifier of the prior batch.
     bytes prev_batch_id = 3;
 
-    // The uniform clearing price rate in parts per billion of the batch.
-    uint32 clearing_price_rate = 4;
+    /*
+    The uniform clearing price rate in parts per billion of the batch, mapped
+    to the duration of the sub batch.
+    */
+    map<uint32, uint32> clearing_price_rate = 4;
 
-    // The set of all orders matched in the batch.
-    repeated AdminMatchedOrderSnapshot matched_orders = 5;
+    // The map of all sub batch lease durations and the orders matched in them.
+    map<uint32, AdminMatchedOrderSnapshots> matched_orders = 5;
 
     // The txid of the batch transaction.
     string batch_tx_id = 7;
 
     // The batch transaction including all witness data.
     bytes batch_tx = 6;
+
+    // The unix timestamp in nanoseconds the batch was made.
+    uint64 creation_timestamp_ns = 8;
 }
 
 message RemoveReservationRequest {
@@ -470,4 +489,10 @@ message NodeRating {
 
 message ListNodeRatingsResponse {
     repeated NodeRating node_ratings = 1;
+}
+
+message LeaseDuration {
+    uint32 duration = 1;
+    
+    poolrpc.DurationBucketState bucket_state = 2;
 }

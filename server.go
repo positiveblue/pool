@@ -133,6 +133,8 @@ type Server struct {
 
 	ratingsDB ratings.NodeRatingsDatabase
 
+	durationBuckets *order.DurationBuckets
+
 	quit chan struct{}
 
 	wg sync.WaitGroup
@@ -195,7 +197,6 @@ func NewServer(cfg *Config) (*Server, error) {
 	// by different parts during the batch execution.
 	auctionTerms := &terms.AuctioneerTerms{
 		MaxAccountValue:  btcutil.Amount(cfg.MaxAcctValue),
-		MaxOrderDuration: cfg.MaxDuration,
 		OrderExecBaseFee: btcutil.Amount(cfg.ExecFeeBase),
 		OrderExecFeeRate: btcutil.Amount(cfg.ExecFeeRate),
 	}
@@ -220,15 +221,9 @@ func NewServer(cfg *Config) (*Server, error) {
 	})
 
 	durationBuckets := order.NewDurationBuckets()
-	for duration, marketState := range cfg.DurationBuckets {
-		durationBuckets.AddNewMarket(
-			duration, order.DurationBucketState(marketState),
-		)
-	}
 	orderBook := order.NewBook(&order.BookConfig{
 		Store:           store,
 		Signer:          lnd.Signer,
-		MaxDuration:     cfg.MaxDuration,
 		DurationBuckets: durationBuckets,
 	})
 
@@ -295,7 +290,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{},
-				auctionTerms.FeeSchedule(),
+				auctionTerms.FeeSchedule(), durationBuckets,
 			),
 			OrderFeed:           orderBook,
 			BatchExecutor:       batchExecutor,
@@ -329,6 +324,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		}),
 		channelEnforcer: channelEnforcer,
 		ratingsDB:       ratingsDB,
+		durationBuckets: durationBuckets,
 		quit:            make(chan struct{}),
 	}
 
@@ -442,7 +438,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 	server.adminServer = newAdminRPCServer(
 		auctioneerServer, adminListener, adminServerOpts,
-		server.auctioneer, store,
+		server.auctioneer, store, durationBuckets,
 	)
 	cfg.Prometheus.AdminRPCServer = server.adminServer.grpcServer
 	adminrpc.RegisterAuctionAdminServer(
@@ -467,6 +463,19 @@ func (s *Server) Start() error {
 			startErr = fmt.Errorf("unable to initialize etcd "+
 				"store: %v", err)
 			return
+		}
+
+		// Load the currently stored lease duration buckets. If this is
+		// the first time we start with the lease durations code, the
+		// above Init will have added the default bucket.
+		buckets, err := s.store.LeaseDurations(ctx)
+		if err != nil {
+			startErr = fmt.Errorf("unable to load lease duration "+
+				"buckets: %v", err)
+			return
+		}
+		for duration, marketState := range buckets {
+			s.durationBuckets.PutMarket(duration, marketState)
 		}
 
 		if s.ratingsDB != nil {

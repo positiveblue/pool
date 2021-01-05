@@ -107,6 +107,8 @@ const (
 	labelMarketMade = "market_made"
 
 	labelConfTarget = "conf_target"
+
+	labelLeaseDuration = "lease_duration"
 )
 
 // batchCollector is a collector that keeps track of our accounts.
@@ -143,6 +145,7 @@ type batchCollector struct {
 func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 	baseLabels := []string{labelBatchID}
 	conflictLabels := []string{labelReporterID, labelSubjectID, labelReason}
+	priceLabels := []string{labelBatchID, labelLeaseDuration}
 	g := make(gauges)
 	g.addGauge(batchCount, "number of batches", nil)
 	g.addGauge(
@@ -153,7 +156,7 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 		append(baseLabels, labelOrderPair),
 	)
 	g.addGauge(batchNumAccounts, "number of involved accounts", baseLabels)
-	g.addGauge(batchClearingPrice, "batch clearing rate/price", baseLabels)
+	g.addGauge(batchClearingPrice, "batch clearing rate/price", priceLabels)
 	g.addGauge(batchAuctionFees, "fees received by auctioneer", baseLabels)
 	g.addGauge(batchTxNumInputs, "number of on-chain tx inputs", baseLabels)
 	g.addGauge(
@@ -387,7 +390,6 @@ func (c *batchCollector) observeBatch(id orderT.BatchID,
 	c.g[batchNumAccounts].With(labels).Set(
 		float64(len(b.FeeReport.AccountDiffs)),
 	)
-	c.g[batchClearingPrice].With(labels).Set(float64(b.ClearingPrice))
 	c.g[batchAuctionFees].With(labels).Set(
 		float64(b.FeeReport.AuctioneerFeesAccrued),
 	)
@@ -403,6 +405,15 @@ func (c *batchCollector) observeBatch(id orderT.BatchID,
 		return
 	}
 	c.g[batchTxFees].With(labels).Set(float64(fee))
+
+	// Group the clearing prices by the lease duration buckets.
+	for duration, price := range b.ClearingPrices {
+		priceLabels := prometheus.Labels{
+			labelBatchID:       hex.EncodeToString(id[:]),
+			labelLeaseDuration: fmt.Sprintf("%d", duration),
+		}
+		c.g[batchClearingPrice].With(priceLabels).Set(float64(price))
+	}
 
 	// For the units matched, we also add a label that consists of the two
 	// order pairs. That way we can get the average channel size easily.

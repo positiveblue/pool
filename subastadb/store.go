@@ -80,6 +80,10 @@ type Store interface {
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context, orderT.BatchID) (*BatchSnapshot, error)
+
+	// LeaseDurations retrieves all lease duration buckets.
+	LeaseDurations(ctx context.Context) (
+		map[uint32]order.DurationBucketState, error)
 }
 
 // BatchSnapshot holds a self-contained snapshot of a batch.
@@ -207,6 +211,13 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 		return errDbVersionMismatch
 	}
 
+	// Some database keys need default values, let's make sure we add them
+	// now. This allows for soft migrations where we can detect an old DB
+	// state simply by the non-existence of the affected keys.
+	if err := s.insertDefaultValues(ctxt); err != nil {
+		return fmt.Errorf("error inserting default values: %v", err)
+	}
+
 	// We end initialization by filling the active orders cache.
 	return s.fillActiveOrdersCache(ctxt)
 }
@@ -226,7 +237,34 @@ func (s *EtcdStore) firstTimeInit(ctx context.Context, version uint32) error {
 		// Store the starting batch key.
 		return s.putPerBatchKeySTM(stm, InitialBatchKey)
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Also add the default values if this is the first time we're using the
+	// DB.
+	return s.insertDefaultValues(ctx)
+}
+
+// insertDefaultValues adds default values to the database where needed.
+func (s *EtcdStore) insertDefaultValues(ctx context.Context) error {
+	// Insert default lease duration bucket if we're starting for the first
+	// time with the version where we actually store them to the database.
+	durations, err := s.LeaseDurations(ctx)
+	if err != nil {
+		return err
+	}
+	if len(durations) == 0 {
+		err := s.StoreLeaseDuration(
+			ctx, orderT.LegacyLeaseDurationBucket,
+			order.BucketStateClearingMarket,
+		)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // getSingleValue is a helper method to retrieve the value for a key that should

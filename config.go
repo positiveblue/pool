@@ -12,7 +12,6 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
-	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -85,11 +84,6 @@ const (
 	// if no other configuration value is set.
 	defaultMaxAcctValue int64 = btcutil.SatoshiPerBitcoin
 
-	// defaultMaxDuration is the default maximum value for an order's min
-	// duration (bid) or max duration (ask). The default is equal to the
-	// number of blocks in a year.
-	defaultMaxDuration uint32 = 365 * 144
-
 	// defaultAccountExpiryOffset is a value expressed in blocks that subtracted
 	// from the expiry of an account in order to determine if it expires
 	// "too soon". This value should essentially represent an upper bound
@@ -116,14 +110,6 @@ const (
 	// defaultTraderRejectResetInterval is the default interval after which
 	// we automatically reset the trader reject conflict map.
 	defaultTraderRejectResetInterval = time.Hour * 24
-)
-
-var (
-	// defaultDurationBuckets is the current default set of active duration
-	// markets, along with the status for each market.
-	defaultDurationBuckets = map[uint32]uint8{
-		2016: order.BucketStateClearingMarket,
-	}
 )
 
 var (
@@ -191,8 +177,6 @@ type Config struct {
 
 	AccountExpiryOffset uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
 
-	DurationBuckets map[uint32]uint8 `long:"durationbuckets" description:"maps a duration the market observes to the current state of said duration"`
-
 	NodeRatingsActive          bool          `long:"noderatingsactive" description:"if true node ratings will be used in order matching"`
 	NodeRatingsRefreshInterval time.Duration `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
 	BosScoreWebURL             string        `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
@@ -223,7 +207,6 @@ var DefaultConfig = &Config{
 	ExecFeeRate:      DefaultExecutionFeeRate,
 	BatchConfTarget:  defaultBatchConfTarget,
 	MaxAcctValue:     defaultMaxAcctValue,
-	MaxDuration:      defaultMaxDuration,
 	SubscribeTimeout: defaultSubscribeTimeout,
 	ServerName:       "auction.lightning.today",
 	Insecure:         false,
@@ -247,7 +230,6 @@ var DefaultConfig = &Config{
 	DebugLevel:                   defaultLogLevel,
 	LogDir:                       defaultLogDir,
 	AccountExpiryOffset:          defaultAccountExpiryOffset,
-	DurationBuckets:              defaultDurationBuckets,
 	NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
 	BosScoreWebURL:               defaultBosScoreURL,
 	FundingConflictResetInterval: defaultFundingConflictResetInterval,

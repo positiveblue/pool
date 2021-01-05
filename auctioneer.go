@@ -1532,9 +1532,15 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// We pass in our two conflict handlers that also act as match
 		// predicates together with the default predicate chain.
-		predicateChain := []matching.MatchPredicate{
-			a.cfg.FundingConflicts, a.cfg.TraderRejected,
-		}
+		predicateChain := make(
+			[]matching.MatchPredicate,
+			len(matching.DefaultPredicateChain),
+		)
+		copy(predicateChain, matching.DefaultPredicateChain)
+		predicateChain = append(
+			predicateChain, a.cfg.FundingConflicts,
+			a.cfg.TraderRejected,
+		)
 
 		batchKey, err := a.cfg.DB.BatchKey(context.Background())
 		if err != nil {
@@ -1555,16 +1561,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			)
 		}
 
-		predicateChain = append(
-			predicateChain, matching.DefaultPredicateChain...,
-		)
-
 		log.Debugf("Using fee rate %v for match making", s.batchFeeRate)
 
 		// We'll attempt to make this market.
-		//
-		// TODO(roasbeef): iterate over then clear each market based on
-		// the duration? then merge at the end? before execution?
 		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
 			accountFilter, filterChain, predicateChain,
@@ -1599,7 +1598,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			log.Infof("Have pending batches, attempting " +
 				"empty batch")
-			orderBatch = &matching.OrderBatch{}
+			orderBatch = matching.EmptyBatch()
 
 		case err != nil:
 			return nil, err

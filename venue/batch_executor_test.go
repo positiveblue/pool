@@ -1164,9 +1164,9 @@ func TestBatchExecutorEmptyBatch(t *testing.T) {
 	testCtx.RegisterTrader(bigAcct)
 
 	// Next, we'll kick things off by submitting the empty batch.
-	batch := matching.OrderBatch{}
+	batch := matching.EmptyBatch()
 	batchFeeRate := chainfee.FeePerKwFloor
-	respChan := testCtx.SubmitBatch(&batch, batchFeeRate)
+	respChan := testCtx.SubmitBatch(batch, batchFeeRate)
 
 	// We expect no messages to be sent, since no trader is part of the
 	// batch.

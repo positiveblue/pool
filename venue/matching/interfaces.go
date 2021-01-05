@@ -1,6 +1,8 @@
 package matching
 
 import (
+	"time"
+
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
@@ -85,6 +87,25 @@ type MatchedOrder struct {
 	Details OrderPair
 }
 
+// copyMatchedOrder creates a deep copy of a MatchedOrder struct.
+func copyMatchedOrder(original *MatchedOrder) MatchedOrder {
+	return MatchedOrder{
+		Asker:  original.Asker,
+		Bidder: original.Bidder,
+		Details: OrderPair{
+			Ask: &order.Ask{
+				Ask: original.Details.Ask.Ask,
+				Kit: original.Details.Ask.Kit,
+			},
+			Bid: &order.Bid{
+				Bid: original.Details.Bid.Bid,
+				Kit: original.Details.Bid.Kit,
+			},
+			Quote: original.Details.Quote,
+		},
+	}
+}
+
 // MatchSet is the final output of a match making session. This packages all
 // the orders that have been matched in the past batch, along with the set of
 // unmatched orders as those may be used for determining the final clearing
@@ -136,8 +157,17 @@ type PriceClearer interface {
 // TradingFeeReport instance is essentially an accounting report detailing how
 // money exchanged hands in the batch.
 type OrderBatch struct {
+	// Version is the version of the batch execution protocol.
+	Version orderT.BatchVersion
+
 	// Orders is the set of matched orders in this batch.
 	Orders []MatchedOrder
+
+	// SubBatches is the set of matched orders in this batch mapped to the
+	// distinct lease duration that was used for the sub-batches. It
+	// contains the exact same number of orders as Orders but split into the
+	// different lease duration markets.
+	SubBatches map[uint32][]MatchedOrder
 
 	// FeeReport is a report describing all the fees paid in the batch.
 	// Note that these are only _trading_ fees and don't yet included any
@@ -145,33 +175,65 @@ type OrderBatch struct {
 	// transaction.
 	FeeReport TradingFeeReport
 
-	// ClearingPrice is the single clearing price that all traders in the
-	// batch will pay as computed within the FeeReport above.
-	ClearingPrice orderT.FixedRatePremium
+	// CreationTimestamp is the timestamp at which the batch was first
+	// persisted.
+	CreationTimestamp time.Time
+
+	// ClearingPrices is the clearing price mapped to the distinct lease
+	// durations of the sub-batches that the traders in the individual
+	// sub-batches will pay as computed within the FeeReport above.
+	ClearingPrices map[uint32]orderT.FixedRatePremium
+}
+
+// NewBatch returns a new batch with the given match data, the latest batch
+// version and the current timestamp.
+func NewBatch(subBatches map[uint32][]MatchedOrder, feeReport TradingFeeReport,
+	prices map[uint32]orderT.FixedRatePremium) *OrderBatch {
+
+	// For quick access to all orders, we also copy them along in a flat
+	// slice that contains the same data as the bucketed map.
+	allOrders := make([]MatchedOrder, 0)
+	for _, subBatch := range subBatches {
+		allOrders = append(allOrders, subBatch...)
+	}
+
+	return &OrderBatch{
+		Version:           orderT.CurrentBatchVersion,
+		Orders:            allOrders,
+		SubBatches:        subBatches,
+		FeeReport:         feeReport,
+		CreationTimestamp: time.Now(),
+		ClearingPrices:    prices,
+	}
+}
+
+// EmptyBatch returns a batch that has only the version set to the latest batch
+// version and the creation timestamp with the current time.
+func EmptyBatch() *OrderBatch {
+	return &OrderBatch{
+		Version:           orderT.CurrentBatchVersion,
+		SubBatches:        make(map[uint32][]MatchedOrder),
+		CreationTimestamp: time.Now(),
+		ClearingPrices:    make(map[uint32]orderT.FixedRatePremium),
+	}
 }
 
 // Copy performs a deep copy of the passed OrderBatch instance.
 func (o *OrderBatch) Copy() OrderBatch {
 	orders := make([]MatchedOrder, 0, len(o.Orders))
 	for _, matchedOrder := range o.Orders {
-		ask := order.Ask{
-			Ask: matchedOrder.Details.Ask.Ask,
-			Kit: matchedOrder.Details.Ask.Kit,
-		}
-		bid := order.Bid{
-			Bid: matchedOrder.Details.Bid.Bid,
-			Kit: matchedOrder.Details.Bid.Kit,
-		}
+		mo := matchedOrder
+		orders = append(orders, copyMatchedOrder(&mo))
+	}
 
-		orders = append(orders, MatchedOrder{
-			Asker:  matchedOrder.Asker,
-			Bidder: matchedOrder.Bidder,
-			Details: OrderPair{
-				Ask:   &ask,
-				Bid:   &bid,
-				Quote: matchedOrder.Details.Quote,
-			},
-		})
+	subBatches := make(map[uint32][]MatchedOrder)
+	for duration, subBatch := range o.SubBatches {
+		orders := make([]MatchedOrder, 0, len(subBatch))
+		for _, matchedOrder := range subBatch {
+			mo := matchedOrder
+			orders = append(orders, copyMatchedOrder(&mo))
+		}
+		subBatches[duration] = orders
 	}
 
 	feeReport := TradingFeeReport{
@@ -195,10 +257,18 @@ func (o *OrderBatch) Copy() OrderBatch {
 		}
 	}
 
+	clearingPrices := make(map[uint32]orderT.FixedRatePremium)
+	for duration, price := range o.ClearingPrices {
+		clearingPrices[duration] = price
+	}
+
 	return OrderBatch{
-		Orders:        orders,
-		ClearingPrice: o.ClearingPrice,
-		FeeReport:     feeReport,
+		Version:           o.Version,
+		Orders:            orders,
+		SubBatches:        subBatches,
+		FeeReport:         feeReport,
+		CreationTimestamp: o.CreationTimestamp,
+		ClearingPrices:    clearingPrices,
 	}
 }
 

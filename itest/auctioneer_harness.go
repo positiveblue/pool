@@ -17,7 +17,6 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
-	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
@@ -92,7 +91,6 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
 			BatchConfTarget:   6,
 			MaxAcctValue:      10 * btcutil.SatoshiPerBitcoin,
-			MaxDuration:       365 * 144,
 			SubscribeTimeout:  500 * time.Millisecond,
 			Lnd: &subasta.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
@@ -114,10 +112,6 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				nextAvailablePort()),
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
 				nextAvailablePort()),
-			DurationBuckets: map[uint32]uint8{
-				2016: order.BucketStateClearingMarket,
-				1440: order.BucketStateClearingMarket,
-			},
 		},
 	}, nil
 }

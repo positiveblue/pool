@@ -74,22 +74,19 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 	// Ask the environment to send the preparation message out and make sure
 	// we receive exactly one with both accounts included.
 	err := env.sendPrepareMsg()
-	if err != nil {
-		t.Fatalf("could not send prepare message: %v", err)
-	}
+	require.NoError(t, err)
 	validateMessagesReceived(func(msg ExecutionMsg) {
 		switch m := msg.(type) {
 		case *PrepareMsg:
-			if len(m.MatchedOrders) != 3 {
-				t.Fatalf("unexpected number of matched "+
-					"orders, got %d wanted 3",
-					len(m.MatchedOrders))
-			}
-			if len(m.AccountOutPoints) != 2 {
-				t.Fatalf("unexpected number of account "+
-					"outputs, got %d wanted 2",
-					len(m.AccountOutPoints))
-			}
+			require.Len(t, m.MatchedOrders, 1)
+			matchedOrders := m.MatchedOrders[testLeaseDuration]
+
+			require.Len(t, matchedOrders, 3)
+			require.Len(t, matchedOrders[bid1.Nonce()], 1)
+			require.Len(t, matchedOrders[bid2.Nonce()], 1)
+			require.Len(t, matchedOrders[ask.Nonce()], 2)
+
+			require.Len(t, m.AccountOutPoints, 2)
 
 		default:
 			t.Fatalf("unknown message received: %#v", m)

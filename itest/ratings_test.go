@@ -71,7 +71,7 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 		askSize        = 600_000
 		askRate        = 2000
 		bidSize        = 300_000
-		durationBlocks = 1440
+		durationBlocks = 2016
 	)
 
 	// Submit an ask order that is large enough to be matched multiple

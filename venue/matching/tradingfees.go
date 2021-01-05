@@ -37,64 +37,69 @@ type TradingFeeReport struct {
 // NewTradingFeeReport creates a new trading fee report given a set of matched
 // orders, the clearing price for the batch, and the feeSchedule of the
 // auctioneer.
-func NewTradingFeeReport(orders []MatchedOrder, feeSchedule terms.FeeSchedule,
-	clearingPrice orderT.FixedRatePremium) TradingFeeReport {
+func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
+	feeSchedule terms.FeeSchedule,
+	clearingPrices map[uint32]orderT.FixedRatePremium) TradingFeeReport {
 
 	accountDiffs := make(map[AccountID]AccountDiff)
 	var totalFeesAccrued btcutil.Amount
 
 	// For each order pair, we'll compute the exchange of funds due to
 	// channel selling, buying, and trading fee execution.
-	for _, order := range orders {
-		maker := order.Asker
-		taker := order.Bidder
+	for _, orders := range subBatches {
+		for _, order := range orders {
+			maker := order.Asker
+			taker := order.Bidder
 
-		// If neither the taker or maker have an entry yet in the
-		// account diff map, we'll initialize them with their starting
-		// balance before clearing of this batch.
-		if _, ok := accountDiffs[taker.AccountKey]; !ok {
-			accountDiffs[taker.AccountKey] = AccountDiff{
-				StartingState: &taker,
-				AccountTally: &orderT.AccountTally{
-					EndingBalance: taker.AccountBalance,
-				},
+			// If neither the taker or maker have an entry yet in
+			// the account diff map, we'll initialize them with
+			// their starting balance before clearing of this batch.
+			if _, ok := accountDiffs[taker.AccountKey]; !ok {
+				accountDiffs[taker.AccountKey] = AccountDiff{
+					StartingState: &taker,
+					AccountTally: &orderT.AccountTally{
+						EndingBalance: taker.AccountBalance,
+					},
+				}
 			}
-		}
-		if _, ok := accountDiffs[maker.AccountKey]; !ok {
-			accountDiffs[maker.AccountKey] = AccountDiff{
-				StartingState: &maker,
-				AccountTally: &orderT.AccountTally{
-					EndingBalance: maker.AccountBalance,
-				},
+			if _, ok := accountDiffs[maker.AccountKey]; !ok {
+				accountDiffs[maker.AccountKey] = AccountDiff{
+					StartingState: &maker,
+					AccountTally: &orderT.AccountTally{
+						EndingBalance: maker.AccountBalance,
+					},
+				}
 			}
+
+			takerDiff := accountDiffs[taker.AccountKey]
+			makerDiff := accountDiffs[maker.AccountKey]
+
+			// Now that we know we have state initialized for both
+			// sides, we'll evaluate the order they belong to clear
+			// them against their balances.
+			totalSats := order.Details.Quote.TotalSatsCleared
+
+			// The durations are symmetric now, it doesn't matter
+			// which one we take. They must be in the same bucket
+			// anyway.
+			duration := order.Details.Ask.LeaseDuration()
+			clearingPrice := clearingPrices[duration]
+
+			// Next, we'll need to debit the taker's account to pay
+			// the premium derived from the uniform clearing price
+			// for this.
+			totalFeesAccrued += makerDiff.CalcMakerDelta(
+				feeSchedule, clearingPrice, totalSats,
+				order.Details.Bid.LeaseDuration(),
+			)
+			totalFeesAccrued += takerDiff.CalcTakerDelta(
+				feeSchedule, clearingPrice, totalSats,
+				order.Details.Bid.LeaseDuration(),
+			)
+
+			accountDiffs[taker.AccountKey] = takerDiff
+			accountDiffs[maker.AccountKey] = makerDiff
 		}
-
-		takerDiff := accountDiffs[taker.AccountKey]
-		makerDiff := accountDiffs[maker.AccountKey]
-
-		// Now that we know we have state initialized for both sides,
-		// we'll evaluate the order they belong to clear them against
-		// their balances.
-		totalSats := order.Details.Quote.TotalSatsCleared
-
-		// Next, we'll need to debit the taker's account to pay the
-		// premium derived from the uniform clearing price for this.
-		//
-		// TODO(roasbeef): which duration to use? clear the duration
-		// market as well?
-		//
-		// TODO(roasbeef): need market wide clamp on duration?
-		totalFeesAccrued += makerDiff.CalcMakerDelta(
-			feeSchedule, clearingPrice, totalSats,
-			order.Details.Bid.LeaseDuration(),
-		)
-		totalFeesAccrued += takerDiff.CalcTakerDelta(
-			feeSchedule, clearingPrice, totalSats,
-			order.Details.Bid.LeaseDuration(),
-		)
-
-		accountDiffs[taker.AccountKey] = takerDiff
-		accountDiffs[maker.AccountKey] = makerDiff
 	}
 
 	return TradingFeeReport{

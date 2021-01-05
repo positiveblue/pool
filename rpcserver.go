@@ -378,6 +378,10 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 			m := account.ValueModifier(value)
 			modifiers = append(modifiers, m)
 		}
+		if req.NewParams.Expiry != 0 {
+			m := account.ExpiryModifier(req.NewParams.Expiry)
+			modifiers = append(modifiers, m)
+		}
 	}
 
 	var rawTraderKey [33]byte
@@ -811,7 +815,7 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *poolrpc.ClientAuctionMessage,
 		// batch execution protocol. If not, they need to update. Better
 		// reject them now instead of waiting for a batch to be prepared
 		// and then everybody bailing out because of a version mismatch.
-		if commit.BatchVersion != uint32(orderT.CurrentVersion) {
+		if commit.BatchVersion != uint32(orderT.CurrentBatchVersion) {
 			comms.err <- orderT.ErrVersionMismatch
 			return
 		}
@@ -1118,96 +1122,12 @@ func (s *rpcServer) sendToTrader(
 
 	switch m := msg.(type) {
 	case *venue.PrepareMsg:
-		feeSchedule, ok := m.ExecutionFee.(*terms.LinearFeeSchedule)
-		if !ok {
-			return fmt.Errorf("FeeSchedule w/o fee rate used: %T",
-				m.ExecutionFee)
+		prepareMsg, err := marshallPrepareMsg(m)
+		if err != nil {
+			return fmt.Errorf("unable to marshall prepare msg: %v",
+				err)
 		}
-
-		// Each order the user submitted may be matched to one or more
-		// corresponding orders, so we'll map the in-memory
-		// representation we use to the proto representation that we
-		// need to send to the client.
-		matchedOrders := make(map[string]*poolrpc.MatchedOrder)
-		for traderOrderNonce, orderMatches := range m.MatchedOrders {
-			rpcLog.Debugf("Order(%x) matched w/ %v orders",
-				traderOrderNonce[:], len(m.MatchedOrders))
-
-			nonceStr := hex.EncodeToString(
-				traderOrderNonce[:],
-			)
-			matchedOrders[nonceStr] = &poolrpc.MatchedOrder{}
-
-			// As we support partial patches, this trader nonce
-			// might be matched with a set of other orders, so
-			// we'll unroll this here now.
-			for _, o := range orderMatches {
-				// Find out if the recipient of the message is
-				// the asker or bidder. Traders with the same
-				// token can't be matched so we know that if the
-				// asker's account is in the list of charged
-				// accounts, the trader is the asker.
-				isAsk := false
-				for _, acct := range m.ChargedAccounts {
-					acctKey := acct.StartingState.AccountKey
-					if o.Asker.AccountKey == acctKey {
-						isAsk = true
-						break
-					}
-				}
-
-				unitsFilled := o.Details.Quote.UnitsMatched
-
-				// If the client had their bid matched, then
-				// we'll send over the ask information and the
-				// other way around if it's a bid.
-				ask, bid := o.Details.Ask, o.Details.Bid
-				if !isAsk {
-					matchedOrders[nonceStr].MatchedAsks = append(
-						matchedOrders[nonceStr].MatchedAsks,
-						marshallMatchedAsk(ask, unitsFilled),
-					)
-				} else {
-					matchedOrders[nonceStr].MatchedBids = append(
-						matchedOrders[nonceStr].MatchedBids,
-						marshallMatchedBid(bid, unitsFilled),
-					)
-				}
-			}
-		}
-
-		// Next, for each account that the user had in this batch,
-		// we'll generate a similar RPC account diff so they can verify
-		// their portion of the batch.
-		var accountDiffs []*poolrpc.AccountDiff
-		for idx, acctDiff := range m.ChargedAccounts {
-			acctDiff, err := marshallAccountDiff(
-				acctDiff, m.AccountOutPoints[idx],
-			)
-			if err != nil {
-				return err
-			}
-
-			accountDiffs = append(accountDiffs, acctDiff)
-		}
-
-		return stream.Send(&poolrpc.ServerAuctionMessage{
-			Msg: &poolrpc.ServerAuctionMessage_Prepare{
-				Prepare: &poolrpc.OrderMatchPrepare{
-					MatchedOrders:     matchedOrders,
-					ClearingPriceRate: uint32(m.ClearingPrice),
-					ChargedAccounts:   accountDiffs,
-					ExecutionFee: &poolrpc.ExecutionFee{
-						BaseFee: uint64(m.ExecutionFee.BaseFee()),
-						FeeRate: uint64(feeSchedule.FeeRate()),
-					},
-					BatchTransaction: m.BatchTx,
-					FeeRateSatPerKw:  uint64(m.FeeRate),
-					BatchId:          m.BatchID[:],
-					BatchVersion:     m.BatchVersion,
-				},
-			},
-		})
+		return stream.Send(prepareMsg)
 
 	case *venue.SignBeginMsg:
 		return stream.Send(&poolrpc.ServerAuctionMessage{
@@ -1232,6 +1152,130 @@ func (s *rpcServer) sendToTrader(
 	default:
 		return fmt.Errorf("unknown message type: %v", msg)
 	}
+}
+
+// marshallPrepareMsg translates the venue's prepare message struct into the
+// RPC representation.
+func marshallPrepareMsg(m *venue.PrepareMsg) (*poolrpc.ServerAuctionMessage,
+	error) {
+
+	feeSchedule, ok := m.ExecutionFee.(*terms.LinearFeeSchedule)
+	if !ok {
+		return nil, fmt.Errorf("FeeSchedule w/o fee rate used: %T",
+			m.ExecutionFee)
+	}
+
+	// Orders and prices are grouped by the distinct lease duration markets.
+	markets := make(map[uint32]*poolrpc.MatchedMarket)
+
+	// Each order the user submitted may be matched to one or more
+	// corresponding orders, so we'll map the in-memory representation we
+	// use to the proto representation that we need to send to the client.
+	for duration, subBatches := range m.MatchedOrders {
+		matchedOrders := make(map[string]*poolrpc.MatchedOrder)
+		for traderOrderNonce, orderMatches := range subBatches {
+			rpcLog.Debugf("Order(%x) matched w/ %v orders",
+				traderOrderNonce[:], len(m.MatchedOrders))
+
+			nonceStr := hex.EncodeToString(traderOrderNonce[:])
+			matchedOrders[nonceStr] = &poolrpc.MatchedOrder{}
+			mo := matchedOrders[nonceStr]
+
+			// As we support partial patches, this trader nonce
+			// might be matched with a set of other orders, so we'll
+			// unroll this here now.
+			for _, o := range orderMatches {
+				// Find out if the recipient of the message is
+				// the asker or bidder. Traders with the same
+				// token can't be matched so we know that if the
+				// asker's account is in the list of charged
+				// accounts, the trader is the asker.
+				isAsk := false
+				for _, acct := range m.ChargedAccounts {
+					acctKey := acct.StartingState.AccountKey
+					if o.Asker.AccountKey == acctKey {
+						isAsk = true
+						break
+					}
+				}
+
+				unitsFilled := o.Details.Quote.UnitsMatched
+
+				// If the client had their bid matched, then
+				// we'll send over the ask information and the
+				// other way around if it's a bid.
+				ask, bid := o.Details.Ask, o.Details.Bid
+				if !isAsk {
+					mo.MatchedAsks = append(
+						mo.MatchedAsks,
+						marshallMatchedAsk(
+							ask, unitsFilled,
+						),
+					)
+				} else {
+					mo.MatchedBids = append(
+						mo.MatchedBids,
+						marshallMatchedBid(
+							bid, unitsFilled,
+						),
+					)
+				}
+			}
+		}
+
+		markets[duration] = &poolrpc.MatchedMarket{
+			MatchedOrders:     matchedOrders,
+			ClearingPriceRate: uint32(m.ClearingPrices[duration]),
+		}
+	}
+
+	// Next, for each account that the user had in this batch, we'll
+	// generate a similar RPC account diff so they can verify their portion
+	// of the batch.
+	accountDiffs := make([]*poolrpc.AccountDiff, len(m.ChargedAccounts))
+	for idx, acctDiff := range m.ChargedAccounts {
+		var err error
+		accountDiffs[idx], err = marshallAccountDiff(
+			acctDiff, m.AccountOutPoints[idx],
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// To accommodate any legacy node participating in a batch, we need to
+	// also send the orders in the deprecated fields. This assumes the
+	// trader was matched with a 2016 block duration order, otherwise
+	// something would be quite wrong.
+	var (
+		legacyMatchedOrders map[string]*poolrpc.MatchedOrder
+		legacyClearingPrice uint32
+	)
+	legacyMarket, ok := markets[orderT.LegacyLeaseDurationBucket]
+	if ok {
+		legacyMatchedOrders = legacyMarket.MatchedOrders
+		legacyClearingPrice = legacyMarket.ClearingPriceRate
+	}
+
+	// Last, group the matched orders by their lease duration markets.
+	return &poolrpc.ServerAuctionMessage{
+		Msg: &poolrpc.ServerAuctionMessage_Prepare{
+			Prepare: &poolrpc.OrderMatchPrepare{
+				MatchedOrders:     legacyMatchedOrders,
+				ClearingPriceRate: legacyClearingPrice,
+				ChargedAccounts:   accountDiffs,
+				ExecutionFee: &poolrpc.ExecutionFee{
+					BaseFee: uint64(m.ExecutionFee.BaseFee()),
+					FeeRate: uint64(feeSchedule.FeeRate()),
+				},
+				BatchTransaction: m.BatchTx,
+				FeeRateSatPerKw:  uint64(m.FeeRate),
+				BatchId:          m.BatchID[:],
+				BatchVersion:     m.BatchVersion,
+				MatchedMarkets:   markets,
+			},
+		},
+	}, nil
 }
 
 // addStreamSubscription adds an account subscription to the stream that is
@@ -1338,8 +1382,12 @@ func (s *rpcServer) Terms(ctx context.Context, _ *poolrpc.TermsRequest) (
 	nextBatchClear := time.Now().Add(s.auctioneer.cfg.BatchTicker.NextTickIn())
 
 	resp := &poolrpc.TermsResponse{
-		MaxAccountValue:        uint64(s.terms.MaxAccountValue),
-		MaxOrderDurationBlocks: s.terms.MaxOrderDuration,
+		MaxAccountValue: uint64(s.terms.MaxAccountValue),
+		// The max order duration is now deprecated, but old clients
+		// will still use it to validate their orders so we need to set
+		// it to a very high value. We'll make sure we don't accept
+		// orders outside of the duration buckets in later commits.
+		MaxOrderDurationBlocks: 365 * 144,
 		ExecutionFee: &poolrpc.ExecutionFee{
 			BaseFee: uint64(s.terms.OrderExecBaseFee),
 			FeeRate: uint64(s.terms.OrderExecFeeRate),
@@ -1348,19 +1396,29 @@ func (s *rpcServer) Terms(ctx context.Context, _ *poolrpc.TermsRequest) (
 		NextBatchConfTarget:      uint32(s.auctioneer.cfg.ConfTarget),
 		NextBatchFeeRateSatPerKw: uint64(nextBatchFeeRate),
 		NextBatchClearTimestamp:  uint64(nextBatchClear.Unix()),
+		LeaseDurationBuckets:     make(map[uint32]poolrpc.DurationBucketState),
 	}
 
 	durationBuckets := s.orderBook.DurationBuckets()
-	_ = durationBuckets.IterBuckets(
+	err = durationBuckets.IterBuckets(
 		func(d uint32, s order.DurationBucketState) error {
 			marketOpen := (s != order.BucketStateMarketClosed &&
 				s != order.BucketStateNoMarket)
 
+			rpcState, err := marshallDurationBucketState(s)
+			if err != nil {
+				return err
+			}
+
 			resp.LeaseDurations[d] = marketOpen
+			resp.LeaseDurationBuckets[d] = rpcState
 
 			return nil
 		},
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	return resp, nil
 }
@@ -1391,12 +1449,12 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 
 	resp := &poolrpc.RelevantBatch{
 		// TODO(wilmer): Set remaining fields when available.
-		Version:           uint32(orderT.CurrentVersion),
-		Id:                batchKey.SerializeCompressed(),
-		ClearingPriceRate: uint32(batch.ClearingPrice),
-		ExecutionFee:      nil,
-		Transaction:       buf.Bytes(),
-		FeeRateSatPerKw:   0,
+		Version:             uint32(batch.Version),
+		Id:                  batchKey.SerializeCompressed(),
+		ExecutionFee:        nil,
+		Transaction:         buf.Bytes(),
+		FeeRateSatPerKw:     0,
+		CreationTimestampNs: uint64(batch.CreationTimestamp.UnixNano()),
 	}
 
 	// With the batch obtained, we'll filter it for the requested accounts.
@@ -1439,29 +1497,49 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 		resp.ChargedAccounts = append(resp.ChargedAccounts, accountDiff)
 	}
 
+	resp.MatchedMarkets = make(map[uint32]*poolrpc.MatchedMarket)
+	for duration := range batch.SubBatches {
+		resp.MatchedMarkets[duration] = &poolrpc.MatchedMarket{
+			MatchedOrders:     make(map[string]*poolrpc.MatchedOrder),
+			ClearingPriceRate: uint32(batch.ClearingPrices[duration]),
+		}
+	}
+
 	// An order can be fulfilled by multiple orders of the opposing type, so
 	// make sure we take that into notice.
-	resp.MatchedOrders = make(map[string]*poolrpc.MatchedOrder)
-	for _, order := range batch.Orders {
-		if _, ok := accounts[order.Asker.AccountKey]; ok {
-			nonce := order.Details.Ask.Nonce().String()
-			matchedBid := marshallMatchedBid(
-				order.Details.Bid, order.Details.Quote.UnitsMatched,
-			)
-			resp.MatchedOrders[nonce].MatchedBids = append(
-				resp.MatchedOrders[nonce].MatchedBids, matchedBid,
-			)
-			continue
-		}
+	for duration, subBatch := range batch.SubBatches {
+		matchedOrders := resp.MatchedMarkets[duration].MatchedOrders
+		for _, o := range subBatch {
+			if _, ok := accounts[o.Asker.AccountKey]; ok {
+				nonce := o.Details.Ask.Nonce().String()
+				matchedBid := marshallMatchedBid(
+					o.Details.Bid,
+					o.Details.Quote.UnitsMatched,
+				)
+				resp.MatchedOrders[nonce].MatchedBids = append(
+					resp.MatchedOrders[nonce].MatchedBids, matchedBid,
+				)
+				matchedOrders[nonce].MatchedBids = append(
+					matchedOrders[nonce].MatchedBids,
+					matchedBid,
+				)
+				continue
+			}
 
-		if _, ok := accounts[order.Bidder.AccountKey]; ok {
-			nonce := order.Details.Bid.Nonce().String()
-			matchedAsk := marshallMatchedAsk(
-				order.Details.Ask, order.Details.Quote.UnitsMatched,
-			)
-			resp.MatchedOrders[nonce].MatchedAsks = append(
-				resp.MatchedOrders[nonce].MatchedAsks, matchedAsk,
-			)
+			if _, ok := accounts[o.Bidder.AccountKey]; ok {
+				nonce := o.Details.Bid.Nonce().String()
+				matchedAsk := marshallMatchedAsk(
+					o.Details.Ask,
+					o.Details.Quote.UnitsMatched,
+				)
+				resp.MatchedOrders[nonce].MatchedAsks = append(
+					resp.MatchedOrders[nonce].MatchedAsks, matchedAsk,
+				)
+				matchedOrders[nonce].MatchedAsks = append(
+					matchedOrders[nonce].MatchedAsks,
+					matchedAsk,
+				)
+			}
 		}
 	}
 
@@ -2119,39 +2197,56 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 	}
 
 	resp := &poolrpc.BatchSnapshotResponse{
-		Version:           uint32(orderT.CurrentVersion),
-		BatchId:           batchKey.SerializeCompressed(),
-		PrevBatchId:       prevBatchID,
-		ClearingPriceRate: uint32(batch.ClearingPrice),
+		Version:             uint32(batch.Version),
+		BatchId:             batchKey.SerializeCompressed(),
+		PrevBatchId:         prevBatchID,
+		CreationTimestampNs: uint64(batch.CreationTimestamp.UnixNano()),
+		MatchedOrders: make(
+			[]*poolrpc.MatchedOrderSnapshot, len(batch.Orders),
+		),
+		MatchedMarkets: make(map[uint32]*poolrpc.MatchedMarketSnapshot),
+	}
+
+	for duration, subBatch := range batch.SubBatches {
+		resp.MatchedMarkets[duration] = &poolrpc.MatchedMarketSnapshot{
+			MatchedOrders: make(
+				[]*poolrpc.MatchedOrderSnapshot, len(subBatch),
+			),
+			ClearingPriceRate: uint32(batch.ClearingPrices[duration]),
+		}
 	}
 
 	// The response for this call is a bit simpler than the
 	// RelevantBatchSnapshot call, in that we only need to return the set
 	// of orders, and not also the accounts diffs.
-	resp.MatchedOrders = make(
-		[]*poolrpc.MatchedOrderSnapshot, len(batch.Orders),
-	)
-	for i, o := range batch.Orders {
-		ask := o.Details.Ask
-		bid := o.Details.Bid
-		quote := o.Details.Quote
+	orderIdx := 0
+	for duration, subBatch := range batch.SubBatches {
+		market := resp.MatchedMarkets[duration]
+		for i, o := range subBatch {
+			ask := o.Details.Ask
+			bid := o.Details.Bid
+			quote := o.Details.Quote
 
-		resp.MatchedOrders[i] = &poolrpc.MatchedOrderSnapshot{
-			Ask: &poolrpc.AskSnapshot{
-				Version:             uint32(ask.Version),
-				LeaseDurationBlocks: ask.LeaseDuration(),
-				RateFixed:           ask.Details().FixedRate,
-				ChanType:            uint32(ask.ServerDetails().ChanType),
-			},
-			Bid: &poolrpc.BidSnapshot{
-				Version:             uint32(bid.Version),
-				LeaseDurationBlocks: bid.LeaseDuration(),
-				RateFixed:           bid.Details().FixedRate,
-				ChanType:            uint32(bid.ServerDetails().ChanType),
-			},
-			MatchingRate:     uint32(quote.MatchingRate),
-			TotalSatsCleared: uint64(quote.TotalSatsCleared),
-			UnitsMatched:     uint32(quote.UnitsMatched),
+			rpcSnapshot := &poolrpc.MatchedOrderSnapshot{
+				Ask: &poolrpc.AskSnapshot{
+					Version:             uint32(ask.Version),
+					LeaseDurationBlocks: ask.LeaseDuration(),
+					RateFixed:           ask.Details().FixedRate,
+					ChanType:            uint32(ask.ServerDetails().ChanType),
+				},
+				Bid: &poolrpc.BidSnapshot{
+					Version:             uint32(bid.Version),
+					LeaseDurationBlocks: bid.LeaseDuration(),
+					RateFixed:           bid.Details().FixedRate,
+					ChanType:            uint32(bid.ServerDetails().ChanType),
+				},
+				MatchingRate:     uint32(quote.MatchingRate),
+				TotalSatsCleared: uint64(quote.TotalSatsCleared),
+				UnitsMatched:     uint32(quote.UnitsMatched),
+			}
+			market.MatchedOrders[i] = rpcSnapshot
+			resp.MatchedOrders[orderIdx] = rpcSnapshot
+			orderIdx++
 		}
 	}
 
@@ -2262,5 +2357,28 @@ func marshallNodeTier(nodeTier orderT.NodeTier) (poolrpc.NodeTier, error) {
 
 	default:
 		return 0, fmt.Errorf("unknown node tier: %v", nodeTier)
+	}
+}
+
+// marshallDurationBucketState maps the duration bucket state integer into the
+// enum used on the RPC interface.
+func marshallDurationBucketState(
+	state order.DurationBucketState) (poolrpc.DurationBucketState, error) {
+
+	switch state {
+	case order.BucketStateNoMarket:
+		return poolrpc.DurationBucketState_NO_MARKET, nil
+
+	case order.BucketStateMarketClosed:
+		return poolrpc.DurationBucketState_MARKET_CLOSED, nil
+
+	case order.BucketStateAcceptingOrders:
+		return poolrpc.DurationBucketState_ACCEPTING_ORDERS, nil
+
+	case order.BucketStateClearingMarket:
+		return poolrpc.DurationBucketState_MARKET_OPEN, nil
+
+	default:
+		return 0, fmt.Errorf("unknown duration bucket state: %v", state)
 	}
 }

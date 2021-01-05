@@ -390,16 +390,17 @@ func (s *EtcdStore) fetchMinUnitsMatchSTM(stm conc.STM,
 // serializeBatchSnapshot binary serializes a batch snapshot by using the LN
 // wire format.
 func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
-
 	// First, we'll encode the finalized batch tx itself.
 	if err := b.BatchTx.Serialize(w); err != nil {
 		return err
 	}
 
-	// Write scalar values next.
+	// The previous batch versions had a single clearing price but because
+	// we now always store the price map afterwards, we signal a new batch
+	// by storing an explicit zero price.
+	var zeroPrice orderT.FixedRatePremium
 	err := WriteElements(
-		w, b.BatchTxFee, b.OrderBatch.ClearingPrice,
-		uint32(len(b.OrderBatch.Orders)),
+		w, b.BatchTxFee, zeroPrice, uint32(len(b.OrderBatch.Orders)),
 	)
 	if err != nil {
 		return err
@@ -412,7 +413,32 @@ func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
 			return err
 		}
 	}
-	return serializeTradingFeeReport(w, &b.OrderBatch.FeeReport)
+	err = serializeTradingFeeReport(w, &b.OrderBatch.FeeReport)
+	if err != nil {
+		return err
+	}
+
+	// For new batches, we also store its version, timestamp and the map of
+	// lease duration bucket -> clearing price.
+	err = WriteElements(
+		w, b.OrderBatch.Version, b.OrderBatch.CreationTimestamp,
+	)
+	if err != nil {
+		return err
+	}
+	numPrices := uint32(len(b.OrderBatch.ClearingPrices))
+	err = WriteElements(w, numPrices)
+	if err != nil {
+		return err
+	}
+	for duration, price := range b.OrderBatch.ClearingPrices {
+		err = WriteElements(w, duration, price)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // serializeMatchedOrder binary serializes a matched order by using the LN wire
@@ -519,11 +545,14 @@ func serializeAccountTally(w io.Writer, t *orderT.AccountTally) error {
 // deserializeBatchSnapshot reconstructs a batch snapshot from binary data in
 // the LN wire format.
 func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
-
 	var (
-		txFee            btcutil.Amount
-		b                = &matching.OrderBatch{}
+		txFee btcutil.Amount
+		b     = &matching.OrderBatch{
+			SubBatches:     make(map[uint32][]matching.MatchedOrder),
+			ClearingPrices: make(map[uint32]orderT.FixedRatePremium),
+		}
 		numMatchedOrders uint32
+		clearingPrice    orderT.FixedRatePremium
 	)
 
 	// First, we'll read out the batch tx itself.
@@ -534,19 +563,20 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 
 	// Next read the scalar values.
 	err := ReadElements(
-		r, &txFee, &b.ClearingPrice, &numMatchedOrders,
+		r, &txFee, &clearingPrice, &numMatchedOrders,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	// Now we know how many orders to read.
+	b.Orders = make([]matching.MatchedOrder, numMatchedOrders)
 	for i := uint32(0); i < numMatchedOrders; i++ {
 		o, err := deserializeMatchedOrder(r)
 		if err != nil {
 			return nil, err
 		}
-		b.Orders = append(b.Orders, *o)
+		b.Orders[i] = *o
 	}
 
 	// Finally deserialize the trading fee report nested structure.
@@ -555,6 +585,61 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 		return nil, err
 	}
 	b.FeeReport = *feeReport
+
+	// Older batches had a single clearing price instead of a map. If we
+	// have a non-zero price, it means this is an old snapshot and we don't
+	// need to read any further.
+	if clearingPrice > 0 {
+		b.Version = orderT.DefaultBatchVersion
+		b.ClearingPrices[orderT.LegacyLeaseDurationBucket] = clearingPrice
+		b.SubBatches[orderT.LegacyLeaseDurationBucket] = b.Orders
+
+		return &BatchSnapshot{
+			BatchTx:    batchTx,
+			BatchTxFee: txFee,
+			OrderBatch: b,
+		}, nil
+	}
+
+	// The version and timestamp field was added to the serialized format at
+	// the same time as the changes to the clearing price. Therefore if the
+	// clearing price is zero, we also expect a version to be stored.
+	err = ReadElements(r, &b.Version, &b.CreationTimestamp)
+	if err != nil {
+		return nil, err
+	}
+
+	// If we got here, we have the new serialization format that also stores
+	// multiple prices, one per duration.
+	var numPrices uint32
+	err = ReadElements(r, &numPrices)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := uint32(0); i < numPrices; i++ {
+		var (
+			duration uint32
+			price    orderT.FixedRatePremium
+		)
+		err = ReadElements(r, &duration, &price)
+		if err != nil {
+			return nil, err
+		}
+
+		b.ClearingPrices[duration] = price
+	}
+
+	// Distribute the orders into their duration buckets.
+	for _, o := range b.Orders {
+		// If we get here, we have a new batch where both ask and bid
+		// need to have the same duration, doesn't matter which one we
+		// use.
+		duration := o.Details.Ask.LeaseDuration()
+		b.SubBatches[duration] = append(
+			b.SubBatches[duration], o,
+		)
+	}
 
 	return &BatchSnapshot{
 		BatchTx:    batchTx,

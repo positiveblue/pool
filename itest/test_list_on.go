@@ -21,6 +21,10 @@ var testCases = []*testCase{
 		test: testAccountDeposit,
 	},
 	{
+		name: "account renewal",
+		test: testAccountRenewal,
+	},
+	{
 		name: "create account subscription",
 		test: testAccountSubscription,
 	},
@@ -71,5 +75,13 @@ var testCases = []*testCase{
 	{
 		name: "batch matching conditions",
 		test: testBatchMatchingConditions,
+	},
+	{
+		name: "distinct lease duration buckets",
+		test: testBatchExecutionDurationBuckets,
+	},
+	{
+		name: "batch sponsor",
+		test: testBatchSponsor,
 	},
 }

@@ -41,14 +41,15 @@ type ExecutionMsg interface {
 // PrepareMsg is the first message the executor sends to all active traders.
 // All traders should then send an TraderAcceptMsg in return.
 type PrepareMsg struct {
-	// MatchedOrders is the set of orders that a trader was matched with in
-	// the batch for the trader. As we support partial matches, this maps
-	// an order nonce to all the other orders it was matched with in the
-	// batch.
-	MatchedOrders map[orderT.Nonce][]*matching.MatchedOrder
+	// MatchedOrders is the map of each sub batch's lease duration and the
+	// orders that a trader was matched with in the sub batch for the
+	// trader. As we support partial matches, this maps an order nonce to
+	// all the other orders it was matched with in the batch.
+	MatchedOrders map[uint32]map[orderT.Nonce][]*matching.MatchedOrder
 
-	// ClearingPrice is the final clearing price of the batch.
-	ClearingPrice orderT.FixedRatePremium
+	// ClearingPrices is the map of each sub batch's lease duration and the
+	// final clearing price of the sub batch.
+	ClearingPrices map[uint32]orderT.FixedRatePremium
 
 	// ChargedAccounts is the set of accounts that the trader used in this
 	// batch.
@@ -788,9 +789,9 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// that as a no-op to ensure a single trader can't
 			// disrupt the entire state machine.
 			default:
-				log.Errorf("expected "+
-					"OrderMatchSign, instead got %T",
-					msgRecv.msg)
+				log.Errorf("expected OrderMatchSign, instead "+
+					"got %T from trader %x", msgRecv.msg,
+					msgRecv.msg.Src())
 
 				return BatchSigning, env, nil
 			}

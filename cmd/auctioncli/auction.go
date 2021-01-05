@@ -44,6 +44,8 @@ var auctionCommands = []cli.Command{
 			clearConflictsCommand,
 			modifyNodeRatingsCommand,
 			listNodeRatingsCommand,
+			storeLeaseDuration,
+			removeLeaseDuration,
 		},
 	},
 }
@@ -620,5 +622,117 @@ var addBanCommand = cli.Command{ // nolint:dupl
 		}
 
 		return client.AddBan(ctx, req)
+	}),
+}
+
+var storeLeaseDuration = cli.Command{
+	Name:      "storeleaseduration",
+	ShortName: "sld",
+	Usage:     "add or update a lease duration bucket",
+	ArgsUsage: "duration status",
+	Flags: []cli.Flag{
+		cli.Uint64Flag{
+			Name:  "duration",
+			Usage: "the duration to add or modify",
+		},
+		cli.StringFlag{
+			Name:  "status",
+			Usage: "the status the market should be updated to",
+			Value: poolrpc.DurationBucketState_MARKET_OPEN.String(),
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		var (
+			duration  uint32
+			statusStr string
+			args      = cliCtx.Args()
+		)
+
+		switch {
+		case cliCtx.IsSet("duration"):
+			duration = uint32(cliCtx.Uint64("duration"))
+		case args.Present():
+			duration64, err := strconv.ParseUint(
+				args.First(), 10, 32,
+			)
+			if err != nil {
+				return nil, err
+			}
+			duration = uint32(duration64)
+			args = args.Tail()
+		}
+
+		if duration == 0 {
+			return nil, fmt.Errorf("invalid duration")
+		}
+
+		switch {
+		case cliCtx.IsSet("status"):
+			statusStr = cliCtx.String("status")
+		case args.Present():
+			statusStr = args.First()
+		}
+
+		statusUint, ok := poolrpc.DurationBucketState_value[statusStr]
+		if !ok {
+			validValues := make(
+				[]string, len(poolrpc.DurationBucketState_name),
+			)
+			for i, validValue := range poolrpc.DurationBucketState_name {
+				validValues[i] = validValue
+			}
+			return nil, fmt.Errorf("invalid market status, must "+
+				"be one of %v", validValues)
+		}
+
+		return client.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
+			Duration:    duration,
+			BucketState: poolrpc.DurationBucketState(statusUint),
+		})
+	}),
+}
+
+var removeLeaseDuration = cli.Command{
+	Name:      "removeleaseduration",
+	ShortName: "rld",
+	Usage:     "remove a lease duration bucket",
+	ArgsUsage: "duration",
+	Flags: []cli.Flag{
+		cli.Uint64Flag{
+			Name:  "duration",
+			Usage: "the duration to add or modify",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		var (
+			duration uint32
+			args     = cliCtx.Args()
+		)
+
+		switch {
+		case cliCtx.IsSet("duration"):
+			duration = uint32(cliCtx.Uint64("duration"))
+		case args.Present():
+			duration64, err := strconv.ParseUint(
+				args.First(), 10, 32,
+			)
+			if err != nil {
+				return nil, err
+			}
+			duration = uint32(duration64)
+			args = args.Tail()
+		}
+
+		if duration == 0 {
+			return nil, fmt.Errorf("invalid duration")
+		}
+
+		return client.RemoveLeaseDuration(ctx, &adminrpc.LeaseDuration{
+			Duration: duration,
+		})
 	}),
 }
