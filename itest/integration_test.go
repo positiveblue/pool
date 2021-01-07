@@ -44,7 +44,9 @@ func TestAuctioneerServer(t *testing.T) {
 		"--trickleinterval=100ms",
 	}
 
-	miner, err := rpctest.New(harnessNetParams, nil, args, "")
+	miner, err := rpctest.New(
+		harnessNetParams, nil, args, lntest.GetBtcdBinary(),
+	)
 	if err != nil {
 		ht.Fatalf("unable to create mining node: %v", err)
 	}

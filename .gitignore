@@ -49,6 +49,7 @@ profile.tmp
 /auctionserver
 /auctioncli
 /itest/lnd-itest
+/itest/btcd-itest
 /itest/regtest/*.log
 /itest/*.log
 /itest/.backendlogs
