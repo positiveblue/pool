@@ -129,7 +129,8 @@ itest: btcd build-itest itest-only
 
 itest-only:
 	@$(call print, "Running integration tests with ${backend} backend.")
-	$(ITEST)
+	rm itest/*.log itest/*/*.log; date
+	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump
 
 # =============
 # FLAKE HUNTING
