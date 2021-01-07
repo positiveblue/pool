@@ -35,7 +35,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// guarantees of getting included in to blocks.
 	//
 	// We will also connect it to our chain backend.
-	minerLogDir := "./.minerlogs"
+	minerLogDir := fmt.Sprintf("%s/.minerlogs", lntest.GetLogDir())
 	args := []string{
 		"--rejectnonstd",
 		"--txindex",
