@@ -605,7 +605,27 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 	// the same time as the changes to the clearing price. Therefore if the
 	// clearing price is zero, we also expect a version to be stored.
 	err = ReadElements(r, &b.Version, &b.CreationTimestamp)
-	if err != nil {
+	switch err {
+	// Successful read, continue reading all prices.
+	case nil:
+		break
+
+	// It's an old but empty batch that has no matched orders and therefore
+	// a clearingPrice of 0 so the above if didn't catch it. We still don't
+	// have a version or multiple buckets so we also need to return early.
+	case io.EOF, io.ErrUnexpectedEOF:
+		b.Version = orderT.DefaultBatchVersion
+		b.ClearingPrices[orderT.LegacyLeaseDurationBucket] = clearingPrice
+		b.SubBatches[orderT.LegacyLeaseDurationBucket] = b.Orders
+
+		return &BatchSnapshot{
+			BatchTx:    batchTx,
+			BatchTxFee: txFee,
+			OrderBatch: b,
+		}, nil
+
+	// Unexpected error, return.
+	default:
 		return nil, err
 	}
 
