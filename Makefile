@@ -17,12 +17,6 @@ GOACC_BIN := $(GO_BIN)/go-acc
 BTCD_DIR :=${GOPATH}/src/$(BTCD_PKG)
 LND_DIR := ${GOPATH}/src/$(LND_PKG)
 
-BTCD_COMMIT := $(shell cat go.mod | \
-		grep $(BTCD_PKG) | \
-		tail -n1 | \
-		awk -F " " '{ print $$2 }' | \
-		awk -F "/" '{ print $$1 }')
-
 LINT_COMMIT := v1.18.0
 GOACC_COMMIT := ddc355013f90fea78d83d3a6c71f1d37ac07ecd5
 
@@ -79,10 +73,6 @@ $(GOACC_BIN):
 	@$(call print, "Fetching go-acc")
 	$(DEPGET) $(GOACC_PKG)@$(GOACC_COMMIT)
 
-btcd:
-	@$(call print, "Installing btcd.")
-	$(DEPGET) $(BTCD_PKG)@$(BTCD_COMMIT)
-
 # ============
 # INSTALLATION
 # ============
@@ -93,8 +83,11 @@ build:
 	$(GOBUILD) $(PKG)/cmd/auctioncli
 
 build-itest:
+	@$(call print, "Building itest btcd.")
+	CGO_ENABLED=0 $(GOBUILD) -tags="rpctest" -o itest/btcd-itest $(BTCD_PKG)
+
 	@$(call print, "Building itest lnd.")
-	$(GOBUILD) -tags="$(ITEST_TAGS)" -o itest/lnd-itest $(LND_ITEST_LDFLAGS) $(LND_PKG)/cmd/lnd
+	CGO_ENABLED=0 $(GOBUILD) -tags="$(ITEST_TAGS)" -o itest/lnd-itest $(LND_ITEST_LDFLAGS) $(LND_PKG)/cmd/lnd
 
 install:
 	@$(call print, "Installing auction server and cli.")
@@ -125,11 +118,12 @@ goveralls: $(GOVERALLS_BIN)
 	@$(call print, "Sending coverage report.")
 	$(GOVERALLS_BIN) -coverprofile=coverage.txt -service=travis-ci
 
-itest: btcd build-itest itest-only
+itest: build-itest itest-only
 
 itest-only:
 	@$(call print, "Running integration tests with ${backend} backend.")
-	$(ITEST)
+	rm -rf itest/regtest; date
+	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
 
 # =============
 # FLAKE HUNTING

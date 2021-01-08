@@ -10,10 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/integration/rpctest"
-	"github.com/btcsuite/btcd/rpcclient"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 )
@@ -29,10 +26,6 @@ func TestAuctioneerServer(t *testing.T) {
 
 	ht := newHarnessTest(t, nil, nil, nil)
 
-	// Declare the network harness here to gain access to its
-	// 'OnTxAccepted' call back.
-	var lndHarness *lntest.NetworkHarness
-
 	// Create an instance of the btcd's rpctest.Harness that will act as
 	// the miner for all tests. This will be used to fund the wallets of
 	// the nodes within the test network and to drive blockchain related
@@ -42,7 +35,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// guarantees of getting included in to blocks.
 	//
 	// We will also connect it to our chain backend.
-	minerLogDir := "./.minerlogs"
+	minerLogDir := fmt.Sprintf("%s/.minerlogs", lntest.GetLogDir())
 	args := []string{
 		"--rejectnonstd",
 		"--txindex",
@@ -50,13 +43,10 @@ func TestAuctioneerServer(t *testing.T) {
 		"--logdir=" + minerLogDir,
 		"--trickleinterval=100ms",
 	}
-	handlers := &rpcclient.NotificationHandlers{
-		OnTxAccepted: func(hash *chainhash.Hash, amt btcutil.Amount) {
-			lndHarness.OnTxAccepted(hash)
-		},
-	}
 
-	miner, err := rpctest.New(harnessNetParams, handlers, args)
+	miner, err := rpctest.New(
+		harnessNetParams, nil, args, lntest.GetBtcdBinary(),
+	)
 	if err != nil {
 		ht.Fatalf("unable to create mining node: %v", err)
 	}
@@ -98,11 +88,14 @@ func TestAuctioneerServer(t *testing.T) {
 	if err := miner.Node.NotifyNewTransactions(false); err != nil {
 		ht.Fatalf("unable to request transaction notifications: %v", err)
 	}
+	if err := chainBackend.ConnectMiner(); err != nil {
+		ht.Fatalf("unable to connect backend to miner: %v", err)
+	}
 
 	// Now we can set up our test harness (LND instance), with the chain
 	// backend we just created.
-	lndHarness, err = lntest.NewNetworkHarness(
-		miner, chainBackend, "./lnd-itest",
+	lndHarness, err := lntest.NewNetworkHarness(
+		miner, chainBackend, "./lnd-itest", false,
 	)
 	if err != nil {
 		ht.Fatalf("unable to create lightning network harness: %v", err)
@@ -113,7 +106,8 @@ func TestAuctioneerServer(t *testing.T) {
 		// we get a race in the TX notifier chan closes. The wait seems
 		// to fix it for now...
 		time.Sleep(100 * time.Millisecond)
-		_ = lndHarness.TearDownAll()
+		_ = lndHarness.TearDown()
+		lndHarness.Stop()
 	}()
 
 	// Spawn a new goroutine to watch for any fatal errors that any of the
@@ -143,7 +137,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// With the btcd harness created, we can now complete the
 	// initialization of the network. args - list of lnd arguments,
 	// example: "--debuglevel=debug"
-	if err = lndHarness.SetUp(nil); err != nil {
+	if err = lndHarness.SetUp("subasta-itest", nil); err != nil {
 		ht.Fatalf("unable to set up test lightning network: %v", err)
 	}
 
