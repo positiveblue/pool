@@ -143,7 +143,7 @@ func (c *accountCollector) resetGauges() {
 
 	// To make prometheus reset values nicely, we can't just remove them.
 	// We need to add a baseline for all account states.
-	for i := account.StatePendingOpen; i <= account.StateClosed; i++ {
+	for i := account.StatePendingOpen; i <= account.StateExpiredPendingUpdate; i++ {
 		l := prometheus.Labels{
 			labelAccountState: i.String(),
 			labelLsat:         "",
