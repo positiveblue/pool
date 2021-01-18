@@ -262,6 +262,12 @@ func (o *OrderBatch) Copy() OrderBatch {
 		clearingPrices[duration] = price
 	}
 
+	// To satisfy equality tests, we make the copy's AccountDiff field nil
+	// if the original was nil.
+	if o.FeeReport.AccountDiffs == nil {
+		feeReport.AccountDiffs = nil
+	}
+
 	return OrderBatch{
 		Version:           o.Version,
 		Orders:            orders,

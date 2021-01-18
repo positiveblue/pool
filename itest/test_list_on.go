@@ -84,4 +84,8 @@ var testCases = []*testCase{
 		name: "batch sponsor",
 		test: testBatchSponsor,
 	},
+	{
+		name: "batch extra inputs outputs",
+		test: testBatchIO,
+	},
 }

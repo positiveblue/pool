@@ -268,7 +268,7 @@ func (h *testHarness) obtainExpectedSig(account *Account,
 		h.t.Fatalf("unable to generate account witness script: %v", err)
 	}
 
-	privKey := h.wallet.signer.PrivKey
+	privKey := h.wallet.signer.PrivKeys[0]
 	tweak := poolscript.AuctioneerKeyTweak(
 		traderKey, account.AuctioneerKey.PubKey, account.BatchKey,
 		account.Secret,

@@ -28,6 +28,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 
@@ -393,20 +394,6 @@ func (b *BatchExecutor) Stop() error {
 	return nil
 }
 
-// NewExecutionContext creates a new ExecutionContext which contains all the
-// information needed to execute the passed OrderBatch. The execution context
-// should later be submitted to the BatchExecutor to start the execution
-// process.
-func (b *BatchExecutor) NewExecutionContext(batchKey *btcec.PublicKey,
-	batch *matching.OrderBatch, masterAcct *account.Auctioneer,
-	batchFeeRate chainfee.SatPerKWeight, feeSchedule terms.FeeSchedule) (
-	*batchtx.ExecutionContext, error) {
-
-	return batchtx.NewExecutionContext(
-		batchKey, batch, masterAcct, batchFeeRate, feeSchedule,
-	)
-}
-
 // validateTradersOnline ensures that all the traders included in this batch
 // are currently online within the venue. If not, then the batch will be failed
 // with ErrMissingTraders.
@@ -452,7 +439,7 @@ func (b *BatchExecutor) validateTradersOnline(batch *matching.OrderBatch) error 
 // witness script as well, so the final witness can easily be fully verified.
 func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	trader *ActiveTrader, batchTx *wire.MsgTx,
-	traderAcctInput *batchtx.AcctInput) (*btcec.Signature, []byte, error) {
+	traderAcctInput *batchtx.BatchInput) (*btcec.Signature, []byte, error) {
 
 	log.Debugf("Signing account input for trader=%x", trader.AccountKey[:])
 
@@ -948,6 +935,29 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			batchTx.TxIn[inputIndex].Witness = witness
 		}
 		batchTx.TxIn[auctioneerInputIndex].Witness = auctioneerWitness
+
+		// If there were any extra inputs added to the batch
+		// transaction by the auctioneer, we'll sign these now.
+		extraInputs := make(map[int]*lnwallet.Utxo)
+		for _, in := range env.exeCtx.ExtraInputs() {
+			index := int(in.InputIndex)
+			extraInputs[index] = &lnwallet.Utxo{
+				Value:    btcutil.Amount(in.PrevOutput.Value),
+				PkScript: in.PrevOutput.PkScript,
+			}
+		}
+
+		witnesses, err := account.InputWitnesses(
+			b.cfg.Signer, batchTx, extraInputs,
+		)
+		if err != nil {
+			return 0, env, err
+		}
+
+		for index, w := range witnesses {
+			batchTx.TxIn[index].SignatureScript = w.SigScript
+			batchTx.TxIn[index].Witness = w.Witness
+		}
 
 		// We have the fully signed transaction, and can find its final
 		// weight.

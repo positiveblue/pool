@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -244,7 +245,11 @@ type mockWallet struct {
 }
 
 func newMockWallet(privKey *btcec.PrivateKey) *mockWallet {
-	return &mockWallet{signer: &MockSigner{privKey}}
+	return &mockWallet{
+		signer: &MockSigner{
+			[]*btcec.PrivateKey{privKey},
+		},
+	}
 }
 
 func (w *mockWallet) DeriveKey(ctx context.Context,
@@ -255,7 +260,7 @@ func (w *mockWallet) DeriveKey(ctx context.Context,
 			Family: poolscript.AccountKeyFamily,
 			Index:  0,
 		},
-		PubKey: w.signer.PrivKey.PubKey(),
+		PubKey: w.signer.PrivKeys[0].PubKey(),
 	}, nil
 }
 
@@ -314,21 +319,19 @@ func (n *MockChainNotifier) RegisterBlockEpochNtfn(
 }
 
 type MockSigner struct {
-	PrivKey *btcec.PrivateKey
+	PrivKeys []*btcec.PrivateKey
 }
 
 func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
 
 	s := input.MockSigner{
-		Privkeys: []*btcec.PrivateKey{
-			m.PrivKey,
-		},
+		Privkeys: m.PrivKeys,
 	}
 
 	// The mock signer relies on the public key being set in the sign
 	// descriptor, so we'll do so now.
-	signDescriptors[0].KeyDesc.PubKey = m.PrivKey.PubKey()
+	signDescriptors[0].KeyDesc.PubKey = m.PrivKeys[0].PubKey()
 
 	lndSignDescriptor := &input.SignDescriptor{
 		KeyDesc:       signDescriptors[0].KeyDesc,
@@ -351,8 +354,30 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 
 func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
 	signDescriptors []*lndclient.SignDescriptor) ([]*input.Script, error) {
-	return nil, nil
+	s := input.MockSigner{
+		Privkeys:  m.PrivKeys,
+		NetParams: &chaincfg.RegressionNetParams,
+	}
+
+	scripts := make([]*input.Script, len(signDescriptors))
+	for i, desc := range signDescriptors {
+		lndSignDescriptor := &input.SignDescriptor{
+			Output:     desc.Output,
+			HashType:   desc.HashType,
+			SigHashes:  txscript.NewTxSigHashes(tx),
+			InputIndex: desc.InputIndex,
+		}
+
+		script, err := s.ComputeInputScript(tx, lndSignDescriptor)
+		if err != nil {
+			return nil, err
+		}
+		scripts[i] = script
+	}
+
+	return scripts, nil
 }
+
 func (m *MockSigner) SignMessage(ctx context.Context, msg []byte,
 	locator keychain.KeyLocator) ([]byte, error) {
 	return nil, nil

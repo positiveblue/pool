@@ -124,7 +124,7 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 	t.Parallel()
 
 	scenario := func(orders []matching.MatchedOrder) bool {
-		feeEstimator := newChainFeeEstimator(orders, testFeeRate)
+		feeEstimator := newChainFeeEstimator(orders, testFeeRate, &BatchIO{})
 
 		// For each pair of traders in this randomly generated batch,
 		// assert that if one trader has a greater number of channels
@@ -222,11 +222,19 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 	scenario := func(set matchedOrderSet) bool {
 		setA, setB := set.orderSetA, set.orderSetB
 
-		estA := newChainFeeEstimator(setA, testFeeRate)
-		feeSetA := estA.EstimateBatchWeight(len(estA.traderChanCount))
+		estA := newChainFeeEstimator(setA, testFeeRate, &BatchIO{})
+		feeSetA, err := estA.EstimateBatchWeight(len(estA.traderChanCount))
+		if err != nil {
+			t.Logf("unable to estimate batch weight: %v", err)
+			return false
+		}
 
-		estB := newChainFeeEstimator(setB, testFeeRate)
-		feeSetB := estB.EstimateBatchWeight(len(estB.traderChanCount))
+		estB := newChainFeeEstimator(setB, testFeeRate, &BatchIO{})
+		feeSetB, err := estB.EstimateBatchWeight(len(estB.traderChanCount))
+		if err != nil {
+			t.Logf("unable to estimate batch weight: %v", err)
+			return false
+		}
 
 		aLarger := (len(estA.traderChanCount) > len(estB.traderChanCount) &&
 			len(estA.orders) > len(estB.orders))
@@ -284,9 +292,9 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 		setA, setB := set.orderSetA, set.orderSetB
 
 		estimateFee := func(
-			orderSet []matching.MatchedOrder) btcutil.Amount {
+			orderSet []matching.MatchedOrder) (btcutil.Amount, error) {
 
-			estimator := newChainFeeEstimator(orderSet, testFeeRate)
+			estimator := newChainFeeEstimator(orderSet, testFeeRate, &BatchIO{})
 
 			// Get estimated fees paid by the traders.
 			var traders btcutil.Amount
@@ -300,8 +308,17 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 			)
 		}
 
-		feeSetA := estimateFee(setA)
-		feeSetB := estimateFee(setB)
+		feeSetA, err := estimateFee(setA)
+		if err != nil {
+			t.Logf("unable to estimate fee: %v", err)
+			return false
+		}
+
+		feeSetB, err := estimateFee(setB)
+		if err != nil {
+			t.Logf("unable to estimate fee: %v", err)
+			return false
+		}
 
 		switch {
 		case set.feeRateA > set.feeRateB && feeSetA < feeSetB:
@@ -358,10 +375,19 @@ func TestChainFeeEstimatorDustAccounts(t *testing.T) {
 	scenario := func(d dustAccScenario) bool {
 		set := d.orderSet
 
-		estimator := newChainFeeEstimator(set, testFeeRate)
+		estimator := newChainFeeEstimator(set, testFeeRate, &BatchIO{})
 
-		weightA := estimator.EstimateBatchWeight(int(d.endingAccsA))
-		weightB := estimator.EstimateBatchWeight(int(d.endingAccsB))
+		weightA, err := estimator.EstimateBatchWeight(int(d.endingAccsA))
+		if err != nil {
+			t.Logf("unable to estimate batch weight: %v", err)
+			return false
+		}
+
+		weightB, err := estimator.EstimateBatchWeight(int(d.endingAccsB))
+		if err != nil {
+			t.Logf("unable to estimate batch weight: %v", err)
+			return false
+		}
 
 		switch {
 		case d.endingAccsA < d.endingAccsB && weightA >= weightB:
@@ -419,7 +445,7 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 		feeRate := singleSet.feeRate
 		orderSet := singleSet.orderSet
 
-		estimator := newChainFeeEstimator(orderSet, feeRate)
+		estimator := newChainFeeEstimator(orderSet, feeRate, &BatchIO{})
 
 		// Get estimated fees paid by the traders.
 		var traders btcutil.Amount
@@ -430,13 +456,22 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 		}
 
 		// Given what the traders paid, return total tx fee.
-		totalFee := traders + estimator.AuctioneerFee(
-			traders, numOuts,
-		)
+		auctFee, err := estimator.AuctioneerFee(traders, numOuts)
+		if err != nil {
+			t.Logf("unable to get auctioneer fee: %v", err)
+			return false
+		}
+
+		totalFee := traders + auctFee
 
 		// Total fee must always be enough to pay for the tx at the
 		// wanted fee rate.
-		w := estimator.EstimateBatchWeight(numOuts)
+		w, err := estimator.EstimateBatchWeight(numOuts)
+		if err != nil {
+			t.Logf("unable to estimate batch weight: %v", err)
+			return false
+		}
+
 		finalFeeRate := chainfee.SatPerKWeight(int64(totalFee) * 1000 / w)
 		if finalFeeRate < feeRate {
 			t.Logf("final fee rate %v not able to satisfy "+

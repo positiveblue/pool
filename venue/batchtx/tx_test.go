@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
@@ -13,8 +14,10 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -36,21 +39,19 @@ func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
 
 var _ terms.FeeSchedule = (*mockFeeSchedule)(nil)
 
-// TestBatchTransactionAssembly tests that given a valid set of parameters,
-// we're able to construct a complete batch transaction. All relevant outputs
-// should be present in the transaction, and all our indexes should be
-// populated and point to the correct outputs.
-func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
-	t.Parallel()
+type testSetup struct {
+	batchKey         *btcec.PublicKey
+	orderBatch       *matching.OrderBatch
+	masterAcct       *account.Auctioneer
+	traders          []*account.Account
+	ordersForAskers  map[matching.AccountID]map[orderT.Nonce]struct{}
+	ordersForBidders map[matching.AccountID]map[orderT.Nonce]struct{}
+}
 
+func setupTestBatch(feeSchedule terms.FeeSchedule) (*testSetup, error) {
 	// For simplicity, we'll use the same clearing price of 1% for the
 	// entire batch.
 	const clearingPrice = orderT.FixedRatePremium(10000)
-	feeSchedule := mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
-
 	acctValue := btcutil.SatoshiPerBitcoin
 	numRandTraders := 10
 
@@ -63,7 +64,8 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	for i := 0; i < numRandTraders; i++ {
 		traderKey, err := btcec.NewPrivateKey(btcec.S256())
 		if err != nil {
-			t.Fatalf("unable to generate trader key: %v", err)
+			return nil, fmt.Errorf("unable to generate "+
+				"trader key: %v", err)
 		}
 
 		acct := &account.Account{
@@ -90,7 +92,8 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 		)
 		askerFundingKey, err := btcec.NewPrivateKey(btcec.S256())
 		if err != nil {
-			t.Fatalf("unable to generate funding key: %v", err)
+			return nil, fmt.Errorf("unable to generate "+
+				"funding key: %v", err)
 		}
 		copy(askKey[:], askerFundingKey.PubKey().SerializeCompressed())
 		copy(askNonce[:], askKey[:])
@@ -113,7 +116,8 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 		)
 		bidderFundingKey, err := btcec.NewPrivateKey(btcec.S256())
 		if err != nil {
-			t.Fatalf("unable to generate funding key: %v", err)
+			return nil, fmt.Errorf("unable to generate "+
+				"funding key: %v", err)
 		}
 		copy(bidKey[:], bidderFundingKey.PubKey().SerializeCompressed())
 		copy(bidNonce[:], bidKey[:])
@@ -187,7 +191,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
 	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		subBatches, &feeSchedule, clearingPrices,
+		subBatches, feeSchedule, clearingPrices,
 	)
 	orderBatch.ClearingPrices = clearingPrices
 
@@ -205,26 +209,22 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	}
 	batchKey := auctioneerKey.PubKey()
 
-	// Now we can being the real meat of our tests: ensuring the batch
-	// transaction and all the relevant indexes ere constructed properly.
-	feeRate := chainfee.SatPerKWeight(200)
-	batchTxCtx, err := NewExecutionContext(
-		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
-	)
-	if err != nil {
-		t.Fatalf("unable to construct batch tx: %v", err)
-	}
+	return &testSetup{
+		batchKey:         batchKey,
+		orderBatch:       orderBatch,
+		masterAcct:       masterAcct,
+		traders:          traders,
+		ordersForAskers:  ordersForAskers,
+		ordersForBidders: ordersForBidders,
+	}, nil
+}
 
-	if batchTxCtx.FeeInfoEstimate.FeeRate() != feeRate {
-		t.Fatalf("assembled tx had wrong feerate %v, wanted %v",
-			batchTxCtx.FeeInfoEstimate.FeeRate(), feeRate)
-	}
-
+func checkContext(t *testing.T, test *testSetup, batchTxCtx *ExecutionContext) {
 	batchTx := batchTxCtx.ExeTx
 
 	// Every trader should be able to find their account output in the
 	// batch transaction.
-	for _, trader := range traders {
+	for _, trader := range test.traders {
 		// An entry in the index for this trader should be present.
 		_, ok := batchTxCtx.AcctOutputForTrader(
 			trader.TraderKeyRaw,
@@ -238,7 +238,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	// Next, for each order within the batch, we should be able to find an
 	// output in the context that actually executes the order (creates the
 	// channel).
-	for _, order := range orderBatch.Orders {
+	for _, order := range test.orderBatch.Orders {
 		ask := order.Details.Ask
 		bid := order.Details.Bid
 
@@ -295,7 +295,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 
 	// Continuing, for each trader, we should be able to easily locate all
 	// the orders that pertain to that trader. We'll start with askers.
-	for trader, orderNonces := range ordersForAskers {
+	for trader, orderNonces := range test.ordersForAskers {
 		traderOutputs, ok := batchTxCtx.ChanOutputsForTrader(trader)
 		if !ok {
 			t.Fatalf("unable to find output for trader: %x", trader)
@@ -316,7 +316,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 	}
 	// We'll apply the same checks for bidders, but bidders have double the
 	// amount of outputs since each bid is matched to two asks.
-	for trader, orderNonces := range ordersForBidders {
+	for trader, orderNonces := range test.ordersForBidders {
 		traderOutputs, ok := batchTxCtx.ChanOutputsForTrader(trader)
 		if !ok {
 			t.Fatalf("unable to find output for trader: %x", trader)
@@ -339,7 +339,7 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 
 	// Next, we'll ensure that each trader has an entry in the chain fee
 	// index and account input index.
-	for _, trader := range traders {
+	for _, trader := range test.traders {
 		if _, ok := batchTxCtx.AcctInputForTrader(trader.TraderKeyRaw); !ok {
 			t.Fatalf("acct input entry for %x found",
 				trader.TraderKeyRaw[:])
@@ -355,6 +355,39 @@ func TestBatchTransactionAssembly(t *testing.T) { // nolint:gocyclo
 			"%v got %v", realMasterOutput.Value,
 			int64(batchTxCtx.MasterAccountDiff.AccountBalance))
 	}
+
+}
+
+// TestBatchTransactionAssembly tests that given a valid set of parameters,
+// we're able to construct a complete batch transaction. All relevant outputs
+// should be present in the transaction, and all our indexes should be
+// populated and point to the correct outputs.
+func TestBatchTransactionAssembly(t *testing.T) {
+	t.Parallel()
+
+	feeSchedule := &mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	test, err := setupTestBatch(feeSchedule)
+	require.NoError(t, err)
+
+	// Now we can being the real meat of our tests: ensuring the batch
+	// transaction and all the relevant indexes ere constructed properly.
+	feeRate := chainfee.SatPerKWeight(200)
+	batchTxCtx, err := NewExecutionContext(
+		test.batchKey, test.orderBatch, test.masterAcct, &BatchIO{},
+		feeRate, feeSchedule,
+	)
+	require.NoError(t, err)
+
+	require.Equal(
+		t, feeRate, batchTxCtx.FeeInfoEstimate.FeeRate(),
+		"assembled tx had wrong feerate",
+	)
+
+	checkContext(t, test, batchTxCtx)
 }
 
 func newMatch(orderSize btcutil.Amount) (*matching.OrderPair, error) {
@@ -502,7 +535,8 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	// transaction and all the relevant indexes ere constructed properly.
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
-		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate,
+		&feeSchedule,
 	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
@@ -737,7 +771,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	// size is the same as the account size).
 	feeRate := chainfee.SatPerKWeight(200)
 	_, err = NewExecutionContext(
-		batchKey, orderBatch, masterAcct, feeRate, &feeSchedule,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, &feeSchedule,
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -753,4 +787,185 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	if feeErr.Account != asker.TraderKeyRaw {
 		t.Fatalf("expected %x got %x", asker.TraderKeyRaw, feeErr.Account)
 	}
+}
+
+// TestBatchTransactionDustAuctioneer creates a batch where the resulting
+// auctioneer output will be dust, causing an error to be returned.
+func TestBatchTransactionDustAuctioneer(t *testing.T) {
+	t.Parallel()
+
+	// We'll just use an empty batch for this test.
+	orderBatch := &matching.OrderBatch{}
+	feeSchedule := mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	// With all our set up done, we'll now create our master account diff,
+	// then construct the batch transaction.
+	priorAccountPoint := wire.OutPoint{}
+	auctPubKey := auctioneerKey.PubKey().SerializeCompressed()
+	copy(priorAccountPoint.Hash[:], auctPubKey)
+	masterAcct := &account.Auctioneer{
+		OutPoint: priorAccountPoint,
+		Balance:  100_000,
+		AuctioneerKey: &keychain.KeyDescriptor{
+			PubKey: auctioneerKey.PubKey(),
+		},
+	}
+	batchKey := auctioneerKey.PubKey()
+
+	// Since the batch is empty, fee estimation will be performed using a
+	// 1-input, 1-output transaction.
+	var weightEstimator input.TxWeightEstimator
+	weightEstimator.AddP2WSHOutput()
+	weightEstimator.AddWitnessInput(
+		account.AuctioneerWitnessSize,
+	)
+
+	// We'll use a fee rate for batch assembly that will leave only 500
+	// sats left for the auctioneer after chain fees.
+	feeRate := chainfee.SatPerKWeight(masterAcct.Balance-500) * 1000 /
+		chainfee.SatPerKWeight(weightEstimator.Weight())
+
+	// Now execute the batch assembly using this fee rate. We expect this
+	// to fail since the master account balance is now dust.
+	_, err := NewExecutionContext(
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate,
+		&feeSchedule,
+	)
+	if err != ErrMasterBalanceDust {
+		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
+	}
+}
+
+// TestBatchTransactionExtraIO tests that the batch transaction created when
+// providing extra batch IO is well formed, and that the difference wne up in
+// the master account balance.
+func TestBatchTransactionExtraIO(t *testing.T) {
+	t.Parallel()
+
+	feeSchedule := &mockFeeSchedule{
+		baseFee:    1,
+		exeFeeRate: orderT.FixedRatePremium(10000),
+	}
+
+	test, err := setupTestBatch(feeSchedule)
+	require.NoError(t, err)
+
+	// We'll add 10 BTC extra as inputs to the batch, and 8 BTC as extra
+	// outputs.
+	extraIO := &BatchIO{
+		Inputs: []*RequestedInput{
+			{
+				PrevOutPoint: wire.OutPoint{
+					Hash:  chainhash.Hash{},
+					Index: 67,
+				},
+				Value:    5 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("aa"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHInput()
+					return nil
+				},
+			},
+			{
+				PrevOutPoint: wire.OutPoint{
+					Hash:  chainhash.Hash{},
+					Index: 68,
+				},
+				Value:    5 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("bb"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHInput()
+					return nil
+				},
+			},
+		},
+		Outputs: []*RequestedOutput{
+			{
+				Value:    3 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("aaaa"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHOutput()
+					return nil
+				},
+			},
+			{
+				Value:    3 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("bbbb"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHOutput()
+					return nil
+				},
+			},
+			{
+				Value:    2 * btcutil.SatoshiPerBitcoin,
+				PkScript: []byte("cccc"),
+				AddWeightEstimate: func(w *input.TxWeightEstimator) error {
+					w.AddP2WKHOutput()
+					return nil
+				},
+			},
+		},
+	}
+
+	// We use a zero fee rate for simplicity. This let us easily check that
+	// the difference from the extra inputs and outputs goes to the
+	// auctioneer, since we don't have to account for chain fees.
+	feeRate := chainfee.SatPerKWeight(0)
+	batchTxCtx, err := NewExecutionContext(
+		test.batchKey, test.orderBatch, test.masterAcct, extraIO, feeRate,
+		feeSchedule,
+	)
+	require.NoError(t, err)
+
+	require.Equal(
+		t, feeRate, batchTxCtx.FeeInfoEstimate.FeeRate(),
+		"assembled tx had wrong feerate",
+	)
+
+	checkContext(t, test, batchTxCtx)
+
+	batchTx := batchTxCtx.ExeTx
+
+	// Check that we find the extra inputs and outputs on the batch
+	// transaction.
+	expectedInputs := make(map[uint32]struct{})
+	for _, in := range extraIO.Inputs {
+		expectedInputs[in.PrevOutPoint.Index] = struct{}{}
+	}
+
+	expectedOutputs := make(map[[32]byte]struct{})
+	for _, out := range extraIO.Outputs {
+		var key [32]byte
+		copy(key[:], out.PkScript)
+		expectedOutputs[key] = struct{}{}
+	}
+
+	for _, txIn := range batchTx.TxIn {
+		delete(expectedInputs, txIn.PreviousOutPoint.Index)
+	}
+
+	if len(expectedInputs) > 0 {
+		t.Fatalf("did not find all extra inputs")
+	}
+
+	for _, txOut := range batchTx.TxOut {
+		var key [32]byte
+		copy(key[:], txOut.PkScript)
+		delete(expectedOutputs, key)
+	}
+
+	if len(expectedOutputs) > 0 {
+		t.Fatalf("did not find all extra outputs")
+	}
+
+	// Finally check that the extra 2 BTC when into the master account.
+	startingBalance := test.masterAcct.Balance
+	expBal := startingBalance + 2*btcutil.SatoshiPerBitcoin +
+		test.orderBatch.FeeReport.AuctioneerFeesAccrued
+	masterBal := batchTxCtx.MasterAccountDiff.AccountBalance
+
+	require.Equal(t, expBal, masterBal, "unexpected master balance")
 }

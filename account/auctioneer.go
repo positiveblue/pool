@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
 // Auctioneer is the master auctioneer account, this will be threaded along in
@@ -148,4 +149,65 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	}
 
 	return witness, nil
+}
+
+// InputWitnesses attempts to construct fully valid witnesses which can be used
+// to spend the given UTXOs in the batch execution transaction. It is assumed
+// that all given inputs are managed by the signer.
+func InputWitnesses(signer lndclient.SignerClient,
+	tx *wire.MsgTx, inputs map[int]*lnwallet.Utxo) (
+	map[int]*input.Script, error) {
+
+	// For each input, create a signdescriptor.
+	signDescs := make([]*lndclient.SignDescriptor, 0, len(inputs))
+	for i, utxo := range inputs {
+		signDesc := &lndclient.SignDescriptor{
+			Output: &wire.TxOut{
+				Value:    int64(utxo.Value),
+				PkScript: utxo.PkScript,
+			},
+			HashType:   txscript.SigHashAll,
+			InputIndex: i,
+		}
+
+		signDescs = append(signDescs, signDesc)
+	}
+
+	// We'll query the signer for witnesses for these inputs.
+	witnesses := make(map[int]*input.Script)
+	if len(signDescs) > 0 {
+		ctx := context.Background()
+		scripts, err := signer.ComputeInputScript(ctx, tx, signDescs)
+		if err != nil {
+			return nil, err
+		}
+
+		for i, script := range scripts {
+			inputIndex := signDescs[i].InputIndex
+			witnesses[inputIndex] = script
+		}
+	}
+
+	txCopy := tx.Copy()
+	for i, w := range witnesses {
+		txCopy.TxIn[i].SignatureScript = w.SigScript
+		txCopy.TxIn[i].Witness = w.Witness
+	}
+
+	// As a final step, we'll ensure the signatures we just generated above
+	// is valid.
+	for i, utxo := range inputs {
+		vm, err := txscript.NewEngine(
+			utxo.PkScript, txCopy, i, txscript.StandardVerifyFlags,
+			nil, nil, int64(utxo.Value),
+		)
+		if err != nil {
+			return nil, err
+		}
+		if err := vm.Execute(); err != nil {
+			return nil, fmt.Errorf("invalid input sig: %v", err)
+		}
+	}
+
+	return witnesses, nil
 }

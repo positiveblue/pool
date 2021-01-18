@@ -160,9 +160,10 @@ func NewServer(cfg *Config) (*Server, error) {
 
 	// With our logging set up, we'll now establish our initial connection
 	// to the backing lnd instance.
+	network := lndclient.Network(cfg.Network)
 	lnd, err := lndclient.NewLndServices(&lndclient.LndServicesConfig{
 		LndAddress:  cfg.Lnd.Host,
-		Network:     lndclient.Network(cfg.Network),
+		Network:     network,
 		MacaroonDir: cfg.Lnd.MacaroonDir,
 		TLSPath:     cfg.Lnd.TLSPath,
 	})
@@ -436,11 +437,22 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 		}
 	}
-	server.adminServer = newAdminRPCServer(
-		auctioneerServer, adminListener, adminServerOpts,
-		server.auctioneer, store, durationBuckets,
+
+	chainParams, err := network.ChainParams()
+	if err != nil {
+		return nil, err
+	}
+
+	server.adminServer, err = newAdminRPCServer(
+		chainParams, auctioneerServer, adminListener, adminServerOpts,
+		server.auctioneer, store, durationBuckets, lnd.WalletKit,
 	)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg.Prometheus.AdminRPCServer = server.adminServer.grpcServer
+
 	adminrpc.RegisterAuctionAdminServer(
 		server.adminServer.grpcServer, server.adminServer,
 	)

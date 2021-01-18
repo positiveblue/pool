@@ -358,7 +358,7 @@ func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 // isn't a part of the batch, or the signature is invalid, then we'll return an
 // error.
 func (e *environment) validateAccountWitness(witnessScript []byte,
-	traderAcctInput *batchtx.AcctInput,
+	traderAcctInput *batchtx.BatchInput,
 	traderSig, auctioneerSig *btcec.Signature) error {
 
 	batchTx := e.exeCtx.ExeTx.Copy()

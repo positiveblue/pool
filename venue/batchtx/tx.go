@@ -30,6 +30,10 @@ func (e *ErrPoorTrader) Error() string {
 	return e.Err.Error()
 }
 
+// ErrMasterBalanceDust will be returned if a batch transaction is attempted
+// assembled where the final master account balance would become dust.
+var ErrMasterBalanceDust = fmt.Errorf("final master account balance below dust")
+
 // OrderOutput represents an executed order within the batch execution
 // transaction. In order words, this output is the created channel from a
 // bid+ask order.
@@ -46,19 +50,62 @@ type OrderOutput struct {
 	Order order.Order
 }
 
-// AcctInput stores information about the input spending a given trader's
-// account.
-type AcctInput struct {
-	// InputIndex the input index in the batch execution transaction.
+// BatchInput stores information about a input to the batch transaction, either
+// spending a given trader's account, or spending some other output into the
+// batch.
+type BatchInput struct {
+	// InputIndex the input index in the final batch execution transaction.
 	InputIndex uint32
 
-	// InputPoint is the full outpoint (of the trader's old account)
-	// referenced within the batch execution.
+	// InputPoint is the full outpoint referenced within the batch
+	// execution.
 	InputPoint wire.OutPoint
 
 	// PrevOutput is the previous output that we're spending. This includes
-	// the prior account balance value, and also the prior script.
+	// the output value, and also the prior script.
 	PrevOutput wire.TxOut
+}
+
+// RequestedInput holds information about an extra input that has been
+// requested added to the batch transaction.
+type RequestedInput struct {
+	// PrevOutPoint is the outpoint the input should spend.
+	PrevOutPoint wire.OutPoint
+
+	// Value is the value of the spent outpoint.
+	Value btcutil.Amount
+
+	// PkScript is the script of the output spent.
+	PkScript []byte
+
+	// AddWeightEstimate adds a size upper bound to the given weight
+	// estimator for this input type.
+	AddWeightEstimate func(*input.TxWeightEstimator) error
+}
+
+// RequestedOutput holds information about an extra output that has been
+// requested added to the batch transaction.
+type RequestedOutput struct {
+	// Value is the valu of the output.
+	Value btcutil.Amount
+
+	// PkScript is the script to send to.
+	PkScript []byte
+
+	// AddWeightEstimate adds the size of the output to the given weight
+	// estimator.
+	AddWeightEstimate func(*input.TxWeightEstimator) error
+}
+
+// BatchIO is a struct holding inputs and outputs that should be attempted
+// added to the batch transaction, in addition to the regular account inputs,
+// and account and channel outputs.
+type BatchIO struct {
+	// Inputs is a list of requested inputs.
+	Inputs []*RequestedInput
+
+	// Outputs is a list of requested outputs.
+	Outputs []*RequestedOutput
 }
 
 // MasterAccountState is a struct that describes how the master account changes
@@ -92,7 +139,7 @@ type MasterAccountState struct {
 	AuctioneerKey [33]byte
 }
 
-// AccountScript derives the auctioneer's account script
+// AccountScript derives the auctioneer's account script.
 //
 // TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;)
 func (m *MasterAccountState) AccountScript() ([]byte, error) {
@@ -102,6 +149,26 @@ func (m *MasterAccountState) AccountScript() ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	return m.script(batchKey)
+}
+
+// PrevAccountScript derives the auctioneer's account script for the previous
+// batch.
+func (m *MasterAccountState) PrevAccountScript() ([]byte, error) {
+	batchKey, err := btcec.ParsePubKey(
+		m.BatchKey[:], btcec.S256(),
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	prevBatchKey := poolscript.DecrementKey(batchKey)
+	return m.script(prevBatchKey)
+}
+
+// script derives the auctioneer's account script for the given batch key.
+func (m *MasterAccountState) script(batchKey *btcec.PublicKey) ([]byte, error) {
 	auctioneerKey, err := btcec.ParsePubKey(
 		m.AuctioneerKey[:], btcec.S256(),
 	)
@@ -158,16 +225,25 @@ type ExecutionContext struct {
 	// channels that involve the trader.
 	traderIndex map[matching.AccountID][]*OrderOutput
 
-	// accountIndex maps a trader's account to the output that re-creates
-	// its account in the batch.
+	// accountOutputIndex maps a trader's account to the output that
+	// re-creates its account in the batch.
 	//
 	// NOTE: If a trader's account is fully consumed in this batch, then
 	// they won't have an entry in this map.
-	accountIndex map[matching.AccountID]wire.OutPoint
+	accountOutputIndex map[matching.AccountID]wire.OutPoint
 
-	// acctInputIndex maps a trader's account ID to information about their
-	// input within the batch execution transaction.
-	acctInputIndex map[matching.AccountID]*AcctInput
+	// acctInputIndex maps a trader's account ID to its previous account
+	// outpoint, that is being spent in the batch.
+	acctInputIndex map[matching.AccountID]wire.OutPoint
+
+	// batchInputIndex maps the outpoints spent by the batch transaction to
+	// information about the input.
+	batchInputIndex map[wire.OutPoint]*BatchInput
+
+	// masterIO are extra inputs and outputs requested added to the batch
+	// by the master account. This means that the delta will be taken from
+	// or added to the master account.
+	masterIO *BatchIO
 }
 
 // indexBatchTx is a helper method that indexes a batch transaction given a
@@ -176,8 +252,7 @@ type ExecutionContext struct {
 func (e *ExecutionContext) indexBatchTx(
 	scriptToOrders map[string][2]order.Order,
 	traderAccounts map[matching.AccountID]*wire.TxOut,
-	ordersForTrader map[matching.AccountID]map[orderT.Nonce]struct{},
-	inputToAcct map[wire.OutPoint]matching.AccountID) (int, error) {
+	ordersForTrader map[matching.AccountID]map[orderT.Nonce]struct{}) error {
 
 	txHash := e.ExeTx.TxHash()
 
@@ -190,7 +265,7 @@ func (e *ExecutionContext) indexBatchTx(
 			e.ExeTx, fundingScript,
 		)
 		if !found {
-			return 0, fmt.Errorf("unable to find funding script "+
+			return fmt.Errorf("unable to find funding script "+
 				"for order pair %v/%v", orders[0].Nonce(),
 				orders[1].Nonce())
 		}
@@ -222,7 +297,7 @@ func (e *ExecutionContext) indexBatchTx(
 		for orderNonce := range orderNonces {
 			orderOutput, ok := e.orderIndex[orderNonce]
 			if !ok {
-				return 0, fmt.Errorf("unable to find order "+
+				return fmt.Errorf("unable to find order "+
 					"for: %x", orderNonce[:])
 			}
 
@@ -236,33 +311,30 @@ func (e *ExecutionContext) indexBatchTx(
 			e.ExeTx, txOut.PkScript,
 		)
 		if !found {
-			return 0, fmt.Errorf("unable to find script for %x",
+			return fmt.Errorf("unable to find script for %x",
 				acctID[:])
 		}
 
-		e.accountIndex[acctID] = wire.OutPoint{
+		e.accountOutputIndex[acctID] = wire.OutPoint{
 			Hash:  txHash,
 			Index: outputIndex,
 		}
 	}
 
 	// Finally, we'll populate the final component (the input index) of the
-	// acctInputIndex map.
-	var auctioneerIndex int
+	// batchInputIndex map.
 	for i, txIn := range e.ExeTx.TxIn {
-		acctID, ok := inputToAcct[txIn.PreviousOutPoint]
+		prevOut := txIn.PreviousOutPoint
+		op, ok := e.batchInputIndex[prevOut]
 		if !ok {
-			// We'll also have the auctioneer's input and any other
-			// inputs that we're piggy backing on, so we won't
-			// always find an entry in the map.
-			auctioneerIndex = i
-			continue
+			return fmt.Errorf("prev outpoint %v not found "+
+				"in index", prevOut)
 		}
 
-		e.acctInputIndex[acctID].InputIndex = uint32(i)
+		op.InputIndex = uint32(i)
 	}
 
-	return auctioneerIndex, nil
+	return nil
 }
 
 // assembleBatchTx attempts to assemble a batch transaction that is able to
@@ -280,6 +352,14 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	if err != nil {
 		return err
 	}
+
+	// We'll create a deep copy of the order batch that we will work with
+	// during batch tx assembly. The reason is that we'll modify the fee
+	// report with chain fees paid, which means we'll mutate the balances
+	// in the batch. If this method fails for some reason, that would lead
+	// to the order batch passed in becoming invalid for the next call.
+	c := orderBatch.Copy()
+	orderBatch = &c
 
 	// First, we'll add all the necessary inputs: for each trader involved
 	// in this batch, we reference an account input on chain, and then also
@@ -312,7 +392,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			return err
 		}
 
-		e.acctInputIndex[acctID] = &AcctInput{
+		e.acctInputIndex[acctID] = prevOutPoint
+		e.batchInputIndex[prevOutPoint] = &BatchInput{
 			InputPoint: prevOutPoint,
 			PrevOutput: wire.TxOut{
 				Value:    int64(acctPreBatch.AccountBalance),
@@ -322,12 +403,27 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 
 		inputToAcct[prevOutPoint] = acctID
 	}
+
+	prevScript, err := mAccountDiff.PrevAccountScript()
+	if err != nil {
+		return err
+	}
+
 	e.ExeTx.AddTxIn(&wire.TxIn{
 		PreviousOutPoint: mAccountDiff.PriorPoint,
 	})
+	e.batchInputIndex[mAccountDiff.PriorPoint] = &BatchInput{
+		InputPoint: mAccountDiff.PriorPoint,
+		PrevOutput: wire.TxOut{
+			Value:    int64(mAccountDiff.AccountBalance),
+			PkScript: prevScript,
+		},
+	}
 
 	// As we go estimate and count the chain fees paid by the traders.
-	txFeeEstimator := newChainFeeEstimator(orderBatch.Orders, feeRate)
+	txFeeEstimator := newChainFeeEstimator(
+		orderBatch.Orders, feeRate, e.masterIO,
+	)
 	var totalTraderFees btcutil.Amount
 
 	// Next, we'll do our first pass amongst the outputs to add the new
@@ -467,15 +563,57 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		orderBatch.FeeReport.AuctioneerFeesAccrued,
 	)
 
-	auctioneerFee := txFeeEstimator.AuctioneerFee(
+	auctioneerFee, err := txFeeEstimator.AuctioneerFee(
 		totalTraderFees, traderOuts,
 	)
+	if err != nil {
+		return err
+	}
 	finalAccountBalance -= int64(auctioneerFee)
 
+	// We'll go through and add extra master account Inputs/Outputs to the
+	// batch tx. The balance delta will be added to the master account
+	// balance.
+	var balanceDelta btcutil.Amount
+	for _, in := range e.masterIO.Inputs {
+		balanceDelta += in.Value
+		e.ExeTx.AddTxIn(&wire.TxIn{
+			PreviousOutPoint: in.PrevOutPoint,
+		})
+		e.batchInputIndex[in.PrevOutPoint] = &BatchInput{
+			InputPoint: in.PrevOutPoint,
+			PrevOutput: wire.TxOut{
+				Value:    int64(in.Value),
+				PkScript: in.PkScript,
+			},
+		}
+	}
+
+	for _, out := range e.masterIO.Outputs {
+		balanceDelta -= out.Value
+		op := &wire.TxOut{
+			Value:    int64(out.Value),
+			PkScript: out.PkScript,
+		}
+		e.ExeTx.AddTxOut(op)
+	}
+
+	finalAccountBalance += int64(balanceDelta)
+
 	log.Infof("Master Auctioneer Output balance delta: prev_bal=%v, "+
-		"new_bal=%v, delta=%v", mAccountDiff.AccountBalance,
+		"new_bal=%v, delta=%v (fees_accrued=%v, auctioneer_chain_fee"+
+		"=%v, extra_io=%v)", mAccountDiff.AccountBalance,
 		btcutil.Amount(finalAccountBalance),
-		btcutil.Amount(finalAccountBalance)-mAccountDiff.AccountBalance)
+		btcutil.Amount(finalAccountBalance)-mAccountDiff.AccountBalance,
+		orderBatch.FeeReport.AuctioneerFeesAccrued, auctioneerFee,
+		balanceDelta)
+
+	// If the final master account balance goes below dust, the next batch
+	// cannot be executed, so we have no choice other than return a
+	// terminal error.
+	if finalAccountBalance < int64(orderT.MinNoDustAccountSize) {
+		return ErrMasterBalanceDust
+	}
 
 	// Next, we'll derive the account script for the auctioneer itself,
 	// which is the final thing we need in order to generate the batch
@@ -494,12 +632,16 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// As the transaction has just been sorted, we can now index the final
 	// version of the transaction, so we can easily perform the signing
 	// execution in the next phase.
-	masterAcctInputIndex, err := e.indexBatchTx(
-		scriptToOrders, traderAccounts, ordersForTrader, inputToAcct,
-	)
+	err = e.indexBatchTx(scriptToOrders, traderAccounts, ordersForTrader)
 	if err != nil {
 		return err
 	}
+
+	// Get the master account index from the input index, since we'll need
+	// that for later.
+	masterAcctInputIndex := int(
+		e.batchInputIndex[mAccountDiff.PriorPoint].InputIndex,
+	)
 
 	err = blockchain.CheckTransactionSanity(btcutil.NewTx(e.ExeTx))
 	if err != nil {
@@ -511,11 +653,20 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// recreate the batch transaction with a higher fee before executing
 	// it.
 	txFee := totalTraderFees + auctioneerFee
-	txWeight := txFeeEstimator.EstimateBatchWeight(traderOuts)
+	txWeight, err := txFeeEstimator.EstimateBatchWeight(traderOuts)
+	if err != nil {
+		return err
+	}
+
 	e.FeeInfoEstimate = &feebump.TxFeeInfo{
 		Fee:    txFee,
 		Weight: txWeight,
 	}
+
+	// Now that batch tx assembly has finished, update the order batch in
+	// the execution context to point to our working copy with chain fees
+	// accounted for.
+	e.OrderBatch = orderBatch
 
 	// Finally, we'll construct a new account diff to be used for the
 	// _next_ execution transaction which describes the ending state of the
@@ -543,7 +694,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 // NewExecutionContext creates a new ExecutionContext which contains all the
 // information needed to execute the passed OrderBatch.
 func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
-	masterAcct *account.Auctioneer, batchFeeRate chainfee.SatPerKWeight,
+	masterAcct *account.Auctioneer, masterIO *BatchIO,
+	batchFeeRate chainfee.SatPerKWeight,
 	feeSchedule terms.FeeSchedule) (*ExecutionContext, error) {
 
 	// When we create this master account state, we'll ensure that
@@ -567,15 +719,17 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	copy(batchID[:], batchKey.SerializeCompressed())
 
 	exeCtx := ExecutionContext{
-		BatchID:        batchID,
-		FeeSchedule:    feeSchedule,
-		BatchFeeRate:   batchFeeRate,
-		MasterAcct:     masterAcct,
-		OrderBatch:     batch,
-		orderIndex:     make(map[orderT.Nonce][]*OrderOutput),
-		traderIndex:    make(map[matching.AccountID][]*OrderOutput),
-		accountIndex:   make(map[matching.AccountID]wire.OutPoint),
-		acctInputIndex: make(map[matching.AccountID]*AcctInput),
+		BatchID:            batchID,
+		FeeSchedule:        feeSchedule,
+		BatchFeeRate:       batchFeeRate,
+		MasterAcct:         masterAcct,
+		OrderBatch:         batch,
+		orderIndex:         make(map[orderT.Nonce][]*OrderOutput),
+		traderIndex:        make(map[matching.AccountID][]*OrderOutput),
+		accountOutputIndex: make(map[matching.AccountID]wire.OutPoint),
+		acctInputIndex:     make(map[matching.AccountID]wire.OutPoint),
+		batchInputIndex:    make(map[wire.OutPoint]*BatchInput),
+		masterIO:           masterIO,
 	}
 
 	err := exeCtx.assembleBatchTx(batch, masterAcctState, batchFeeRate)
@@ -606,13 +760,33 @@ func (e *ExecutionContext) ChanOutputsForTrader(acct matching.AccountID) ([]*Ord
 // NOTE: If the trader's account was fully consumed, then there won't be an
 // entry for them.
 func (e *ExecutionContext) AcctOutputForTrader(acct matching.AccountID) (wire.OutPoint, bool) {
-	op, ok := e.accountIndex[acct]
+	op, ok := e.accountOutputIndex[acct]
 	return op, ok
 }
 
 // AcctInputForTrader returns the account input information for the target
 // trader, if it exists.
-func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (*AcctInput, bool) {
-	input, ok := e.acctInputIndex[acct]
+func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (*BatchInput, bool) {
+	op, ok := e.acctInputIndex[acct]
+	if !ok {
+		return nil, false
+	}
+
+	input, ok := e.batchInputIndex[op]
 	return input, ok
+}
+
+func (e *ExecutionContext) BatchInput(op wire.OutPoint) (*BatchInput, bool) {
+	input, ok := e.batchInputIndex[op]
+	return input, ok
+}
+
+// ExtraInputs returns a list of extra batch inputs added by the auctioneer.
+func (e *ExecutionContext) ExtraInputs() []*BatchInput {
+	extra := make([]*BatchInput, len(e.masterIO.Inputs))
+	for i, in := range e.masterIO.Inputs {
+		prev := in.PrevOutPoint
+		extra[i] = e.batchInputIndex[prev]
+	}
+	return extra
 }
