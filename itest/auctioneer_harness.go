@@ -12,7 +12,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
-	"github.com/lightninglabs/pool/poolrpc"
+	poolrpc "github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"

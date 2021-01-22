@@ -10,11 +10,12 @@ require (
 	github.com/golang/protobuf v1.3.3
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/aperture v0.1.3-beta
-	github.com/lightninglabs/lndclient v1.0.1-0.20201005192720-d7e439329144
-	github.com/lightninglabs/pool v0.3.4-alpha.0.20210107154214-c300ba172832
+	github.com/lightninglabs/aperture v0.1.5-beta
+	github.com/lightninglabs/lndclient v0.11.0-5
+	github.com/lightninglabs/pool v0.4.3-alpha
+	github.com/lightninglabs/pool/auctioneerrpc v1.0.1
 	github.com/lightninglabs/protobuf-hex-display v1.3.3-0.20191212020323-b444784ce75d
-	github.com/lightningnetwork/lnd v0.12.0-beta.rc3
+	github.com/lightningnetwork/lnd v0.12.0-beta.rc5
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/prometheus/client_golang v1.5.1
@@ -31,3 +32,9 @@ go 1.13
 // Fix incompatibility of etcd go.mod package.
 // See https://github.com/etcd-io/etcd/issues/11154
 replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20200520232829-54ba9589114f
+
+// The subasta/auctioneerrpc package declares itself as pool/auctioneerrpc as
+// well so go mod can identify it as the same package and allows us to replace
+// it in the client binary as well. We need to import it with its declared name
+// everywhere too, otherwise the replace won't work properly.
+replace github.com/lightninglabs/pool/auctioneerrpc => ./auctioneerrpc

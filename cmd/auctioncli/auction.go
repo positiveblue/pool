@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/lightninglabs/pool/poolrpc"
+	poolrpc "github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/urfave/cli"

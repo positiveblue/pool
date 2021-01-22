@@ -3,6 +3,7 @@ package itest
 import (
 	"context"
 
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -61,7 +62,7 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 	require.NoError(t.t, err)
 
 	for _, nodeRating := range nodeRatings.NodeRatings {
-		require.Equal(t.t, nodeRating.NodeTier, poolrpc.NodeTier_TIER_0)
+		require.Equal(t.t, nodeRating.NodeTier, auctioneerrpc.NodeTier_TIER_0)
 	}
 
 	// Now that we have accounts open for both parties, we'll start to

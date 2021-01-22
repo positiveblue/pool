@@ -22,6 +22,7 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta"
@@ -1050,7 +1051,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 			Version: uint32(
 				orderT.VersionLeaseDurationBuckets,
 			),
-			MinNodeTier: poolrpc.NodeTier_TIER_0,
+			MinNodeTier: auctioneerrpc.NodeTier_TIER_0,
 		},
 	}
 	for _, modifier := range modifiers {
@@ -1131,7 +1132,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, ask := range resp.Asks {
-			if ask.Details.State != poolrpc.OrderState_ORDER_EXECUTED {
+			if ask.Details.State != auctioneerrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					ask.Details.State)
@@ -1139,7 +1140,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 		}
 
 		for _, bid := range resp.Bids {
-			if bid.Details.State != poolrpc.OrderState_ORDER_EXECUTED {
+			if bid.Details.State != auctioneerrpc.OrderState_ORDER_EXECUTED {
 
 				return fmt.Errorf("order in state: %v",
 					bid.Details.State)

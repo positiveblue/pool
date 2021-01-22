@@ -15,7 +15,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/pool/account"
-	"github.com/lightninglabs/pool/poolrpc"
+	poolrpc "github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/internal/test"

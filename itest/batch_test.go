@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
@@ -606,7 +607,7 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 
 	ctxb := context.Background()
 	batchSnapshot, err := trader.BatchSnapshot(
-		ctxb, &poolrpc.BatchSnapshotRequest{
+		ctxb, &auctioneerrpc.BatchSnapshotRequest{
 			BatchId: batchID,
 		},
 	)
@@ -651,7 +652,7 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 // finalized batches in its database.
 func assertNumFinalBatches(t *harnessTest, numTotalBatches int) {
 	resp, err := t.trader.BatchSnapshots(
-		context.Background(), &poolrpc.BatchSnapshotsRequest{
+		context.Background(), &auctioneerrpc.BatchSnapshotsRequest{
 			NumBatchesBack: 100,
 		},
 	)
@@ -1544,12 +1545,12 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 	// the multiples 4032 and 6048 that we explicitly add now.
 	_, err = t.auctioneer.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
 		Duration:    4032,
-		BucketState: poolrpc.DurationBucketState_MARKET_OPEN,
+		BucketState: auctioneerrpc.DurationBucketState_MARKET_OPEN,
 	})
 	require.NoError(t.t, err)
 	_, err = t.auctioneer.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
 		Duration:    6048,
-		BucketState: poolrpc.DurationBucketState_MARKET_OPEN,
+		BucketState: auctioneerrpc.DurationBucketState_MARKET_OPEN,
 	})
 	require.NoError(t.t, err)
 

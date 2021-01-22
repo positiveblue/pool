@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
@@ -661,14 +662,14 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// Query the auctioneer directly about the status of the ask we
 	// submitted earlier.
 	resp, err := t.auctioneer.OrderState(
-		idCtx, &poolrpc.ServerOrderStateRequest{OrderNonce: askNonce},
+		idCtx, &auctioneerrpc.ServerOrderStateRequest{OrderNonce: askNonce},
 	)
 	if err != nil {
 		t.Fatalf("could not query order status: %v", err)
 	}
-	if resp.State != poolrpc.OrderState_ORDER_CANCELED {
+	if resp.State != auctioneerrpc.OrderState_ORDER_CANCELED {
 		t.Fatalf("unexpected order state, got %d wanted %d",
-			resp.State, poolrpc.OrderState_ORDER_CANCELED)
+			resp.State, auctioneerrpc.OrderState_ORDER_CANCELED)
 	}
 }
 
@@ -692,7 +693,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 	// Reserve the account with the auctioneer now and parse the returned
 	// keys so we can derive the account script later.
 	res, err := t.auctioneer.ReserveAccount(
-		lsatCtx, &poolrpc.ReserveAccountRequest{
+		lsatCtx, &auctioneerrpc.ReserveAccountRequest{
 			AccountValue:  value,
 			TraderKey:     keyDesc.RawKeyBytes,
 			AccountExpiry: expiry,
