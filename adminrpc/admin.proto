@@ -4,6 +4,8 @@ import "auctioneerrpc/auctioneer.proto";
 
 package adminrpc;
 
+option go_package = "github.com/lightninglabs/subasta/adminrpc";
+
 service AuctionAdmin {
     rpc MasterAccount (EmptyRequest) returns (MasterAccountResponse);
     rpc ConnectedTraders (EmptyRequest) returns (ConnectedTradersResponse);
