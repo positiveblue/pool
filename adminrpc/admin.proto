@@ -19,7 +19,8 @@ service AuctionAdmin {
     rpc DeleteAccountDiff (DeleteAccountDiffRequest) returns (EmptyResponse);
     rpc AuctionStatus (EmptyRequest) returns (AuctionStatusResponse);
     rpc ListBatches (EmptyRequest) returns (ListBatchesResponse);
-    rpc BatchSnapshot (poolrpc.BatchSnapshotRequest) returns (AdminBatchSnapshotResponse);
+    rpc BatchSnapshot (poolrpc.BatchSnapshotRequest)
+        returns (AdminBatchSnapshotResponse);
     rpc ListBans (EmptyRequest) returns (ListBansResponse);
     rpc RemoveBan (RemoveBanRequest) returns (EmptyResponse);
     rpc AddBan (BanRequest) returns (EmptyResponse);
@@ -32,7 +33,7 @@ service AuctionAdmin {
     rpc ListNodeRatings (EmptyRequest) returns (ListNodeRatingsResponse);
     rpc StoreLeaseDuration (LeaseDuration) returns (EmptyResponse);
     rpc RemoveLeaseDuration (LeaseDuration) returns (EmptyResponse);
-    rpc MoveFunds(MoveFundsRequest) returns (EmptyResponse);
+    rpc MoveFunds (MoveFundsRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -511,7 +512,7 @@ message Output {
     uint64 value = 2;
 }
 
-message MoveFundsRequest{
+message MoveFundsRequest {
     repeated Input inputs = 1;
     repeated Output outputs = 2;
 }

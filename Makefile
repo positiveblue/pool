@@ -160,8 +160,7 @@ list:
 
 rpc:
 	@$(call print, "Compiling protos.")
-	cd ./adminrpc; ./gen_protos.sh
-	cd ./auctioneerrpc; ./gen_protos.sh
+	cd ./auctioneerrpc; ./gen_protos_docker.sh
 
 clean:
 	@$(call print, "Cleaning source.$(NC)")
