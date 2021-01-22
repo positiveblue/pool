@@ -162,6 +162,10 @@ rpc:
 	@$(call print, "Compiling protos.")
 	cd ./auctioneerrpc; ./gen_protos_docker.sh
 
+rpc-check: rpc
+	@$(call print, "Verifying protos.")
+	if test -n "$$(git describe --dirty | grep dirty)"; then echo "Protos not properly formatted or not compiled with correct version!"; git status; git diff; exit 1; fi
+
 clean:
 	@$(call print, "Cleaning source.$(NC)")
 	$(RM) ./auctionserver

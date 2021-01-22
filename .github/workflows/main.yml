@@ -24,6 +24,22 @@ env:
 
 jobs:
   ########################
+  # RPC compilation check
+  ########################
+  rpc-check:
+    name: RPC compilation check
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: docker image cache
+        uses: satackey/action-docker-layer-caching@v0.0.11
+
+      - name: run check
+        run: make rpc-check
+
+  ########################
   # lint code
   ########################
   lint:
