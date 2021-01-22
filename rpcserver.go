@@ -1410,7 +1410,7 @@ func (s *rpcServer) Terms(ctx context.Context, _ *auctioneerrpc.TermsRequest) (
 				return err
 			}
 
-			resp.LeaseDurations[d] = marketOpen
+			resp.LeaseDurations[d] = marketOpen // nolint:staticcheck
 			resp.LeaseDurationBuckets[d] = rpcState
 
 			return nil
@@ -1516,8 +1516,8 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 					o.Details.Bid,
 					o.Details.Quote.UnitsMatched,
 				)
-				resp.MatchedOrders[nonce].MatchedBids = append(
-					resp.MatchedOrders[nonce].MatchedBids, matchedBid,
+				resp.MatchedOrders[nonce].MatchedBids = append( // nolint:staticcheck
+					resp.MatchedOrders[nonce].MatchedBids, matchedBid, // nolint:staticcheck
 				)
 				matchedOrders[nonce].MatchedBids = append(
 					matchedOrders[nonce].MatchedBids,
@@ -1532,8 +1532,8 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 					o.Details.Ask,
 					o.Details.Quote.UnitsMatched,
 				)
-				resp.MatchedOrders[nonce].MatchedAsks = append(
-					resp.MatchedOrders[nonce].MatchedAsks, matchedAsk,
+				resp.MatchedOrders[nonce].MatchedAsks = append( // nolint:staticcheck
+					resp.MatchedOrders[nonce].MatchedAsks, matchedAsk, // nolint:staticcheck
 				)
 				matchedOrders[nonce].MatchedAsks = append(
 					matchedOrders[nonce].MatchedAsks,
@@ -2245,7 +2245,7 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 				UnitsMatched:     uint32(quote.UnitsMatched),
 			}
 			market.MatchedOrders[i] = rpcSnapshot
-			resp.MatchedOrders[orderIdx] = rpcSnapshot
+			resp.MatchedOrders[orderIdx] = rpcSnapshot // nolint:staticcheck
 			orderIdx++
 		}
 	}
