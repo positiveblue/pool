@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
 )
 
@@ -374,13 +375,13 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	// Append TLS configuration to server options.
-	certOpts, err := extractCertOpt(cfg)
+	serverTLS, err := getTLSConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	if certOpts != nil {
-		serverOpts = append(serverOpts, certOpts)
-	}
+	serverOpts = append(
+		serverOpts, grpc.Creds(credentials.NewTLS(serverTLS)),
+	)
 
 	// Next, create our listener, and initialize the primary gRPc server
 	// for HTTP/2 connections.

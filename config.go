@@ -1,6 +1,7 @@
 package subasta
 
 import (
+	"crypto/tls"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -12,8 +13,6 @@ import (
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -225,9 +224,9 @@ var DefaultConfig = &Config{
 	TraderRejectResetInterval:    defaultTraderRejectResetInterval,
 }
 
-// extractCertOpt examines the main configuration to create a grpc.ServerOption
-// instance which encodes our TLS parameters.
-func extractCertOpt(cfg *Config) (grpc.ServerOption, error) {
+// getTLSConfig examines the main configuration to create a *tls.Config instance
+// which encodes our TLS parameters.
+func getTLSConfig(cfg *Config) (*tls.Config, error) {
 	// Ensure we create TLS key and certificate if they don't exist
 	if !lnrpc.FileExists(cfg.TLSCertPath) &&
 		!lnrpc.FileExists(cfg.TLSKeyPath) {
@@ -245,9 +244,8 @@ func extractCertOpt(cfg *Config) (grpc.ServerOption, error) {
 	if err != nil {
 		return nil, err
 	}
-	serverTls := credentials.NewTLS(cert.TLSConfFromCert(certData))
 
-	return grpc.Creds(serverTls), nil
+	return cert.TLSConfFromCert(certData), nil
 }
 
 func initLogging(cfg *Config) error {
