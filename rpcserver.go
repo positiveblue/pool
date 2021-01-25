@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"net/http"
 	"strconv"
 	"strings"
 	"sync"
@@ -21,6 +22,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
+	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	accountT "github.com/lightninglabs/pool/account"
@@ -126,6 +128,8 @@ type rpcServer struct {
 	listener         net.Listener
 	restListener     net.Listener
 	restProxyCertOpt grpc.DialOption
+	restProxy        *http.Server
+	restCancel       func()
 	serveWg          sync.WaitGroup
 
 	started uint32 // To be used atomically.
@@ -219,6 +223,58 @@ func (s *rpcServer) Start() error {
 		}
 	}()
 
+	// The default JSON marshaler of the REST proxy only sets OrigName to
+	// true, which instructs it to use the same field names as specified in
+	// the proto file and not switch to camel case. What we also want is
+	// that the marshaler prints all values, even if they are falsey.
+	customMarshalerOption := proxy.WithMarshalerOption(
+		proxy.MIMEWildcard, &proxy.JSONPb{
+			OrigName:     true,
+			EmitDefaults: true,
+		},
+	)
+
+	// We'll also create and start an accompanying proxy to serve clients
+	// through REST.
+	var ctx context.Context
+	ctx, s.restCancel = context.WithCancel(context.Background())
+	mux := proxy.NewServeMux(customMarshalerOption)
+
+	// With TLS enabled by default, we cannot call 0.0.0.0
+	// internally from the REST proxy as that IP address isn't in
+	// the cert. We need to rewrite it to the loopback address.
+	restProxyDest := s.listener.Addr().String()
+	switch {
+	case strings.Contains(restProxyDest, "0.0.0.0"):
+		restProxyDest = strings.Replace(
+			restProxyDest, "0.0.0.0", "127.0.0.1", 1,
+		)
+
+	case strings.Contains(restProxyDest, "[::]"):
+		restProxyDest = strings.Replace(
+			restProxyDest, "[::]", "[::1]", 1,
+		)
+	}
+	err := auctioneerrpc.RegisterChannelAuctioneerHandlerFromEndpoint(
+		ctx, mux, restProxyDest, []grpc.DialOption{s.restProxyCertOpt},
+	)
+	if err != nil {
+		return err
+	}
+
+	s.restProxy = &http.Server{Handler: mux}
+	s.serveWg.Add(1)
+	go func() {
+		defer s.serveWg.Done()
+
+		rpcLog.Infof("REST server listening on %s",
+			s.restListener.Addr())
+		err := s.restProxy.Serve(s.restListener)
+		if err != nil && err != http.ErrServerClosed {
+			rpcLog.Errorf("REST server stopped with error: %v", err)
+		}
+	}()
+
 	rpcLog.Infof("Auction server is now active")
 
 	return nil
@@ -231,6 +287,12 @@ func (s *rpcServer) Stop() {
 	}
 
 	rpcLog.Info("Stopping auction server")
+
+	rpcLog.Info("Stopping REST server and listener")
+	s.restCancel()
+	if err := s.restProxy.Close(); err != nil {
+		rpcLog.Errorf("Error closing REST proxy listener: %v", err)
+	}
 
 	close(s.quit)
 	s.wg.Wait()
