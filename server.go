@@ -2,6 +2,7 @@ package subasta
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -375,7 +376,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	// Append TLS configuration to server options.
-	serverTLS, err := getTLSConfig(cfg)
+	serverTLS, clientCertOpt, err := getTLSConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -383,22 +384,30 @@ func NewServer(cfg *Config) (*Server, error) {
 		serverOpts, grpc.Creds(credentials.NewTLS(serverTLS)),
 	)
 
-	// Next, create our listener, and initialize the primary gRPc server
-	// for HTTP/2 connections.
-	log.Infof("Starting gRPC listener")
+	// Next, create our listeners, and initialize the primary gRPC and
+	// REST proxy server for HTTP/2 connections.
+	log.Info("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
 	if grpcListener == nil {
 		grpcListener, err = net.Listen("tcp", cfg.RPCListen)
 		if err != nil {
 			return nil, fmt.Errorf("RPC server unable to listen "+
-				"on %s", cfg.RPCListen)
+				"on %s: %v", cfg.RPCListen, err)
 		}
 	}
+	log.Info("Starting REST listener")
+	restListener, err := net.Listen("tcp", cfg.RESTListen)
+	if err != nil {
+		return nil, fmt.Errorf("REST proxy unable to listen on %s: %v",
+			cfg.RESTListen, err)
+	}
+	restListener = tls.NewListener(restListener, serverTLS)
+
 	auctioneerServer := newRPCServer(
 		store, lnd.Signer, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, server.auctioneer,
-		auctionTerms, ratingsAgency, ratingsDB, grpcListener, serverOpts,
-		cfg.SubscribeTimeout,
+		auctionTerms, ratingsAgency, ratingsDB, grpcListener,
+		restListener, serverOpts, clientCertOpt, cfg.SubscribeTimeout,
 	)
 	server.rpcServer = auctioneerServer
 	cfg.Prometheus.PublicRPCServer = auctioneerServer.grpcServer

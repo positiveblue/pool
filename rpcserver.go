@@ -123,8 +123,10 @@ func (c *commChannels) abort() {
 type rpcServer struct {
 	grpcServer *grpc.Server
 
-	listener net.Listener
-	serveWg  sync.WaitGroup
+	listener         net.Listener
+	restListener     net.Listener
+	restProxyCertOpt grpc.DialOption
+	serveWg          sync.WaitGroup
 
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
@@ -172,12 +174,15 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 	orderBook *order.Book, batchExecutor *venue.BatchExecutor,
 	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
 	ratingAgency ratings.Agency, ratingsDB ratings.NodeRatingsDatabase,
-	listener net.Listener, serverOpts []grpc.ServerOption,
+	listener, restListener net.Listener, serverOpts []grpc.ServerOption,
+	restProxyCertOpt grpc.DialOption,
 	subscribeTimeout time.Duration) *rpcServer {
 
 	return &rpcServer{
 		grpcServer:       grpc.NewServer(serverOpts...),
 		listener:         listener,
+		restListener:     restListener,
+		restProxyCertOpt: restProxyCertOpt,
 		bestHeight:       bestHeight,
 		signer:           signer,
 		accountManager:   accountManager,

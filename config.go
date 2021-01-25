@@ -2,6 +2,7 @@ package subasta
 
 import (
 	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net"
 	"path/filepath"
@@ -13,6 +14,8 @@ import (
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -231,9 +234,10 @@ var DefaultConfig = &Config{
 	TraderRejectResetInterval:    defaultTraderRejectResetInterval,
 }
 
-// getTLSConfig examines the main configuration to create a *tls.Config instance
-// which encodes our TLS parameters.
-func getTLSConfig(cfg *Config) (*tls.Config, error) {
+// getTLSConfig examines the main configuration to create a *tls.Config and
+// grpc.DialOption instance which encodes our TLS parameters for both the gRPC
+// server and the REST proxy client.
+func getTLSConfig(cfg *Config) (*tls.Config, grpc.DialOption, error) {
 	// Ensure we create TLS key and certificate if they don't exist
 	if !lnrpc.FileExists(cfg.TLSCertPath) &&
 		!lnrpc.FileExists(cfg.TLSKeyPath) {
@@ -244,15 +248,24 @@ func getTLSConfig(cfg *Config) (*tls.Config, error) {
 			cert.DefaultAutogenValidity,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 	}
-	certData, _, err := cert.LoadCert(cfg.TLSCertPath, cfg.TLSKeyPath)
+	certData, x509Cert, err := cert.LoadCert(
+		cfg.TLSCertPath, cfg.TLSKeyPath,
+	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return cert.TLSConfFromCert(certData), nil
+	// The REST proxy is a client that connects to the gRPC server so it
+	// needs to add our server cert as a trusted CA.
+	certPool := x509.NewCertPool()
+	certPool.AddCert(x509Cert)
+	clientTls := credentials.NewClientTLSFromCert(certPool, "")
+
+	return cert.TLSConfFromCert(certData),
+		grpc.WithTransportCredentials(clientTls), nil
 }
 
 func initLogging(cfg *Config) error {
