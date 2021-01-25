@@ -153,6 +153,28 @@
           "ChannelAuctioneer"
         ]
       }
+    },
+    "/v1/pool/market/info": {
+      "get": {
+        "operationId": "ChannelAuctioneer_MarketInfo",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/poolrpcMarketInfoResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/gatewayruntimeError"
+            }
+          }
+        },
+        "tags": [
+          "ChannelAuctioneer"
+        ]
+      }
     }
   },
   "definitions": {
@@ -172,6 +194,18 @@
         "INVALID_AMT"
       ],
       "default": "INVALID_AMT"
+    },
+    "MarketInfoTierValue": {
+      "type": "object",
+      "properties": {
+        "tier": {
+          "$ref": "#/definitions/poolrpcNodeTier"
+        },
+        "value": {
+          "type": "integer",
+          "format": "int64"
+        }
+      }
     },
     "OrderMatchRejectRejectReason": {
       "type": "string",
@@ -555,6 +589,51 @@
         },
         "fail_string": {
           "type": "string"
+        }
+      }
+    },
+    "poolrpcMarketInfo": {
+      "type": "object",
+      "properties": {
+        "num_asks": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MarketInfoTierValue"
+          },
+          "description": "The number of open/pending ask orders per node tier."
+        },
+        "num_bids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MarketInfoTierValue"
+          },
+          "description": "The number of open/pending bid orders per node tier."
+        },
+        "ask_open_interest_units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MarketInfoTierValue"
+          },
+          "description": "The total number of open/unmatched units in open/pending ask orders per node\ntier."
+        },
+        "bid_open_interest_units": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/MarketInfoTierValue"
+          },
+          "description": "The total number of open/unmatched units in open/pending bid orders per node\ntier."
+        }
+      }
+    },
+    "poolrpcMarketInfoResponse": {
+      "type": "object",
+      "properties": {
+        "markets": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/poolrpcMarketInfo"
+          },
+          "description": "A map of all markets identified by their lease duration and the current\nset of statistics."
         }
       }
     },

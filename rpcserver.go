@@ -2263,6 +2263,109 @@ func (s *rpcServer) BatchSnapshots(ctx context.Context,
 	return resp, nil
 }
 
+// MarketInfo returns a simple set of statistics per active market, grouped by
+// node tier.
+func (s *rpcServer) MarketInfo(ctx context.Context,
+	req *auctioneerrpc.MarketInfoRequest) (*auctioneerrpc.MarketInfoResponse,
+	error) {
+
+	cachedOrders, err := s.store.GetOrders(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching orders: %v", err)
+	}
+
+	// To make sure we get de-duplicated results, let's store everything in
+	// a map of duration->node tier->stats first.
+	type stat struct {
+		numAsk   uint32
+		numBid   uint32
+		askUnits orderT.SupplyUnit
+		bidUnits orderT.SupplyUnit
+	}
+	stats := make(map[uint32]map[orderT.NodeTier]*stat)
+	for _, cachedOrder := range cachedOrders {
+		duration := cachedOrder.Details().LeaseDuration
+		durationStat, ok := stats[duration]
+		if !ok {
+			stats[duration] = map[orderT.NodeTier]*stat{
+				orderT.NodeTier0: {},
+				orderT.NodeTier1: {},
+			}
+			durationStat = stats[duration]
+		}
+
+		switch o := cachedOrder.(type) {
+		case *order.Bid:
+			// For bids the default min node tier is 1.
+			tier := orderT.NodeTier1
+			if o.MinNodeTier == orderT.NodeTier0 {
+				tier = orderT.NodeTier0
+			}
+
+			durationStat[tier].numBid++
+			durationStat[tier].bidUnits +=
+				cachedOrder.Details().UnitsUnfulfilled
+
+		case *order.Ask:
+			// The default node tier is 0 if we don't have an agency
+			// because we're on regtest.
+			tier := orderT.NodeTier0
+			if s.ratingAgency != nil {
+				tier = s.ratingAgency.RateNode(o.NodeKey)
+			}
+
+			durationStat[tier].numAsk++
+			durationStat[tier].askUnits +=
+				cachedOrder.Details().UnitsUnfulfilled
+		}
+	}
+
+	// Now marshall everything into the RPC compliant values.
+	resp := &auctioneerrpc.MarketInfoResponse{
+		Markets: make(map[uint32]*auctioneerrpc.MarketInfo),
+	}
+	for duration := range stats {
+		resp.Markets[duration] = &auctioneerrpc.MarketInfo{}
+		for tier, tierStat := range stats[duration] {
+			rpcTier, err := marshallNodeTier(tier)
+			if err != nil {
+				return nil, err
+			}
+
+			resp.Markets[duration].NumAsks = append(
+				resp.Markets[duration].NumAsks,
+				&auctioneerrpc.MarketInfo_TierValue{
+					Tier:  rpcTier,
+					Value: tierStat.numAsk,
+				},
+			)
+			resp.Markets[duration].NumBids = append(
+				resp.Markets[duration].NumBids,
+				&auctioneerrpc.MarketInfo_TierValue{
+					Tier:  rpcTier,
+					Value: tierStat.numBid,
+				},
+			)
+			resp.Markets[duration].AskOpenInterestUnits = append(
+				resp.Markets[duration].AskOpenInterestUnits,
+				&auctioneerrpc.MarketInfo_TierValue{
+					Tier:  rpcTier,
+					Value: uint32(tierStat.askUnits),
+				},
+			)
+			resp.Markets[duration].BidOpenInterestUnits = append(
+				resp.Markets[duration].BidOpenInterestUnits,
+				&auctioneerrpc.MarketInfo_TierValue{
+					Tier:  rpcTier,
+					Value: uint32(tierStat.bidUnits),
+				},
+			)
+		}
+	}
+
+	return resp, nil
+}
+
 // marshallBatchSnapshot converts a batch snapshot into the RPC representation.
 func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 	batchSnapshot *subastadb.BatchSnapshot) (*auctioneerrpc.BatchSnapshotResponse,
