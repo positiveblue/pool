@@ -20,6 +20,10 @@ const (
 	// server listens on.
 	defaultAuctioneerRPCPort = 12009
 
+	// defaultAuctioneerRESTPort is the default port that the auctioneer
+	// server listens on for REST requests.
+	defaultAuctioneerRESTPort = 12080
+
 	// defaultAdminRPCPort is the default port that the admin server listens
 	// on.
 	defaultAdminRPCPort = 13370
@@ -115,6 +119,7 @@ var (
 	DefaultBaseDir = btcutil.AppDataDir("auctionserver", false)
 
 	defaultAuctioneerAddr = fmt.Sprintf(":%d", defaultAuctioneerRPCPort)
+	defaultRestAddr       = fmt.Sprintf(":%d", defaultAuctioneerRESTPort)
 	defaultAdminAddr      = fmt.Sprintf("127.0.0.1:%d", defaultAdminRPCPort)
 	defaultTLSCertPath    = filepath.Join(
 		DefaultBaseDir, defaultTLSCertFilename,
@@ -141,6 +146,7 @@ type Config struct {
 	Network        string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
 	BaseDir        string `long:"basedir" description:"The base directory where auctionserver stores all its data"`
 	RPCListen      string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	RESTListen     string `long:"restlisten" description:"Address to listen on for REST clients"`
 	AdminRPCListen string `long:"adminrpclisten" description:"Address to listen on for gRPC admin clients"`
 
 	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
@@ -193,6 +199,7 @@ var DefaultConfig = &Config{
 	Network:          "mainnet",
 	BaseDir:          DefaultBaseDir,
 	RPCListen:        defaultAuctioneerAddr,
+	RESTListen:       defaultRestAddr,
 	AdminRPCListen:   defaultAdminAddr,
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
