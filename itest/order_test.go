@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/stretchr/testify/require"
@@ -63,7 +64,7 @@ func testOrderSubmission(t *harnessTest) {
 	require.NoError(t.t, err)
 	require.Len(t.t, list.Asks, 1)
 	require.Equal(
-		t.t, poolrpc.OrderState_ORDER_SUBMITTED,
+		t.t, auctioneerrpc.OrderState_ORDER_SUBMITTED,
 		list.Asks[0].Details.State,
 	)
 
@@ -92,14 +93,14 @@ func testOrderSubmission(t *harnessTest) {
 	require.NoError(t.t, err)
 	require.Len(t.t, list.Bids, 1)
 	require.Equal(
-		t.t, poolrpc.OrderState_ORDER_SUBMITTED,
+		t.t, auctioneerrpc.OrderState_ORDER_SUBMITTED,
 		list.Bids[0].Details.State,
 	)
 
 	// We didn't submit a default node tier, but this should have returned
 	// the current default node tier.
 	require.Equal(
-		t.t, poolrpc.NodeTier_TIER_1,
+		t.t, auctioneerrpc.NodeTier_TIER_1,
 		list.Bids[0].MinNodeTier,
 	)
 
@@ -122,7 +123,7 @@ func testOrderSubmission(t *harnessTest) {
 		},
 		LeaseDurationBlocks: 2016,
 		Version:             uint32(order.CurrentBatchVersion),
-		MinNodeTier:         poolrpc.NodeTier_TIER_0,
+		MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Bid{
@@ -139,12 +140,12 @@ func testOrderSubmission(t *harnessTest) {
 
 	var cancelIdx int
 	for i, bid := range list.Bids {
-		if bid.Details.State != poolrpc.OrderState_ORDER_SUBMITTED {
+		if bid.Details.State != auctioneerrpc.OrderState_ORDER_SUBMITTED {
 			continue
 		}
 
 		cancelIdx = i
-		require.Equal(t.t, poolrpc.NodeTier_TIER_0, bid.MinNodeTier)
+		require.Equal(t.t, auctioneerrpc.NodeTier_TIER_0, bid.MinNodeTier)
 	}
 
 	// To close, we'll the final ask, then query again to confirm that all
@@ -161,13 +162,13 @@ func testOrderSubmission(t *harnessTest) {
 	require.NoError(t.t, err)
 	for _, bid := range list.Bids {
 		require.Equal(
-			t.t, poolrpc.OrderState_ORDER_CANCELED,
+			t.t, auctioneerrpc.OrderState_ORDER_CANCELED,
 			bid.Details.State,
 		)
 	}
 	for _, ask := range list.Asks {
 		require.Equal(
-			t.t, poolrpc.OrderState_ORDER_CANCELED,
+			t.t, auctioneerrpc.OrderState_ORDER_CANCELED,
 			ask.Details.State,
 		)
 	}

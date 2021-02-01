@@ -9,7 +9,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/urfave/cli"
@@ -368,7 +368,7 @@ var batchSnapshotCommand = cli.Command{
 			return nil, err
 		}
 
-		return client.BatchSnapshot(ctx, &poolrpc.BatchSnapshotRequest{
+		return client.BatchSnapshot(ctx, &auctioneerrpc.BatchSnapshotRequest{
 			BatchId: batchID,
 		})
 	}),
@@ -638,7 +638,7 @@ var storeLeaseDuration = cli.Command{
 		cli.StringFlag{
 			Name:  "status",
 			Usage: "the status the market should be updated to",
-			Value: poolrpc.DurationBucketState_MARKET_OPEN.String(),
+			Value: auctioneerrpc.DurationBucketState_MARKET_OPEN.String(),
 		},
 	},
 	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
@@ -675,12 +675,12 @@ var storeLeaseDuration = cli.Command{
 			statusStr = args.First()
 		}
 
-		statusUint, ok := poolrpc.DurationBucketState_value[statusStr]
+		statusUint, ok := auctioneerrpc.DurationBucketState_value[statusStr]
 		if !ok {
 			validValues := make(
-				[]string, len(poolrpc.DurationBucketState_name),
+				[]string, len(auctioneerrpc.DurationBucketState_name),
 			)
-			for i, validValue := range poolrpc.DurationBucketState_name {
+			for i, validValue := range auctioneerrpc.DurationBucketState_name {
 				validValues[i] = validValue
 			}
 			return nil, fmt.Errorf("invalid market status, must "+
@@ -689,7 +689,7 @@ var storeLeaseDuration = cli.Command{
 
 		return client.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
 			Duration:    duration,
-			BucketState: poolrpc.DurationBucketState(statusUint),
+			BucketState: auctioneerrpc.DurationBucketState(statusUint),
 		})
 	}),
 }

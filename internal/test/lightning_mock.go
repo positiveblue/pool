@@ -60,6 +60,8 @@ func NewMockLightning() *MockLightning {
 }
 
 type MockLightning struct {
+	lndclient.LightningClient
+
 	SendPaymentChannel chan PaymentChannelMessage
 	NodePubkey         string
 	ChainParams        *chaincfg.Params
@@ -346,7 +348,7 @@ func (m *MockLightning) DecodePaymentRequest(context.Context,
 }
 
 func (m *MockLightning) OpenChannel(_ context.Context, peer route.Vertex,
-	localSat, pushSat btcutil.Amount) (*wire.OutPoint, error) {
+	localSat, pushSat btcutil.Amount, _ bool) (*wire.OutPoint, error) {
 
 	var randomHash chainhash.Hash
 	if _, err := rand.Read(randomHash[:]); err != nil {
@@ -368,13 +370,14 @@ func (m *MockLightning) OpenChannel(_ context.Context, peer route.Vertex,
 }
 
 func (m *MockLightning) CloseChannel(context.Context, *wire.OutPoint,
-	bool) (chan lndclient.CloseChannelUpdate, chan error, error) {
+	bool, int32, btcutil.Address) (chan lndclient.CloseChannelUpdate,
+	chan error, error) {
 
 	return nil, nil, nil
 }
 
 func (m *MockLightning) Connect(_ context.Context, peer route.Vertex,
-	host string) error {
+	host string, _ bool) error {
 
 	m.Connections[peer] = host
 	return nil

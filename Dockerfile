@@ -1,4 +1,7 @@
-FROM golang:1.14.9-alpine as builder
+# If you change this value, please change it in the following files as well:
+# /.travis.yml
+# /.github/workflows/main.yml
+FROM golang:1.15.6-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightninglabs/subasta

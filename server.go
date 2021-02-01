@@ -14,7 +14,7 @@ import (
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -410,7 +410,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	cfg.Prometheus.BatchConfTarget = cfg.BatchConfTarget
 	cfg.Prometheus.SnapshotSource = auctioneerServer.lookupSnapshot
 
-	poolrpc.RegisterChannelAuctioneerServer(
+	auctioneerrpc.RegisterChannelAuctioneerServer(
 		auctioneerServer.grpcServer, auctioneerServer,
 	)
 

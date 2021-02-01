@@ -4,7 +4,10 @@ cache:
     - $GOCACHE
 
 go:
-  - "1.13.x"
+  # If you change this value, please change it in the following files as well:
+  # /Dockerfile
+  # /.github/workflows/main.yml
+  - "1.15.6"
 
 # Remove Travis' default flag --depth=50 from the git clone command to make sure
 # we have the whole git history, including the commit we lint against.
@@ -27,13 +30,6 @@ sudo: required
 
 jobs:
   include:
-    - stage: Build
-      script:
-        - make unit pkg=... case=_NONE_
-        - make lint workers=1
-    - stage: Test
-      script: make unit-race
-      name: Unit Race
     - script: make itest
       name: Btcd Integration
 

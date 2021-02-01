@@ -325,11 +325,13 @@ func (m *mockWallet) SendOutputs(cctx context.Context, outputs []*wire.TxOut,
 	return lastTx, nil
 }
 
-func (m *mockWallet) ConfirmedWalletBalance(context.Context) (btcutil.Amount, error) {
+func (m *mockWallet) WalletBalance(context.Context) (*lndclient.WalletBalance,
+	error) {
+
 	m.RLock()
 	defer m.RUnlock()
 
-	return m.balance, nil
+	return &lndclient.WalletBalance{Confirmed: m.balance}, nil
 }
 
 func (m *mockWallet) ListTransactions(context.Context, int32, int32) (

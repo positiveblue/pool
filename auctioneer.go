@@ -114,9 +114,9 @@ type Wallet interface {
 	SendOutputs(context.Context, []*wire.TxOut,
 		chainfee.SatPerKWeight, string) (*wire.MsgTx, error)
 
-	// ConfirmedWalletBalance returns the total amount of confirmed coins
-	// in the wallet.
-	ConfirmedWalletBalance(context.Context) (btcutil.Amount, error)
+	// WalletBalance returns the total amount of confirmed and unconfirmed
+	// coins in the wallet.
+	WalletBalance(context.Context) (*lndclient.WalletBalance, error)
 
 	// ListTransactions returns the set of confirmed transactions in the
 	// wallet.
@@ -1288,13 +1288,13 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// have no sats.
 		//
 		// TODO(roasbeef): add wallet balance to WalletKit
-		walletBalance, err := a.cfg.Wallet.ConfirmedWalletBalance(
+		walletBalance, err := a.cfg.Wallet.WalletBalance(
 			ctxb,
 		)
 		if err != nil {
 			return nil, err
 		}
-		if walletBalance <= a.cfg.StartingAcctValue {
+		if walletBalance.Confirmed <= a.cfg.StartingAcctValue {
 			log.Infof("Need %v coins for Master Account, only "+
 				"have %v, waiting for new block...",
 				a.cfg.StartingAcctValue, walletBalance)

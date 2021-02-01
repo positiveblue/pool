@@ -19,8 +19,8 @@ import (
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
+	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -249,7 +249,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				Details:             marshallServerOrder(o),
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
-				State: poolrpc.OrderState(
+				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
 			})
@@ -264,7 +264,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
 				MinNodeTier:         nodeTier,
-				State: poolrpc.OrderState(
+				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
 			})
@@ -279,7 +279,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 
 // AccountDetails retrieves the details of specified account from the store.
 func (s *adminRPCServer) AccountDetails(ctx context.Context,
-	req *adminrpc.AccountDetailsRequest) (*poolrpc.AuctionAccount, error) {
+	req *adminrpc.AccountDetailsRequest) (*auctioneerrpc.AuctionAccount, error) {
 
 	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
 	if err != nil {
@@ -294,7 +294,7 @@ func (s *adminRPCServer) AccountDetails(ctx context.Context,
 
 // EditAccount edits the details of an existing account.
 func (s *adminRPCServer) EditAccount(ctx context.Context,
-	req *adminrpc.EditAccountRequest) (*poolrpc.AuctionAccount, error) {
+	req *adminrpc.EditAccountRequest) (*auctioneerrpc.AuctionAccount, error) {
 
 	// Retrieve the account with the associated key.
 	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
@@ -392,7 +392,7 @@ func (s *adminRPCServer) ListAccounts(ctx context.Context,
 		return nil, err
 	}
 
-	rpcAccounts := make([]*poolrpc.AuctionAccount, 0, len(dbAccounts))
+	rpcAccounts := make([]*auctioneerrpc.AuctionAccount, 0, len(dbAccounts))
 	for _, dbAccount := range dbAccounts {
 		rpcAccount, err := marshallServerAccount(dbAccount)
 		if err != nil {
@@ -425,7 +425,7 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	rpcDurationBuckets := make(map[uint32]poolrpc.DurationBucketState)
+	rpcDurationBuckets := make(map[uint32]auctioneerrpc.DurationBucketState)
 	for duration, state := range durationBuckets {
 		rpcState, err := marshallDurationBucketState(state)
 		if err != nil {
@@ -495,7 +495,7 @@ func (s *adminRPCServer) ListBatches(ctx context.Context,
 // BatchSnapshot returns the stored snapshot information of one batch specified
 // by its ID.
 func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
-	req *poolrpc.BatchSnapshotRequest) (*adminrpc.AdminBatchSnapshotResponse,
+	req *auctioneerrpc.BatchSnapshotRequest) (*adminrpc.AdminBatchSnapshotResponse,
 	error) {
 
 	log.Tracef("[BatchSnapshot] batch_id=%x", req.BatchId)
@@ -572,14 +572,14 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 			quote := o.Details.Quote
 
 			snapshots[i] = &adminrpc.AdminMatchedOrderSnapshot{
-				Ask: &poolrpc.ServerAsk{
+				Ask: &auctioneerrpc.ServerAsk{
 					Details: marshallServerOrder(
 						ask,
 					),
 					LeaseDurationBlocks: ask.LeaseDuration(),
 					Version:             uint32(ask.Version),
 				},
-				Bid: &poolrpc.ServerBid{
+				Bid: &auctioneerrpc.ServerBid{
 					Details: marshallServerOrder(
 						bid,
 					),
@@ -933,20 +933,20 @@ func (s *adminRPCServer) RemoveLeaseDuration(ctx context.Context,
 }
 
 func parseRPCDurationBucketState(
-	rpcState poolrpc.DurationBucketState) (order.DurationBucketState,
+	rpcState auctioneerrpc.DurationBucketState) (order.DurationBucketState,
 	error) {
 
 	switch rpcState {
-	case poolrpc.DurationBucketState_NO_MARKET:
+	case auctioneerrpc.DurationBucketState_NO_MARKET:
 		return order.BucketStateNoMarket, nil
 
-	case poolrpc.DurationBucketState_MARKET_CLOSED:
+	case auctioneerrpc.DurationBucketState_MARKET_CLOSED:
 		return order.BucketStateMarketClosed, nil
 
-	case poolrpc.DurationBucketState_ACCEPTING_ORDERS:
+	case auctioneerrpc.DurationBucketState_ACCEPTING_ORDERS:
 		return order.BucketStateAcceptingOrders, nil
 
-	case poolrpc.DurationBucketState_MARKET_OPEN:
+	case auctioneerrpc.DurationBucketState_MARKET_OPEN:
 		return order.BucketStateClearingMarket, nil
 
 	default:
