@@ -9,6 +9,7 @@ require (
 	github.com/go-errors/errors v1.0.1
 	github.com/golang/protobuf v1.4.3
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
+	github.com/grpc-ecosystem/grpc-gateway v1.14.6
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.5-beta
 	github.com/lightninglabs/lndclient v0.11.0-5
@@ -22,7 +23,6 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
 	go.etcd.io/etcd v3.3.22+incompatible
-	golang.org/x/crypto v0.0.0-20200709230013-948cd5f35899
 	google.golang.org/grpc v1.29.1
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/macaroon.v2 v2.1.0

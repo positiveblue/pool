@@ -253,6 +253,7 @@ func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
 
 	traderHarness, err := newTraderHarness(traderConfig{
 		AuctionServer: auctioneer.serverCfg.RPCListen,
+		ServerTLSPath: auctioneer.serverCfg.TLSCertPath,
 		BackendCfg:    backend,
 		NetParams:     harnessNetParams,
 		LndNode:       node,

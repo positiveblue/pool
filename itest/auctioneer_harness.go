@@ -84,9 +84,10 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			// being in the lowest tier unless we manually set
 			// their scores.
 			NodeRatingsActive: true,
-			Insecure:          true,
 			FakeAuth:          true,
 			BaseDir:           cfg.BaseDir,
+			TLSCertPath:       path.Join(cfg.BaseDir, "tls.cert"),
+			TLSKeyPath:        path.Join(cfg.BaseDir, "tls.key"),
 			ExecFeeBase:       subasta.DefaultExecutionFeeBase,
 			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
 			BatchConfTarget:   6,

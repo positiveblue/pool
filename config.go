@@ -2,10 +2,9 @@ package subasta
 
 import (
 	"crypto/tls"
-	"errors"
+	"crypto/x509"
 	"fmt"
 	"net"
-	"net/http"
 	"path/filepath"
 	"time"
 
@@ -15,7 +14,6 @@ import (
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
-	"golang.org/x/crypto/acme/autocert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 )
@@ -24,6 +22,10 @@ const (
 	// defaultAuctioneerRPCPort is the default port that the auctioneer
 	// server listens on.
 	defaultAuctioneerRPCPort = 12009
+
+	// defaultAuctioneerRESTPort is the default port that the auctioneer
+	// server listens on for REST requests.
+	defaultAuctioneerRESTPort = 12080
 
 	// defaultAdminRPCPort is the default port that the admin server listens
 	// on.
@@ -120,6 +122,7 @@ var (
 	DefaultBaseDir = btcutil.AppDataDir("auctionserver", false)
 
 	defaultAuctioneerAddr = fmt.Sprintf(":%d", defaultAuctioneerRPCPort)
+	defaultRestAddr       = fmt.Sprintf(":%d", defaultAuctioneerRESTPort)
 	defaultAdminAddr      = fmt.Sprintf("127.0.0.1:%d", defaultAdminRPCPort)
 	defaultTLSCertPath    = filepath.Join(
 		DefaultBaseDir, defaultTLSCertFilename,
@@ -146,6 +149,7 @@ type Config struct {
 	Network        string `long:"network" description:"network to run on" choice:"regtest" choice:"testnet" choice:"mainnet" choice:"simnet"`
 	BaseDir        string `long:"basedir" description:"The base directory where auctionserver stores all its data"`
 	RPCListen      string `long:"rpclisten" description:"Address to listen on for gRPC clients"`
+	RESTListen     string `long:"restlisten" description:"Address to listen on for REST clients"`
 	AdminRPCListen string `long:"adminrpclisten" description:"Address to listen on for gRPC admin clients"`
 
 	SubscribeTimeout time.Duration `long:"subscribetimeout" description:"The maximum duration we wait for a client to send the first subscription when connecting to the stream."`
@@ -157,10 +161,6 @@ type Config struct {
 
 	MaxAcctValue int64  `long:"maxacctvalue" description:"The maximum account value we enforce on the auctioneer side."`
 	MaxDuration  uint32 `long:"maxduration" description:"The maximum value for the min/max order duration values."`
-
-	ServerName string `long:"servername" description:"Server name to use for the tls certificate"`
-	Insecure   bool   `long:"insecure" description:"disable tls"`
-	AutoCert   bool   `long:"autocert" description:"automatically create a Let's Encrypt cert using ServerName"`
 
 	TLSCertPath    string `long:"tlscertpath" description:"Path to write the TLS certificate for lnd's RPC and REST services"`
 	TLSKeyPath     string `long:"tlskeypath" description:"Path to write the TLS private key for lnd's RPC and REST services"`
@@ -202,15 +202,13 @@ var DefaultConfig = &Config{
 	Network:          "mainnet",
 	BaseDir:          DefaultBaseDir,
 	RPCListen:        defaultAuctioneerAddr,
+	RESTListen:       defaultRestAddr,
 	AdminRPCListen:   defaultAdminAddr,
 	ExecFeeBase:      DefaultExecutionFeeBase,
 	ExecFeeRate:      DefaultExecutionFeeRate,
 	BatchConfTarget:  defaultBatchConfTarget,
 	MaxAcctValue:     defaultMaxAcctValue,
 	SubscribeTimeout: defaultSubscribeTimeout,
-	ServerName:       "auction.lightning.today",
-	Insecure:         false,
-	AutoCert:         false,
 	Lnd: &LndConfig{
 		Host: "localhost:10009",
 	},
@@ -236,74 +234,38 @@ var DefaultConfig = &Config{
 	TraderRejectResetInterval:    defaultTraderRejectResetInterval,
 }
 
-// extractCertOpt examines the main configuration to create a grpc.ServerOption
-// instance which encodes our TLS parameters.
-func extractCertOpt(cfg *Config) (grpc.ServerOption, error) {
-	var certOpt grpc.ServerOption
+// getTLSConfig examines the main configuration to create a *tls.Config and
+// grpc.DialOption instance which encodes our TLS parameters for both the gRPC
+// server and the REST proxy client.
+func getTLSConfig(cfg *Config) (*tls.Config, grpc.DialOption, error) {
+	// Ensure we create TLS key and certificate if they don't exist
+	if !lnrpc.FileExists(cfg.TLSCertPath) &&
+		!lnrpc.FileExists(cfg.TLSKeyPath) {
 
-	switch {
-	// If auto cert is configured, then we'll create a cert automatically
-	// using Let's Encrypt.
-	case !cfg.Insecure && cfg.AutoCert:
-		serverName := cfg.ServerName
-		if serverName == "" {
-			return nil, errors.New("servername option is required " +
-				"for secure operation")
-		}
-
-		certDir := filepath.Join(cfg.BaseDir, "autocert")
-		log.Infof("Configuring autocert for server %v and cache dir %v",
-			serverName, certDir)
-
-		manager := autocert.Manager{
-			Cache:      autocert.DirCache(certDir),
-			Prompt:     autocert.AcceptTOS,
-			HostPolicy: autocert.HostWhitelist(serverName),
-		}
-
-		go func() {
-			err := http.ListenAndServe(
-				":http", manager.HTTPHandler(nil),
-			)
-			if err != nil {
-				log.Errorf("Autocert http failed: %v", err)
-			}
-		}()
-		tlsConf := &tls.Config{
-			GetCertificate: manager.GetCertificate,
-		}
-
-		sCreds := credentials.NewTLS(tlsConf)
-
-		certOpt = grpc.Creds(sCreds)
-
-	// Otherwise, we'll generate custom self-signed cets.
-	case !cfg.Insecure:
-		// Ensure we create TLS key and certificate if they don't exist
-		if !lnrpc.FileExists(cfg.TLSCertPath) &&
-			!lnrpc.FileExists(cfg.TLSKeyPath) {
-
-			err := cert.GenCertPair(
-				"subasta autogenerated cert", cfg.TLSCertPath,
-				cfg.TLSKeyPath, nil, nil, false,
-				cert.DefaultAutogenValidity,
-			)
-			if err != nil {
-				return nil, err
-			}
-		}
-		certData, _, err := cert.LoadCert(
-			cfg.TLSCertPath, cfg.TLSKeyPath,
+		err := cert.GenCertPair(
+			"subasta autogenerated cert", cfg.TLSCertPath,
+			cfg.TLSKeyPath, nil, nil, false,
+			cert.DefaultAutogenValidity,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
-		sCreds := credentials.NewTLS(cert.TLSConfFromCert(certData))
-
-		certOpt = grpc.Creds(sCreds)
+	}
+	certData, x509Cert, err := cert.LoadCert(
+		cfg.TLSCertPath, cfg.TLSKeyPath,
+	)
+	if err != nil {
+		return nil, nil, err
 	}
 
-	return certOpt, nil
+	// The REST proxy is a client that connects to the gRPC server so it
+	// needs to add our server cert as a trusted CA.
+	certPool := x509.NewCertPool()
+	certPool.AddCert(x509Cert)
+	clientTls := credentials.NewClientTLSFromCert(certPool, "")
+
+	return cert.TLSConfFromCert(certData),
+		grpc.WithTransportCredentials(clientTls), nil
 }
 
 func initLogging(cfg *Config) error {

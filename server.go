@@ -2,6 +2,7 @@ package subasta
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/hex"
 	"fmt"
 	"net"
@@ -27,7 +28,25 @@ import (
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
+)
+
+const (
+	// headerRESTProxyAccept is the name of a gRPC metadata field that is
+	// set only if the request was forwarded by the REST proxy.
+	headerRESTProxyAccept = "grpcgateway-accept"
+)
+
+var (
+	// lsatTokenREST is a dummy LSAT token ID that is set if a request is
+	// made by the REST proxy (which might be on the LSAT whitelist in
+	// aperture and therefore might not have a real token) and no token can
+	// be found.
+	lsatTokenREST = lsat.TokenID{
+		// This is hex for the string "restproxy".
+		0x72, 0x65, 0x73, 0x74, 0x70, 0x72, 0x6f, 0x78, 0x79,
+	}
 )
 
 type auctioneerWallet struct {
@@ -374,30 +393,38 @@ func NewServer(cfg *Config) (*Server, error) {
 	}
 
 	// Append TLS configuration to server options.
-	certOpts, err := extractCertOpt(cfg)
+	serverTLS, clientCertOpt, err := getTLSConfig(cfg)
 	if err != nil {
 		return nil, err
 	}
-	if certOpts != nil {
-		serverOpts = append(serverOpts, certOpts)
-	}
+	serverOpts = append(
+		serverOpts, grpc.Creds(credentials.NewTLS(serverTLS)),
+	)
 
-	// Next, create our listener, and initialize the primary gRPc server
-	// for HTTP/2 connections.
-	log.Infof("Starting gRPC listener")
+	// Next, create our listeners, and initialize the primary gRPC and
+	// REST proxy server for HTTP/2 connections.
+	log.Info("Starting gRPC listener")
 	grpcListener := cfg.RPCListener
 	if grpcListener == nil {
 		grpcListener, err = net.Listen("tcp", cfg.RPCListen)
 		if err != nil {
 			return nil, fmt.Errorf("RPC server unable to listen "+
-				"on %s", cfg.RPCListen)
+				"on %s: %v", cfg.RPCListen, err)
 		}
 	}
+	log.Info("Starting REST listener")
+	restListener, err := net.Listen("tcp", cfg.RESTListen)
+	if err != nil {
+		return nil, fmt.Errorf("REST proxy unable to listen on %s: %v",
+			cfg.RESTListen, err)
+	}
+	restListener = tls.NewListener(restListener, serverTLS)
+
 	auctioneerServer := newRPCServer(
 		store, lnd.Signer, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, server.auctioneer,
-		auctionTerms, ratingsAgency, ratingsDB, grpcListener, serverOpts,
-		cfg.SubscribeTimeout,
+		auctionTerms, ratingsAgency, ratingsDB, grpcListener,
+		restListener, serverOpts, clientCertOpt, cfg.SubscribeTimeout,
 	)
 	server.rpcServer = auctioneerServer
 	cfg.Prometheus.PublicRPCServer = auctioneerServer.grpcServer
@@ -694,13 +721,26 @@ func idFromContext(ctx context.Context) (*lsat.TokenID, error) {
 	if !ok {
 		return nil, fmt.Errorf("context contains no metadata")
 	}
-	authHeader := md.Get(lsat.HeaderAuthorization)[0]
-	log.Debugf("Auth header present in request: %s", authHeader)
-	if !dummyRex.MatchString(authHeader) {
+
+	// If this is a request coming from the REST proxy, it might not have
+	// a real token attached since we might decide to put those requests on
+	// the whitelist in aperture. We return the dummy ID in that case so we
+	// can still kind of identify those non-authenticated requests.
+	authHeader := md.Get(lsat.HeaderAuthorization)
+	restProxyHeader := md.Get(headerRESTProxyAccept)
+	if len(authHeader) == 0 && len(restProxyHeader) > 0 {
+		log.Debugf("Got REST proxy request with no token")
+		return &lsatTokenREST, nil
+	} else if len(authHeader) == 0 {
+		return nil, fmt.Errorf("request contains no auth header")
+	}
+
+	log.Debugf("Auth header present in request: %s", authHeader[0])
+	if !dummyRex.MatchString(authHeader[0]) {
 		log.Debugf("Auth header didn't match dummy ID")
 		return nil, nil
 	}
-	matches := dummyRex.FindStringSubmatch(authHeader)
+	matches := dummyRex.FindStringSubmatch(authHeader[0])
 	idHex, err := hex.DecodeString(matches[1])
 	if err != nil {
 		return nil, err
