@@ -29,6 +29,11 @@ const (
 	// pending modifications. This needs be prefixed with the account's key
 	// within the store to obtain the full path.
 	accountDiffDir = "diff"
+
+	// accountKeyLen is the expected number of parts in an account's main
+	// key without any additional sub path.
+	// Example: bitcoin/clm/subasta/<network>/account/123456
+	accountKeyLen = 6
 )
 
 var (
@@ -458,7 +463,9 @@ func (s *EtcdStore) Account(ctx context.Context,
 	return acct, err
 }
 
-// Accounts retrieves all existing accounts.
+// Accounts retrieves all existing accounts. If an account has a diff that is
+// not yet committed, the diff will not be included. To get an account with its
+// diff applied, query it individually.
 func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -470,7 +477,15 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 	}
 
 	accounts := make([]*account.Account, 0, len(resp))
-	for _, v := range resp {
+	for k, v := range resp {
+		// We queried by prefix and will therefore also get keys for
+		// account diffs or other extra data. We only want the main
+		// account value here so we skip everything else.
+		parts := strings.Split(k, keyDelimiter)
+		if len(parts) != accountKeyLen {
+			continue
+		}
+
 		acct, err := deserializeAccount(bytes.NewReader(v))
 		if err != nil {
 			return nil, err
