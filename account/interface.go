@@ -162,6 +162,10 @@ type Parameters struct {
 	// TraderKey is the base trader's key in the 2-of-2 multi-sig
 	// construction of a CLM account.
 	TraderKey *btcec.PublicKey
+
+	// UserAgent is the string that identifies the software running on the
+	// user's side that was used to initially initialize this account.
+	UserAgent string
 }
 
 // Account encapsulates all of the details of a CLM account on-chain from the

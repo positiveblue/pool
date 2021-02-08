@@ -370,6 +370,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 		State:         StatePendingOpen,
 		HeightHint:    reservation.HeightHint,
 		OutPoint:      params.OutPoint,
+		UserAgent:     params.UserAgent,
 	}
 	copy(account.TraderKeyRaw[:], params.TraderKey.SerializeCompressed())
 	if err := m.cfg.Store.CompleteReservation(ctx, account); err != nil {
