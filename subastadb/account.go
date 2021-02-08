@@ -30,6 +30,13 @@ const (
 	// within the store to obtain the full path.
 	accountDiffDir = "diff"
 
+	// accountTlvKey is the key that we'll use to store the account's
+	// additional tlv encoded data. From the top level directory, this path
+	// is:
+	//
+	// bitcoin/clm/subasta/<network>/account/<trader-pubkey>/tlv
+	accountTlvKey = "tlv"
+
 	// accountKeyLen is the expected number of parts in an account's main
 	// key without any additional sub path.
 	// Example: bitcoin/clm/subasta/<network>/account/123456
@@ -72,6 +79,18 @@ func (s *EtcdStore) getAccountDiffKey(traderKey *btcec.PublicKey) string {
 	parts := []string{
 		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
 		accountDiffDir,
+	}
+	accountKey := strings.Join(parts, keyDelimiter)
+	return s.getKeyPrefix(accountKey)
+}
+
+// getAccountTlvKey returns the key for the tlv encoded additional data of an
+// account. Assuming a trader key of 123456, the resulting key would be:
+//	bitcoin/clm/subasta/<network>/account/123456/tlv
+func (s *EtcdStore) getAccountTlvKey(traderKey *btcec.PublicKey) string {
+	parts := []string{
+		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
+		accountTlvKey,
 	}
 	accountKey := strings.Join(parts, keyDelimiter)
 	return s.getKeyPrefix(accountKey)
@@ -190,9 +209,26 @@ func (s *EtcdStore) CompleteReservation(ctx context.Context,
 		}
 
 		stm.Put(s.getAccountKey(traderKey), buf.String())
-		return nil
+
+		// Now write all remaining additional data as a tlv encoded
+		// stream.
+		return s.storeAccountTlv(stm, a, traderKey)
 	})
 	return err
+}
+
+// storeAccountTlv stores an account's tlv encoded additional data using the
+// given STM instance.
+func (s *EtcdStore) storeAccountTlv(stm conc.STM, a *account.Account,
+	acctKey *btcec.PublicKey) error {
+
+	k := s.getAccountTlvKey(acctKey)
+	var buf bytes.Buffer
+	if err := serializeAccountTlvData(&buf, a); err != nil {
+		return err
+	}
+	stm.Put(k, buf.String())
+	return nil
 }
 
 // RemoveReservation deletes a reservation identified by the LSAT ID.
@@ -275,6 +311,15 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 		return err
 	}
 
+	// Decode any additional data that's stored in a tlv encoded stream.
+	tlvKey := s.getAccountTlvKey(acctKey)
+	err = deserializeAccountTlvData(
+		strings.NewReader(stm.Get(tlvKey)), dbAccount,
+	)
+	if err != nil {
+		return err
+	}
+
 	// Apply the given modifications to it and serialize it back.
 	for _, modifier := range modifiers {
 		modifier(dbAccount)
@@ -287,7 +332,9 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 
 	// Add the put operation to the queue.
 	stm.Put(k, buf.String())
-	return nil
+
+	// Now write all remaining additional data as a tlv encoded stream.
+	return s.storeAccountTlv(stm, dbAccount, acctKey)
 }
 
 // StoreAccountDiff stores a pending set of updates that should be applied to an
@@ -436,29 +483,39 @@ func (s *EtcdStore) Account(ctx context.Context,
 
 	var acct *account.Account
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		var err error
+
 		accountDiffKey := s.getAccountDiffKey(traderKey)
 		rawAccountDiff := stm.Get(accountDiffKey)
 
 		// If we need to return the account's diff, and one exists,
 		// return it.
 		if includeDiff && len(rawAccountDiff) > 0 {
-			var err error
 			acct, err = deserializeAccount(
 				strings.NewReader(rawAccountDiff),
 			)
+		} else {
+			// Otherwise, return the existing account state.
+			accountKey := s.getAccountKey(traderKey)
+			rawAccount := stm.Get(accountKey)
+			if len(rawAccount) == 0 {
+				return NewAccountNotFoundError(traderKey)
+			}
+
+			acct, err = deserializeAccount(
+				strings.NewReader(rawAccount),
+			)
+		}
+		if err != nil {
 			return err
 		}
 
-		// Otherwise, return the existing account state.
-		accountKey := s.getAccountKey(traderKey)
-		rawAccount := stm.Get(accountKey)
-		if len(rawAccount) == 0 {
-			return NewAccountNotFoundError(traderKey)
-		}
-
-		var err error
-		acct, err = deserializeAccount(strings.NewReader(rawAccount))
-		return err
+		// Decode any additional data that's stored in a tlv encoded
+		// stream.
+		tlvKey := s.getAccountTlvKey(traderKey)
+		return deserializeAccountTlvData(
+			strings.NewReader(stm.Get(tlvKey)), acct,
+		)
 	})
 	return acct, err
 }
@@ -490,6 +547,23 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		// Decode any additional data that's stored in a tlv encoded
+		// stream. If there is no data in the map we'll just get a nil
+		// byte slice from the map which the reader and tlv decoder can
+		// handle.
+		traderKey, err := acct.TraderKey()
+		if err != nil {
+			return nil, err
+		}
+		tlvKey := s.getAccountTlvKey(traderKey)
+		err = deserializeAccountTlvData(
+			bytes.NewReader(resp[tlvKey]), acct,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		accounts = append(accounts, acct)
 	}
 
@@ -549,4 +623,17 @@ func deserializeAccount(r io.Reader) (*account.Account, error) {
 		}
 	}
 	return &a, nil
+}
+
+// deserializeAccountTlvData attempts to decode the remaining bytes in the
+// supplied reader by interpreting it as a tlv stream. If successful any
+// non-default values of the additional data will be set on the given account.
+func deserializeAccountTlvData(r io.Reader, a *account.Account) error {
+	return nil
+}
+
+// serializeAccountTlvData encodes all additional data of an account as a single
+// tlv stream.
+func serializeAccountTlvData(w io.Writer, a *account.Account) error {
+	return nil
 }
