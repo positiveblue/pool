@@ -2,6 +2,7 @@
   "swagger": "2.0",
   "info": {
     "title": "auctioneer.proto",
+    "description": "We can't rename this to auctioneerrpc, otherwise it would be a breaking\nchange since the package name is also contained in the HTTP URIs and old\nclients would call the wrong endpoints. Luckily with the go_package option we\ncan have different golang and RPC package names.",
     "version": "version not set"
   },
   "consumes": [
