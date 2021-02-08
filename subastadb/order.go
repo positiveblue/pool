@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/pool/clientdb"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightningnetwork/lnd/tlv"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
@@ -766,11 +767,48 @@ func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes,
 // supplied reader by interpreting it as a tlv stream. If successful any
 // non-default values of the additional data will be set on the given order.
 func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
+	var (
+		userAgent []byte
+	)
+
+	tlvStream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(userAgentType, &userAgent),
+	)
+	if err != nil {
+		return err
+	}
+
+	parsedTypes, err := tlvStream.DecodeWithParsedTypes(r)
+	if err != nil {
+		return err
+	}
+
+	// No need setting the user agent if it wasn't parsed from the stream.
+	if t, ok := parsedTypes[userAgentType]; ok && t == nil {
+		o.ServerDetails().UserAgent = string(userAgent)
+	}
+
 	return nil
 }
 
 // serializeOrderTlvData encodes all additional data of an order as a single tlv
 // stream.
 func serializeOrderTlvData(w io.Writer, o order.ServerOrder) error {
-	return nil
+	userAgent := []byte(o.ServerDetails().UserAgent)
+
+	var tlvRecords []tlv.Record
+
+	// No need adding an empty record.
+	if len(userAgent) > 0 {
+		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+			userAgentType, &userAgent,
+		))
+	}
+
+	tlvStream, err := tlv.NewStream(tlvRecords...)
+	if err != nil {
+		return err
+	}
+
+	return tlvStream.Encode(w)
 }

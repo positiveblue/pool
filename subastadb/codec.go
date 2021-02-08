@@ -12,6 +12,13 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/lightningnetwork/lnd/tlv"
+)
+
+const (
+	// userAgentType is the tlv stream type for the order's user agent
+	// string.
+	userAgentType tlv.Type = 1
 )
 
 // WriteElements is writes each element in the elements slice to the passed

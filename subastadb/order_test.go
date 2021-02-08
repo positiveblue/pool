@@ -294,6 +294,7 @@ func dummyOrder(t *testing.T) *order.Kit {
 	kit.NodeAddrs = []net.Addr{addr}
 	kit.ChanType = 7
 	kit.Lsat = lsat.TokenID{9, 8, 7, 6, 5}
+	kit.UserAgent = "poold/v0.4.3-alpha/commit=test"
 	return kit
 }
 
