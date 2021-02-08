@@ -228,6 +228,10 @@ type Account struct {
 	// does not know of the transaction beforehand. There are also no
 	// guarantees to the transaction having its witness populated.
 	LatestTx *wire.MsgTx
+
+	// UserAgent is the string that identifies the software running on the
+	// user's side that was used to initially initialize this account.
+	UserAgent string
 }
 
 // Output returns the current on-chain output associated with the account.
@@ -301,6 +305,7 @@ func (a *Account) Copy(modifiers ...Modifier) *Account {
 		State:      a.State,
 		HeightHint: a.HeightHint,
 		OutPoint:   a.OutPoint,
+		UserAgent:  a.UserAgent,
 	}
 
 	if a.State != StatePendingOpen {

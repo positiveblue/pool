@@ -69,6 +69,7 @@ var (
 				},
 			},
 		},
+		UserAgent: "poold/v0.4.3-alpha/commit=test",
 	}
 )
 
@@ -195,9 +196,9 @@ func TestAccounts(t *testing.T) {
 	if len(accounts) != 1 {
 		t.Fatalf("expected 1 account, found %d", len(accounts))
 	}
-	if !reflect.DeepEqual(accounts[0], &a) {
+	if !reflect.DeepEqual(accounts[0], &testAccount) {
 		t.Fatalf("expected account: %v\ngot: %v",
-			spew.Sdump(a), spew.Sdump(accounts[0]))
+			spew.Sdump(testAccount), spew.Sdump(accounts[0]))
 	}
 
 	// Update some of the fields of the account.

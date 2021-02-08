@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightningnetwork/lnd/tlv"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
@@ -629,11 +630,48 @@ func deserializeAccount(r io.Reader) (*account.Account, error) {
 // supplied reader by interpreting it as a tlv stream. If successful any
 // non-default values of the additional data will be set on the given account.
 func deserializeAccountTlvData(r io.Reader, a *account.Account) error {
+	var (
+		userAgent []byte
+	)
+
+	tlvStream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(userAgentType, &userAgent),
+	)
+	if err != nil {
+		return err
+	}
+
+	parsedTypes, err := tlvStream.DecodeWithParsedTypes(r)
+	if err != nil {
+		return err
+	}
+
+	// No need setting the user agent if it wasn't parsed from the stream.
+	if t, ok := parsedTypes[userAgentType]; ok && t == nil {
+		a.UserAgent = string(userAgent)
+	}
+
 	return nil
 }
 
 // serializeAccountTlvData encodes all additional data of an account as a single
 // tlv stream.
 func serializeAccountTlvData(w io.Writer, a *account.Account) error {
-	return nil
+	userAgent := []byte(a.UserAgent)
+
+	var tlvRecords []tlv.Record
+
+	// No need adding an empty record.
+	if len(userAgent) > 0 {
+		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+			userAgentType, &userAgent,
+		))
+	}
+
+	tlvStream, err := tlv.NewStream(tlvRecords...)
+	if err != nil {
+		return err
+	}
+
+	return tlvStream.Encode(w)
 }
