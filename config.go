@@ -262,10 +262,10 @@ func getTLSConfig(cfg *Config) (*tls.Config, grpc.DialOption, error) {
 	// needs to add our server cert as a trusted CA.
 	certPool := x509.NewCertPool()
 	certPool.AddCert(x509Cert)
-	clientTls := credentials.NewClientTLSFromCert(certPool, "")
+	clientTLS := credentials.NewClientTLSFromCert(certPool, "")
 
 	return cert.TLSConfFromCert(certData),
-		grpc.WithTransportCredentials(clientTls), nil
+		grpc.WithTransportCredentials(clientTLS), nil
 }
 
 func initLogging(cfg *Config) error {
