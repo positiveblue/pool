@@ -42,7 +42,7 @@ var _ account.Store = (*EtcdStore)(nil)
 
 // getReservationKey returns the key for a reservation associated with the LSAT
 // token ID. Assuming a token ID of 123456, the resulting key would be:
-//	/bitcoin/clm/subasta/reservation/123456
+//	bitcoin/clm/subasta/<network>/reservation/123456
 func (s *EtcdStore) getReservationKey(tokenID lsat.TokenID) string {
 	parts := []string{reservationDir, tokenID.String()}
 	reservationKey := strings.Join(parts, keyDelimiter)
@@ -51,7 +51,7 @@ func (s *EtcdStore) getReservationKey(tokenID lsat.TokenID) string {
 
 // getAccountKey returns the key for an account associated with the trader key.
 // Assuming a trader key of 123456, the resulting key would be:
-//	/bitcoin/clm/subasta/account/123456
+//	bitcoin/clm/subasta/<network>/account/123456
 func (s *EtcdStore) getAccountKey(traderKey *btcec.PublicKey) string {
 	parts := []string{
 		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
@@ -62,7 +62,7 @@ func (s *EtcdStore) getAccountKey(traderKey *btcec.PublicKey) string {
 
 // getAccountDiffKey returns the key for the diff of an account. Assuming a
 // trader key of 123456, the resulting key would be:
-//	/bitcoin/clm/subasta/account/123456/diff
+//	bitcoin/clm/subasta/<network>/account/123456/diff
 func (s *EtcdStore) getAccountDiffKey(traderKey *btcec.PublicKey) string {
 	parts := []string{
 		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
