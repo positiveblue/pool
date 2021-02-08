@@ -252,6 +252,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
+				UserAgent: o.UserAgent,
 			})
 		case *order.Bid:
 			nodeTier, err := marshallNodeTier(o.MinNodeTier)
@@ -267,6 +268,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
+				UserAgent: o.UserAgent,
 			})
 		}
 	}
@@ -1097,6 +1099,7 @@ func marshallAdminAccount(acct *account.Account) (*adminrpc.Account, error) {
 		BatchKey:      acct.BatchKey.SerializeCompressed(),
 		HeightHint:    acct.HeightHint,
 		Outpoint:      acct.OutPoint.String(),
+		UserAgent:     acct.UserAgent,
 	}
 
 	switch acct.State {

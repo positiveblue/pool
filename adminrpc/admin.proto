@@ -150,6 +150,11 @@ message ServerAsk {
     The state the order currently is in.
     */
     poolrpc.OrderState state = 4;
+
+    /*
+    The user agent string this order was submitted with.
+    */
+    string user_agent = 5;
 }
 
 message ServerBid {
@@ -180,6 +185,11 @@ message ServerBid {
     a node this tier or higher will be eligible for matching with this bid.
     */
     poolrpc.NodeTier min_node_tier = 5;
+
+    /*
+    The user agent string this order was submitted with.
+    */
+    string user_agent = 6;
 }
 
 message AccountDetailsRequest {
@@ -277,6 +287,11 @@ message Account {
     after the account has met its initial funding confirmation.
     */
     bytes latest_tx = 9;
+
+    /*
+    The user agent string this order was submitted with.
+    */
+    string user_agent = 10;
 }
 
 message AuctionStatusResponse {
