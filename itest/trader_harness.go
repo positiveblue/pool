@@ -60,8 +60,9 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 	if cfg.LndNode == nil || cfg.LndNode.Cfg == nil {
 		return nil, fmt.Errorf("lnd node configuration cannot be nil")
 	}
-	rpcMacaroonDir := filepath.Join(
+	lndMacPath := filepath.Join(
 		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
+		"admin.macaroon",
 	)
 
 	tlsCertPath := filepath.Join(cfg.BaseDir, pool.DefaultTLSCertFilename)
@@ -86,9 +87,9 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 		RPCListen:      fmt.Sprintf("127.0.0.1:%d", nextAvailablePort()),
 		NewNodesOnly:   false,
 		Lnd: &pool.LndConfig{
-			Host:        cfg.LndNode.Cfg.RPCAddr(),
-			MacaroonDir: rpcMacaroonDir,
-			TLSPath:     cfg.LndNode.Cfg.TLSCertPath,
+			Host:         cfg.LndNode.Cfg.RPCAddr(),
+			MacaroonPath: lndMacPath,
+			TLSPath:      cfg.LndNode.Cfg.TLSCertPath,
 		},
 	}
 	for _, opt := range opts {
