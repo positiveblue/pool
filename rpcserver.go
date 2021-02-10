@@ -255,7 +255,7 @@ func (s *rpcServer) Start() error {
 
 	case strings.Contains(restProxyDest, "[::]"):
 		restProxyDest = strings.Replace(
-			restProxyDest, "[::]", "[::1]", 1,
+			restProxyDest, "[::]", "127.0.0.1", 1,
 		)
 	}
 	err := auctioneerrpc.RegisterChannelAuctioneerHandlerFromEndpoint(
