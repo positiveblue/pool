@@ -29,6 +29,11 @@ const (
 	// pending modifications. This needs be prefixed with the account's key
 	// within the store to obtain the full path.
 	accountDiffDir = "diff"
+
+	// accountKeyLen is the expected number of parts in an account's main
+	// key without any additional sub path.
+	// Example: bitcoin/clm/subasta/<network>/account/123456
+	accountKeyLen = 6
 )
 
 var (
@@ -42,7 +47,7 @@ var _ account.Store = (*EtcdStore)(nil)
 
 // getReservationKey returns the key for a reservation associated with the LSAT
 // token ID. Assuming a token ID of 123456, the resulting key would be:
-//	/bitcoin/clm/subasta/reservation/123456
+//	bitcoin/clm/subasta/<network>/reservation/123456
 func (s *EtcdStore) getReservationKey(tokenID lsat.TokenID) string {
 	parts := []string{reservationDir, tokenID.String()}
 	reservationKey := strings.Join(parts, keyDelimiter)
@@ -51,7 +56,7 @@ func (s *EtcdStore) getReservationKey(tokenID lsat.TokenID) string {
 
 // getAccountKey returns the key for an account associated with the trader key.
 // Assuming a trader key of 123456, the resulting key would be:
-//	/bitcoin/clm/subasta/account/123456
+//	bitcoin/clm/subasta/<network>/account/123456
 func (s *EtcdStore) getAccountKey(traderKey *btcec.PublicKey) string {
 	parts := []string{
 		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
@@ -62,7 +67,7 @@ func (s *EtcdStore) getAccountKey(traderKey *btcec.PublicKey) string {
 
 // getAccountDiffKey returns the key for the diff of an account. Assuming a
 // trader key of 123456, the resulting key would be:
-//	/bitcoin/clm/subasta/account/123456/diff
+//	bitcoin/clm/subasta/<network>/account/123456/diff
 func (s *EtcdStore) getAccountDiffKey(traderKey *btcec.PublicKey) string {
 	parts := []string{
 		accountDir, hex.EncodeToString(traderKey.SerializeCompressed()),
@@ -458,7 +463,9 @@ func (s *EtcdStore) Account(ctx context.Context,
 	return acct, err
 }
 
-// Accounts retrieves all existing accounts.
+// Accounts retrieves all existing accounts. If an account has a diff that is
+// not yet committed, the diff will not be included. To get an account with its
+// diff applied, query it individually.
 func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -470,7 +477,15 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 	}
 
 	accounts := make([]*account.Account, 0, len(resp))
-	for _, v := range resp {
+	for k, v := range resp {
+		// We queried by prefix and will therefore also get keys for
+		// account diffs or other extra data. We only want the main
+		// account value here so we skip everything else.
+		parts := strings.Split(k, keyDelimiter)
+		if len(parts) != accountKeyLen {
+			continue
+		}
+
 		acct, err := deserializeAccount(bytes.NewReader(v))
 		if err != nil {
 			return nil, err

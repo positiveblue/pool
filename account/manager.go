@@ -151,9 +151,26 @@ func (m *Manager) start() error {
 	}
 
 	for _, account := range accounts {
-		if err := m.resumeAccount(account); err != nil {
+		traderKey, err := account.TraderKey()
+		if err != nil {
+			return fmt.Errorf("error getting trader key: %v", err)
+		}
+
+		// With the Accounts() method of the store we only get the last
+		// fully committed state. But to resume our accounts, we also
+		// want to be aware of any diffs that might be present.
+		accountWithDiff, err := m.cfg.Store.Account(
+			ctx, traderKey, true,
+		)
+		if err != nil {
+			return fmt.Errorf("unable to load account %x with "+
+				"diff: %v", traderKey.SerializeCompressed(),
+				err)
+		}
+
+		if err := m.resumeAccount(accountWithDiff); err != nil {
 			return fmt.Errorf("unable to resume account %v: %v",
-				account, err)
+				traderKey.SerializeCompressed(), err)
 		}
 	}
 

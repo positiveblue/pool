@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -322,6 +323,13 @@ func TestAccountDiffs(t *testing.T) {
 	if !reflect.DeepEqual(accountWithDiff, aDiff) {
 		t.Fatal("stored account diff does not match expected")
 	}
+
+	// Querying all accounts while one of them has a diff should also not
+	// result in an error and we also should only get one even though we
+	// query by prefix.
+	accounts, err := store.Accounts(ctx)
+	require.NoError(t, err)
+	require.Len(t, accounts, 1)
 
 	// Storing a diff while we already have one should result in
 	// ErrAccountDiffAlreadyExists.
