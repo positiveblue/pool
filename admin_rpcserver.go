@@ -252,6 +252,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
+				UserAgent: o.UserAgent,
 			})
 		case *order.Bid:
 			nodeTier, err := marshallNodeTier(o.MinNodeTier)
@@ -267,6 +268,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
+				UserAgent: o.UserAgent,
 			})
 		}
 	}
@@ -279,7 +281,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 
 // AccountDetails retrieves the details of specified account from the store.
 func (s *adminRPCServer) AccountDetails(ctx context.Context,
-	req *adminrpc.AccountDetailsRequest) (*auctioneerrpc.AuctionAccount, error) {
+	req *adminrpc.AccountDetailsRequest) (*adminrpc.Account, error) {
 
 	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
 	if err != nil {
@@ -289,12 +291,12 @@ func (s *adminRPCServer) AccountDetails(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	return marshallServerAccount(acct)
+	return marshallAdminAccount(acct)
 }
 
 // EditAccount edits the details of an existing account.
 func (s *adminRPCServer) EditAccount(ctx context.Context,
-	req *adminrpc.EditAccountRequest) (*auctioneerrpc.AuctionAccount, error) {
+	req *adminrpc.EditAccountRequest) (*adminrpc.Account, error) {
 
 	// Retrieve the account with the associated key.
 	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
@@ -363,7 +365,7 @@ func (s *adminRPCServer) EditAccount(ctx context.Context,
 		}
 	}
 
-	return marshallServerAccount(acct)
+	return marshallAdminAccount(acct)
 }
 
 // DeleteAccountDiff deletes the staged diff of an account.
@@ -392,9 +394,9 @@ func (s *adminRPCServer) ListAccounts(ctx context.Context,
 		return nil, err
 	}
 
-	rpcAccounts := make([]*auctioneerrpc.AuctionAccount, 0, len(dbAccounts))
+	rpcAccounts := make([]*adminrpc.Account, 0, len(dbAccounts))
 	for _, dbAccount := range dbAccounts {
-		rpcAccount, err := marshallServerAccount(dbAccount)
+		rpcAccount, err := marshallAdminAccount(dbAccount)
 		if err != nil {
 			return nil, err
 		}
@@ -1084,4 +1086,52 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 	}
 
 	return &adminrpc.EmptyResponse{}, nil
+}
+
+// marshallAdminAccount translates an account.Account into its admin RPC
+// counterpart.
+func marshallAdminAccount(acct *account.Account) (*adminrpc.Account, error) {
+	rpcAcct := &adminrpc.Account{
+		Value:         uint64(acct.Value),
+		Expiry:        acct.Expiry,
+		TraderKey:     acct.TraderKeyRaw[:],
+		AuctioneerKey: acct.AuctioneerKey.PubKey.SerializeCompressed(),
+		BatchKey:      acct.BatchKey.SerializeCompressed(),
+		HeightHint:    acct.HeightHint,
+		Outpoint:      acct.OutPoint.String(),
+		UserAgent:     acct.UserAgent,
+	}
+
+	switch acct.State {
+	case account.StatePendingOpen:
+		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_OPEN
+
+	case account.StateOpen:
+		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_OPEN
+
+	case account.StateExpired:
+		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_EXPIRED
+
+	case account.StateClosed:
+		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_CLOSED
+
+	case account.StatePendingUpdate:
+		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_UPDATE
+
+	case account.StatePendingBatch:
+		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_BATCH
+
+	default:
+		return nil, fmt.Errorf("unknown account state")
+	}
+
+	if acct.LatestTx != nil {
+		var txBuf bytes.Buffer
+		if err := acct.LatestTx.Serialize(&txBuf); err != nil {
+			return nil, err
+		}
+		rpcAcct.LatestTx = txBuf.Bytes()
+	}
+
+	return rpcAcct, nil
 }

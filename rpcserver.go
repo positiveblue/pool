@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net"
 	"net/http"
 	"strconv"
@@ -46,6 +47,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tor"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 const (
@@ -361,12 +364,19 @@ func parseRPCAccountParams(
 		return nil, err
 	}
 
+	// New clients optionally send their user agent string.
+	userAgent, err := checkUserAgent(req.UserAgent)
+	if err != nil {
+		return nil, err
+	}
+
 	return &account.Parameters{
 		OutPoint:  accountPoint,
 		Value:     btcutil.Amount(req.AccountValue),
 		Script:    req.AccountScript,
 		Expiry:    req.AccountExpiry,
 		TraderKey: traderKey,
+		UserAgent: userAgent,
 	}, nil
 }
 
@@ -542,13 +552,20 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 		return nil, fmt.Errorf("invalid order request")
 	}
 
+	// New clients optionally send their user agent string.
+	userAgent, err := checkUserAgent(req.UserAgent)
+	if err != nil {
+		return nil, err
+	}
+	o.ServerDetails().UserAgent = userAgent
+
 	// TODO(roasbeef): instead have callback/notification system on order
 	// book itself?
 	//  * eventually needed if we want to stream the info out live
 
 	// Formally everything seems OK, hand over the order to the manager for
 	// further validation and processing.
-	err := s.orderBook.PrepareOrder(
+	err = s.orderBook.PrepareOrder(
 		ctx, o, s.terms.FeeSchedule(), s.bestHeight(),
 	)
 	return mapOrderResp(o.Nonce(), err)
@@ -2448,4 +2465,18 @@ func marshallDurationBucketState(
 	default:
 		return 0, fmt.Errorf("unknown duration bucket state: %v", state)
 	}
+}
+
+// checkUserAgent makes sure the user agent string isn't longer than allowed and
+// returns it white space trimmed.
+func checkUserAgent(userAgent string) (string, error) {
+	trimmedUserAgent := strings.TrimSpace(userAgent)
+	if len(trimmedUserAgent) > math.MaxUint8 {
+		return "", status.Error(
+			codes.InvalidArgument, "user agent string longer than "+
+				"allowed limit of 255 characters",
+		)
+	}
+
+	return trimmedUserAgent, nil
 }

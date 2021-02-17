@@ -318,6 +318,17 @@ func (s *EtcdStore) supplementSnapshotData(stm conc.STM,
 			return fmt.Errorf("bid min units match: %v", err)
 		}
 		matchedOrder.Details.Bid.MinUnitsMatch = bidMinUnitsMatch
+
+		// Finally also add any extra data that's encoded in the tlv
+		// stream.
+		err = s.fetchTlvSTM(stm, matchedOrder.Details.Ask)
+		if err != nil {
+			return fmt.Errorf("ask tlv data: %v", err)
+		}
+		err = s.fetchTlvSTM(stm, matchedOrder.Details.Bid)
+		if err != nil {
+			return fmt.Errorf("bid tlv data: %v", err)
+		}
 	}
 
 	return nil
@@ -385,6 +396,30 @@ func (s *EtcdStore) fetchMinUnitsMatchSTM(stm conc.STM,
 	}
 
 	return minUnitsMatch, nil
+}
+
+// fetchTlvSTM attempts to fetch the additional tlv data for a given order nonce
+// using an existing STM context.
+func (s *EtcdStore) fetchTlvSTM(stm conc.STM, o order.ServerOrder) error {
+	// Since we don't know the state of the order, we'll need to check both
+	// possible branches (archived vs active).
+	tlvKey := s.getOrderTlvKey(false, o.Nonce())
+	tlvResp := stm.Get(tlvKey)
+
+	// If the order has been archived, we'll check for that branch.
+	if tlvResp == "" {
+		tlvKey = s.getOrderTlvKey(true, o.Nonce())
+		tlvResp = stm.Get(tlvKey)
+
+		// If the value still hasn't been found, then this is an old
+		// order that was not aware of the value, so we'll fall back to
+		// the default.
+		if tlvResp == "" {
+			return nil
+		}
+	}
+
+	return deserializeOrderTlvData(strings.NewReader(tlvResp), o)
 }
 
 // serializeBatchSnapshot binary serializes a batch snapshot by using the LN

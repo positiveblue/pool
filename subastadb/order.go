@@ -13,6 +13,7 @@ import (
 	"github.com/lightninglabs/pool/clientdb"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightningnetwork/lnd/tlv"
 	conc "go.etcd.io/etcd/clientv3/concurrency"
 )
 
@@ -52,6 +53,12 @@ var (
 	//
 	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/min_units_match
 	orderMinUnitsMatchPrefix = "min_units_match"
+
+	// orderTlvKey is the key that we'll use to store the order's additional
+	// tlv encoded data. From the top level directory, this path is:
+	//
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/tlv
+	orderTlvKey = "tlv"
 )
 
 // SubmitOrder submits an order to the store. If an order with the given nonce
@@ -94,6 +101,13 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 		// Store the order's min units match to a nested key under the
 		// main order namespace.
 		err = s.storeOrderMinUnitsMatch(stm, newOrder, false)
+		if err != nil {
+			return err
+		}
+
+		// Now write all remaining additional data for both order types
+		// as a tlv encoded stream.
+		err = s.storeOrderTlv(stm, newOrder, false)
 		if err != nil {
 			return err
 		}
@@ -183,10 +197,11 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		minUnitsMatchReader := s.orderMinUnitsMatchReader(
 			stm, false, nonce,
 		)
+		tlvReader := s.orderTlvReader(stm, false, nonce)
 
 		dbOrder, err := deserializeOrder(
 			strings.NewReader(resp), nodeTierReader,
-			minUnitsMatchReader, nonce,
+			minUnitsMatchReader, tlvReader, nonce,
 		)
 		if err != nil {
 			return nil, err
@@ -214,6 +229,13 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		stm.Put(key, buf.String())
 
 		err = s.storeOrderMinUnitsMatch(stm, dbOrder, archived)
+		if err != nil {
+			return nil, err
+		}
+
+		// Now write all remaining additional data for both order types
+		// as a tlv encoded stream.
+		err = s.storeOrderTlv(stm, dbOrder, archived)
 		if err != nil {
 			return nil, err
 		}
@@ -293,6 +315,28 @@ func (s *EtcdStore) storeOrderMinUnitsMatch(stm conc.STM, o order.ServerOrder,
 	return nil
 }
 
+// orderTlvReader returns an io.Reader from which an order's tlv encoded
+// additional data can be deserialized from.
+func (s *EtcdStore) orderTlvReader(stm conc.STM, archive bool,
+	nonce orderT.Nonce) io.Reader {
+
+	return strings.NewReader(stm.Get(s.getOrderTlvKey(archive, nonce)))
+}
+
+// storeOrderTlv stores an order's tlv encoded additional data using the given
+// STM instance.
+func (s *EtcdStore) storeOrderTlv(stm conc.STM, o order.ServerOrder,
+	archive bool) error {
+
+	k := s.getOrderTlvKey(archive, o.Nonce())
+	var buf bytes.Buffer
+	if err := serializeOrderTlvData(&buf, o); err != nil {
+		return err
+	}
+	stm.Put(k, buf.String())
+	return nil
+}
+
 // GetOrder returns an order by looking up the nonce. If no order with that
 // nonce exists in the store, ErrNoOrder is returned.
 //
@@ -334,11 +378,12 @@ func (s *EtcdStore) GetOrder(ctx context.Context, nonce orderT.Nonce) (
 		minUnitsMatchReader := s.orderMinUnitsMatchReader(
 			stm, true, nonce,
 		)
+		tlvReader := s.orderTlvReader(stm, true, nonce)
 
 		var err error
 		dbOrder, err = deserializeOrder(
 			strings.NewReader(rawOrder), nodeTierReader,
-			minUnitsMatchReader, nonce,
+			minUnitsMatchReader, tlvReader, nonce,
 		)
 		return err
 	})
@@ -401,13 +446,18 @@ func (s *EtcdStore) fillActiveOrdersCache(ctx context.Context) error {
 		// be stored using suffix of the main order key.
 		nodeTierKey := s.getOrderTierKey(false, nonce)
 		nodeTierBytes := resultMap[nodeTierKey]
+
 		minUnitsMatchKey := s.getOrderMinUnitsMatchKey(false, nonce)
 		minUnitsMatchBytes := resultMap[minUnitsMatchKey]
+
+		tlvKey := s.getOrderTlvKey(false, nonce)
+		tlvBytes := resultMap[tlvKey]
 
 		o, err := deserializeOrder(
 			bytes.NewReader(baseOrderBytes),
 			bytes.NewReader(nodeTierBytes),
 			bytes.NewReader(minUnitsMatchBytes),
+			bytes.NewReader(tlvBytes),
 			nonce,
 		)
 		if err != nil {
@@ -470,10 +520,14 @@ func (s *EtcdStore) GetArchivedOrders(ctx context.Context) ([]order.ServerOrder,
 		minUnitsMatchKey := s.getOrderMinUnitsMatchKey(true, nonce)
 		minUnitsMatchBytes := resultMap[minUnitsMatchKey]
 
+		tlvKey := s.getOrderTlvKey(true, nonce)
+		tlvBytes := resultMap[tlvKey]
+
 		o, err := deserializeOrder(
 			bytes.NewReader(baseOrderBytes),
 			bytes.NewReader(nodeTierBytes),
 			bytes.NewReader(minUnitsMatchBytes),
+			bytes.NewReader(tlvBytes),
 			nonce,
 		)
 		if err != nil {
@@ -515,7 +569,7 @@ func (s *EtcdStore) getKeyOrderArchivePrefix(archive bool) string {
 // getOrderTierKey returns the key used to store the tier of an order.
 // Currently, this key will only be populated for Bid orders.
 func (s *EtcdStore) getOrderTierKey(archive bool, nonce orderT.Nonce) string {
-	// bitcoin/clm/subasta/<network>/order/<archiveFalse>/<nonce>/order_tier.
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/order_tier.
 	return strings.Join(
 		[]string{
 			s.getKeyOrderArchivePrefix(archive),
@@ -537,6 +591,20 @@ func (s *EtcdStore) getOrderMinUnitsMatchKey(archive bool,
 			s.getKeyOrderArchivePrefix(archive),
 			nonce.String(),
 			orderMinUnitsMatchPrefix,
+		},
+		keyDelimiter,
+	)
+}
+
+// getOrderTlvKey returns the key used to store the additional tlv encoded data
+// of an order.
+func (s *EtcdStore) getOrderTlvKey(archive bool, nonce orderT.Nonce) string {
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/tlv.
+	return strings.Join(
+		[]string{
+			s.getKeyOrderArchivePrefix(archive),
+			nonce.String(),
+			orderTlvKey,
 		},
 		keyDelimiter,
 	)
@@ -627,8 +695,8 @@ func deserializeBaseOrder(r io.Reader, nonce orderT.Nonce) (order.ServerOrder,
 
 // deserializeOrder reconstructs an order from binary data in the LN wire
 // format.
-func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes io.Reader,
-	nonce orderT.Nonce) (order.ServerOrder, error) {
+func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes,
+	tlv io.Reader, nonce orderT.Nonce) (order.ServerOrder, error) {
 
 	serverOrder, err := deserializeBaseOrder(baseOrderBytes, nonce)
 	if err != nil {
@@ -652,6 +720,12 @@ func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes io.Read
 
 	// Unexpected error, return.
 	default:
+		return nil, err
+	}
+
+	// Decode any additional data that's stored in a tlv encoded stream.
+	err = deserializeOrderTlvData(tlv, serverOrder)
+	if err != nil {
 		return nil, err
 	}
 
@@ -687,4 +761,54 @@ func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes io.Read
 	default:
 		return nil, fmt.Errorf("unknown order type: %v", o.Type())
 	}
+}
+
+// deserializeOrderTlvData attempts to decode the remaining bytes in the
+// supplied reader by interpreting it as a tlv stream. If successful any
+// non-default values of the additional data will be set on the given order.
+func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
+	var (
+		userAgent []byte
+	)
+
+	tlvStream, err := tlv.NewStream(
+		tlv.MakePrimitiveRecord(userAgentType, &userAgent),
+	)
+	if err != nil {
+		return err
+	}
+
+	parsedTypes, err := tlvStream.DecodeWithParsedTypes(r)
+	if err != nil {
+		return err
+	}
+
+	// No need setting the user agent if it wasn't parsed from the stream.
+	if t, ok := parsedTypes[userAgentType]; ok && t == nil {
+		o.ServerDetails().UserAgent = string(userAgent)
+	}
+
+	return nil
+}
+
+// serializeOrderTlvData encodes all additional data of an order as a single tlv
+// stream.
+func serializeOrderTlvData(w io.Writer, o order.ServerOrder) error {
+	userAgent := []byte(o.ServerDetails().UserAgent)
+
+	var tlvRecords []tlv.Record
+
+	// No need adding an empty record.
+	if len(userAgent) > 0 {
+		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+			userAgentType, &userAgent,
+		))
+	}
+
+	tlvStream, err := tlv.NewStream(tlvRecords...)
+	if err != nil {
+		return err
+	}
+
+	return tlvStream.Encode(w)
 }

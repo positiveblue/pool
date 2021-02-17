@@ -30,6 +30,7 @@ const (
 
 	labelAccountState = "acct_state"
 	labelLsat         = "lsat"
+	labelUserAgent    = "user_agent"
 	labelAccountKey   = "acct_key"
 	labelBlock        = "block_height"
 )
@@ -43,7 +44,7 @@ type accountCollector struct {
 
 // newAccountCollector makes a new accountCollector instance.
 func newAccountCollector(cfg *PrometheusConfig) *accountCollector {
-	baseLabels := []string{labelAccountState, labelLsat}
+	baseLabels := []string{labelAccountState, labelLsat, labelUserAgent}
 	g := make(gauges)
 	g.addGauge(
 		accountCount, "total number of accounts", baseLabels,
@@ -111,9 +112,15 @@ func (c *accountCollector) Collect(ch chan<- prometheus.Metric) {
 // observeAccount fetches the details of a chain TX from the chain backend
 // and adds them to the account metrics.
 func (c *accountCollector) observeAccount(acct *account.Account) {
+	userAgent := "<none>"
+	if len(acct.UserAgent) > 0 {
+		userAgent = acct.UserAgent
+	}
+
 	l := prometheus.Labels{
 		labelAccountState: acct.State.String(),
 		labelLsat:         acct.TokenID.String(),
+		labelUserAgent:    userAgent,
 	}
 	c.g[accountCount].With(l).Inc()
 	c.g[accountBalance].With(l).Add(float64(acct.Value))
@@ -132,6 +139,7 @@ func (c *accountCollector) observeAccount(acct *account.Account) {
 	c.g[accountTxFeePaidBlock].With(prometheus.Labels{
 		labelAccountState: acct.State.String(),
 		labelLsat:         acct.TokenID.String(),
+		labelUserAgent:    userAgent,
 		labelAccountKey:   hex.EncodeToString(acct.TraderKeyRaw[:]),
 		labelBlock:        strconv.Itoa(int(*details.BlockHeight)),
 	}).Add(float64(details.TxFee))
@@ -147,6 +155,7 @@ func (c *accountCollector) resetGauges() {
 		l := prometheus.Labels{
 			labelAccountState: i.String(),
 			labelLsat:         "",
+			labelUserAgent:    "<none>",
 		}
 		c.g[accountCount].With(l).Set(0)
 		c.g[accountBalance].With(l).Set(0)

@@ -13,9 +13,9 @@ service AuctionAdmin {
     rpc PauseBatchTicker (EmptyRequest) returns (EmptyResponse);
     rpc ResumeBatchTicker (EmptyRequest) returns (EmptyResponse);
     rpc ListOrders (ListOrdersRequest) returns (ListOrdersResponse);
-    rpc AccountDetails (AccountDetailsRequest) returns (poolrpc.AuctionAccount);
+    rpc AccountDetails (AccountDetailsRequest) returns (Account);
     rpc ListAccounts (EmptyRequest) returns (ListAccountsResponse);
-    rpc EditAccount (EditAccountRequest) returns (poolrpc.AuctionAccount);
+    rpc EditAccount (EditAccountRequest) returns (Account);
     rpc DeleteAccountDiff (DeleteAccountDiffRequest) returns (EmptyResponse);
     rpc AuctionStatus (EmptyRequest) returns (AuctionStatusResponse);
     rpc ListBatches (EmptyRequest) returns (ListBatchesResponse);
@@ -150,6 +150,11 @@ message ServerAsk {
     The state the order currently is in.
     */
     poolrpc.OrderState state = 4;
+
+    /*
+    The user agent string this order was submitted with.
+    */
+    string user_agent = 5;
 }
 
 message ServerBid {
@@ -180,6 +185,11 @@ message ServerBid {
     a node this tier or higher will be eligible for matching with this bid.
     */
     poolrpc.NodeTier min_node_tier = 5;
+
+    /*
+    The user agent string this order was submitted with.
+    */
+    string user_agent = 6;
 }
 
 message AccountDetailsRequest {
@@ -225,7 +235,63 @@ message DeleteAccountDiffRequest {
 }
 
 message ListAccountsResponse {
-    repeated poolrpc.AuctionAccount accounts = 1;
+    repeated Account accounts = 1;
+}
+
+message Account {
+    /*
+    The value of the account in satoshis. Must match the amount of the
+    account_point output.
+    */
+    uint64 value = 1;
+
+    /*
+    The block height at which the account should expire.
+    */
+    uint32 expiry = 2;
+
+    /*
+    The trader's account key.
+    */
+    bytes trader_key = 3;
+
+    /*
+    The long term auctioneer's account key.
+    */
+    bytes auctioneer_key = 4;
+
+    /*
+    The current batch key used to create the account output.
+    */
+    bytes batch_key = 5;
+
+    /*
+    The current state of the account as the auctioneer sees it.
+    */
+    poolrpc.AuctionAccountState state = 6;
+
+    /*
+    The block height of the last change to the account's output. Can be used to
+    scan the chain for the output's spend state more efficiently.
+    */
+    uint32 height_hint = 7;
+
+    /*
+    Transaction output of the account. Depending on the state of the account,
+    this output might have been spent.
+    */
+    string outpoint = 8;
+
+    /*
+    The latest transaction of an account. This is only known by the auctioneer
+    after the account has met its initial funding confirmation.
+    */
+    bytes latest_tx = 9;
+
+    /*
+    The user agent string this order was submitted with.
+    */
+    string user_agent = 10;
 }
 
 message AuctionStatusResponse {

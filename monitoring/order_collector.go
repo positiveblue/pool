@@ -60,7 +60,7 @@ func newOrderCollector(cfg *PrometheusConfig) *orderCollector {
 	baseLabels := []string{
 		labelOrderType, labelOrderState, labelOrderNonce,
 		labelOrderRate, labelOrderDuration, labelOrderFeeRate,
-		labelBidNodeTier,
+		labelBidNodeTier, labelUserAgent,
 	}
 
 	g := make(gauges)
@@ -197,6 +197,11 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 		return
 	}
 
+	userAgent := "<none>"
+	if len(o.ServerDetails().UserAgent) > 0 {
+		userAgent = o.ServerDetails().UserAgent
+	}
+
 	labels = prometheus.Labels{
 		labelOrderType:     o.Type().String(),
 		labelOrderState:    o.Details().State.String(),
@@ -204,6 +209,7 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 		labelOrderRate:     strconv.Itoa(int(o.Details().FixedRate)),
 		labelOrderDuration: strconv.Itoa(int(o.Details().LeaseDuration)),
 		labelOrderFeeRate:  strconv.Itoa(int(o.Details().MaxBatchFeeRate)),
+		labelUserAgent:     userAgent,
 	}
 
 	if b, ok := o.(*order.Bid); ok {

@@ -61,6 +61,10 @@ type Kit struct {
 
 	// Lsat is the LSAT token that was used to submit the order.
 	Lsat lsat.TokenID
+
+	// UserAgent is the string that identifies the software running on the
+	// user's side that was used to initially submit this order.
+	UserAgent string
 }
 
 // ServerDetails returns the Kit of the server order.
