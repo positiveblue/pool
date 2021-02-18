@@ -29,9 +29,9 @@ type BitcoinConfig struct {
 type BitcoinClient struct {
 	sync.Mutex
 
-	rpcClient     *rpcclient.Client
-	txDetailCache map[string]*btcjson.TxRawResult
-	blockCache    map[string]*btcjson.GetBlockVerboseResult
+	rpcClient        *rpcclient.Client
+	txDetailCache    map[string]*btcjson.TxRawResult
+	blockHeightCache map[string]int64
 }
 
 // GetTxDetail fetches a single transaction from the chain and returns it
@@ -65,14 +65,12 @@ func (c *BitcoinClient) GetTxDetail(txHash *chainhash.Hash) (
 }
 
 // GetBlockHeight fetches a block by its hash and returns its height.
-func (c *BitcoinClient) GetBlockHeight(blockHash string) (
-	int64, error) {
-
+func (c *BitcoinClient) GetBlockHeight(blockHash string) (int64, error) {
 	c.Lock()
-	cachedBlock, ok := c.blockCache[blockHash]
+	cachedBlockHeight, ok := c.blockHeightCache[blockHash]
 	c.Unlock()
 	if ok {
-		return cachedBlock.Height, nil
+		return cachedBlockHeight, nil
 	}
 
 	hash, err := chainhash.NewHashFromStr(blockHash)
@@ -85,7 +83,7 @@ func (c *BitcoinClient) GetBlockHeight(blockHash string) (
 	}
 
 	c.Lock()
-	c.blockCache[blockHash] = block
+	c.blockHeightCache[blockHash] = block.Height
 	c.Unlock()
 
 	return block.Height, nil
@@ -170,8 +168,8 @@ func (c *BitcoinClient) Shutdown() {
 func NewClient(cfg *BitcoinConfig) (*BitcoinClient, error) {
 	var err error
 	client := &BitcoinClient{
-		txDetailCache: make(map[string]*btcjson.TxRawResult),
-		blockCache:    make(map[string]*btcjson.GetBlockVerboseResult),
+		txDetailCache:    make(map[string]*btcjson.TxRawResult),
+		blockHeightCache: make(map[string]int64),
 	}
 	client.rpcClient, err = getBitcoinConn(cfg)
 	if err != nil {
