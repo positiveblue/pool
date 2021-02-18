@@ -34,15 +34,6 @@ type BitcoinClient struct {
 	blockCache    map[string]*btcjson.GetBlockVerboseResult
 }
 
-// GetTx fetches a single transaction from the chain backend by its hash.
-func (c *BitcoinClient) GetTx(txHash *chainhash.Hash) (*wire.MsgTx, error) {
-	tx, err := c.rpcClient.GetRawTransaction(txHash)
-	if err != nil {
-		return nil, err
-	}
-	return tx.MsgTx(), nil
-}
-
 // GetTxDetail fetches a single transaction from the chain and returns it
 // in a format that contains more details, like the block hash it was included
 // in for example.
@@ -104,11 +95,20 @@ func (c *BitcoinClient) GetBlockHeight(blockHash string) (
 func (c *BitcoinClient) GetTxFee(tx *wire.MsgTx) (btcutil.Amount, error) {
 	inValue := int64(0)
 	for _, in := range tx.TxIn {
-		inTx, err := c.GetTx(&in.PreviousOutPoint.Hash)
+		op := in.PreviousOutPoint
+		inTx, err := c.GetTxDetail(&op.Hash)
 		if err != nil {
 			return 0, err
 		}
-		inValue += inTx.TxOut[in.PreviousOutPoint.Index].Value
+
+		// In the Vout we get from GetTxDetail, the output values are in
+		// btc, we need to convert to satoshis!
+		satValue, err := btcutil.NewAmount(inTx.Vout[op.Index].Value)
+		if err != nil {
+			return 0, fmt.Errorf("error converting btc to sat: %v",
+				err)
+		}
+		inValue += int64(satValue)
 	}
 
 	outValue := int64(0)
@@ -131,13 +131,19 @@ func (c *BitcoinClient) GetTxFeeFromJSON(vin []btcjson.Vin,
 			return 0, err
 		}
 
-		inTx, err := c.GetTx(txHash)
+		inTx, err := c.GetTxDetail(txHash)
 		if err != nil {
 			return 0, err
 		}
-		// In the TxOut we get from GetTx, the output values are in
-		// satoshis!
-		inValue += inTx.TxOut[in.Vout].Value
+
+		// In the Vout we get from GetTxDetail, the output values are in
+		// btc, we need to convert to satoshis!
+		satValue, err := btcutil.NewAmount(inTx.Vout[in.Vout].Value)
+		if err != nil {
+			return 0, fmt.Errorf("error converting btc to sat: %v",
+				err)
+		}
+		inValue += int64(satValue)
 	}
 
 	outValue := int64(0)
