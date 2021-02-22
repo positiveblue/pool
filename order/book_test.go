@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -395,6 +394,40 @@ func TestBookPrepareOrder(t *testing.T) {
 			return err
 		},
 	}, {
+		name:        "invalid version for sidecar",
+		expectedErr: "invalid order version 0 for order with sidecar",
+		run: func() error {
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			o.IsSidecar = true
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name: "invalid min units match for sidecar",
+		expectedErr: "to use self chan balance the min units match " +
+			"must be equal to the order amount in units",
+		run: func() error {
+			o := bid(orderT.Kit{
+				Amt:              500_000,
+				Units:            orderT.NewSupplyFromSats(500_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(500_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			o.Version = orderT.VersionSidecarChannel
+			o.IsSidecar = true
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
 		name:        "successful order submission",
 		expectedErr: "",
 		run: func() error {
@@ -448,18 +481,11 @@ func TestBookPrepareOrder(t *testing.T) {
 			err := tc.run()
 
 			// Make sure the error is what we expected.
-			if err == nil && tc.expectedErr != "" {
-				t.Fatalf("expected error '%s' but got nil",
-					tc.expectedErr)
-			}
-			if err != nil && tc.expectedErr == "" {
-				t.Fatalf("expected nil error but got '%v'", err)
-			}
-			if err != nil &&
-				!strings.Contains(err.Error(), tc.expectedErr) {
-
-				t.Fatalf("expected error '%s' but got '%v'",
-					tc.expectedErr, err)
+			if tc.expectedErr == "" {
+				require.NoError(t, err)
+			} else {
+				require.Error(t, err)
+				require.Contains(t, err.Error(), tc.expectedErr)
 			}
 		})
 	}
