@@ -771,6 +771,7 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 	var (
 		userAgent       []byte
 		selfChanBalance uint64
+		isSidecar       uint8
 	)
 
 	tlvStream, err := tlv.NewStream(
@@ -778,6 +779,7 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 		tlv.MakePrimitiveRecord(
 			bidSelfChanBalanceType, &selfChanBalance,
 		),
+		tlv.MakePrimitiveRecord(bidIsSidecarType, &isSidecar),
 	)
 	if err != nil {
 		return err
@@ -798,6 +800,10 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 		bid.SelfChanBalance = btcutil.Amount(selfChanBalance)
 	}
 
+	if t, ok := parsedTypes[bidIsSidecarType]; isBid && ok && t == nil {
+		bid.IsSidecar = isSidecar == 1
+	}
+
 	return nil
 }
 
@@ -805,8 +811,11 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 // stream.
 func serializeOrderTlvData(w io.Writer, o order.ServerOrder) error {
 	userAgent := []byte(o.ServerDetails().UserAgent)
+	isSidecar := uint8(0)
 
-	var tlvRecords []tlv.Record
+	var (
+		tlvRecords []tlv.Record
+	)
 
 	// No need adding an empty record.
 	if len(userAgent) > 0 {
@@ -820,6 +829,13 @@ func serializeOrderTlvData(w io.Writer, o order.ServerOrder) error {
 		selfChanBalance := uint64(bid.SelfChanBalance)
 		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
 			bidSelfChanBalanceType, &selfChanBalance,
+		))
+	}
+
+	if isBid && bid.IsSidecar {
+		isSidecar = 1
+		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+			bidIsSidecarType, &isSidecar,
 		))
 	}
 
