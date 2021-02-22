@@ -39,3 +39,5 @@ replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20200520232829-54ba9589114f
 // it in the client binary as well. We need to import it with its declared name
 // everywhere too, otherwise the replace won't work properly.
 replace github.com/lightninglabs/pool/auctioneerrpc => ./auctioneerrpc
+
+replace github.com/lightninglabs/pool => github.com/guggero/pool v0.3.2-alpha.0.20210316143446-492559c94857
