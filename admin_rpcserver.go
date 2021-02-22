@@ -270,6 +270,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				),
 				UserAgent:       o.UserAgent,
 				SelfChanBalance: uint64(o.SelfChanBalance),
+				IsSidecar:       o.IsSidecar,
 			})
 		}
 	}
