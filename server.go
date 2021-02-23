@@ -126,6 +126,63 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 	return nil
 }
 
+type activeTradersMap struct {
+	activeTraders map[matching.AccountID]*venue.ActiveTrader
+	sync.RWMutex
+}
+
+// RegisterTrader registers a new trader as being active. An active traders is
+// eligible to join execution of a batch that they're a part of.
+func (a *activeTradersMap) RegisterTrader(t *venue.ActiveTrader) error {
+	a.Lock()
+	defer a.Unlock()
+
+	_, ok := a.activeTraders[t.AccountKey]
+	if ok {
+		return fmt.Errorf("trader %x already registered",
+			t.AccountKey)
+	}
+	a.activeTraders[t.AccountKey] = t
+
+	log.Infof("Registering new trader: %x", t.AccountKey[:])
+
+	return nil
+}
+
+// UnregisterTrader removes a registered trader from the batch.
+func (a *activeTradersMap) UnregisterTrader(t *venue.ActiveTrader) error {
+	a.Lock()
+	defer a.Unlock()
+
+	delete(a.activeTraders, t.AccountKey)
+
+	log.Infof("Disconnecting trader: %x", t.AccountKey[:])
+	return nil
+}
+
+// IsActive returns true if the given key is among the active traders.
+func (a *activeTradersMap) IsActive(acctKey [33]byte) bool {
+	a.RLock()
+	defer a.RUnlock()
+
+	_, ok := a.activeTraders[acctKey]
+	return ok
+}
+
+// GetTrades returns the current set of active traders.
+func (a *activeTradersMap) GetTraders() map[matching.AccountID]*venue.ActiveTrader {
+	a.RLock()
+	defer a.RUnlock()
+
+	c := make(map[matching.AccountID]*venue.ActiveTrader, len(a.activeTraders))
+
+	for k, v := range a.activeTraders {
+		c[k] = v
+	}
+
+	return c
+}
+
 var _ venue.ExecutorStore = (*executorStore)(nil)
 
 // Server is the main auction auctioneer server.
@@ -145,6 +202,11 @@ type Server struct {
 	orderBook *order.Book
 
 	batchExecutor *venue.BatchExecutor
+
+	// activeTraders is a map of all the current active traders. An active
+	// trader is one that's online and has a live communication channel
+	// with the BatchExecutor.
+	activeTraders *activeTradersMap
 
 	auctioneer *Auctioneer
 
@@ -232,12 +294,16 @@ func NewServer(cfg *Config) (*Server, error) {
 	exeStore := &executorStore{
 		Store: store,
 	}
+	activeTraders := &activeTradersMap{
+		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),
+	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
 		Store:            exeStore,
 		Signer:           lnd.Signer,
 		BatchStorer:      venue.NewExeBatchStorer(store),
 		AccountWatcher:   accountManager,
 		TraderMsgTimeout: defaultMsgTimeout,
+		ActiveTraders:    activeTraders.GetTraders,
 	})
 
 	durationBuckets := order.NewDurationBuckets()
@@ -297,6 +363,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		accountManager: accountManager,
 		orderBook:      orderBook,
 		batchExecutor:  batchExecutor,
+		activeTraders:  activeTraders,
 		auctioneer: NewAuctioneer(AuctioneerConfig{
 			DB:            newAuctioneerStore(store),
 			ChainNotifier: lnd.ChainNotifier,
@@ -340,6 +407,7 @@ func NewServer(cfg *Config) (*Server, error) {
 			FundingConflictsResetInterval: cfg.FundingConflictResetInterval,
 			TraderRejected:                traderRejected,
 			TraderRejectResetInterval:     cfg.TraderRejectResetInterval,
+			TraderOnline:                  matching.NewTraderOnlineFilter(activeTraders.IsActive),
 			RatingsAgency:                 ratingsAgency,
 		}),
 		channelEnforcer: channelEnforcer,
@@ -425,6 +493,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		server.orderBook, batchExecutor, server.auctioneer,
 		auctionTerms, ratingsAgency, ratingsDB, grpcListener,
 		restListener, serverOpts, clientCertOpt, cfg.SubscribeTimeout,
+		activeTraders,
 	)
 	server.rpcServer = auctioneerServer
 	cfg.Prometheus.PublicRPCServer = auctioneerServer.grpcServer

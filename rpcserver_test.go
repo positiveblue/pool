@@ -450,6 +450,9 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 }
 
 func newServer(store subastadb.Store) *rpcServer {
+	activeTraders := &activeTradersMap{
+		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),
+	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
 		Store: &executorStore{
 			Store: store,
@@ -457,6 +460,7 @@ func newServer(store subastadb.Store) *rpcServer {
 		Signer:           mockSigner,
 		BatchStorer:      venue.NewExeBatchStorer(store),
 		TraderMsgTimeout: time.Second * 15,
+		ActiveTraders:    activeTraders.GetTraders,
 	})
 
 	return newRPCServer(
@@ -465,7 +469,7 @@ func newServer(store subastadb.Store) *rpcServer {
 			OrderExecBaseFee: 1,
 			OrderExecFeeRate: 100,
 		}, nil, nil, bufconn.Listen(100), bufconn.Listen(100), nil, nil,
-		defaultTimeout,
+		defaultTimeout, activeTraders,
 	)
 }
 

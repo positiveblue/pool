@@ -322,6 +322,11 @@ type ExecutorConfig struct {
 	// takes longer than that it is timed out and removed from the current
 	// batch.
 	TraderMsgTimeout time.Duration
+
+	// ActiveTraders is a closure that returns a map of all the current
+	// active traders. An active trader is one that's online and has a live
+	// communication channel with the BatchExecutor.
+	ActiveTraders func() map[matching.AccountID]*ActiveTrader
 }
 
 // BatchExecutor is the primary state machine that executes a cleared batch.
@@ -331,11 +336,6 @@ type ExecutorConfig struct {
 type BatchExecutor struct {
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
-
-	// activeTraders is a map of all the current active traders. An active
-	// trader is one that's online and has a live communication channel
-	// with the BatchExecutor.
-	activeTraders map[matching.AccountID]*ActiveTrader
 
 	// newBatches is a channel used to accept new incoming requests to
 	// execute a batch.
@@ -347,8 +347,6 @@ type BatchExecutor struct {
 
 	cfg *ExecutorConfig
 
-	sync.RWMutex
-
 	quit chan struct{}
 	wg   sync.WaitGroup
 }
@@ -357,11 +355,10 @@ type BatchExecutor struct {
 // configuration.
 func NewBatchExecutor(cfg *ExecutorConfig) *BatchExecutor {
 	return &BatchExecutor{
-		cfg:           cfg,
-		quit:          make(chan struct{}),
-		activeTraders: make(map[matching.AccountID]*ActiveTrader),
-		newBatches:    make(chan *executionReq),
-		venueEvents:   make(chan EventTrigger),
+		cfg:         cfg,
+		quit:        make(chan struct{}),
+		newBatches:  make(chan *executionReq),
+		venueEvents: make(chan EventTrigger),
 	}
 }
 
@@ -397,7 +394,10 @@ func (b *BatchExecutor) Stop() error {
 // validateTradersOnline ensures that all the traders included in this batch
 // are currently online within the venue. If not, then the batch will be failed
 // with ErrMissingTraders.
-func (b *BatchExecutor) validateTradersOnline(batch *matching.OrderBatch) error {
+func (b *BatchExecutor) validateTradersOnline(
+	activeTraders map[matching.AccountID]*ActiveTrader,
+	batch *matching.OrderBatch) error {
+
 	offlineTraders := make(map[matching.AccountID]struct{})
 	offlineNonces := make(map[orderT.Nonce]struct{})
 
@@ -406,12 +406,12 @@ func (b *BatchExecutor) validateTradersOnline(batch *matching.OrderBatch) error 
 	// trader.
 	for _, order := range batch.Orders {
 
-		if _, ok := b.activeTraders[order.Asker.AccountKey]; !ok {
+		if _, ok := activeTraders[order.Asker.AccountKey]; !ok {
 			offlineTraders[order.Asker.AccountKey] = struct{}{}
 			offlineNonces[order.Details.Ask.Nonce()] = struct{}{}
 		}
 
-		if _, ok := b.activeTraders[order.Bidder.AccountKey]; !ok {
+		if _, ok := activeTraders[order.Bidder.AccountKey]; !ok {
 			offlineTraders[order.Bidder.AccountKey] = struct{}{}
 			offlineNonces[order.Details.Bid.Nonce()] = struct{}{}
 		}
@@ -526,19 +526,20 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// all the trader's in the bach are actually online and
 		// register. If one or more of them aren't, then we'll need to
 		// reject this batch with the proper error.
-		err := b.validateTradersOnline(env.exeCtx.OrderBatch)
+		activeTraders := b.cfg.ActiveTraders()
+		err := b.validateTradersOnline(
+			activeTraders, env.exeCtx.OrderBatch,
+		)
 		if err != nil {
 			env.tempErr = err
 			return BatchTempError, env, nil
 		}
 
-		b.Lock()
-
 		// To ensure that we have a fully up to date view of the state
 		// of each of the trader's, we'll sync what we have here, with
 		// the set of traders on disk.
-		if err := b.syncTraderState(); err != nil {
-			b.Unlock()
+		activeTraders, err = b.syncTraderState(activeTraders)
+		if err != nil {
 			return 0, env, err
 		}
 
@@ -546,10 +547,8 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		// of active traders in the environment so we can begin our
 		// message passing phase.
 		for trader := range env.exeCtx.OrderBatch.FeeReport.AccountDiffs {
-			env.traders[trader] = b.activeTraders[trader]
+			env.traders[trader] = activeTraders[trader]
 		}
-
-		b.Unlock()
 
 		// If there are no traders part of this batch, it means the
 		// batch is empty and there is nothing to execute. In this case
@@ -793,10 +792,6 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchTempError, env, nil
 			}
 
-			b.RLock()
-			trader := b.activeTraders[src]
-			b.RUnlock()
-
 			signMsg := msgRecv.msg.(*TraderSignMsg)
 			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
 			if !ok {
@@ -808,6 +803,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			// generate our own signature for his input to ensure
 			// we can properly spend it with broadcast of the batch
 			// transaction.
+			trader := env.traders[src]
 			traderAcctInput, ok := env.exeCtx.AcctInputForTrader(
 				trader.AccountKey,
 			)
@@ -1267,41 +1263,6 @@ func (b *BatchExecutor) Submit(exeCtx *batchtx.ExecutionContext) (
 	return exeReq.Result, nil
 }
 
-// RegisterTrader registers a new trader as being active. An active traders is
-// eligible to join execution of a batch that they're a part of.
-func (b *BatchExecutor) RegisterTrader(t *ActiveTrader) error {
-	b.Lock()
-	defer b.Unlock()
-
-	_, ok := b.activeTraders[t.AccountKey]
-	if ok {
-		return fmt.Errorf("trader %x already registered",
-			t.AccountKey)
-	}
-	b.activeTraders[t.AccountKey] = t
-
-	log.Infof("Registering new trader: %x", t.AccountKey[:])
-
-	return nil
-}
-
-// UnregisterTrader removes a registered trader from the batch.
-//
-// TODO(roasbeef): job of the caller to unregister the traders to ensure we
-// don't loop in the state machine
-func (b *BatchExecutor) UnregisterTrader(t *ActiveTrader) error {
-	b.Lock()
-	defer b.Unlock()
-
-	delete(b.activeTraders, t.AccountKey)
-
-	log.Infof("Disconnecting trader: %x", t.AccountKey[:])
-
-	// TODO(roasbeef): client always removes traders?
-
-	return nil
-}
-
 // HandleTraderMsg sends a new message from the target to the main batch
 // executor.
 func (b *BatchExecutor) HandleTraderMsg(m TraderMsg) error {
@@ -1318,11 +1279,12 @@ func (b *BatchExecutor) HandleTraderMsg(m TraderMsg) error {
 
 // syncTraderState syncs the passed state with the resulting account state
 // after the batch has been applied for all traders involved in the executed
-// batch.
-//
-// NOTE: The write lock MUST be held when calling this method.
-func (b *BatchExecutor) syncTraderState() error {
-	log.Debugf("Syncing account state for %v traders", len(b.activeTraders))
+// batch. The set of refreshed traders is returned.
+func (b *BatchExecutor) syncTraderState(
+	activeTraders map[matching.AccountID]*ActiveTrader) (
+	map[matching.AccountID]*ActiveTrader, error) {
+
+	log.Debugf("Syncing account state for %v traders", len(activeTraders))
 
 	// For each active trader, we'll attempt to sync the state of our
 	// in-memory representation with the resulting state after the batch
@@ -1330,16 +1292,17 @@ func (b *BatchExecutor) syncTraderState() error {
 	//
 	// TODO(roasbeef): optimize by only refreshing traders that were in a
 	// recent batch? for account updates send them to the executor
-	for acctID := range b.activeTraders {
+	refreshed := make(map[matching.AccountID]*ActiveTrader, len(activeTraders))
+	for acctID, trader := range activeTraders {
 		acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		diskTraderAcct, err := b.cfg.Store.Account(
 			context.Background(), acctKey, false,
 		)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		// Now that we have the fresh trader state from disk, we'll
@@ -1347,8 +1310,13 @@ func (b *BatchExecutor) syncTraderState() error {
 		refreshedTrader := matching.NewTraderFromAccount(
 			diskTraderAcct,
 		)
-		b.activeTraders[acctID].Trader = &refreshedTrader
+		refreshed[acctID] = &ActiveTrader{
+			Trader:   &refreshedTrader,
+			TokenID:  trader.TokenID,
+			CommLine: trader.CommLine,
+		}
+
 	}
 
-	return nil
+	return refreshed, nil
 }

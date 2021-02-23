@@ -165,6 +165,10 @@ type rpcServer struct {
 	snapshotCache    map[orderT.BatchID]*subastadb.BatchSnapshot
 	snapshotCacheMtx sync.Mutex
 
+	// activeTraders is a map where we'll add/remove traders as they come
+	// and go.
+	activeTraders *activeTradersMap
+
 	// connectedStreams is the list of all currently connected
 	// bi-directional update streams. Each trader has exactly one stream
 	// but can subscribe to updates for multiple accounts through the same
@@ -183,7 +187,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 	ratingAgency ratings.Agency, ratingsDB ratings.NodeRatingsDatabase,
 	listener, restListener net.Listener, serverOpts []grpc.ServerOption,
 	restProxyCertOpt grpc.DialOption,
-	subscribeTimeout time.Duration) *rpcServer {
+	subscribeTimeout time.Duration, activeTraders *activeTradersMap) *rpcServer {
 
 	return &rpcServer{
 		grpcServer:       grpc.NewServer(serverOpts...),
@@ -204,6 +208,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		subscribeTimeout: subscribeTimeout,
 		ratingAgency:     ratingAgency,
 		ratingsDB:        ratingsDB,
+		activeTraders:    activeTraders,
 	}
 }
 
@@ -1392,7 +1397,7 @@ func (s *rpcServer) addStreamSubscription(traderID lsat.TokenID,
 	// There's no subscription for that account yet, notify our batch
 	// executor that the trader for a certain account is now connected.
 	trader.Subscriptions[newSub.AccountKey] = newSub
-	err := s.batchExecutor.RegisterTrader(newSub)
+	err := s.activeTraders.RegisterTrader(newSub)
 	if err != nil {
 		return fmt.Errorf("error registering trader at venue: %v", err)
 	}
@@ -1421,7 +1426,7 @@ func (s *rpcServer) disconnectTrader(traderID lsat.TokenID) error {
 	for acctKey, trader := range subscriptions {
 		monitoring.ObserveFailedConnection(acctKey)
 
-		err := s.batchExecutor.UnregisterTrader(trader)
+		err := s.activeTraders.UnregisterTrader(trader)
 		if err != nil {
 			return fmt.Errorf("error unregistering"+
 				"trader at venue: %v", err)

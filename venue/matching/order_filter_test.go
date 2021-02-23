@@ -70,6 +70,22 @@ func TestLeaseDurationFilter(t *testing.T) {
 	require.True(t, filter.IsSuitable(order3))
 }
 
+func TestTraderOnlineFilter(t *testing.T) {
+	t.Parallel()
+
+	online := false
+	filter := NewTraderOnlineFilter(func(_ [33]byte) bool {
+		return online
+	})
+
+	require.False(t, filter.IsSuitable(order1))
+	require.False(t, filter.IsSuitable(order2))
+
+	online = true
+	require.True(t, filter.IsSuitable(order1))
+	require.True(t, filter.IsSuitable(order2))
+}
+
 func TestAccountPredicate(t *testing.T) {
 	t.Parallel()
 
