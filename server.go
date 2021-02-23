@@ -150,9 +150,6 @@ func (a *activeTradersMap) RegisterTrader(t *venue.ActiveTrader) error {
 }
 
 // UnregisterTrader removes a registered trader from the batch.
-//
-// TODO(roasbeef): job of the caller to unregister the traders to ensure we
-// don't loop in the state machine
 func (a *activeTradersMap) UnregisterTrader(t *venue.ActiveTrader) error {
 	a.Lock()
 	defer a.Unlock()
@@ -160,9 +157,6 @@ func (a *activeTradersMap) UnregisterTrader(t *venue.ActiveTrader) error {
 	delete(a.activeTraders, t.AccountKey)
 
 	log.Infof("Disconnecting trader: %x", t.AccountKey[:])
-
-	// TODO(roasbeef): client always removes traders?
-
 	return nil
 }
 
