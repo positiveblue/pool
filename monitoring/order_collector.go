@@ -203,15 +203,16 @@ func (c *orderCollector) observeOrder(o order.ServerOrder) {
 		labelOrderRate:     strconv.Itoa(int(o.Details().FixedRate)),
 		labelOrderDuration: strconv.Itoa(int(o.Details().LeaseDuration)),
 		labelOrderFeeRate:  strconv.Itoa(int(o.Details().MaxBatchFeeRate)),
+		labelBidNodeTier:   "N/A",
 		labelUserAgent:     userAgent,
 	}
 
+	// Make the bid order rate negative as a hack for showing an order book
+	// like graph. And we also add the min node tier for bid orders.
 	if b, ok := o.(*order.Bid); ok {
 		labels[labelOrderRate] = "-" + labels[labelOrderRate]
 
 		labels[labelBidNodeTier] = b.MinNodeTier.String()
-	} else {
-		labels[labelBidNodeTier] = "N/A"
 	}
 
 	c.g[orderUnits].With(labels).Set(float64(o.Details().Units))
