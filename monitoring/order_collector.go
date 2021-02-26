@@ -161,7 +161,7 @@ func (c *orderCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Record all metrics for each order.
 	for _, o := range sortedOrders {
-		c.observeOrder(o, true)
+		c.observeOrder(o)
 	}
 
 	// Next, we'll fetch all our archived orders so we can export our series
@@ -176,7 +176,7 @@ func (c *orderCollector) Collect(ch chan<- prometheus.Metric) {
 
 	// Record all metrics for each order.
 	for _, o := range archivedOrders {
-		c.observeOrder(o, false)
+		c.observeOrder(o)
 	}
 
 	// Finally, collect the metrics into the prometheus collect channel.
@@ -184,18 +184,12 @@ func (c *orderCollector) Collect(ch chan<- prometheus.Metric) {
 }
 
 // observeOrder adds all order metrics to our gauges.
-func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
+func (c *orderCollector) observeOrder(o order.ServerOrder) {
 	labels := prometheus.Labels{
 		labelOrderType:  o.Type().String(),
 		labelOrderState: o.Details().State.String(),
 	}
 	c.g[orderCount].With(labels).Inc()
-
-	// Only track exact values for active orders as these will create more
-	// lines in the metrics export because we include the nonce.
-	if !active {
-		return
-	}
 
 	userAgent := "<none>"
 	if len(o.ServerDetails().UserAgent) > 0 {
@@ -209,15 +203,16 @@ func (c *orderCollector) observeOrder(o order.ServerOrder, active bool) {
 		labelOrderRate:     strconv.Itoa(int(o.Details().FixedRate)),
 		labelOrderDuration: strconv.Itoa(int(o.Details().LeaseDuration)),
 		labelOrderFeeRate:  strconv.Itoa(int(o.Details().MaxBatchFeeRate)),
+		labelBidNodeTier:   "N/A",
 		labelUserAgent:     userAgent,
 	}
 
+	// Make the bid order rate negative as a hack for showing an order book
+	// like graph. And we also add the min node tier for bid orders.
 	if b, ok := o.(*order.Bid); ok {
 		labels[labelOrderRate] = "-" + labels[labelOrderRate]
 
 		labels[labelBidNodeTier] = b.MinNodeTier.String()
-	} else {
-		labels[labelBidNodeTier] = "N/A"
 	}
 
 	c.g[orderUnits].With(labels).Set(float64(o.Details().Units))
