@@ -29,24 +29,15 @@ type BitcoinConfig struct {
 type BitcoinClient struct {
 	sync.Mutex
 
-	rpcClient     *rpcclient.Client
-	txDetailCache map[string]*btcjson.TxRawResult
-	blockCache    map[string]*btcjson.GetBlockVerboseResult
+	rpcClient        *rpcclient.Client
+	txDetailCache    map[string]*btcjson.TxRawResult
+	blockHeightCache map[string]int64
 }
 
-// GetTx fetches a single transaction from the chain backend by its hash.
-func (c *BitcoinClient) GetTx(txHash *chainhash.Hash) (*wire.MsgTx, error) {
-	tx, err := c.rpcClient.GetRawTransaction(txHash)
-	if err != nil {
-		return nil, err
-	}
-	return tx.MsgTx(), nil
-}
-
-// GetTxDetail fetches a single transaction from the chain and returns it
+// getTxDetail fetches a single transaction from the chain and returns it
 // in a format that contains more details, like the block hash it was included
 // in for example.
-func (c *BitcoinClient) GetTxDetail(txHash *chainhash.Hash) (
+func (c *BitcoinClient) getTxDetail(txHash *chainhash.Hash) (
 	*btcjson.TxRawResult, error) {
 
 	c.Lock()
@@ -73,15 +64,13 @@ func (c *BitcoinClient) GetTxDetail(txHash *chainhash.Hash) (
 	return tx, nil
 }
 
-// GetBlockHeight fetches a block by its hash and returns its height.
-func (c *BitcoinClient) GetBlockHeight(blockHash string) (
-	int64, error) {
-
+// getBlockHeight fetches a block by its hash and returns its height.
+func (c *BitcoinClient) getBlockHeight(blockHash string) (int64, error) {
 	c.Lock()
-	cachedBlock, ok := c.blockCache[blockHash]
+	cachedBlockHeight, ok := c.blockHeightCache[blockHash]
 	c.Unlock()
 	if ok {
-		return cachedBlock.Height, nil
+		return cachedBlockHeight, nil
 	}
 
 	hash, err := chainhash.NewHashFromStr(blockHash)
@@ -94,7 +83,7 @@ func (c *BitcoinClient) GetBlockHeight(blockHash string) (
 	}
 
 	c.Lock()
-	c.blockCache[blockHash] = block
+	c.blockHeightCache[blockHash] = block.Height
 	c.Unlock()
 
 	return block.Height, nil
@@ -104,11 +93,20 @@ func (c *BitcoinClient) GetBlockHeight(blockHash string) (
 func (c *BitcoinClient) GetTxFee(tx *wire.MsgTx) (btcutil.Amount, error) {
 	inValue := int64(0)
 	for _, in := range tx.TxIn {
-		inTx, err := c.GetTx(&in.PreviousOutPoint.Hash)
+		op := in.PreviousOutPoint
+		inTx, err := c.getTxDetail(&op.Hash)
 		if err != nil {
 			return 0, err
 		}
-		inValue += inTx.TxOut[in.PreviousOutPoint.Index].Value
+
+		// In the Vout we get from GetTxDetail, the output values are in
+		// btc, we need to convert to satoshis!
+		satValue, err := btcutil.NewAmount(inTx.Vout[op.Index].Value)
+		if err != nil {
+			return 0, fmt.Errorf("error converting btc to sat: %v",
+				err)
+		}
+		inValue += int64(satValue)
 	}
 
 	outValue := int64(0)
@@ -119,9 +117,9 @@ func (c *BitcoinClient) GetTxFee(tx *wire.MsgTx) (btcutil.Amount, error) {
 	return btcutil.Amount(inValue - outValue), nil
 }
 
-// GetTxFeeFromJSON calculates the on chain fees for a set of inputs and outputs
+// getTxFeeFromJSON calculates the on chain fees for a set of inputs and outputs
 // that come from a transaction fetched with GetTxDetail.
-func (c *BitcoinClient) GetTxFeeFromJSON(vin []btcjson.Vin,
+func (c *BitcoinClient) getTxFeeFromJSON(vin []btcjson.Vin,
 	vout []btcjson.Vout) (btcutil.Amount, error) {
 
 	inValue := int64(0)
@@ -131,13 +129,19 @@ func (c *BitcoinClient) GetTxFeeFromJSON(vin []btcjson.Vin,
 			return 0, err
 		}
 
-		inTx, err := c.GetTx(txHash)
+		inTx, err := c.getTxDetail(txHash)
 		if err != nil {
 			return 0, err
 		}
-		// In the TxOut we get from GetTx, the output values are in
-		// satoshis!
-		inValue += inTx.TxOut[in.Vout].Value
+
+		// In the Vout we get from GetTxDetail, the output values are in
+		// btc, we need to convert to satoshis!
+		satValue, err := btcutil.NewAmount(inTx.Vout[in.Vout].Value)
+		if err != nil {
+			return 0, fmt.Errorf("error converting btc to sat: %v",
+				err)
+		}
+		inValue += int64(satValue)
 	}
 
 	outValue := int64(0)
@@ -164,8 +168,8 @@ func (c *BitcoinClient) Shutdown() {
 func NewClient(cfg *BitcoinConfig) (*BitcoinClient, error) {
 	var err error
 	client := &BitcoinClient{
-		txDetailCache: make(map[string]*btcjson.TxRawResult),
-		blockCache:    make(map[string]*btcjson.GetBlockVerboseResult),
+		txDetailCache:    make(map[string]*btcjson.TxRawResult),
+		blockHeightCache: make(map[string]int64),
 	}
 	client.rpcClient, err = getBitcoinConn(cfg)
 	if err != nil {
@@ -225,12 +229,12 @@ type TxDetails struct {
 func (c *BitcoinClient) GetFullTxDetails(txHash chainhash.Hash) (*TxDetails,
 	error) {
 
-	txRaw, err := c.GetTxDetail(&txHash)
+	txRaw, err := c.getTxDetail(&txHash)
 	if err != nil {
 		return nil, fmt.Errorf("unable to find tx %v: %v", txHash, err)
 	}
 
-	txFee, err := c.GetTxFeeFromJSON(txRaw.Vin, txRaw.Vout)
+	txFee, err := c.getTxFeeFromJSON(txRaw.Vin, txRaw.Vout)
 	if err != nil {
 		return nil, fmt.Errorf("unable to calculate fee for tx %v: %v",
 			txHash, err)
@@ -244,7 +248,7 @@ func (c *BitcoinClient) GetFullTxDetails(txHash chainhash.Hash) (*TxDetails,
 	// Can only set the block height if the transaction is actually
 	// confirmed in a block.
 	if txRaw.BlockHash != "" {
-		blockHeight, err := c.GetBlockHeight(txRaw.BlockHash)
+		blockHeight, err := c.getBlockHeight(txRaw.BlockHash)
 		if err != nil {
 			return nil, fmt.Errorf("unable to find block height "+
 				"for tx %v in block %v on chain: %v",
