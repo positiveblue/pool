@@ -94,6 +94,7 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 			)
 			totalFeesAccrued += takerDiff.CalcTakerDelta(
 				feeSchedule, clearingPrice, totalSats,
+				order.Details.Bid.SelfChanBalance,
 				order.Details.Bid.LeaseDuration(),
 			)
 
