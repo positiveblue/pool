@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/pool/clientdb"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
@@ -768,11 +769,15 @@ func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes,
 // non-default values of the additional data will be set on the given order.
 func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 	var (
-		userAgent []byte
+		userAgent       []byte
+		selfChanBalance uint64
 	)
 
 	tlvStream, err := tlv.NewStream(
 		tlv.MakePrimitiveRecord(userAgentType, &userAgent),
+		tlv.MakePrimitiveRecord(
+			bidSelfChanBalanceType, &selfChanBalance,
+		),
 	)
 	if err != nil {
 		return err
@@ -786,6 +791,11 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 	// No need setting the user agent if it wasn't parsed from the stream.
 	if t, ok := parsedTypes[userAgentType]; ok && t == nil {
 		o.ServerDetails().UserAgent = string(userAgent)
+	}
+
+	bid, isBid := o.(*order.Bid)
+	if t, ok := parsedTypes[bidSelfChanBalanceType]; isBid && ok && t == nil {
+		bid.SelfChanBalance = btcutil.Amount(selfChanBalance)
 	}
 
 	return nil
@@ -802,6 +812,14 @@ func serializeOrderTlvData(w io.Writer, o order.ServerOrder) error {
 	if len(userAgent) > 0 {
 		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
 			userAgentType, &userAgent,
+		))
+	}
+
+	bid, isBid := o.(*order.Bid)
+	if isBid && bid.SelfChanBalance > 0 {
+		selfChanBalance := uint64(bid.SelfChanBalance)
+		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
+			bidSelfChanBalanceType, &selfChanBalance,
 		))
 	}
 

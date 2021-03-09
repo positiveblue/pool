@@ -16,9 +16,13 @@ import (
 )
 
 const (
-	// userAgentType is the tlv stream type for the order's user agent
+	// userAgentType is the tlv record type for the order's user agent
 	// string.
 	userAgentType tlv.Type = 1
+
+	// bidSelfChanBalanceType is the tlv type we use to store the self
+	// channel balance on bid orders.
+	bidSelfChanBalanceType tlv.Type = 2
 )
 
 // WriteElements is writes each element in the elements slice to the passed
