@@ -98,8 +98,9 @@ func copyMatchedOrder(original *MatchedOrder) MatchedOrder {
 				Kit: original.Details.Ask.Kit,
 			},
 			Bid: &order.Bid{
-				Bid: original.Details.Bid.Bid,
-				Kit: original.Details.Bid.Kit,
+				Bid:       original.Details.Bid.Bid,
+				Kit:       original.Details.Bid.Kit,
+				IsSidecar: original.Details.Bid.IsSidecar,
 			},
 			Quote: original.Details.Quote,
 		},
