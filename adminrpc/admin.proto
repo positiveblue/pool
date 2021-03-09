@@ -181,7 +181,7 @@ message ServerBid {
     poolrpc.OrderState state = 4;
 
     /*
-    The minium node tier this order should be matched with. Only asks backed by
+    The minimum node tier this order should be matched with. Only asks backed by
     a node this tier or higher will be eligible for matching with this bid.
     */
     poolrpc.NodeTier min_node_tier = 5;
@@ -190,6 +190,11 @@ message ServerBid {
     The user agent string this order was submitted with.
     */
     string user_agent = 6;
+
+    /*
+    The initial self balance that was chosen by the user for this bid.
+    */
+    uint64 self_chan_balance = 7;
 }
 
 message AccountDetailsRequest {

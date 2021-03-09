@@ -268,7 +268,8 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
-				UserAgent: o.UserAgent,
+				UserAgent:       o.UserAgent,
+				SelfChanBalance: uint64(o.SelfChanBalance),
 			})
 		}
 	}
@@ -587,6 +588,9 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 					),
 					LeaseDurationBlocks: bid.LeaseDuration(),
 					Version:             uint32(bid.Version),
+					SelfChanBalance: uint64(
+						bid.SelfChanBalance,
+					),
 				},
 				MatchingRate:     uint32(quote.MatchingRate),
 				TotalSatsCleared: uint64(quote.TotalSatsCleared),
