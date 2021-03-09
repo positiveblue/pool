@@ -333,6 +333,41 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
+		name: "invalid version for self chan balance",
+		expectedErr: "cannot use self chan balance with old order " +
+			"version",
+		run: func() error {
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			o.SelfChanBalance = 500000
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name: "invalid self chan balance",
+		expectedErr: "invalid self chan balance: self channel balance " +
+			"must be smaller than or equal to capacity",
+		run: func() error {
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			o.Version = orderT.VersionSelfChanBalance
+			o.SelfChanBalance = 500000
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
 		name:        "banned account",
 		expectedErr: account.NewErrBannedAccount(bestHeight + 144).Error(),
 		run: func() error {

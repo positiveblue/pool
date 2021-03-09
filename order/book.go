@@ -302,6 +302,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	// Make sure the amount is consistent with Unit and UnitsUnfulfilled.
 	if srvOrder.Details().Units.ToSatoshis() != amt ||
 		srvOrder.Details().UnitsUnfulfilled.ToSatoshis() != amt {
+
 		return fmt.Errorf("units and units unfulfilled must " +
 			"translate exactly to amount")
 	}
@@ -351,6 +352,13 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 
 	case *Bid:
 		leaseDuration = o.LeaseDuration()
+
+		// Make sure the self channel balance is correct.
+		if o.SelfChanBalance > 0 {
+			if err := o.ValidateSelfChanBalance(); err != nil {
+				return err
+			}
+		}
 	}
 
 	// Only clients that understand multiple lease buckets are allowed to
