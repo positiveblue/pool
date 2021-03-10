@@ -429,7 +429,12 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 			// orders, as we'll get to test both the case where no
 			// orders match, or only a sub-set of the orders match
 			// and the intermediate state needs to be updated.
-			randOrderSet := genRandOrderSet(r, acctDB, 1000)
+			randOrderSet := genRandOrderSet(
+				r, acctDB,
+				1000,
+				staticDurationGen(testDuration),
+				oneOfUnitGen(50, 100, 200, 400, 777, 1000),
+			)
 
 			// We'll also supplements this set of orders with an
 			// pair of orders that we know will be totally filled.
@@ -604,7 +609,11 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 			// When generating the random set below, we'll cap the
 			// number of orders on both sides to ensure the test
 			// completes in a timely manner.
-			randOrderSet := genRandOrderSet(r, acctDB, 1000)
+			randOrderSet := genRandOrderSet(
+				r, acctDB,
+				1000,
+				staticDurationGen(testDuration),
+			)
 
 			v[0] = reflect.ValueOf(randOrderSet)
 		},

@@ -19,7 +19,7 @@ import (
 var emptyAcct [33]byte
 
 type orderGenCfg struct {
-	numUnits      orderT.SupplyUnit
+	numUnits      []orderT.SupplyUnit
 	minUnitsMatch orderT.SupplyUnit
 	fixedRate     uint32
 	duration      uint32
@@ -30,6 +30,12 @@ type orderGenCfg struct {
 type orderGenOption func(*orderGenCfg)
 
 func staticUnitGen(numUnits orderT.SupplyUnit) orderGenOption {
+	return func(opt *orderGenCfg) {
+		opt.numUnits = []orderT.SupplyUnit{numUnits}
+	}
+}
+
+func oneOfUnitGen(numUnits ...orderT.SupplyUnit) orderGenOption {
 	return func(opt *orderGenCfg) {
 		opt.numUnits = numUnits
 	}
@@ -102,8 +108,8 @@ func staticAccountState(state account.State) orderGenOption {
 }
 
 func (o *orderGenCfg) supplyUnits(r *rand.Rand) orderT.SupplyUnit {
-	if o.numUnits != 0 {
-		return o.numUnits
+	if len(o.numUnits) > 0 {
+		return o.numUnits[r.Int()%len(o.numUnits)]
 	}
 
 	return orderT.SupplyUnit(r.Int31())
