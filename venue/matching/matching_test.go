@@ -109,12 +109,14 @@ func (o *orderGenCfg) supplyUnits(r *rand.Rand) orderT.SupplyUnit {
 	return orderT.SupplyUnit(r.Int31())
 }
 
-func (o *orderGenCfg) getMinUnitsMatch(r *rand.Rand) orderT.SupplyUnit { // nolint:unparam
+func (o *orderGenCfg) getMinUnitsMatch(r *rand.Rand,
+	maxUnits orderT.SupplyUnit) orderT.SupplyUnit { // nolint:unparam
+
 	if o.minUnitsMatch != 0 {
 		return o.minUnitsMatch
 	}
 
-	return orderT.SupplyUnit(r.Int31())
+	return orderT.SupplyUnit(r.Int31())%maxUnits + 1
 }
 
 func (o *orderGenCfg) rate(r *rand.Rand) uint32 {
@@ -182,7 +184,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	acct := genRandAccount(r, genOptions...)
 
 	numUnits := genCfg.supplyUnits(r)
-	minUnitsMatch := genCfg.getMinUnitsMatch(r)
+	minUnitsMatch := genCfg.getMinUnitsMatch(r, numUnits)
 	b := &order.Bid{
 		Bid: orderT.Bid{
 			Kit: *orderT.NewKit(nonce),
@@ -224,7 +226,7 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	acct := genRandAccount(r, genOptions...)
 
 	numUnits := genCfg.supplyUnits(r)
-	minUnitsMatch := genCfg.getMinUnitsMatch(r)
+	minUnitsMatch := genCfg.getMinUnitsMatch(r, numUnits)
 	a := &order.Ask{
 		Ask: orderT.Ask{
 			Kit: *orderT.NewKit(nonce),
