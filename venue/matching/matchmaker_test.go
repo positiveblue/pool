@@ -244,7 +244,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 
 	acctDB, acctCacher, predicates := newAcctCacher()
 
-	n, y := 0, 0
+	y := 0
 	scenario := func(orders orderSet) bool {
 		// We'll start with making a new call market,
 		callMarket := NewUniformPriceCallMarket(
@@ -285,9 +285,8 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 			acctCacher, dummyFilterChain, predicates,
 		)
 		if err != nil {
-			fmt.Println("clear error: ", err)
-			n++
-			return true
+			t.Logf("clear error: %v", err)
+			return false
 		}
 
 		// Indexes should not be mutated.
@@ -439,7 +438,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 				1,
 				staticRateGen(1000),
 				staticUnitGen(1000),
-				staticDurationGen(2),
+				staticDurationGen(testDuration),
 				staticMinUnitsMatchGen(1),
 			)
 
@@ -457,7 +456,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		t.Fatalf("clearing price consistency scenario failed: %v", err)
 	}
 
-	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
+	t.Logf("Total number of scenarios run: %v (%v positive)", y, y)
 }
 
 // TestMaybeClearFilterFeeRates tests that orders with a max batch feerate
