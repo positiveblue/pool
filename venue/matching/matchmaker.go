@@ -367,9 +367,12 @@ func (u *UniformPriceCallMarket) RemoveMatches(matches ...MatchedOrder) error {
 
 			o.UnitsUnfulfilled -= filled
 
-			// If no more units remain, it should not be added back
-			// to the order book.
-			if o.UnitsUnfulfilled == 0 {
+			// If no more units remain, or the remainder is less
+			// than the minimum match size, it should not be added
+			// back to the order book.
+			if o.UnitsUnfulfilled == 0 ||
+				o.UnitsUnfulfilled < o.MinUnitsMatch {
+
 				return false, nil
 			}
 		}

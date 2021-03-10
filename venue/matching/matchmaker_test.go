@@ -354,22 +354,35 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 				return false
 			}
 
-			// If the order set was totally filled, then it
-			// shouldn't be found in current set of active orders.
-			if bid.UnitsUnfulfilled == 0 {
+			// If the order set was totally filled or the
+			// remaining units were less than its minimum match
+			// size, then it shouldn't be found in current set of
+			// active orders.
+			if bid.UnitsUnfulfilled == 0 ||
+				bid.UnitsUnfulfilled < bid.MinUnitsMatch {
+
 				if _, ok := callMarket.bidIndex[bid.Nonce()]; ok {
-					t.Logf("bid found in active orders " +
-						"after total fulfill")
+					t.Logf("bid %v found in active orders "+
+						"with unfulfilled units=%v "+
+						"and min units=%v", bid.Nonce(),
+						bid.UnitsUnfulfilled,
+						bid.MinUnitsMatch)
 					return false
 				}
 
 				bidNonce := bid.Nonce()
 				fullyConsumedOrders[bidNonce] = struct{}{}
 			}
-			if ask.UnitsUnfulfilled == 0 {
+			if ask.UnitsUnfulfilled == 0 ||
+				ask.UnitsUnfulfilled < ask.MinUnitsMatch {
+
 				if _, ok := callMarket.askIndex[ask.Nonce()]; ok {
-					t.Logf("ask found in active orders " +
-						"after total fulfill")
+					t.Logf("ask %v found in active orders "+
+						"with unfulfilled units=%v "+
+						"and min units=%v", ask.Nonce(),
+						ask.UnitsUnfulfilled,
+						ask.MinUnitsMatch)
+
 					return false
 				}
 
