@@ -301,12 +301,14 @@ func filterAnomalies(matches []MatchedOrder,
 	for _, m := range matches {
 		ask := m.Details.Ask
 		bid := m.Details.Bid
+
+		skip := false
 		if ask.FixedRate > uint32(clearingPrice) {
 			log.Debugf("Filtered out ask %v (and matched bid %v) "+
 				"with fixed rate %v for clearing price %v",
 				ask.Nonce(), bid.Nonce(), ask.FixedRate,
 				clearingPrice)
-			continue
+			skip = true
 		}
 
 		if bid.FixedRate < uint32(clearingPrice) {
@@ -314,6 +316,16 @@ func filterAnomalies(matches []MatchedOrder,
 				"with fixed rate %v for clearing price %v",
 				bid.Nonce(), ask.Nonce(), bid.FixedRate,
 				clearingPrice)
+			skip = true
+		}
+
+		// If we decided to filter out this match, add back the units
+		// to the ask and bid, as we use this for checking how much is
+		// lefter after this batch clear.
+		if skip {
+			filled := m.Details.Quote.UnitsMatched
+			ask.UnitsUnfulfilled += filled
+			bid.UnitsUnfulfilled += filled
 			continue
 		}
 
