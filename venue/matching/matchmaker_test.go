@@ -244,7 +244,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 
 	acctDB, acctCacher, predicates := newAcctCacher()
 
-	n, y := 0, 0
+	y := 0
 	scenario := func(orders orderSet) bool {
 		// We'll start with making a new call market,
 		callMarket := NewUniformPriceCallMarket(
@@ -285,9 +285,8 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 			acctCacher, dummyFilterChain, predicates,
 		)
 		if err != nil {
-			fmt.Println("clear error: ", err)
-			n++
-			return true
+			t.Logf("clear error: %v", err)
+			return false
 		}
 
 		// Indexes should not be mutated.
@@ -355,22 +354,35 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 				return false
 			}
 
-			// If the order set was totally filled, then it
-			// shouldn't be found in current set of active orders.
-			if bid.UnitsUnfulfilled == 0 {
+			// If the order set was totally filled or the
+			// remaining units were less than its minimum match
+			// size, then it shouldn't be found in current set of
+			// active orders.
+			if bid.UnitsUnfulfilled == 0 ||
+				bid.UnitsUnfulfilled < bid.MinUnitsMatch {
+
 				if _, ok := callMarket.bidIndex[bid.Nonce()]; ok {
-					t.Logf("bid found in active orders " +
-						"after total fulfill")
+					t.Logf("bid %v found in active orders "+
+						"with unfulfilled units=%v "+
+						"and min units=%v", bid.Nonce(),
+						bid.UnitsUnfulfilled,
+						bid.MinUnitsMatch)
 					return false
 				}
 
 				bidNonce := bid.Nonce()
 				fullyConsumedOrders[bidNonce] = struct{}{}
 			}
-			if ask.UnitsUnfulfilled == 0 {
+			if ask.UnitsUnfulfilled == 0 ||
+				ask.UnitsUnfulfilled < ask.MinUnitsMatch {
+
 				if _, ok := callMarket.askIndex[ask.Nonce()]; ok {
-					t.Logf("ask found in active orders " +
-						"after total fulfill")
+					t.Logf("ask %v found in active orders "+
+						"with unfulfilled units=%v "+
+						"and min units=%v", ask.Nonce(),
+						ask.UnitsUnfulfilled,
+						ask.MinUnitsMatch)
+
 					return false
 				}
 
@@ -430,7 +442,12 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 			// orders, as we'll get to test both the case where no
 			// orders match, or only a sub-set of the orders match
 			// and the intermediate state needs to be updated.
-			randOrderSet := genRandOrderSet(r, acctDB, 1000)
+			randOrderSet := genRandOrderSet(
+				r, acctDB,
+				1000,
+				staticDurationGen(testDuration),
+				oneOfUnitGen(50, 100, 200, 400, 777, 1000),
+			)
 
 			// We'll also supplements this set of orders with an
 			// pair of orders that we know will be totally filled.
@@ -439,7 +456,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 				1,
 				staticRateGen(1000),
 				staticUnitGen(1000),
-				staticDurationGen(2),
+				staticDurationGen(testDuration),
 				staticMinUnitsMatchGen(1),
 			)
 
@@ -457,7 +474,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		t.Fatalf("clearing price consistency scenario failed: %v", err)
 	}
 
-	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
+	t.Logf("Total number of scenarios run: %v (%v positive)", y, y)
 }
 
 // TestMaybeClearFilterFeeRates tests that orders with a max batch feerate
@@ -605,7 +622,11 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 			// When generating the random set below, we'll cap the
 			// number of orders on both sides to ensure the test
 			// completes in a timely manner.
-			randOrderSet := genRandOrderSet(r, acctDB, 1000)
+			randOrderSet := genRandOrderSet(
+				r, acctDB,
+				1000,
+				staticDurationGen(testDuration),
+			)
 
 			v[0] = reflect.ValueOf(randOrderSet)
 		},

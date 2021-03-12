@@ -19,7 +19,7 @@ import (
 var emptyAcct [33]byte
 
 type orderGenCfg struct {
-	numUnits      orderT.SupplyUnit
+	numUnits      []orderT.SupplyUnit
 	minUnitsMatch orderT.SupplyUnit
 	fixedRate     uint32
 	duration      uint32
@@ -30,6 +30,12 @@ type orderGenCfg struct {
 type orderGenOption func(*orderGenCfg)
 
 func staticUnitGen(numUnits orderT.SupplyUnit) orderGenOption {
+	return func(opt *orderGenCfg) {
+		opt.numUnits = []orderT.SupplyUnit{numUnits}
+	}
+}
+
+func oneOfUnitGen(numUnits ...orderT.SupplyUnit) orderGenOption {
 	return func(opt *orderGenCfg) {
 		opt.numUnits = numUnits
 	}
@@ -102,19 +108,21 @@ func staticAccountState(state account.State) orderGenOption {
 }
 
 func (o *orderGenCfg) supplyUnits(r *rand.Rand) orderT.SupplyUnit {
-	if o.numUnits != 0 {
-		return o.numUnits
+	if len(o.numUnits) > 0 {
+		return o.numUnits[r.Int()%len(o.numUnits)]
 	}
 
 	return orderT.SupplyUnit(r.Int31())
 }
 
-func (o *orderGenCfg) getMinUnitsMatch(r *rand.Rand) orderT.SupplyUnit { // nolint:unparam
+func (o *orderGenCfg) getMinUnitsMatch(r *rand.Rand,
+	maxUnits orderT.SupplyUnit) orderT.SupplyUnit { // nolint:unparam
+
 	if o.minUnitsMatch != 0 {
 		return o.minUnitsMatch
 	}
 
-	return orderT.SupplyUnit(r.Int31())
+	return orderT.SupplyUnit(r.Int31())%maxUnits + 1
 }
 
 func (o *orderGenCfg) rate(r *rand.Rand) uint32 {
@@ -182,7 +190,7 @@ func genRandBid(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	acct := genRandAccount(r, genOptions...)
 
 	numUnits := genCfg.supplyUnits(r)
-	minUnitsMatch := genCfg.getMinUnitsMatch(r)
+	minUnitsMatch := genCfg.getMinUnitsMatch(r, numUnits)
 	b := &order.Bid{
 		Bid: orderT.Bid{
 			Kit: *orderT.NewKit(nonce),
@@ -224,7 +232,7 @@ func genRandAsk(r *rand.Rand, accts *acctFetcher, // nolint:dupl
 	acct := genRandAccount(r, genOptions...)
 
 	numUnits := genCfg.supplyUnits(r)
-	minUnitsMatch := genCfg.getMinUnitsMatch(r)
+	minUnitsMatch := genCfg.getMinUnitsMatch(r, numUnits)
 	a := &order.Ask{
 		Ask: orderT.Ask{
 			Kit: *orderT.NewKit(nonce),
