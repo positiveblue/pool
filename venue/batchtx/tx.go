@@ -518,9 +518,12 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		orderDetails := matchedOrder.Details
 		bid := orderDetails.Bid
 		ask := orderDetails.Ask
+
+		fundingAmount := orderDetails.Quote.TotalSatsCleared +
+			bid.SelfChanBalance
 		_, fundingOutput, err := input.GenFundingPkScript(
 			bid.MultiSigKey[:], ask.MultiSigKey[:],
-			int64(orderDetails.Quote.TotalSatsCleared),
+			int64(fundingAmount),
 		)
 		if err != nil {
 			return err
