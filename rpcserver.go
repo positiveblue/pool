@@ -635,6 +635,14 @@ func (s *rpcServer) SubscribeBatchAuction(
 	}
 	rpcLog.Debugf("New trader client_id=%x connected to stream", traderID)
 
+	return s.handleTraderStream(traderID, stream)
+}
+
+// newTraderStream creates a new trader stream and starts the goroutine that
+// receives incoming messages from that trader.
+func (s *rpcServer) handleTraderStream(traderID lsat.TokenID,
+	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
+
 	// Prepare the structure that we are going to use to track the trader
 	// over the duration of this stream.
 	trader := &TraderStream{
