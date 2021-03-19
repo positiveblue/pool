@@ -836,11 +836,16 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return state, env, nil
 			}
 
-			// If we have all the witnesses we need, then we'll
-			// proceed to the batch finalize phase.
-			if len(env.acctWitnesses) == len(env.traders) {
-				log.Infof("Received valid signatures from all " +
-					"traders, finalizing batch")
+			// If we have all the witnesses we need and also got all
+			// channel info from all traders, then we'll proceed to
+			// the batch finalize phase.
+			numChans := len(env.exeCtx.AllChanOutputs())
+			if len(env.acctWitnesses) == len(env.traders) &&
+				len(env.chanInfoComplete) == numChans {
+
+				log.Infof("Received valid signatures and " +
+					"chan info from all traders, " +
+					"finalizing batch")
 
 				return BatchFinalize, env, nil
 			}

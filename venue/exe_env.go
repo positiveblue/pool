@@ -110,6 +110,14 @@ type environment struct {
 	// NOTE: This will only be set after the BatchSigning state.
 	matchingChanTrader map[wire.OutPoint]traderChannelInfo
 
+	// chanInfoComplete tracks whether the channel information was submitted
+	// completely and is valid for both traders. We can no longer just look
+	// at the witnesses since for sidecar orders the account witness and the
+	// channel funding information are submitted by two different traders.
+	//
+	// NOTE: This will only be set after the BatchSigning state.
+	chanInfoComplete map[wire.OutPoint]struct{}
+
 	// lifetimePkgs contains the service level enforcement package for each
 	// channel created as a result of the batch.
 	//
@@ -145,6 +153,7 @@ func newEnvironment(newBatch *executionReq,
 		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
 		acctWitnesses:      make(map[int]wire.TxWitness),
 		matchingChanTrader: make(map[wire.OutPoint]traderChannelInfo),
+		chanInfoComplete:   make(map[wire.OutPoint]struct{}),
 		rejectingTraders:   make(map[matching.AccountID]*OrderRejectMap),
 		msgTimers:          stallTimers,
 		quit:               make(chan struct{}),
@@ -512,6 +521,10 @@ func (e *environment) validateChanInfo(trader matching.AccountID,
 		return err
 	}
 	e.lifetimePkgs = append(e.lifetimePkgs, lifetimePkg)
+
+	// We have everything we need when it comes to the channel info as both
+	// traders have now submitted them.
+	e.chanInfoComplete[chanOutput.OutPoint] = struct{}{}
 
 	return nil
 }
