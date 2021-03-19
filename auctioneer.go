@@ -1332,8 +1332,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
-		log.Debugf("Sending genesis transaction to output %v using "+
-			"fee rate %v", acctOutput, feeRate)
+		log.Debugf("Sending genesis transaction to output (value=%d, "+
+			"script=%x) using fee rate %v", acctOutput.Value,
+			acctOutput.PkScript, feeRate)
 
 		tx, err := a.cfg.Wallet.SendOutputs(
 			ctxb, []*wire.TxOut{acctOutput}, feeRate,
