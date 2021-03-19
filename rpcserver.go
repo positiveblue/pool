@@ -1208,10 +1208,12 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			// connected daemon, some of them might not be involved
 			// in the batch in question. Otherwise the auctioneer
 			// will try to extract the signature for an account that
-			// was not signed with.
+			// was not signed with. Unless it's a sidecar trader
+			// which itself doesn't send signatures. There the
+			// auctioneer will handle the case correctly.
 			key := hex.EncodeToString(subscribedTrader.AccountKey[:])
 			_, ok := sigs[key]
-			if !ok {
+			if !ok && !trader.IsSidecar {
 				continue
 			}
 
