@@ -13,7 +13,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.5-beta
 	github.com/lightninglabs/lndclient v0.12.0-3
-	github.com/lightninglabs/pool v0.4.4-alpha.0.20210316143314-9fb2862fede4
+	github.com/lightninglabs/pool v0.4.4-alpha.0.20210407121930-5f7f4cd7f4c1
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.1
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.12.0-beta
@@ -39,5 +39,3 @@ replace go.etcd.io/etcd => go.etcd.io/etcd v0.0.0-20200520232829-54ba9589114f
 // it in the client binary as well. We need to import it with its declared name
 // everywhere too, otherwise the replace won't work properly.
 replace github.com/lightninglabs/pool/auctioneerrpc => ./auctioneerrpc
-
-replace github.com/lightninglabs/pool => github.com/guggero/pool v0.3.2-alpha.0.20210316143446-492559c94857

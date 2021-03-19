@@ -645,6 +645,34 @@ func (s *rpcServer) SubscribeBatchAuction(
 	return s.handleTraderStream(traderID, false, stream)
 }
 
+// SubscribeSidecar is a streaming RPC that allows a trader to subscribe to
+// updates and events around sidecar orders. This method will be called
+// by the RPC server once per sidecar channel and will keep running for the
+// entire length of the connection. Each method invocation represents one trader
+// with no account but a single sidecar order.
+func (s *rpcServer) SubscribeSidecar(
+	stream auctioneerrpc.ChannelAuctioneer_SubscribeSidecarServer) error {
+
+	// Don't let the rpcServer shut down while we have traders connected.
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	// The SubscribeSidecar RPC will be white listed on the aperture proxy
+	// so the recipient very likely doesn't have an LSAT. To get rid of any
+	// side effects of what would happen if they _did_ have one, we create a
+	// random one here in any case.
+	var traderID lsat.TokenID
+	if _, err := rand.Read(traderID[:]); err != nil {
+		return err
+	}
+	rpcLog.Debugf("New sidecar connected to stream, assigned random "+
+		"client_id=%x", traderID[:])
+
+	// Prepare the structure that we are going to use to track the trader
+	// over the duration of this stream.
+	return s.handleTraderStream(traderID, true, stream)
+}
+
 // newTraderStream creates a new trader stream and starts the goroutine that
 // receives incoming messages from that trader.
 func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
