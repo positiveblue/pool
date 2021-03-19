@@ -947,7 +947,8 @@ func (s *rpcServer) readIncomingStream(trader *TraderStream,
 
 // handleIncomingMessage parses the incoming gRPC messages, turns them into
 // native structs and forwards them to the correct channel.
-func (s *rpcServer) handleIncomingMessage(rpcMsg *auctioneerrpc.ClientAuctionMessage,
+func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
+	rpcMsg *auctioneerrpc.ClientAuctionMessage,
 	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer,
 	trader *TraderStream) {
 
