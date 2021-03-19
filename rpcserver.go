@@ -91,6 +91,13 @@ type TraderStream struct {
 	// to updates to, keyed by the account key/ID.
 	Subscriptions map[[33]byte]*venue.ActiveTrader
 
+	// IsSidecar indicates that this stream with the trader is exclusively
+	// for negotiating sidecar channels. The client on the other end of this
+	// stream might even be a light client with limited capabilities. We
+	// send all batch events to such a client but only expect certain fields
+	// in their responses to be set.
+	IsSidecar bool
+
 	// authNonce is the nonce the auctioneer picks to create the challenge,
 	// together with the commitment the trader sends. This is sent back to
 	// the trader as step 2 of the 3-way authentication handshake.
@@ -635,12 +642,12 @@ func (s *rpcServer) SubscribeBatchAuction(
 	}
 	rpcLog.Debugf("New trader client_id=%x connected to stream", traderID)
 
-	return s.handleTraderStream(traderID, stream)
+	return s.handleTraderStream(traderID, false, stream)
 }
 
 // newTraderStream creates a new trader stream and starts the goroutine that
 // receives incoming messages from that trader.
-func (s *rpcServer) handleTraderStream(traderID lsat.TokenID,
+func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
 
 	// Prepare the structure that we are going to use to track the trader
@@ -665,6 +672,7 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID,
 			quitConn: make(chan struct{}),
 			err:      make(chan error),
 		},
+		IsSidecar: isSidecar,
 	}
 	s.connectedStreamsMutex.Lock()
 	s.connectedStreams[traderID] = trader
