@@ -660,10 +660,12 @@ func assertNumFinalBatches(t *harnessTest, numTotalBatches int) {
 	require.Len(t.t, resp.Batches, numTotalBatches)
 }
 
+type leaseCheck func(leases []*poolrpc.Lease) error
+
 // assertTraderAssets ensures that the given trader has the expected number of
 // assets with any of the given transaction hashes.
 func assertTraderAssets(t *harnessTest, trader *traderHarness, numAssets int,
-	txids []*chainhash.Hash) {
+	txids []*chainhash.Hash, additionalChecks ...leaseCheck) {
 
 	resp, err := trader.Leases(context.Background(), &poolrpc.LeasesRequest{})
 	require.NoErrorf(t.t, err, "unable to retrieve assets")
@@ -678,6 +680,10 @@ func assertTraderAssets(t *harnessTest, trader *traderHarness, numAssets int,
 		assetTxid, err := chainhash.NewHash(asset.ChannelPoint.Txid)
 		require.NoError(t.t, err)
 		require.Contains(t.t, txidSet, *assetTxid)
+	}
+
+	for _, check := range additionalChecks {
+		require.NoError(t.t, check(resp.Leases))
 	}
 }
 

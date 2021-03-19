@@ -92,4 +92,8 @@ var testCases = []*testCase{
 		name: "self channel balance",
 		test: testSelfChanBalance,
 	},
+	{
+		name: "sidecar channels happy path",
+		test: testSidecarChannelsHappyPath,
+	},
 }
