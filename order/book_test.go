@@ -23,17 +23,23 @@ import (
 )
 
 var (
-	testRawAuctioneerKey, _ = hex.DecodeString("02187d1a0e30f4e5016fc1137363ee9e7ed5dde1e6c50f367422336df7a108b716")
-	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
-	testAuctioneerKeyDesc   = &keychain.KeyDescriptor{
+	testRawAuctioneerKey, _ = hex.DecodeString(
+		"02187d1a0e30f4e5016fc1137363ee9e7ed5dde1e6c50f367422336df7a1" +
+			"08b716",
+	)
+	testAuctioneerKey, _  = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
+	testAuctioneerKeyDesc = &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
 			Family: account.AuctioneerKeyFamily,
 		},
 		PubKey: testAuctioneerKey,
 	}
 
-	testRawTraderKey, _ = hex.DecodeString("036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c9395446ba09")
-	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+	testRawTraderKey, _ = hex.DecodeString(
+		"036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c93954" +
+			"46ba09",
+	)
+	testTraderKey, _ = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
 
 	testAccount = account.Account{
 		TraderKeyRaw:  toRawKey(testTraderKey),
@@ -133,268 +139,247 @@ func TestBookPrepareOrder(t *testing.T) {
 		expectedErr: "signature not valid for public key",
 		run: func() error {
 			signer.shouldVerify = false
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "ask duration 0",
 		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    0,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    0,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "ask invalid duration",
 		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    143,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    143,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "bid duration 0",
 		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
-			o := &order.Bid{
-				Bid: orderT.Bid{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    0,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    0,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "bid invalid duration",
 		expectedErr: "cannot submit order outside of default 2016",
 		run: func() error {
-			o := &order.Bid{
-				Bid: orderT.Bid{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    143,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    143,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "zero amount",
 		expectedErr: "order amount must be multiple of",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              0,
-						Units:            orderT.NewSupplyFromSats(0),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(0),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              0,
+				Units:            orderT.NewSupplyFromSats(0),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(0),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "zero max batch feerate",
 		expectedErr: "invalid max batch feerate",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  0,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  0,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "low max batch feerate",
 		expectedErr: "invalid max batch feerate",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor - 1,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor - 1,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "account balance insufficient",
 		expectedErr: order.ErrInvalidAmt.Error(),
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              500_000,
-						Units:            orderT.NewSupplyFromSats(500_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(500_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              500_000,
+				Units:            orderT.NewSupplyFromSats(500_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(500_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "invalid duration for order",
 		expectedErr: "bucket for duration 145 is in state: BucketStateNoMarket",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    145,
-						MinUnitsMatch:    1,
-						Version:          orderT.VersionLeaseDurationBuckets,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    145,
+				MinUnitsMatch:    1,
+				Version:          orderT.VersionLeaseDurationBuckets,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "invalid version for duration",
 		expectedErr: "cannot submit order outside of default 2016 duration bucket",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    4032,
-						MinUnitsMatch:    1,
-						Version:          orderT.VersionNodeTierMinMatch,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    4032,
+				MinUnitsMatch:    1,
+				Version:          orderT.VersionNodeTierMinMatch,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "maker cannot pay fees",
 		expectedErr: order.ErrInvalidAmt.Error(),
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              200_000,
-						Units:            orderT.NewSupplyFromSats(200_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(200_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              200_000,
+				Units:            orderT.NewSupplyFromSats(200_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(200_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "taker cannot pay fees",
 		expectedErr: order.ErrInvalidAmt.Error(),
 		run: func() error {
-			o := &order.Bid{
-				Bid: orderT.Bid{
-					Kit: orderT.Kit{
-						Amt:              2_000_000,
-						Units:            orderT.NewSupplyFromSats(2_000_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(2_000_000),
-						FixedRate:        100_000,
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := bid(orderT.Kit{
+				Amt:              2_000_000,
+				Units:            orderT.NewSupplyFromSats(2_000_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(2_000_000),
+				FixedRate:        100_000,
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name: "invalid version for self chan balance",
+		expectedErr: "cannot use self chan balance with old order " +
+			"version",
+		run: func() error {
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			o.SelfChanBalance = 500000
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name: "invalid self chan balance",
+		expectedErr: "invalid self chan balance: self channel balance " +
+			"must be smaller than or equal to capacity",
+		run: func() error {
+			o := bid(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			o.Version = orderT.VersionSelfChanBalance
+			o.SelfChanBalance = 500000
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
 		name:        "banned account",
 		expectedErr: account.NewErrBannedAccount(bestHeight + 144).Error(),
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			err := store.BanAccount(ctxb, testTraderKey, bestHeight)
 			if err != nil {
 				return fmt.Errorf("unable to ban account: %v",
@@ -413,19 +398,15 @@ func TestBookPrepareOrder(t *testing.T) {
 		name:        "successful order submission",
 		expectedErr: "",
 		run: func() error {
-			o := &order.Ask{
-				Ask: orderT.Ask{
-					Kit: orderT.Kit{
-						Amt:              100_000,
-						Units:            orderT.NewSupplyFromSats(100_000),
-						UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-						AcctKey:          toRawKey(testTraderKey),
-						MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-						LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-						MinUnitsMatch:    1,
-					},
-				},
-			}
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
 			err := book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 			if err != nil {
 				return err
@@ -441,28 +422,23 @@ func TestBookPrepareOrder(t *testing.T) {
 
 			return nil
 		},
-	},
-		{
-			name:        "good order but account is expired",
-			expectedErr: "account must be open or pending open to submit orders, instead state=StateExpired",
-			run: func() error {
-				o := &order.Ask{
-					Ask: orderT.Ask{
-						Kit: orderT.Kit{
-							Amt:              100_000,
-							Units:            orderT.NewSupplyFromSats(100_000),
-							UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
-							AcctKey:          toRawKey(testAuctioneerKey),
-							MaxBatchFeeRate:  chainfee.FeePerKwFloor,
-							LeaseDuration:    orderT.LegacyLeaseDurationBucket,
-							MinUnitsMatch:    1,
-						},
-					},
-				}
-				return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
-			},
+	}, {
+		name: "good order but account is expired",
+		expectedErr: "account must be open or pending open to submit " +
+			"orders, instead state=StateExpired",
+		run: func() error {
+			o := ask(orderT.Kit{
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testAuctioneerKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+			})
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
-	}
+	}}
 
 	for _, tc := range testCases {
 		tc := tc
@@ -549,4 +525,20 @@ func toRawKey(pubkey *btcec.PublicKey) [33]byte {
 	var result [33]byte
 	copy(result[:], pubkey.SerializeCompressed())
 	return result
+}
+
+func ask(kit orderT.Kit) *order.Ask {
+	return &order.Ask{
+		Ask: orderT.Ask{
+			Kit: kit,
+		},
+	}
+}
+
+func bid(kit orderT.Kit) *order.Bid {
+	return &order.Bid{
+		Bid: orderT.Bid{
+			Kit: kit,
+		},
+	}
 }

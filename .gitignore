@@ -50,4 +50,6 @@ profile.tmp
 /auctioncli
 /itest/lnd-itest
 /itest/btcd-itest
-/itest/regtest/*.log
+/itest/regtest/*
+/itest/.backendlogs/*
+/itest/.minerlogs/*

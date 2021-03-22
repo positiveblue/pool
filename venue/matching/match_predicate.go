@@ -17,6 +17,7 @@ var (
 		MatchPredicateFunc(DifferentNodesPredicate),
 		MatchPredicateFunc(AskRateSmallerOrEqualPredicate),
 		MatchPredicateFunc(AskDurationGreaterOrEqualPredicate),
+		MatchPredicateFunc(SelfChanBalanceEnabledPredicate),
 	}
 )
 
@@ -68,6 +69,18 @@ func AskRateSmallerOrEqualPredicate(ask *order.Ask, bid *order.Bid) bool {
 // can occur.
 func AskDurationGreaterOrEqualPredicate(ask *order.Ask, bid *order.Bid) bool {
 	return ask.LeaseDuration() >= bid.LeaseDuration()
+}
+
+// SelfChanBalanceEnabledPredicate is a matching predicate that makes sure the
+// asker's node is up-to-date and knows how to account for the self channel
+// balance feature of bid orders. Old asker nodes wouldn't correctly calculate
+// an account's diff (and also not open the channel correctly) if they didn't
+// know of the self channel balance feature. Therefore we need to make sure we
+// exclude old asker clients from being matched with bid orders that have a self
+// channel balance set.
+func SelfChanBalanceEnabledPredicate(ask *order.Ask, bid *order.Bid) bool {
+	return bid.SelfChanBalance == 0 ||
+		ask.Version >= orderT.VersionSelfChanBalance
 }
 
 // MinPartialMatchPredicate is a matching predicate that returns true if the

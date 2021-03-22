@@ -88,4 +88,8 @@ var testCases = []*testCase{
 		name: "batch extra inputs outputs",
 		test: testBatchIO,
 	},
+	{
+		name: "self channel balance",
+		test: testSelfChanBalance,
+	},
 }

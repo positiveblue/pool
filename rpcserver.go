@@ -545,8 +545,9 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 			return nil, err
 		}
 		clientBid := &orderT.Bid{
-			Kit:         *clientKit,
-			MinNodeTier: nodeTier,
+			Kit:             *clientKit,
+			MinNodeTier:     nodeTier,
+			SelfChanBalance: btcutil.Amount(b.SelfChanBalance),
 		}
 		o = &order.Bid{
 			Bid: *clientBid,
@@ -1816,6 +1817,7 @@ func marshallMatchedBid(bid *order.Bid,
 			Details:             marshallServerOrder(bid),
 			LeaseDurationBlocks: bid.LeaseDuration(),
 			Version:             uint32(bid.Version),
+			SelfChanBalance:     uint64(bid.SelfChanBalance),
 		},
 		UnitsFilled: uint32(unitsFilled),
 	}

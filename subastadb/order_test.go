@@ -32,8 +32,9 @@ func TestSubmitOrder(t *testing.T) {
 	addDummyAccount(t, store)
 	bid := &order.Bid{
 		Bid: orderT.Bid{
-			Kit:         *dummyClientOrder(t, 500000, 1337),
-			MinNodeTier: 9,
+			Kit:             *dummyClientOrder(t, 500000, 1337),
+			MinNodeTier:     9,
+			SelfChanBalance: 12345,
 		},
 		Kit: *dummyOrder(t),
 	}

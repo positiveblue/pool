@@ -795,8 +795,12 @@ func traderOutputScript(t *harnessTest, traderNode *lntest.HarnessNode) []byte {
 	return addrScript
 }
 
+type pendingChanCheck func(
+	channel *lnrpc.PendingChannelsResponse_PendingChannel) error
+
 func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode,
-	chanAmt btcutil.Amount, initiator bool, chanPeer [33]byte) {
+	chanAmt btcutil.Amount, initiator bool, chanPeer [33]byte,
+	moreChecks ...pendingChanCheck) {
 
 	req := &lnrpc.PendingChannelsRequest{}
 	err := wait.NoError(func() error {
@@ -843,6 +847,13 @@ func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode,
 
 			return fmt.Errorf("intiator mismatch: expected %v, "+
 				"got %v", initiator, channel.Initiator)
+		}
+
+		for _, chk := range moreChecks {
+			if err := chk(channel); err != nil {
+				return fmt.Errorf("custom check failed: %v",
+					err)
+			}
 		}
 
 		return nil
@@ -958,9 +969,12 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 	return nil
 }
 
+type activeChanCheck func(channel *lnrpc.Channel) error
+
 func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 	chanAmt int64, fundingTXID chainhash.Hash, chanPeer [33]byte,
-	chanDuration uint32) *lnrpc.ChannelPoint { // nolint:unparam
+	chanDuration uint32,
+	moreChecks ...activeChanCheck) *lnrpc.ChannelPoint { // nolint:unparam
 
 	var chanPointStr string
 	req := &lnrpc.ListChannelsRequest{}
@@ -1007,6 +1021,13 @@ func assertActiveChannel(t *harnessTest, node *lntest.HarnessNode,
 		if pendingChan.ThawHeight != chanDuration {
 			return fmt.Errorf("wrong thaw height: expected %v, "+
 				"got %v", chanDuration, pendingChan.ThawHeight)
+		}
+
+		for _, chk := range moreChecks {
+			if err := chk(pendingChan); err != nil {
+				return fmt.Errorf("custom check failed: %v",
+					err)
+			}
 		}
 
 		chanPointStr = pendingChan.ChannelPoint
@@ -1158,7 +1179,7 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 func assertAskOrderState(t *harnessTest, trader *traderHarness,
 	unfilledUnits uint32, orderNonce orderT.Nonce) {
 
-	// TODO(roasbeef): add LookupORder method for client RPC
+	// TODO(roasbeef): add LookupOrder method for client RPC
 	err := wait.NoError(func() error {
 		req := &poolrpc.ListOrdersRequest{}
 		resp, err := trader.ListOrders(context.Background(), req)
