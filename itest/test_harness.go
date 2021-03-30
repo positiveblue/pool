@@ -738,10 +738,10 @@ func assertOrderEvents(t *harnessTest, trader *traderHarness, nonce []byte,
 	}
 	require.NotNil(t.t, rpcOrder)
 
-	// Make sure the creation timestamp is within 100 milliseconds of the
+	// Make sure the creation timestamp is within 500 milliseconds of the
 	// time that was passed in.
 	expectedTs := uint64(creationTs.UnixNano())
-	maxDelta := float64(100 * time.Millisecond)
+	maxDelta := float64(500 * time.Millisecond)
 	require.InDelta(t.t, expectedTs, rpcOrder.CreationTimestampNs, maxDelta)
 
 	// Assert we have the right number of events in verbose mode.
