@@ -83,8 +83,8 @@ func (d *DurationBuckets) QueryMarketState(durationBlocks uint32,
 func (d *DurationBuckets) PutMarket(durationBlocks uint32,
 	state DurationBucketState) {
 
-	d.RLock()
-	defer d.RUnlock()
+	d.Lock()
+	defer d.Unlock()
 
 	d.buckets[durationBlocks] = state
 }
@@ -122,8 +122,8 @@ func (d *DurationBuckets) IterBuckets(f func(durationBlocks uint32,
 
 // RemoveMarket completely removes the market with the given duration.
 func (d *DurationBuckets) RemoveMarket(durationBlocks uint32) {
-	d.RLock()
-	defer d.RUnlock()
+	d.Lock()
+	defer d.Unlock()
 
 	delete(d.buckets, durationBlocks)
 }
