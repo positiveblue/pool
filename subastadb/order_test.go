@@ -36,7 +36,8 @@ func TestSubmitOrder(t *testing.T) {
 			MinNodeTier:     9,
 			SelfChanBalance: 12345,
 		},
-		Kit: *dummyOrder(t),
+		Kit:       *dummyOrder(t),
+		IsSidecar: true,
 	}
 	_, err := store.GetOrder(ctxb, bid.Nonce())
 	if err != ErrNoOrder {

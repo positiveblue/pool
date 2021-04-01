@@ -23,6 +23,10 @@ const (
 	// bidSelfChanBalanceType is the tlv type we use to store the self
 	// channel balance on bid orders.
 	bidSelfChanBalanceType tlv.Type = 2
+
+	// bidIsSidecarType is the tlv record type for the sidecar flag of a bid
+	// order.
+	bidIsSidecarType tlv.Type = 3
 )
 
 // WriteElements is writes each element in the elements slice to the passed

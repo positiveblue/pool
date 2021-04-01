@@ -195,6 +195,11 @@ message ServerBid {
     The initial self balance that was chosen by the user for this bid.
     */
     uint64 self_chan_balance = 7;
+
+    /*
+    Whether this bid was submitted as a sidecar order.
+    */
+    bool is_sidecar = 8;
 }
 
 message AccountDetailsRequest {

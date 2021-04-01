@@ -32,6 +32,7 @@ import (
 	"github.com/lightninglabs/pool/chaninfo"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/pool/sidecar"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/feebump"
@@ -549,9 +550,20 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 			MinNodeTier:     nodeTier,
 			SelfChanBalance: btcutil.Amount(b.SelfChanBalance),
 		}
+
+		// The order signature digest includes the IsSidecar flag but
+		// it's calculated based on whether the sidecar ticket in the
+		// client struct is nil or not. So we need to add an empty
+		// ticket if the flag is true, otherwise we'd get a different
+		// digest.
+		if b.IsSidecarChannel {
+			clientBid.SidecarTicket = &sidecar.Ticket{}
+		}
+
 		o = &order.Bid{
-			Bid: *clientBid,
-			Kit: *serverKit,
+			Bid:       *clientBid,
+			Kit:       *serverKit,
+			IsSidecar: b.IsSidecarChannel,
 		}
 
 	default:

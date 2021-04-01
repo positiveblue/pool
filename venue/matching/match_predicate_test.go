@@ -45,6 +45,7 @@ var (
 		Kit: order.Kit{
 			NodeKey: node2Key,
 		},
+		IsSidecar: true,
 	}
 	node4Bid = &order.Bid{
 		Bid: orderT.Bid{

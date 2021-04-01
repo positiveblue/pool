@@ -359,6 +359,14 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 				return err
 			}
 		}
+
+		// Check the sidecar parameters if the flag is set on the order.
+		if o.IsSidecar {
+			if err := b.validateSidecarOrder(ctx, o); err != nil {
+				return fmt.Errorf("error validating sidecar "+
+					"order: %v", err)
+			}
+		}
 	}
 
 	// Only clients that understand multiple lease buckets are allowed to
@@ -384,6 +392,48 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 			leaseDuration, marketState)
 	}
 
+	return nil
+}
+
+// validateSidecarOrder makes sure all order parameters are set correctly for
+// a sidecar order.
+func (b *Book) validateSidecarOrder(ctx context.Context, bid *Bid) error {
+	// A sidecar order must have its version set accordingly.
+	if bid.Version < order.VersionSidecarChannel {
+		return fmt.Errorf("invalid order version %d for order with "+
+			"sidecar ticket attached", bid.Version)
+	}
+
+	// Sidecar channels with a self channel balance need to have the minimum
+	// matched units set to the bid size to avoid an overly complicated
+	// execution protocol. We also check the size of the self channel
+	// balance in the process.
+	if err := bid.ValidateSelfChanBalance(); err != nil {
+		return fmt.Errorf("invalid self balance for sidecar order: %v",
+			err)
+	}
+
+	dbOrders, err := b.cfg.Store.GetOrders(ctx)
+	if err != nil {
+		return fmt.Errorf("error validating sidecar order against "+
+			"existing orders: %v", err)
+	}
+
+	for _, dbOrder := range dbOrders {
+		dbBid, isBid := dbOrder.(*Bid)
+		if !isBid {
+			continue
+		}
+
+		if dbBid.MultiSigKey == bid.MultiSigKey {
+			return fmt.Errorf("an active order for the multisig " +
+				"pubkey of the sidecar recipient already " +
+				"exists, cancel it first before submitting a " +
+				"new one")
+		}
+	}
+
+	// As far as we can tell everything is in order with the order.
 	return nil
 }
 

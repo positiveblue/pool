@@ -100,6 +100,9 @@ type Bid struct {
 
 	// Kit contains all the common order parameters.
 	Kit
+
+	// IsSidecar denotes whether this bid was submitted as a sidecar order.
+	IsSidecar bool
 }
 
 // LeaseDuration is the minimal duration the channel resulting from this bid
