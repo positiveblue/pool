@@ -227,6 +227,204 @@ func testSidecarChannelsHappyPath(t *harnessTest) {
 	)
 }
 
+// testSidecarChannelsRejectNewNodesOnly makes sure that if a sidecar channel
+// recipient rejects a batch because of duplicate channels the execution is
+// re-attempted correctly.
+func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third and fourth lnd node for the additional participants.
+	// Charlie is the sidecar channel provider (has an account, submits the
+	// bid order) and Dave is the sidecar channel recipient (has no account
+	// and only receives the channel).
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	require.NoError(t.t, err)
+	providerTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, providerTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	require.NoError(t.t, err)
+
+	// Dave only wants channels from new nodes. We use this to make sure
+	// they reject the sidecar channel if they already have a channel from
+	// the maker.
+	dave, err := t.lndHarness.NewNode("dave", nil)
+	require.NoError(t.t, err)
+	recipientTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+		newNodesOnlyOpt(),
+	)
+	defer shutdownAndAssert(t, dave, recipientTrader)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders. To test the message multi-plexing between token IDs
+	// and accounts, we add a secondary account to the second trader.
+	makerAccount := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	providerAccount := openAccountAndAssert(
+		t, providerTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We manually open a channel between Bob and Dave now to saturate the
+	// newnodesonly setting.
+	err = t.lndHarness.EnsureConnected(ctx, t.trader.cfg.LndNode, dave)
+	require.NoError(t.t, err)
+	_, err = t.lndHarness.OpenPendingChannel(
+		ctx, t.trader.cfg.LndNode, dave, 1_000_000, 0,
+	)
+	require.NoError(t.t, err)
+	_ = mineBlocks(t, t.lndHarness, 1, 1)
+
+	// Now that the accounts are confirmed and the pending channel is open,
+	// submit an ask order from our maker, selling 200 units (200k sats) of
+	// liquidity.
+	const (
+		orderFixedRate = 100
+		askAmt         = 200_000
+	)
+	_, err = submitAskOrder(
+		t.trader, makerAccount.TraderKey, orderFixedRate, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.Version = uint32(orderT.VersionSidecarChannel)
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Create the sidecar channel ticket now, including the offer, order and
+	// channel expectation.
+	firstSidecarBid := makeSidecar(
+		t.t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0,
+	)
+
+	// We are now ready to start the actual batch execution process. Let's
+	// kick the auctioneer again to try and create a batch. This should
+	// fail because the recipient rejected.
+	_, _ = executeBatch(t, 0)
+
+	// Close the offending channel and try again.
+	closeAllChannels(ctx, t, dave)
+	_, batchTXIDs := executeBatch(t, 1)
+	firstBatchTXID := batchTXIDs[0]
+
+	// At this point the recipient should have two pending channels from the
+	// maker node.
+	assertPendingChannel(t, t.trader.cfg.LndNode, askAmt, true, dave.PubKey)
+	assertPendingChannel(
+		t, dave, askAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// Clear the mempool and all channels for the following tests.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+	closeAllChannels(ctx, t, dave)
+
+	// Assert that our lease is returned correctly on the provider side.
+	assertSidecarLease(
+		t, providerTrader, 1, []*chainhash.Hash{firstBatchTXID},
+		firstSidecarBid, 0,
+	)
+}
+
+// testSidecarChannelsRejectMinChanSize makes sure that if a sidecar channel
+// recipient rejects a batch because of unmet minimum channel size the execution
+// is aborted.
+func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third and fourth lnd node for the additional participants.
+	// Charlie is the sidecar channel provider (has an account, submits the
+	// bid order) and Dave is the sidecar channel recipient (has no account
+	// and only receives the channel).
+	charlie, err := t.lndHarness.NewNode("charlie", nil)
+	require.NoError(t.t, err)
+	providerTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, providerTrader)
+	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
+	require.NoError(t.t, err)
+
+	// Dave only wants big channels. We use this to provoke a failure during
+	// the signing phase instead of the preparation phase.
+	dave, err := t.lndHarness.NewNode(
+		"dave", []string{"--minchansize=300000"},
+	)
+	require.NoError(t.t, err)
+	recipientTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, dave, recipientTrader)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders. To test the message multi-plexing between token IDs
+	// and accounts, we add a secondary account to the second trader.
+	makerAccount := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	providerAccount := openAccountAndAssert(
+		t, providerTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// We manually open a channel between Bob and Dave now to saturate the
+	// newnodesonly setting.
+	err = t.lndHarness.EnsureConnected(ctx, t.trader.cfg.LndNode, dave)
+	require.NoError(t.t, err)
+	_, err = t.lndHarness.OpenPendingChannel(
+		ctx, t.trader.cfg.LndNode, dave, 1_000_000, 0,
+	)
+	require.NoError(t.t, err)
+	_ = mineBlocks(t, t.lndHarness, 1, 1)
+
+	// Now that the accounts are confirmed and the pending channel is open,
+	// submit an ask order from our maker, selling 200 units (200k sats) of
+	// liquidity.
+	const (
+		orderFixedRate = 100
+		askAmt         = 200_000
+	)
+	_, err = submitAskOrder(
+		t.trader, makerAccount.TraderKey, orderFixedRate, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.Version = uint32(orderT.VersionSidecarChannel)
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Create the sidecar channel ticket now, including the offer, order and
+	// channel expectation.
+	makeSidecar(
+		t.t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0,
+	)
+
+	// We are now ready to start the actual batch execution process. Let's
+	// kick the auctioneer again to try and create a batch. This should
+	// fail because the recipient rejected.
+	_, _ = executeBatch(t, 0)
+}
+
 // makeSidecar creates a sidecar ticket with an offer on the provider node,
 // registers the offer with the recipient node, creates a bid order for the
 // provider and finally adds the channel expectation to the recipient's node.
