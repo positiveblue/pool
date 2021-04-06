@@ -1155,15 +1155,25 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 	// potential DoS attacks from too many rejects.
 	env.cancelTimerForTrader(reporter)
 
+	// The isInvolved closure returns true if the reporter of a reject is
+	// somehow involved in a matched order pair. This is the case if the
+	// reporter is the asker, the bidder or the recipient of a sidecar
+	// channel.
+	isInvolved := func(pair matching.MatchedOrder) bool {
+		isSidecar := pair.Details.Bid.IsSidecar
+		recipientKey := pair.Details.Bid.MultiSigKey
+		return pair.Asker.AccountKey == reporter ||
+			pair.Bidder.AccountKey == reporter ||
+			(isSidecar && recipientKey == reporter)
+	}
+
 	// The executor gets de-multiplexed messages from the RPC. That means if
 	// a trader daemon has multiple accounts, we get the same message for
 	// all those accounts. We first need to make sure the reporter is even
 	// involved in the batch. If not, we simply skip adding an entry.
 	var involvedOrders []matching.MatchedOrder
 	for _, orderPair := range env.exeCtx.OrderBatch.Orders {
-		if orderPair.Asker.AccountKey == reporter ||
-			orderPair.Bidder.AccountKey == reporter {
-
+		if isInvolved(orderPair) {
 			involvedOrders = append(involvedOrders, orderPair)
 		}
 	}
@@ -1178,7 +1188,8 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 		PartialRejects: msg.Orders,
 	}
 
-	log.Debugf("Trader %x rejected orders %v", msg.Src(), spew.Sdump(msg.Orders))
+	log.Debugf("Trader %x rejected orders %v", msg.Src(),
+		spew.Sdump(msg.Orders))
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new
