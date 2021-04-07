@@ -630,8 +630,8 @@ func (s *rpcServer) SubscribeBatchAuction(
 	_, ok := s.connectedStreams[traderID]
 	s.connectedStreamsMutex.Unlock()
 	if ok {
-		return fmt.Errorf("client already connected, only one stream " +
-			"per trader is allowed")
+		return fmt.Errorf("client_id=%x already connected, only one "+
+			"stream per trader is allowed", traderID)
 	}
 	rpcLog.Debugf("New trader client_id=%x connected to stream", traderID)
 
@@ -812,7 +812,8 @@ func (s *rpcServer) SubscribeBatchAuction(
 				continue
 			}
 
-			rpcLog.Errorf("Error in trader stream: %v", err)
+			rpcLog.Errorf("Error in trader (client_id=%x) "+
+				"stream: %v", traderID, err)
 
 			trader.comms.abort()
 
@@ -821,8 +822,8 @@ func (s *rpcServer) SubscribeBatchAuction(
 				rpcLog.Errorf("Unable to disconnect trader: %v",
 					err2)
 			}
-			return fmt.Errorf("error reading client stream: %v",
-				err)
+			return fmt.Errorf("error reading client=%x stream: %v",
+				traderID, err)
 
 		// The server is shutting down.
 		case <-s.quit:
@@ -888,8 +889,8 @@ func (s *rpcServer) readIncomingStream(trader *TraderStream,
 			// In case we are shutting down, the goroutine that
 			// reads the comms' errors might have already exited.
 			select {
-			case trader.comms.err <- fmt.Errorf("error reading "+
-				"client stream: %v", err):
+			case trader.comms.err <- fmt.Errorf("error receiving "+
+				"from stream: %v", err):
 			case <-s.quit:
 			}
 			return
