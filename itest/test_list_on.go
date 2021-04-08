@@ -92,4 +92,16 @@ var testCases = []*testCase{
 		name: "self channel balance",
 		test: testSelfChanBalance,
 	},
+	{
+		name: "sidecar channels happy path",
+		test: testSidecarChannelsHappyPath,
+	},
+	{
+		name: "sidecar channels reject new nodes only",
+		test: testSidecarChannelsRejectNewNodesOnly,
+	},
+	{
+		name: "sidecar channels reject min chan size",
+		test: testSidecarChannelsRejectMinChanSize,
+	},
 }

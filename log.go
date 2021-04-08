@@ -37,7 +37,7 @@ var (
 
 func init() {
 	setSubLogger(Subsystem, log, nil)
-	setSubLogger("RPCS", log, nil)
+	setSubLogger("RPCS", rpcLog, nil)
 	addSubLogger(subastadb.Subsystem, subastadb.UseLogger)
 	addSubLogger("LNDC", lndclient.UseLogger)
 	addSubLogger("SGNL", signal.UseLogger)

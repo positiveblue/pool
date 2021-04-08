@@ -757,6 +757,27 @@ func (e *ExecutionContext) ChanOutputsForTrader(acct matching.AccountID) ([]*Ord
 	return outputs, ok
 }
 
+// AllChanOutputs returns all the channel outpoints that are being created by
+// the batch in this execution context.
+func (e *ExecutionContext) AllChanOutputs() []wire.OutPoint {
+	// We de-duplicate the outpoints first by putting them into a map
+	// because otherwise we'd get double the outpoints since two traders are
+	// always involved in a channel output.
+	ops := make(map[wire.OutPoint]struct{})
+	for _, outputs := range e.traderIndex {
+		for _, output := range outputs {
+			ops[output.OutPoint] = struct{}{}
+		}
+	}
+
+	result := make([]wire.OutPoint, 0, len(ops))
+	for op := range ops {
+		result = append(result, op)
+	}
+
+	return result
+}
+
 // AcctOutputForTrader returns the output that re-creates an account for the
 // target trader.
 //

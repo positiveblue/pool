@@ -91,6 +91,13 @@ type TraderStream struct {
 	// to updates to, keyed by the account key/ID.
 	Subscriptions map[[33]byte]*venue.ActiveTrader
 
+	// IsSidecar indicates that this stream with the trader is exclusively
+	// for negotiating sidecar channels. The client on the other end of this
+	// stream might even be a light client with limited capabilities. We
+	// send all batch events to such a client but only expect certain fields
+	// in their responses to be set.
+	IsSidecar bool
+
 	// authNonce is the nonce the auctioneer picks to create the challenge,
 	// together with the commitment the trader sends. This is sent back to
 	// the trader as step 2 of the 3-way authentication handshake.
@@ -635,6 +642,42 @@ func (s *rpcServer) SubscribeBatchAuction(
 	}
 	rpcLog.Debugf("New trader client_id=%x connected to stream", traderID)
 
+	return s.handleTraderStream(traderID, false, stream)
+}
+
+// SubscribeSidecar is a streaming RPC that allows a trader to subscribe to
+// updates and events around sidecar orders. This method will be called
+// by the RPC server once per sidecar channel and will keep running for the
+// entire length of the connection. Each method invocation represents one trader
+// with no account but a single sidecar order.
+func (s *rpcServer) SubscribeSidecar(
+	stream auctioneerrpc.ChannelAuctioneer_SubscribeSidecarServer) error {
+
+	// Don't let the rpcServer shut down while we have traders connected.
+	s.wg.Add(1)
+	defer s.wg.Done()
+
+	// The SubscribeSidecar RPC will be white listed on the aperture proxy
+	// so the recipient very likely doesn't have an LSAT. To get rid of any
+	// side effects of what would happen if they _did_ have one, we create a
+	// random one here in any case.
+	var traderID lsat.TokenID
+	if _, err := rand.Read(traderID[:]); err != nil {
+		return err
+	}
+	rpcLog.Debugf("New sidecar connected to stream, assigned random "+
+		"client_id=%x", traderID[:])
+
+	// Prepare the structure that we are going to use to track the trader
+	// over the duration of this stream.
+	return s.handleTraderStream(traderID, true, stream)
+}
+
+// newTraderStream creates a new trader stream and starts the goroutine that
+// receives incoming messages from that trader.
+func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
+	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
+
 	// Prepare the structure that we are going to use to track the trader
 	// over the duration of this stream.
 	trader := &TraderStream{
@@ -657,6 +700,7 @@ func (s *rpcServer) SubscribeBatchAuction(
 			quitConn: make(chan struct{}),
 			err:      make(chan error),
 		},
+		IsSidecar: isSidecar,
 	}
 	s.connectedStreamsMutex.Lock()
 	s.connectedStreams[traderID] = trader
@@ -903,7 +947,8 @@ func (s *rpcServer) readIncomingStream(trader *TraderStream,
 
 // handleIncomingMessage parses the incoming gRPC messages, turns them into
 // native structs and forwards them to the correct channel.
-func (s *rpcServer) handleIncomingMessage(rpcMsg *auctioneerrpc.ClientAuctionMessage,
+func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
+	rpcMsg *auctioneerrpc.ClientAuctionMessage,
 	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer,
 	trader *TraderStream) {
 
@@ -1011,6 +1056,63 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *auctioneerrpc.ClientAuctionMes
 			return
 		}
 
+		activeTrader := &venue.ActiveTrader{
+			CommLine: &venue.DuplexLine{
+				Send: comms.toTrader,
+				Recv: comms.toServer,
+			},
+			TokenID: trader.Lsat,
+		}
+
+		// This is a trader that's subscribing as a sidecar channel
+		// recipient. They don't have an account of their own but sign
+		// their messages with the multisig key of the order that
+		// another trader submitted for them.
+		if trader.IsSidecar {
+			// We need to make sure there's an active order for that
+			// multisig key that's used as the sidecar "account
+			// key".
+			activeOrders, err := s.store.GetOrders(stream.Context())
+			if err != nil {
+				comms.err <- fmt.Errorf("error looking up "+
+					"active orders: %v", err)
+				return
+			}
+
+			for _, o := range activeOrders {
+				bid, isBid := o.(*order.Bid)
+				if !isBid || !bid.IsSidecar {
+					continue
+				}
+
+				// We found an order that references the key the
+				// trader sent us as the multisig key. We'll use
+				// that as the identifying "account key" in the
+				// further message exchanges.
+				if bid.MultiSigKey == acctKey {
+					activeTrader.IsSidecar = true
+					activeTrader.Trader = &matching.Trader{
+						AccountKey: acctKey,
+					}
+
+					rpcLog.Infof("Sidecar trader %v "+
+						"authenticated for bid order "+
+						"%v", trader.Lsat.String(),
+						bid.Nonce().String())
+
+					comms.newSub <- activeTrader
+
+					return
+				}
+			}
+
+			// If we got here, then the trader has an invalid or
+			// outdated sidecar ticket.
+			comms.err <- fmt.Errorf("no sidecar order found for "+
+				"multisig key %x", acctKey)
+			return
+		}
+
 		// The signature is valid, the trader proved that they are in
 		// possession of the trader private key. We now check if the
 		// account exists on our side. First we need to determine if the
@@ -1042,16 +1144,8 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *auctioneerrpc.ClientAuctionMes
 
 		// Finally inform the batch executor about the new connected
 		// client.
-		commLine := &venue.DuplexLine{
-			Send: comms.toTrader,
-			Recv: comms.toServer,
-		}
 		venueTrader := matching.NewTraderFromAccount(acct)
-		activeTrader := &venue.ActiveTrader{
-			CommLine: commLine,
-			Trader:   &venueTrader,
-			TokenID:  trader.Lsat,
-		}
+		activeTrader.Trader = &venueTrader
 
 		comms.newSub <- activeTrader
 
@@ -1114,10 +1208,12 @@ func (s *rpcServer) handleIncomingMessage(rpcMsg *auctioneerrpc.ClientAuctionMes
 			// connected daemon, some of them might not be involved
 			// in the batch in question. Otherwise the auctioneer
 			// will try to extract the signature for an account that
-			// was not signed with.
+			// was not signed with. Unless it's a sidecar trader
+			// which itself doesn't send signatures. There the
+			// auctioneer will handle the case correctly.
 			key := hex.EncodeToString(subscribedTrader.AccountKey[:])
 			_, ok := sigs[key]
-			if !ok {
+			if !ok && !trader.IsSidecar {
 				continue
 			}
 
@@ -1831,6 +1927,7 @@ func marshallMatchedBid(bid *order.Bid,
 			LeaseDurationBlocks: bid.LeaseDuration(),
 			Version:             uint32(bid.Version),
 			SelfChanBalance:     uint64(bid.SelfChanBalance),
+			IsSidecarChannel:    bid.IsSidecar,
 		},
 		UnitsFilled: uint32(unitsFilled),
 	}

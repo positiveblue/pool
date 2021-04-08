@@ -29,6 +29,10 @@ type ActiveTrader struct {
 	// CommLine is the active communication line between the trader and the
 	// auctioneer.
 	CommLine *DuplexLine
+
+	// IsSidecar indicates that this trader is exclusively handling sidecar
+	// channels. Such a trader doesn't have their own account.
+	IsSidecar bool
 }
 
 // DuplexLine is the communication line between a trader and the batch

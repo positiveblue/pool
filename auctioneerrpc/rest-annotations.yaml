@@ -31,6 +31,7 @@ http:
     - selector: poolrpc.ChannelAuctioneer.CancelOrder
     - selector: poolrpc.ChannelAuctioneer.OrderState
     - selector: poolrpc.ChannelAuctioneer.SubscribeBatchAuction
+    - selector: poolrpc.ChannelAuctioneer.SubscribeSidecar
     - selector: poolrpc.ChannelAuctioneer.RelevantBatchSnapshot
     - selector: poolrpc.ChannelAuctioneer.BatchSnapshot
     - selector: poolrpc.ChannelAuctioneer.NodeRating

@@ -404,18 +404,29 @@ func (b *BatchExecutor) validateTradersOnline(
 	// We'll run through all the active orders in this batch, if either
 	// trader isn't online, then we'll mark both the order nonce and the
 	// trader.
-	for _, order := range batch.Orders {
+	for _, o := range batch.Orders {
 
-		if _, ok := activeTraders[order.Asker.AccountKey]; !ok {
-			offlineTraders[order.Asker.AccountKey] = struct{}{}
-			offlineNonces[order.Details.Ask.Nonce()] = struct{}{}
+		if _, ok := activeTraders[o.Asker.AccountKey]; !ok {
+			offlineTraders[o.Asker.AccountKey] = struct{}{}
+			offlineNonces[o.Details.Ask.Nonce()] = struct{}{}
 		}
 
-		if _, ok := activeTraders[order.Bidder.AccountKey]; !ok {
-			offlineTraders[order.Bidder.AccountKey] = struct{}{}
-			offlineNonces[order.Details.Bid.Nonce()] = struct{}{}
+		bid := o.Details.Bid
+		if _, ok := activeTraders[o.Bidder.AccountKey]; !ok {
+			offlineTraders[o.Bidder.AccountKey] = struct{}{}
+			offlineNonces[bid.Nonce()] = struct{}{}
 		}
 
+		// For sidecar orders, we also need to make sure the receiver of
+		// the channel is online, otherwise we can't continue.
+		if bid.IsSidecar {
+			_, receiverOnline := activeTraders[bid.MultiSigKey]
+			if !receiverOnline {
+				offlineTraders[o.Bidder.AccountKey] = struct{}{}
+				offlineTraders[bid.MultiSigKey] = struct{}{}
+				offlineNonces[bid.Nonce()] = struct{}{}
+			}
+		}
 	}
 
 	// If no traders were offline, then we're good to go!
@@ -550,6 +561,19 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 			env.traders[trader] = activeTraders[trader]
 		}
 
+		// We'll also need to add all sidecar traders to the env as
+		// they'll also get prepare messages. We've already made sure
+		// they're online.
+		for _, o := range env.exeCtx.OrderBatch.Orders {
+			if !o.Details.Bid.IsSidecar {
+				continue
+			}
+
+			trader := o.Details.Bid.MultiSigKey
+			env.sidecarTraders[trader] = activeTraders[trader]
+			env.sidecarOrders[o.Details.Bid.Nonce()] = trader
+		}
+
 		// If there are no traders part of this batch, it means the
 		// batch is empty and there is nothing to execute. In this case
 		// we skip straight ahead to the finalization stage.
@@ -571,6 +595,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		//
 		// TODO(roasbeef): re-work? e.traders
 		env.launchMsgTimers(b.venueEvents, env.traders)
+		env.launchMsgTimers(b.venueEvents, env.sidecarTraders)
 
 		return PrepareSent, env, nil
 
@@ -689,6 +714,9 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				}
 
 				env.launchMsgTimers(b.venueEvents, env.traders)
+				env.launchMsgTimers(
+					b.venueEvents, env.sidecarTraders,
+				)
 				return BatchSigning, env, nil
 			}
 		}
@@ -792,114 +820,32 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 				return BatchTempError, env, nil
 			}
 
+			// We get to the spicy sauce of the sidecar channel
+			// funding process now. The provider (=trader with Pool
+			// account that submitted the bid) will send the
+			// signature for the account input. The recipient
+			// (=trader with no account and possibly a light client)
+			// sends the channel info as they receive the resulting
+			// channel.
 			signMsg := msgRecv.msg.(*TraderSignMsg)
-			acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
-			if !ok {
-				return 0, env, fmt.Errorf("account witness "+
-					"for %x not found", src)
-			}
-
-			// As we want to fully validate the witness, we'll
-			// generate our own signature for his input to ensure
-			// we can properly spend it with broadcast of the batch
-			// transaction.
-			trader := env.traders[src]
-			traderAcctInput, ok := env.exeCtx.AcctInputForTrader(
-				trader.AccountKey,
-			)
-			if !ok {
-				return 0, env, fmt.Errorf("unable to find "+
-					"input for trader %x",
-					trader.AccountKey[:])
-			}
-			auctioneerSig, witnessScript, err := b.signAcctInput(
-				env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
-				traderAcctInput,
-			)
+			state, err := b.handleSignMsg(signMsg, src, &env)
 			if err != nil {
-				return 0, env, fmt.Errorf("unable to "+
-					"generate auctioneer sig: %v", err)
+				return state, env, err
+			}
+			if state == BatchTempError {
+				return state, env, nil
 			}
 
-			// We'll now full validate the witness to ensure we'll
-			// be able to broadcast the funding transaction. If the
-			// trader gives us an invalid witness, then we'll
-			// return an error identifying them as rogue.
-			err = env.validateAccountWitness(
-				witnessScript, traderAcctInput,
-				acctSig, auctioneerSig,
-			)
-			if err != nil {
-				log.Warnf("trader=%x sent invalid "+
-					"signature: %v", src[:], err)
+			// If we have all the witnesses we need and also got all
+			// channel info from all traders, then we'll proceed to
+			// the batch finalize phase.
+			numChans := len(env.exeCtx.AllChanOutputs())
+			if len(env.acctWitnesses) == len(env.traders) &&
+				len(env.chanInfoComplete) == numChans {
 
-				orderNonces := env.traderToOrders[src]
-				env.tempErr = &ErrInvalidWitness{
-					VerifyErr:   err,
-					Trader:      src,
-					OrderNonces: orderNonces,
-				}
-				return BatchTempError, env, nil
-			}
-
-			// With the witness validated, we'll also validate the
-			// channel info submitted with the matched trader to
-			// ensure we have the correct base point keys to enforce
-			// the channel's service level agreement.
-			chanOutputs, _ := env.exeCtx.ChanOutputsForTrader(src)
-			for _, chanOutput := range chanOutputs {
-				chanPoint := chanOutput.OutPoint
-				chanInfo, ok := signMsg.ChannelInfos[chanPoint]
-				if !ok {
-					// The trader didn't provide information
-					// for one of their channels, so we'll
-					// ignore their orders and retry the
-					// batch.
-					orderNonces := env.traderToOrders[src]
-					env.tempErr = &ErrMissingChannelInfo{
-						Trader:       src,
-						ChannelPoint: chanPoint,
-						OrderNonces:  orderNonces,
-					}
-					log.Warn(env.tempErr)
-					return BatchTempError, env, nil
-				}
-
-				err := env.validateChanInfo(
-					src, chanOutput, chanInfo,
-				)
-				if err != nil {
-					// If the information submitted between
-					// both parties of the to be created
-					// channel don't match, then one must be
-					// lying. The bidder doesn't have any
-					// incentive to lie, but we cannot be
-					// sure, so we'll punish both anyway.
-					matchingTrader := env.
-						matchingChanTrader[chanPoint].
-						AccountID
-					orders := env.traderToOrders[src]
-					orders = append(
-						orders,
-						env.traderToOrders[matchingTrader]...,
-					)
-					env.tempErr = &ErrNonMatchingChannelInfo{
-						Err:          err,
-						Trader1:      src,
-						Trader2:      matchingTrader,
-						ChannelPoint: chanPoint,
-						OrderNonces:  orders,
-					}
-					log.Warn(env.tempErr)
-					return BatchTempError, env, nil
-				}
-			}
-
-			// If we have all the witnesses we need, then we'll
-			// proceed to the batch finalize phase.
-			if len(env.acctWitnesses) == len(env.traders) {
-				log.Infof("Received valid signatures from all " +
-					"traders, finalizing batch")
+				log.Infof("Received valid signatures and " +
+					"chan info from all traders, " +
+					"finalizing batch")
 
 				return BatchFinalize, env, nil
 			}
@@ -1018,6 +964,153 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 	}
 }
 
+// handleSignMsg handles a single incoming sign message from a trader. This is
+// the most complex part of the batch execution because in the case of a sidecar
+// channel, we'll get two messages from different traders for the same orders in
+// the batch. We'll need to check them depending on their role in the process.
+func (b *BatchExecutor) handleSignMsg(signMsg *TraderSignMsg,
+	src matching.AccountID, env *environment) (ExecutionState, error) {
+
+	// Is this message coming from the sidecar stream, meaning the trader
+	// that sent the message is a sidecar channel recipient?
+	_, isSidecarRecipient := env.sidecarTraders[src]
+
+	// Sidecar recipients are the only traders that don't send signatures.
+	// Everyone else must always send signatures in this step.
+	if !isSidecarRecipient {
+		acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
+		if !ok {
+			return 0, fmt.Errorf("account witness for %x not "+
+				"found", src)
+		}
+
+		// As we want to fully validate the witness, we'll generate our
+		// own signature for his input to ensure we can properly spend
+		// it with broadcast of the batch transaction.
+		trader := env.traders[src]
+		traderAcctInput, ok := env.exeCtx.AcctInputForTrader(
+			trader.AccountKey,
+		)
+		if !ok {
+			return 0, fmt.Errorf("unable to find input for trader "+
+				"%x", trader.AccountKey[:])
+		}
+		auctioneerSig, witnessScript, err := b.signAcctInput(
+			env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
+			traderAcctInput,
+		)
+		if err != nil {
+			return 0, fmt.Errorf("unable to generate auctioneer "+
+				"sig: %v", err)
+		}
+
+		// We'll now full validate the witness to ensure we'll be able
+		// to broadcast the funding transaction. If the trader gives us
+		// an invalid witness, then we'll return an error identifying
+		// them as rogue.
+		err = env.validateAccountWitness(
+			witnessScript, traderAcctInput, acctSig, auctioneerSig,
+		)
+		if err != nil {
+			log.Warnf("trader=%x sent invalid signature: %v",
+				src[:], err)
+
+			env.tempErr = &ErrInvalidWitness{
+				VerifyErr:   err,
+				Trader:      src,
+				OrderNonces: env.traderToOrders[src],
+			}
+			return BatchTempError, nil
+		}
+	}
+
+	// As a sidecar receiver, their account isn't registered to receive a
+	// channel output, at least not in the indexed batch TX. But we know the
+	// order they are sending the channel info for and can therefore look up
+	// the channel outputs that way.
+	chanOutputs, _ := env.exeCtx.ChanOutputsForTrader(src)
+	if isSidecarRecipient {
+		// We need to look up the channel outputs by the bid order's
+		// nonce. Here it's a 1:1 relationship between the trader key
+		// (channel funding multisig in this case) and the nonce. This
+		// isn't the case for normal orders where one account can have
+		// multiple orders in the same batch. We don't want to add
+		// another index map just for this lookup as there probably
+		// won't be a large number of sidecar
+		// orders in any batch. So we loop instead.
+		for nonce, trader := range env.sidecarOrders {
+			if trader == src {
+				chanOutputs, _ = env.exeCtx.OutputsForOrder(
+					nonce,
+				)
+
+				break
+			}
+		}
+	}
+
+	// With the witness validated, we'll also validate the channel info
+	// submitted with the matched trader to ensure we have the correct base
+	// point keys to enforce the channel's service level agreement.
+	for _, chanOutput := range chanOutputs {
+		chanPoint := chanOutput.OutPoint
+		chanOrderNonce := chanOutput.Order.Nonce()
+
+		// The ChannelInfos map is always initialized when we parse the
+		// RPC message. Therefore we shouldn't run into a nil pointer
+		// error here, even if the trader didn't send any infos. This is
+		// nice since we can then also return the error struct that
+		// includes the channel point that is missing the channel infos.
+		chanInfo, ok := signMsg.ChannelInfos[chanPoint]
+		if !ok {
+			// The only trader that doesn't need to send channel
+			// information is the sidecar channel provider. For
+			// everyone else we fail if the info is missing.
+			_, isSidecarOrder := env.sidecarOrders[chanOrderNonce]
+			if isSidecarOrder && !isSidecarRecipient {
+				continue
+			}
+
+			// The trader didn't provide information for one of
+			// their channels, so we'll ignore their orders and
+			// retry the batch.
+			env.tempErr = &ErrMissingChannelInfo{
+				Trader:       src,
+				ChannelPoint: chanPoint,
+				OrderNonces:  env.traderToOrders[src],
+			}
+			log.Warn(env.tempErr)
+			return BatchTempError, nil
+		}
+
+		err := env.validateChanInfo(src, chanOutput, chanInfo)
+		if err != nil {
+			// If the information submitted between both parties of
+			// the to be created channel don't match, then one must
+			// be lying. The bidder doesn't have any incentive to
+			// lie, but we cannot be sure, so we'll punish both
+			// anyway.
+			matchingTrader := env.matchingChanTrader[chanPoint].
+				AccountID
+			orders := env.traderToOrders[src]
+			orders = append(
+				orders, env.traderToOrders[matchingTrader]...,
+			)
+			env.tempErr = &ErrNonMatchingChannelInfo{
+				Err:          err,
+				Trader1:      src,
+				Trader2:      matchingTrader,
+				ChannelPoint: chanPoint,
+				OrderNonces:  orders,
+			}
+			log.Warn(env.tempErr)
+			return BatchTempError, nil
+		}
+	}
+
+	return BatchSigning, nil
+}
+
 // handleFullReject processes the full reject message of a trader. All orders
 // of the trader that were involved in the batch are added to the map of
 // rejected orders as the trader likely won't be able to participate in this or
@@ -1062,15 +1155,25 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 	// potential DoS attacks from too many rejects.
 	env.cancelTimerForTrader(reporter)
 
+	// The isInvolved closure returns true if the reporter of a reject is
+	// somehow involved in a matched order pair. This is the case if the
+	// reporter is the asker, the bidder or the recipient of a sidecar
+	// channel.
+	isInvolved := func(pair matching.MatchedOrder) bool {
+		isSidecar := pair.Details.Bid.IsSidecar
+		recipientKey := pair.Details.Bid.MultiSigKey
+		return pair.Asker.AccountKey == reporter ||
+			pair.Bidder.AccountKey == reporter ||
+			(isSidecar && recipientKey == reporter)
+	}
+
 	// The executor gets de-multiplexed messages from the RPC. That means if
 	// a trader daemon has multiple accounts, we get the same message for
 	// all those accounts. We first need to make sure the reporter is even
 	// involved in the batch. If not, we simply skip adding an entry.
 	var involvedOrders []matching.MatchedOrder
 	for _, orderPair := range env.exeCtx.OrderBatch.Orders {
-		if orderPair.Asker.AccountKey == reporter ||
-			orderPair.Bidder.AccountKey == reporter {
-
+		if isInvolved(orderPair) {
 			involvedOrders = append(involvedOrders, orderPair)
 		}
 	}
@@ -1085,7 +1188,8 @@ func (b *BatchExecutor) handlePartialReject(msg *TraderPartialRejectMsg,
 		PartialRejects: msg.Orders,
 	}
 
-	log.Debugf("Trader %x rejected orders %v", msg.Src(), spew.Sdump(msg.Orders))
+	log.Debugf("Trader %x rejected orders %v", msg.Src(),
+		spew.Sdump(msg.Orders))
 }
 
 // executor is the primary goroutine of the BatchExecutor. It accepts new
@@ -1294,6 +1398,15 @@ func (b *BatchExecutor) syncTraderState(
 	// recent batch? for account updates send them to the executor
 	refreshed := make(map[matching.AccountID]*ActiveTrader, len(activeTraders))
 	for acctID, trader := range activeTraders {
+		// We don't refresh sidecar traders as they don't have an
+		// account state themselves so there's nothing to load from the
+		// database.
+		if trader.IsSidecar {
+			refreshed[acctID] = trader
+
+			continue
+		}
+
 		acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
 		if err != nil {
 			return nil, err

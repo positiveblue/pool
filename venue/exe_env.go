@@ -78,6 +78,17 @@ type environment struct {
 	// NOTE: This will only be set after the NoActiveBatch state.
 	traders map[matching.AccountID]*ActiveTrader
 
+	// sidecarTraders is a map that tracks all recipient clients that
+	// subscribed for receiving sidecar channels. The map is keyed by the
+	// account ID which in the sidecar channel case is the channel funding
+	// multisig key of the recipient.
+	sidecarTraders map[matching.AccountID]*ActiveTrader
+
+	// sidecarOrders keeps track of all orders in which sidecar channels are
+	// involved. The value is the account ID (channel funding multisig key)
+	// of the sidecar recipient.
+	sidecarOrders map[orderT.Nonce]matching.AccountID
+
 	// traderToOrders maps the account ID of a trader to all the orders
 	// that involve this trader. We'll use this to instruct a caller to
 	// remove all orders by a trader due to an error.
@@ -98,6 +109,14 @@ type environment struct {
 	//
 	// NOTE: This will only be set after the BatchSigning state.
 	matchingChanTrader map[wire.OutPoint]traderChannelInfo
+
+	// chanInfoComplete tracks whether the channel information was submitted
+	// completely and is valid for both traders. We can no longer just look
+	// at the witnesses since for sidecar orders the account witness and the
+	// channel funding information are submitted by two different traders.
+	//
+	// NOTE: This will only be set after the BatchSigning state.
+	chanInfoComplete map[wire.OutPoint]struct{}
 
 	// lifetimePkgs contains the service level enforcement package for each
 	// channel created as a result of the batch.
@@ -129,9 +148,12 @@ func newEnvironment(newBatch *executionReq,
 		exeCtx:             newBatch.exeCtx,
 		resultChan:         newBatch.Result,
 		traders:            make(map[matching.AccountID]*ActiveTrader),
+		sidecarTraders:     make(map[matching.AccountID]*ActiveTrader),
+		sidecarOrders:      make(map[orderT.Nonce]matching.AccountID),
 		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
 		acctWitnesses:      make(map[int]wire.TxWitness),
 		matchingChanTrader: make(map[wire.OutPoint]traderChannelInfo),
+		chanInfoComplete:   make(map[wire.OutPoint]struct{}),
 		rejectingTraders:   make(map[matching.AccountID]*OrderRejectMap),
 		msgTimers:          stallTimers,
 		quit:               make(chan struct{}),
@@ -159,8 +181,9 @@ func (e *environment) cancel() {
 func (e *environment) sendPrepareMsg() error {
 	accountDiffs := e.exeCtx.OrderBatch.FeeReport.AccountDiffs
 
+	numTraders := len(e.traders) + len(e.sidecarTraders)
 	log.Infof("Sending OrderMatchPrepare to %v traders for batch=%x",
-		len(e.traders), e.exeCtx.BatchID[:])
+		numTraders, e.exeCtx.BatchID[:])
 
 	// Each prepare message includes the fully serialized batch
 	// transaction, so we'll encode this first before we proceed.
@@ -185,7 +208,14 @@ func (e *environment) sendPrepareMsg() error {
 	// ones. So we don't fully know what durations to create sub maps for.
 	// That's why we just go ahead and create them for all durations, even
 	// if some of them won't be filled with orders.
-	for _, trader := range e.traders {
+	allTraders := make(map[matching.AccountID]*ActiveTrader, numTraders)
+	for acctID, trader := range e.traders {
+		allTraders[acctID] = trader
+	}
+	for acctID, trader := range e.sidecarTraders {
+		allTraders[acctID] = trader
+	}
+	for _, trader := range allTraders {
 		// Multiple traders can have the same token ID (meaning they
 		// belong to the same trader daemon). We'll only create and send
 		// one message per daemon (=one token).
@@ -274,6 +304,44 @@ func (e *environment) sendPrepareMsg() error {
 		}
 	}
 
+	// Prepare the messages for the sidecar receivers as well.
+	for _, trader := range e.sidecarTraders {
+		msg := msgs[trader.TokenID]
+		traderKey := trader.AccountKey
+
+		// For any sidecar trader, we'll also filter out all the orders
+		// that it belongs to, and also update our map tracking the
+		// order for each trader.
+		for duration, subBatch := range batch.SubBatches {
+			matchedOrders := msg.matchedOrders[duration]
+			for _, o := range subBatch {
+				o := o
+				bid := o.Details.Bid
+
+				// A sidecar order recipient authenticates with
+				// the channel multisig key as their "account"
+				// key towards the auctioneer. This is how we
+				// can identify the orders they are meant to
+				// receive the channel for.
+				if !bid.IsSidecar || bid.MultiSigKey != traderKey {
+					continue
+				}
+
+				orderNonce := bid.Nonce()
+				matchedOrders[orderNonce] = append(
+					matchedOrders[orderNonce], &o,
+				)
+
+				e.traderToOrders[traderKey] = append(
+					e.traderToOrders[traderKey], orderNonce,
+				)
+			}
+
+			msg.matchedOrders[duration] = matchedOrders
+			msg.clearingPrices[duration] = batch.ClearingPrices[duration]
+		}
+	}
+
 	// Send out the batched messages now.
 	for _, msg := range msgs {
 		select {
@@ -299,7 +367,7 @@ func (e *environment) sendPrepareMsg() error {
 // sendSignBeginMsg sends the SignBeginMsg to all active traders.
 func (e *environment) sendSignBeginMsg() error {
 	log.Infof("Sending OrderSignBegin to %v traders for batch=%x",
-		len(e.traders), e.exeCtx.BatchID[:])
+		len(e.traders)+len(e.sidecarTraders), e.exeCtx.BatchID[:])
 
 	// What the venue sees as a trader is only one account of a trader's
 	// daemon that might manage multiple accounts. The sign message must
@@ -308,6 +376,9 @@ func (e *environment) sendSignBeginMsg() error {
 	// "traders") belong together, we can use the LSAT ID.
 	msgs := make(map[lsat.TokenID]*DuplexLine)
 	for _, trader := range e.traders {
+		msgs[trader.TokenID] = trader.CommLine
+	}
+	for _, trader := range e.sidecarTraders {
 		msgs[trader.TokenID] = trader.CommLine
 	}
 
@@ -327,7 +398,7 @@ func (e *environment) sendSignBeginMsg() error {
 // sendFinalizeMsg sends the finalize message to all active traders.
 func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 	log.Infof("Sending Finalize to %v traders for batch=%x",
-		len(e.traders), e.exeCtx.BatchID[:])
+		len(e.traders)+len(e.sidecarTraders), e.exeCtx.BatchID[:])
 
 	// What the venue sees as a trader is only one account of a trader's
 	// daemon that might manage multiple accounts. The finalize message must
@@ -336,6 +407,9 @@ func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 	// "traders") belong together, we can use the LSAT ID.
 	msgs := make(map[lsat.TokenID]*DuplexLine)
 	for _, trader := range e.traders {
+		msgs[trader.TokenID] = trader.CommLine
+	}
+	for _, trader := range e.sidecarTraders {
 		msgs[trader.TokenID] = trader.CommLine
 	}
 
@@ -448,12 +522,18 @@ func (e *environment) validateChanInfo(trader matching.AccountID,
 	}
 	e.lifetimePkgs = append(e.lifetimePkgs, lifetimePkg)
 
+	// We have everything we need when it comes to the channel info as both
+	// traders have now submitted them.
+	e.chanInfoComplete[chanOutput.OutPoint] = struct{}{}
+
 	return nil
 }
 
 // traderPartOfBatch returns true if the passed pubkey belongs to a trader
 // that's a part of the batch.
 func (e *environment) traderPartOfBatch(trader matching.AccountID) bool {
-	_, ok := e.traders[trader]
-	return ok
+	_, normalTrader := e.traders[trader]
+	_, sidecarTrader := e.sidecarTraders[trader]
+
+	return normalTrader || sidecarTrader
 }
