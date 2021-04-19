@@ -510,6 +510,30 @@ func NewServer(cfg *Config) (*Server, error) {
 		auctioneerServer.grpcServer, auctioneerServer,
 	)
 
+	hashMailServer := newHashMailServer(hashMailServerConfig{
+		IsAccountActive: func(ctx context.Context,
+			acctKey *btcec.PublicKey) bool {
+
+			acct, err := store.Account(ctx, acctKey, false)
+			if err != nil {
+				return false
+			}
+
+			switch acct.State {
+			case account.StatePendingUpdate,
+				account.StatePendingBatch, account.StateOpen:
+
+				return true
+			default:
+				return false
+			}
+		},
+		Signer: lnd.Signer,
+	})
+	auctioneerrpc.RegisterHashMailServer(
+		auctioneerServer.grpcServer, hashMailServer,
+	)
+
 	// Finally, create our admin RPC that is by default only exposed on the
 	// local loopback interface.
 	log.Infof("Starting admin gRPC listener")

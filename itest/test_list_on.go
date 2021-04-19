@@ -104,4 +104,9 @@ var testCases = []*testCase{
 		name: "sidecar channels reject min chan size",
 		test: testSidecarChannelsRejectMinChanSize,
 	},
+
+	{
+		name: "hashmail server",
+		test: testHashMailServer,
+	},
 }
