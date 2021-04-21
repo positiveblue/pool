@@ -475,7 +475,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 	}
 
 	var rawTraderKey [33]byte
-	copy(rawTraderKey[:], req.TraderKey)
+	copy(rawTraderKey[:], traderKey.SerializeCompressed())
 
 	// Consult with the auctioneer whether an account update should be
 	// allowed at the moment as it may interfere with an ongoing batch.
