@@ -252,6 +252,10 @@ func (h *hashMailServer) ValidateStreamInit(ctx context.Context,
 	// presented with a ticket hat was signed by an existing active Pool
 	// account.
 	switch {
+	// Only a single auth method can be used.
+	case init.GetAcctAuth() != nil && init.GetSidecarAuth() != nil:
+		return fmt.Errorf("only a single auth method is accepted")
+
 	// In this case we need to validate that the account exists, and
 	// the sig under the stream ID is valid.
 	case init.GetAcctAuth() != nil:
