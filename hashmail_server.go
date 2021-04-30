@@ -189,7 +189,7 @@ func (s *stream) RequestReadStream() (*readStream, error) {
 	select {
 	case r := <-s.readStreamChan:
 		return r, nil
-	case <-time.After(leaseTimeout):
+	default:
 		return nil, fmt.Errorf("read stream occupied")
 	}
 }
@@ -203,8 +203,8 @@ func (s *stream) RequestWriteStream() (*writeStream, error) {
 	select {
 	case w := <-s.writeStreamChan:
 		return w, nil
-	case <-time.After(leaseTimeout):
-		return nil, fmt.Errorf("read stream occupied")
+	default:
+		return nil, fmt.Errorf("write stream occupied")
 	}
 }
 
