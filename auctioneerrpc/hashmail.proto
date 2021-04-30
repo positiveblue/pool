@@ -20,7 +20,14 @@ service HashMail {
     or needs to be changed, then a CipherChallenge message is returned.
     Otherwise the method will either be accepted or rejected.
     */
-    rpc NewCipherBox (CipherBoxInit) returns (CipherInitResp);
+    rpc NewCipherBox (CipherBoxAuth) returns (CipherInitResp);
+
+    /*
+    DelCipherBox attempts to tear down an existing cipher box pipe. The same
+    authentication mechanism used to initially create the stream MUST be
+    specified.
+    */
+    rpc DelCipherBox (CipherBoxAuth) returns (DelCipherBoxResp);
 
     /*
     SendStream opens up the write side of the passed CipherBox pipe. Writes
@@ -53,7 +60,7 @@ message SidecarAuth {
     string ticket = 1;
 }
 
-message CipherBoxInit {
+message CipherBoxAuth {
     // A description of the stream one is attempting to initialize.
     CipherBoxDesc desc = 1;
 
@@ -62,6 +69,9 @@ message CipherBoxInit {
 
         SidecarAuth sidecar_auth = 3;
     }
+}
+
+message DelCipherBoxResp {
 }
 
 message CipherChallenge {

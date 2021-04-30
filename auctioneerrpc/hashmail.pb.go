@@ -141,7 +141,7 @@ func (x *SidecarAuth) GetTicket() string {
 	return ""
 }
 
-type CipherBoxInit struct {
+type CipherBoxAuth struct {
 	state         protoimpl.MessageState
 	sizeCache     protoimpl.SizeCache
 	unknownFields protoimpl.UnknownFields
@@ -149,13 +149,13 @@ type CipherBoxInit struct {
 	// A description of the stream one is attempting to initialize.
 	Desc *CipherBoxDesc `protobuf:"bytes,1,opt,name=desc,proto3" json:"desc,omitempty"`
 	// Types that are assignable to Auth:
-	//	*CipherBoxInit_AcctAuth
-	//	*CipherBoxInit_SidecarAuth
-	Auth isCipherBoxInit_Auth `protobuf_oneof:"auth"`
+	//	*CipherBoxAuth_AcctAuth
+	//	*CipherBoxAuth_SidecarAuth
+	Auth isCipherBoxAuth_Auth `protobuf_oneof:"auth"`
 }
 
-func (x *CipherBoxInit) Reset() {
-	*x = CipherBoxInit{}
+func (x *CipherBoxAuth) Reset() {
+	*x = CipherBoxAuth{}
 	if protoimpl.UnsafeEnabled {
 		mi := &file_hashmail_proto_msgTypes[2]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -163,13 +163,13 @@ func (x *CipherBoxInit) Reset() {
 	}
 }
 
-func (x *CipherBoxInit) String() string {
+func (x *CipherBoxAuth) String() string {
 	return protoimpl.X.MessageStringOf(x)
 }
 
-func (*CipherBoxInit) ProtoMessage() {}
+func (*CipherBoxAuth) ProtoMessage() {}
 
-func (x *CipherBoxInit) ProtoReflect() protoreflect.Message {
+func (x *CipherBoxAuth) ProtoReflect() protoreflect.Message {
 	mi := &file_hashmail_proto_msgTypes[2]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
@@ -181,54 +181,92 @@ func (x *CipherBoxInit) ProtoReflect() protoreflect.Message {
 	return mi.MessageOf(x)
 }
 
-// Deprecated: Use CipherBoxInit.ProtoReflect.Descriptor instead.
-func (*CipherBoxInit) Descriptor() ([]byte, []int) {
+// Deprecated: Use CipherBoxAuth.ProtoReflect.Descriptor instead.
+func (*CipherBoxAuth) Descriptor() ([]byte, []int) {
 	return file_hashmail_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *CipherBoxInit) GetDesc() *CipherBoxDesc {
+func (x *CipherBoxAuth) GetDesc() *CipherBoxDesc {
 	if x != nil {
 		return x.Desc
 	}
 	return nil
 }
 
-func (m *CipherBoxInit) GetAuth() isCipherBoxInit_Auth {
+func (m *CipherBoxAuth) GetAuth() isCipherBoxAuth_Auth {
 	if m != nil {
 		return m.Auth
 	}
 	return nil
 }
 
-func (x *CipherBoxInit) GetAcctAuth() *PoolAccountAuth {
-	if x, ok := x.GetAuth().(*CipherBoxInit_AcctAuth); ok {
+func (x *CipherBoxAuth) GetAcctAuth() *PoolAccountAuth {
+	if x, ok := x.GetAuth().(*CipherBoxAuth_AcctAuth); ok {
 		return x.AcctAuth
 	}
 	return nil
 }
 
-func (x *CipherBoxInit) GetSidecarAuth() *SidecarAuth {
-	if x, ok := x.GetAuth().(*CipherBoxInit_SidecarAuth); ok {
+func (x *CipherBoxAuth) GetSidecarAuth() *SidecarAuth {
+	if x, ok := x.GetAuth().(*CipherBoxAuth_SidecarAuth); ok {
 		return x.SidecarAuth
 	}
 	return nil
 }
 
-type isCipherBoxInit_Auth interface {
-	isCipherBoxInit_Auth()
+type isCipherBoxAuth_Auth interface {
+	isCipherBoxAuth_Auth()
 }
 
-type CipherBoxInit_AcctAuth struct {
+type CipherBoxAuth_AcctAuth struct {
 	AcctAuth *PoolAccountAuth `protobuf:"bytes,2,opt,name=acct_auth,json=acctAuth,proto3,oneof"`
 }
 
-type CipherBoxInit_SidecarAuth struct {
+type CipherBoxAuth_SidecarAuth struct {
 	SidecarAuth *SidecarAuth `protobuf:"bytes,3,opt,name=sidecar_auth,json=sidecarAuth,proto3,oneof"`
 }
 
-func (*CipherBoxInit_AcctAuth) isCipherBoxInit_Auth() {}
+func (*CipherBoxAuth_AcctAuth) isCipherBoxAuth_Auth() {}
 
-func (*CipherBoxInit_SidecarAuth) isCipherBoxInit_Auth() {}
+func (*CipherBoxAuth_SidecarAuth) isCipherBoxAuth_Auth() {}
+
+type DelCipherBoxResp struct {
+	state         protoimpl.MessageState
+	sizeCache     protoimpl.SizeCache
+	unknownFields protoimpl.UnknownFields
+}
+
+func (x *DelCipherBoxResp) Reset() {
+	*x = DelCipherBoxResp{}
+	if protoimpl.UnsafeEnabled {
+		mi := &file_hashmail_proto_msgTypes[3]
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		ms.StoreMessageInfo(mi)
+	}
+}
+
+func (x *DelCipherBoxResp) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*DelCipherBoxResp) ProtoMessage() {}
+
+func (x *DelCipherBoxResp) ProtoReflect() protoreflect.Message {
+	mi := &file_hashmail_proto_msgTypes[3]
+	if protoimpl.UnsafeEnabled && x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use DelCipherBoxResp.ProtoReflect.Descriptor instead.
+func (*DelCipherBoxResp) Descriptor() ([]byte, []int) {
+	return file_hashmail_proto_rawDescGZIP(), []int{3}
+}
 
 type CipherChallenge struct {
 	state         protoimpl.MessageState
@@ -239,7 +277,7 @@ type CipherChallenge struct {
 func (x *CipherChallenge) Reset() {
 	*x = CipherChallenge{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hashmail_proto_msgTypes[3]
+		mi := &file_hashmail_proto_msgTypes[4]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -252,7 +290,7 @@ func (x *CipherChallenge) String() string {
 func (*CipherChallenge) ProtoMessage() {}
 
 func (x *CipherChallenge) ProtoReflect() protoreflect.Message {
-	mi := &file_hashmail_proto_msgTypes[3]
+	mi := &file_hashmail_proto_msgTypes[4]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -265,7 +303,7 @@ func (x *CipherChallenge) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CipherChallenge.ProtoReflect.Descriptor instead.
 func (*CipherChallenge) Descriptor() ([]byte, []int) {
-	return file_hashmail_proto_rawDescGZIP(), []int{3}
+	return file_hashmail_proto_rawDescGZIP(), []int{4}
 }
 
 type CipherError struct {
@@ -277,7 +315,7 @@ type CipherError struct {
 func (x *CipherError) Reset() {
 	*x = CipherError{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hashmail_proto_msgTypes[4]
+		mi := &file_hashmail_proto_msgTypes[5]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -290,7 +328,7 @@ func (x *CipherError) String() string {
 func (*CipherError) ProtoMessage() {}
 
 func (x *CipherError) ProtoReflect() protoreflect.Message {
-	mi := &file_hashmail_proto_msgTypes[4]
+	mi := &file_hashmail_proto_msgTypes[5]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -303,7 +341,7 @@ func (x *CipherError) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CipherError.ProtoReflect.Descriptor instead.
 func (*CipherError) Descriptor() ([]byte, []int) {
-	return file_hashmail_proto_rawDescGZIP(), []int{4}
+	return file_hashmail_proto_rawDescGZIP(), []int{5}
 }
 
 type CipherSuccess struct {
@@ -317,7 +355,7 @@ type CipherSuccess struct {
 func (x *CipherSuccess) Reset() {
 	*x = CipherSuccess{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hashmail_proto_msgTypes[5]
+		mi := &file_hashmail_proto_msgTypes[6]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -330,7 +368,7 @@ func (x *CipherSuccess) String() string {
 func (*CipherSuccess) ProtoMessage() {}
 
 func (x *CipherSuccess) ProtoReflect() protoreflect.Message {
-	mi := &file_hashmail_proto_msgTypes[5]
+	mi := &file_hashmail_proto_msgTypes[6]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -343,7 +381,7 @@ func (x *CipherSuccess) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CipherSuccess.ProtoReflect.Descriptor instead.
 func (*CipherSuccess) Descriptor() ([]byte, []int) {
-	return file_hashmail_proto_rawDescGZIP(), []int{5}
+	return file_hashmail_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CipherSuccess) GetDesc() *CipherBoxDesc {
@@ -368,7 +406,7 @@ type CipherInitResp struct {
 func (x *CipherInitResp) Reset() {
 	*x = CipherInitResp{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hashmail_proto_msgTypes[6]
+		mi := &file_hashmail_proto_msgTypes[7]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -381,7 +419,7 @@ func (x *CipherInitResp) String() string {
 func (*CipherInitResp) ProtoMessage() {}
 
 func (x *CipherInitResp) ProtoReflect() protoreflect.Message {
-	mi := &file_hashmail_proto_msgTypes[6]
+	mi := &file_hashmail_proto_msgTypes[7]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -394,7 +432,7 @@ func (x *CipherInitResp) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CipherInitResp.ProtoReflect.Descriptor instead.
 func (*CipherInitResp) Descriptor() ([]byte, []int) {
-	return file_hashmail_proto_rawDescGZIP(), []int{6}
+	return file_hashmail_proto_rawDescGZIP(), []int{7}
 }
 
 func (m *CipherInitResp) GetResp() isCipherInitResp_Resp {
@@ -467,7 +505,7 @@ type CipherBoxDesc struct {
 func (x *CipherBoxDesc) Reset() {
 	*x = CipherBoxDesc{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hashmail_proto_msgTypes[7]
+		mi := &file_hashmail_proto_msgTypes[8]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -480,7 +518,7 @@ func (x *CipherBoxDesc) String() string {
 func (*CipherBoxDesc) ProtoMessage() {}
 
 func (x *CipherBoxDesc) ProtoReflect() protoreflect.Message {
-	mi := &file_hashmail_proto_msgTypes[7]
+	mi := &file_hashmail_proto_msgTypes[8]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -493,7 +531,7 @@ func (x *CipherBoxDesc) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CipherBoxDesc.ProtoReflect.Descriptor instead.
 func (*CipherBoxDesc) Descriptor() ([]byte, []int) {
-	return file_hashmail_proto_rawDescGZIP(), []int{7}
+	return file_hashmail_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *CipherBoxDesc) GetStreamId() []byte {
@@ -515,7 +553,7 @@ type CipherBox struct {
 func (x *CipherBox) Reset() {
 	*x = CipherBox{}
 	if protoimpl.UnsafeEnabled {
-		mi := &file_hashmail_proto_msgTypes[8]
+		mi := &file_hashmail_proto_msgTypes[9]
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		ms.StoreMessageInfo(mi)
 	}
@@ -528,7 +566,7 @@ func (x *CipherBox) String() string {
 func (*CipherBox) ProtoMessage() {}
 
 func (x *CipherBox) ProtoReflect() protoreflect.Message {
-	mi := &file_hashmail_proto_msgTypes[8]
+	mi := &file_hashmail_proto_msgTypes[9]
 	if protoimpl.UnsafeEnabled && x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -541,7 +579,7 @@ func (x *CipherBox) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CipherBox.ProtoReflect.Descriptor instead.
 func (*CipherBox) Descriptor() ([]byte, []int) {
-	return file_hashmail_proto_rawDescGZIP(), []int{8}
+	return file_hashmail_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *CipherBox) GetDesc() *CipherBoxDesc {
@@ -570,7 +608,7 @@ var file_hashmail_proto_rawDesc = []byte{
 	0x65, 0x61, 0x6d, 0x53, 0x69, 0x67, 0x22, 0x25, 0x0a, 0x0b, 0x53, 0x69, 0x64, 0x65, 0x63, 0x61,
 	0x72, 0x41, 0x75, 0x74, 0x68, 0x12, 0x16, 0x0a, 0x06, 0x74, 0x69, 0x63, 0x6b, 0x65, 0x74, 0x18,
 	0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x06, 0x74, 0x69, 0x63, 0x6b, 0x65, 0x74, 0x22, 0xb7, 0x01,
-	0x0a, 0x0d, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x49, 0x6e, 0x69, 0x74, 0x12,
+	0x0a, 0x0d, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x41, 0x75, 0x74, 0x68, 0x12,
 	0x2a, 0x0a, 0x04, 0x64, 0x65, 0x73, 0x63, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e,
 	0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f,
 	0x78, 0x44, 0x65, 0x73, 0x63, 0x52, 0x04, 0x64, 0x65, 0x73, 0x63, 0x12, 0x37, 0x0a, 0x09, 0x61,
@@ -581,48 +619,53 @@ var file_hashmail_proto_rawDesc = []byte{
 	0x61, 0x75, 0x74, 0x68, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x70, 0x6f, 0x6f,
 	0x6c, 0x72, 0x70, 0x63, 0x2e, 0x53, 0x69, 0x64, 0x65, 0x63, 0x61, 0x72, 0x41, 0x75, 0x74, 0x68,
 	0x48, 0x00, 0x52, 0x0b, 0x73, 0x69, 0x64, 0x65, 0x63, 0x61, 0x72, 0x41, 0x75, 0x74, 0x68, 0x42,
-	0x06, 0x0a, 0x04, 0x61, 0x75, 0x74, 0x68, 0x22, 0x11, 0x0a, 0x0f, 0x43, 0x69, 0x70, 0x68, 0x65,
-	0x72, 0x43, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x22, 0x0d, 0x0a, 0x0b, 0x43, 0x69,
-	0x70, 0x68, 0x65, 0x72, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x22, 0x3b, 0x0a, 0x0d, 0x43, 0x69, 0x70,
-	0x68, 0x65, 0x72, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x2a, 0x0a, 0x04, 0x64, 0x65,
-	0x73, 0x63, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72,
-	0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65, 0x73, 0x63,
-	0x52, 0x04, 0x64, 0x65, 0x73, 0x63, 0x22, 0xb4, 0x01, 0x0a, 0x0e, 0x43, 0x69, 0x70, 0x68, 0x65,
-	0x72, 0x49, 0x6e, 0x69, 0x74, 0x52, 0x65, 0x73, 0x70, 0x12, 0x32, 0x0a, 0x07, 0x73, 0x75, 0x63,
-	0x63, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x70, 0x6f, 0x6f,
-	0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x53, 0x75, 0x63, 0x63, 0x65,
-	0x73, 0x73, 0x48, 0x00, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x38, 0x0a,
-	0x09, 0x63, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x0b,
-	0x32, 0x18, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65,
-	0x72, 0x43, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x48, 0x00, 0x52, 0x09, 0x63, 0x68,
-	0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x12, 0x2c, 0x0a, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72,
-	0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63,
-	0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x48, 0x00, 0x52, 0x05,
-	0x65, 0x72, 0x72, 0x6f, 0x72, 0x42, 0x06, 0x0a, 0x04, 0x72, 0x65, 0x73, 0x70, 0x22, 0x2c, 0x0a,
-	0x0d, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65, 0x73, 0x63, 0x12, 0x1b,
-	0x0a, 0x09, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18, 0x01, 0x20, 0x01, 0x28,
-	0x0c, 0x52, 0x08, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x49, 0x64, 0x22, 0x49, 0x0a, 0x09, 0x43,
-	0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x12, 0x2a, 0x0a, 0x04, 0x64, 0x65, 0x73, 0x63,
-	0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63,
-	0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65, 0x73, 0x63, 0x52, 0x04,
-	0x64, 0x65, 0x73, 0x63, 0x12, 0x10, 0x0a, 0x03, 0x6d, 0x73, 0x67, 0x18, 0x02, 0x20, 0x01, 0x28,
-	0x0c, 0x52, 0x03, 0x6d, 0x73, 0x67, 0x32, 0xc3, 0x01, 0x0a, 0x08, 0x48, 0x61, 0x73, 0x68, 0x4d,
-	0x61, 0x69, 0x6c, 0x12, 0x3f, 0x0a, 0x0c, 0x4e, 0x65, 0x77, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72,
-	0x42, 0x6f, 0x78, 0x12, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69,
-	0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x49, 0x6e, 0x69, 0x74, 0x1a, 0x17, 0x2e, 0x70, 0x6f,
-	0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x49, 0x6e, 0x69, 0x74,
-	0x52, 0x65, 0x73, 0x70, 0x12, 0x3a, 0x0a, 0x0a, 0x53, 0x65, 0x6e, 0x64, 0x53, 0x74, 0x72, 0x65,
-	0x61, 0x6d, 0x12, 0x12, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70,
-	0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x1a, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63,
-	0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65, 0x73, 0x63, 0x28, 0x01,
-	0x12, 0x3a, 0x0a, 0x0a, 0x52, 0x65, 0x63, 0x76, 0x53, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x12, 0x16,
-	0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42,
-	0x6f, 0x78, 0x44, 0x65, 0x73, 0x63, 0x1a, 0x12, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63,
-	0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x30, 0x01, 0x42, 0x2d, 0x5a, 0x2b,
-	0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68, 0x74,
-	0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73, 0x2f, 0x70, 0x6f, 0x6f, 0x6c, 0x2f, 0x61, 0x75,
-	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x65, 0x65, 0x72, 0x72, 0x70, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f,
-	0x74, 0x6f, 0x33,
+	0x06, 0x0a, 0x04, 0x61, 0x75, 0x74, 0x68, 0x22, 0x12, 0x0a, 0x10, 0x44, 0x65, 0x6c, 0x43, 0x69,
+	0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x52, 0x65, 0x73, 0x70, 0x22, 0x11, 0x0a, 0x0f, 0x43,
+	0x69, 0x70, 0x68, 0x65, 0x72, 0x43, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x22, 0x0d,
+	0x0a, 0x0b, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x45, 0x72, 0x72, 0x6f, 0x72, 0x22, 0x3b, 0x0a,
+	0x0d, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x53, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x12, 0x2a,
+	0x0a, 0x04, 0x64, 0x65, 0x73, 0x63, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x70,
+	0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78,
+	0x44, 0x65, 0x73, 0x63, 0x52, 0x04, 0x64, 0x65, 0x73, 0x63, 0x22, 0xb4, 0x01, 0x0a, 0x0e, 0x43,
+	0x69, 0x70, 0x68, 0x65, 0x72, 0x49, 0x6e, 0x69, 0x74, 0x52, 0x65, 0x73, 0x70, 0x12, 0x32, 0x0a,
+	0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16,
+	0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x53,
+	0x75, 0x63, 0x63, 0x65, 0x73, 0x73, 0x48, 0x00, 0x52, 0x07, 0x73, 0x75, 0x63, 0x63, 0x65, 0x73,
+	0x73, 0x12, 0x38, 0x0a, 0x09, 0x63, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x18, 0x02,
+	0x20, 0x01, 0x28, 0x0b, 0x32, 0x18, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43,
+	0x69, 0x70, 0x68, 0x65, 0x72, 0x43, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x48, 0x00,
+	0x52, 0x09, 0x63, 0x68, 0x61, 0x6c, 0x6c, 0x65, 0x6e, 0x67, 0x65, 0x12, 0x2c, 0x0a, 0x05, 0x65,
+	0x72, 0x72, 0x6f, 0x72, 0x18, 0x03, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x14, 0x2e, 0x70, 0x6f, 0x6f,
+	0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x45, 0x72, 0x72, 0x6f, 0x72,
+	0x48, 0x00, 0x52, 0x05, 0x65, 0x72, 0x72, 0x6f, 0x72, 0x42, 0x06, 0x0a, 0x04, 0x72, 0x65, 0x73,
+	0x70, 0x22, 0x2c, 0x0a, 0x0d, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65,
+	0x73, 0x63, 0x12, 0x1b, 0x0a, 0x09, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x5f, 0x69, 0x64, 0x18,
+	0x01, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x08, 0x73, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x49, 0x64, 0x22,
+	0x49, 0x0a, 0x09, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x12, 0x2a, 0x0a, 0x04,
+	0x64, 0x65, 0x73, 0x63, 0x18, 0x01, 0x20, 0x01, 0x28, 0x0b, 0x32, 0x16, 0x2e, 0x70, 0x6f, 0x6f,
+	0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65,
+	0x73, 0x63, 0x52, 0x04, 0x64, 0x65, 0x73, 0x63, 0x12, 0x10, 0x0a, 0x03, 0x6d, 0x73, 0x67, 0x18,
+	0x02, 0x20, 0x01, 0x28, 0x0c, 0x52, 0x03, 0x6d, 0x73, 0x67, 0x32, 0x86, 0x02, 0x0a, 0x08, 0x48,
+	0x61, 0x73, 0x68, 0x4d, 0x61, 0x69, 0x6c, 0x12, 0x3f, 0x0a, 0x0c, 0x4e, 0x65, 0x77, 0x43, 0x69,
+	0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x12, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70,
+	0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x41, 0x75, 0x74, 0x68, 0x1a,
+	0x17, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72,
+	0x49, 0x6e, 0x69, 0x74, 0x52, 0x65, 0x73, 0x70, 0x12, 0x41, 0x0a, 0x0c, 0x44, 0x65, 0x6c, 0x43,
+	0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x12, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72,
+	0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x41, 0x75, 0x74, 0x68,
+	0x1a, 0x19, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x44, 0x65, 0x6c, 0x43, 0x69,
+	0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x52, 0x65, 0x73, 0x70, 0x12, 0x3a, 0x0a, 0x0a, 0x53,
+	0x65, 0x6e, 0x64, 0x53, 0x74, 0x72, 0x65, 0x61, 0x6d, 0x12, 0x12, 0x2e, 0x70, 0x6f, 0x6f, 0x6c,
+	0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x1a, 0x16, 0x2e,
+	0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f,
+	0x78, 0x44, 0x65, 0x73, 0x63, 0x28, 0x01, 0x12, 0x3a, 0x0a, 0x0a, 0x52, 0x65, 0x63, 0x76, 0x53,
+	0x74, 0x72, 0x65, 0x61, 0x6d, 0x12, 0x16, 0x2e, 0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e,
+	0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f, 0x78, 0x44, 0x65, 0x73, 0x63, 0x1a, 0x12, 0x2e,
+	0x70, 0x6f, 0x6f, 0x6c, 0x72, 0x70, 0x63, 0x2e, 0x43, 0x69, 0x70, 0x68, 0x65, 0x72, 0x42, 0x6f,
+	0x78, 0x30, 0x01, 0x42, 0x2d, 0x5a, 0x2b, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f,
+	0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73, 0x2f,
+	0x70, 0x6f, 0x6f, 0x6c, 0x2f, 0x61, 0x75, 0x63, 0x74, 0x69, 0x6f, 0x6e, 0x65, 0x65, 0x72, 0x72,
+	0x70, 0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -637,35 +680,38 @@ func file_hashmail_proto_rawDescGZIP() []byte {
 	return file_hashmail_proto_rawDescData
 }
 
-var file_hashmail_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_hashmail_proto_msgTypes = make([]protoimpl.MessageInfo, 10)
 var file_hashmail_proto_goTypes = []interface{}{
-	(*PoolAccountAuth)(nil), // 0: poolrpc.PoolAccountAuth
-	(*SidecarAuth)(nil),     // 1: poolrpc.SidecarAuth
-	(*CipherBoxInit)(nil),   // 2: poolrpc.CipherBoxInit
-	(*CipherChallenge)(nil), // 3: poolrpc.CipherChallenge
-	(*CipherError)(nil),     // 4: poolrpc.CipherError
-	(*CipherSuccess)(nil),   // 5: poolrpc.CipherSuccess
-	(*CipherInitResp)(nil),  // 6: poolrpc.CipherInitResp
-	(*CipherBoxDesc)(nil),   // 7: poolrpc.CipherBoxDesc
-	(*CipherBox)(nil),       // 8: poolrpc.CipherBox
+	(*PoolAccountAuth)(nil),  // 0: poolrpc.PoolAccountAuth
+	(*SidecarAuth)(nil),      // 1: poolrpc.SidecarAuth
+	(*CipherBoxAuth)(nil),    // 2: poolrpc.CipherBoxAuth
+	(*DelCipherBoxResp)(nil), // 3: poolrpc.DelCipherBoxResp
+	(*CipherChallenge)(nil),  // 4: poolrpc.CipherChallenge
+	(*CipherError)(nil),      // 5: poolrpc.CipherError
+	(*CipherSuccess)(nil),    // 6: poolrpc.CipherSuccess
+	(*CipherInitResp)(nil),   // 7: poolrpc.CipherInitResp
+	(*CipherBoxDesc)(nil),    // 8: poolrpc.CipherBoxDesc
+	(*CipherBox)(nil),        // 9: poolrpc.CipherBox
 }
 var file_hashmail_proto_depIdxs = []int32{
-	7,  // 0: poolrpc.CipherBoxInit.desc:type_name -> poolrpc.CipherBoxDesc
-	0,  // 1: poolrpc.CipherBoxInit.acct_auth:type_name -> poolrpc.PoolAccountAuth
-	1,  // 2: poolrpc.CipherBoxInit.sidecar_auth:type_name -> poolrpc.SidecarAuth
-	7,  // 3: poolrpc.CipherSuccess.desc:type_name -> poolrpc.CipherBoxDesc
-	5,  // 4: poolrpc.CipherInitResp.success:type_name -> poolrpc.CipherSuccess
-	3,  // 5: poolrpc.CipherInitResp.challenge:type_name -> poolrpc.CipherChallenge
-	4,  // 6: poolrpc.CipherInitResp.error:type_name -> poolrpc.CipherError
-	7,  // 7: poolrpc.CipherBox.desc:type_name -> poolrpc.CipherBoxDesc
-	2,  // 8: poolrpc.HashMail.NewCipherBox:input_type -> poolrpc.CipherBoxInit
-	8,  // 9: poolrpc.HashMail.SendStream:input_type -> poolrpc.CipherBox
-	7,  // 10: poolrpc.HashMail.RecvStream:input_type -> poolrpc.CipherBoxDesc
-	6,  // 11: poolrpc.HashMail.NewCipherBox:output_type -> poolrpc.CipherInitResp
-	7,  // 12: poolrpc.HashMail.SendStream:output_type -> poolrpc.CipherBoxDesc
-	8,  // 13: poolrpc.HashMail.RecvStream:output_type -> poolrpc.CipherBox
-	11, // [11:14] is the sub-list for method output_type
-	8,  // [8:11] is the sub-list for method input_type
+	8,  // 0: poolrpc.CipherBoxAuth.desc:type_name -> poolrpc.CipherBoxDesc
+	0,  // 1: poolrpc.CipherBoxAuth.acct_auth:type_name -> poolrpc.PoolAccountAuth
+	1,  // 2: poolrpc.CipherBoxAuth.sidecar_auth:type_name -> poolrpc.SidecarAuth
+	8,  // 3: poolrpc.CipherSuccess.desc:type_name -> poolrpc.CipherBoxDesc
+	6,  // 4: poolrpc.CipherInitResp.success:type_name -> poolrpc.CipherSuccess
+	4,  // 5: poolrpc.CipherInitResp.challenge:type_name -> poolrpc.CipherChallenge
+	5,  // 6: poolrpc.CipherInitResp.error:type_name -> poolrpc.CipherError
+	8,  // 7: poolrpc.CipherBox.desc:type_name -> poolrpc.CipherBoxDesc
+	2,  // 8: poolrpc.HashMail.NewCipherBox:input_type -> poolrpc.CipherBoxAuth
+	2,  // 9: poolrpc.HashMail.DelCipherBox:input_type -> poolrpc.CipherBoxAuth
+	9,  // 10: poolrpc.HashMail.SendStream:input_type -> poolrpc.CipherBox
+	8,  // 11: poolrpc.HashMail.RecvStream:input_type -> poolrpc.CipherBoxDesc
+	7,  // 12: poolrpc.HashMail.NewCipherBox:output_type -> poolrpc.CipherInitResp
+	3,  // 13: poolrpc.HashMail.DelCipherBox:output_type -> poolrpc.DelCipherBoxResp
+	8,  // 14: poolrpc.HashMail.SendStream:output_type -> poolrpc.CipherBoxDesc
+	9,  // 15: poolrpc.HashMail.RecvStream:output_type -> poolrpc.CipherBox
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
 	8,  // [8:8] is the sub-list for extension type_name
 	8,  // [8:8] is the sub-list for extension extendee
 	0,  // [0:8] is the sub-list for field type_name
@@ -702,7 +748,7 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[2].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CipherBoxInit); i {
+			switch v := v.(*CipherBoxAuth); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -714,7 +760,7 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[3].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CipherChallenge); i {
+			switch v := v.(*DelCipherBoxResp); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -726,7 +772,7 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[4].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CipherError); i {
+			switch v := v.(*CipherChallenge); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -738,7 +784,7 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[5].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CipherSuccess); i {
+			switch v := v.(*CipherError); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -750,7 +796,7 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[6].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CipherInitResp); i {
+			switch v := v.(*CipherSuccess); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -762,7 +808,7 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[7].Exporter = func(v interface{}, i int) interface{} {
-			switch v := v.(*CipherBoxDesc); i {
+			switch v := v.(*CipherInitResp); i {
 			case 0:
 				return &v.state
 			case 1:
@@ -774,6 +820,18 @@ func file_hashmail_proto_init() {
 			}
 		}
 		file_hashmail_proto_msgTypes[8].Exporter = func(v interface{}, i int) interface{} {
+			switch v := v.(*CipherBoxDesc); i {
+			case 0:
+				return &v.state
+			case 1:
+				return &v.sizeCache
+			case 2:
+				return &v.unknownFields
+			default:
+				return nil
+			}
+		}
+		file_hashmail_proto_msgTypes[9].Exporter = func(v interface{}, i int) interface{} {
 			switch v := v.(*CipherBox); i {
 			case 0:
 				return &v.state
@@ -787,10 +845,10 @@ func file_hashmail_proto_init() {
 		}
 	}
 	file_hashmail_proto_msgTypes[2].OneofWrappers = []interface{}{
-		(*CipherBoxInit_AcctAuth)(nil),
-		(*CipherBoxInit_SidecarAuth)(nil),
+		(*CipherBoxAuth_AcctAuth)(nil),
+		(*CipherBoxAuth_SidecarAuth)(nil),
 	}
-	file_hashmail_proto_msgTypes[6].OneofWrappers = []interface{}{
+	file_hashmail_proto_msgTypes[7].OneofWrappers = []interface{}{
 		(*CipherInitResp_Success)(nil),
 		(*CipherInitResp_Challenge)(nil),
 		(*CipherInitResp_Error)(nil),
@@ -801,7 +859,7 @@ func file_hashmail_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: file_hashmail_proto_rawDesc,
 			NumEnums:      0,
-			NumMessages:   9,
+			NumMessages:   10,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
@@ -832,7 +890,12 @@ type HashMailClient interface {
 	//authentication mechanism. If the authentication mechanism has been revoked,
 	//or needs to be changed, then a CipherChallenge message is returned.
 	//Otherwise the method will either be accepted or rejected.
-	NewCipherBox(ctx context.Context, in *CipherBoxInit, opts ...grpc.CallOption) (*CipherInitResp, error)
+	NewCipherBox(ctx context.Context, in *CipherBoxAuth, opts ...grpc.CallOption) (*CipherInitResp, error)
+	//
+	//DelCipherBox attempts to tear down an existing cipher box pipe. The same
+	//authentication mechanism used to initially create the stream MUST be
+	//specified.
+	DelCipherBox(ctx context.Context, in *CipherBoxAuth, opts ...grpc.CallOption) (*DelCipherBoxResp, error)
 	//
 	//SendStream opens up the write side of the passed CipherBox pipe. Writes
 	//will be non-blocking up to the buffer size of the pipe. Beyond that writes
@@ -853,9 +916,18 @@ func NewHashMailClient(cc grpc.ClientConnInterface) HashMailClient {
 	return &hashMailClient{cc}
 }
 
-func (c *hashMailClient) NewCipherBox(ctx context.Context, in *CipherBoxInit, opts ...grpc.CallOption) (*CipherInitResp, error) {
+func (c *hashMailClient) NewCipherBox(ctx context.Context, in *CipherBoxAuth, opts ...grpc.CallOption) (*CipherInitResp, error) {
 	out := new(CipherInitResp)
 	err := c.cc.Invoke(ctx, "/poolrpc.HashMail/NewCipherBox", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *hashMailClient) DelCipherBox(ctx context.Context, in *CipherBoxAuth, opts ...grpc.CallOption) (*DelCipherBoxResp, error) {
+	out := new(DelCipherBoxResp)
+	err := c.cc.Invoke(ctx, "/poolrpc.HashMail/DelCipherBox", in, out, opts...)
 	if err != nil {
 		return nil, err
 	}
@@ -935,7 +1007,12 @@ type HashMailServer interface {
 	//authentication mechanism. If the authentication mechanism has been revoked,
 	//or needs to be changed, then a CipherChallenge message is returned.
 	//Otherwise the method will either be accepted or rejected.
-	NewCipherBox(context.Context, *CipherBoxInit) (*CipherInitResp, error)
+	NewCipherBox(context.Context, *CipherBoxAuth) (*CipherInitResp, error)
+	//
+	//DelCipherBox attempts to tear down an existing cipher box pipe. The same
+	//authentication mechanism used to initially create the stream MUST be
+	//specified.
+	DelCipherBox(context.Context, *CipherBoxAuth) (*DelCipherBoxResp, error)
 	//
 	//SendStream opens up the write side of the passed CipherBox pipe. Writes
 	//will be non-blocking up to the buffer size of the pipe. Beyond that writes
@@ -952,8 +1029,11 @@ type HashMailServer interface {
 type UnimplementedHashMailServer struct {
 }
 
-func (*UnimplementedHashMailServer) NewCipherBox(context.Context, *CipherBoxInit) (*CipherInitResp, error) {
+func (*UnimplementedHashMailServer) NewCipherBox(context.Context, *CipherBoxAuth) (*CipherInitResp, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method NewCipherBox not implemented")
+}
+func (*UnimplementedHashMailServer) DelCipherBox(context.Context, *CipherBoxAuth) (*DelCipherBoxResp, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method DelCipherBox not implemented")
 }
 func (*UnimplementedHashMailServer) SendStream(HashMail_SendStreamServer) error {
 	return status.Errorf(codes.Unimplemented, "method SendStream not implemented")
@@ -967,7 +1047,7 @@ func RegisterHashMailServer(s *grpc.Server, srv HashMailServer) {
 }
 
 func _HashMail_NewCipherBox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(CipherBoxInit)
+	in := new(CipherBoxAuth)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -979,7 +1059,25 @@ func _HashMail_NewCipherBox_Handler(srv interface{}, ctx context.Context, dec fu
 		FullMethod: "/poolrpc.HashMail/NewCipherBox",
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(HashMailServer).NewCipherBox(ctx, req.(*CipherBoxInit))
+		return srv.(HashMailServer).NewCipherBox(ctx, req.(*CipherBoxAuth))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _HashMail_DelCipherBox_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CipherBoxAuth)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(HashMailServer).DelCipherBox(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/poolrpc.HashMail/DelCipherBox",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(HashMailServer).DelCipherBox(ctx, req.(*CipherBoxAuth))
 	}
 	return interceptor(ctx, in, info, handler)
 }
@@ -1038,6 +1136,10 @@ var _HashMail_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "NewCipherBox",
 			Handler:    _HashMail_NewCipherBox_Handler,
+		},
+		{
+			MethodName: "DelCipherBox",
+			Handler:    _HashMail_DelCipherBox_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

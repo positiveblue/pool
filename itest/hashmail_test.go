@@ -12,6 +12,8 @@ import (
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // testHashMailServer tests that the hash mail server implements a non-blocking
@@ -67,11 +69,11 @@ func testHashMailServer(t *harnessTest) {
 		}
 		pubKey := privKey.PubKey()
 
-		streamInit := &auctioneerrpc.CipherBoxInit{
+		streamInit := &auctioneerrpc.CipherBoxAuth{
 			Desc: &auctioneerrpc.CipherBoxDesc{
 				StreamId: streamID[:],
 			},
-			Auth: &auctioneerrpc.CipherBoxInit_AcctAuth{
+			Auth: &auctioneerrpc.CipherBoxAuth_AcctAuth{
 				AcctAuth: &auctioneerrpc.PoolAccountAuth{
 					AcctKey:   pubKey.SerializeCompressed(),
 					StreamSig: []byte{},
@@ -86,6 +88,7 @@ func testHashMailServer(t *harnessTest) {
 
 	// Next, we'll ensure that we're able to create a stream using a valid
 	// account auth.
+	var streamAuth *auctioneerrpc.CipherBoxAuth
 	t.t.Run("acct stream creation (pass)", func(tt *testing.T) {
 		// In order to create a valid authentication mode, we'll first
 		// sign the stream ID we created above.
@@ -103,18 +106,18 @@ func testHashMailServer(t *harnessTest) {
 		// We'll now attempt to initialize a new stream, this should
 		// pass validation as expected.
 		acctKey := aliceAcct.TraderKey
-		streamInit := &auctioneerrpc.CipherBoxInit{
+		streamAuth = &auctioneerrpc.CipherBoxAuth{
 			Desc: &auctioneerrpc.CipherBoxDesc{
 				StreamId: streamID[:],
 			},
-			Auth: &auctioneerrpc.CipherBoxInit_AcctAuth{
+			Auth: &auctioneerrpc.CipherBoxAuth_AcctAuth{
 				AcctAuth: &auctioneerrpc.PoolAccountAuth{
 					AcctKey:   acctKey,
 					StreamSig: streamSig.Signature,
 				},
 			},
 		}
-		streamDesc, err := mailClient.NewCipherBox(ctx, streamInit)
+		streamDesc, err := mailClient.NewCipherBox(ctx, streamAuth)
 		require.Nil(tt, err, "stream creation failed: %v", err)
 
 		// The response should be the success variant.
@@ -133,7 +136,7 @@ func testHashMailServer(t *harnessTest) {
 		require.Equal(tt, statusCode.Code(), codes.AlreadyExists)
 	})
 
-	// Now that we have the stream we'll attempt our first read anr write
+	// Now that we have the stream we'll attempt our first read and write
 	// attempt.
 	t.t.Run("acct stream read/write", func(tt *testing.T) {
 		// First, we'll obtain our read stream, if we try to obtain one
@@ -141,7 +144,8 @@ func testHashMailServer(t *harnessTest) {
 		streamDesc := &auctioneerrpc.CipherBoxDesc{
 			StreamId: streamID[:],
 		}
-		readStream, err := mailClient.RecvStream(ctx, streamDesc)
+		ctxC, cancel := context.WithCancel(ctx)
+		readStream, err := mailClient.RecvStream(ctxC, streamDesc)
 		require.Nil(tt, err, "unable to obtain read stream: %v", err)
 
 		// Give the server a chance to read out the message.
@@ -183,6 +187,7 @@ func testHashMailServer(t *harnessTest) {
 		require.Nil(tt, err, "empty write should proceed")
 		_, err = writeStream2.CloseAndRecv()
 		require.NotNil(tt, err, "write should've failed")
+		_ = writeStream2.CloseSend()
 
 		// We'll now close out the write stream to simulate a user
 		// hanging up, then attempt to read what was written from the
@@ -194,5 +199,28 @@ func testHashMailServer(t *harnessTest) {
 		readMsg, err := readStream.Recv()
 		require.Nil(tt, err, "unable to read msg: %v", err)
 		require.Equal(tt, msg, readMsg.Msg)
+
+		// Hang up the stream on the client-side.
+		cancel()
+	})
+
+	// Now we test stream deletion to ensure that after stream deletion the
+	// stream is garbage collected and unusable.
+	t.t.Run("stream del", func(tt *testing.T) {
+		// We should be able to tear down a stream using the proper
+		// authentication mechanism.
+		_, err := mailClient.DelCipherBox(ctx, streamAuth)
+		require.NoError(tt, err)
+
+		// At this point, if we try to read from the stream again, we
+		// should get an error.
+		streamDesc := &auctioneerrpc.CipherBoxDesc{
+			StreamId: streamID[:],
+		}
+		readStream, err := mailClient.RecvStream(ctx, streamDesc)
+		require.NoError(tt, err)
+
+		_, err = readStream.Recv()
+		require.Error(tt, err)
 	})
 }

@@ -2,6 +2,7 @@ package subasta
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -13,6 +14,8 @@ import (
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/sidecar"
 	"github.com/lightningnetwork/lnd/tlv"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // streamID is the identifier of a stream.
@@ -114,6 +117,18 @@ func (w *writeStream) ReturnStream() {
 	w.parentStream.ReturnWriteStream(w)
 }
 
+// authMethod is an enum that keeps track of the auth type used to initially
+// created a new cipher box.
+type authMethod uint8
+
+const (
+	// authAcct is the normal account auth.
+	authAcct authMethod = iota
+
+	// authSidecar represents authentication using a sidecar ticket.
+	authSidecar
+)
+
 // stream is a unique pipe implemented using a subscription server, and expose
 // over gRPC. Only a single writer and reader can exist within the stream at
 // any given time.
@@ -122,10 +137,24 @@ type stream struct {
 
 	readStreamChan  chan *readStream
 	writeStreamChan chan *writeStream
+
+	id streamID
+
+	// equivAuth is a method used to determine if an authentication
+	// mechanism to tear down a stream is equivalent to the one used to
+	// create it in the first place. WE use this to ensure that only the
+	// original creator of a stream can tear it down.
+	equivAuth func(auth *auctioneerrpc.CipherBoxAuth) error
+
+	tearDown func() error
+
+	wg sync.WaitGroup
 }
 
 // newStream creates a new stream independent of any given stream ID.
-func newStream() *stream {
+func newStream(id streamID,
+	equivAuth func(auth *auctioneerrpc.CipherBoxAuth) error) *stream {
+
 	// Our stream is actually just a plain io.Pipe. This allows us to avoid
 	// having to do things like rate limiting, etc as we can limit the
 	// buffer size. In order to allow non-blocking writes (up to the buffer
@@ -133,7 +162,30 @@ func newStream() *stream {
 	writeReadPipe, writeWritePipe := io.Pipe()
 	readReadPipe, readWritePipe := io.Pipe()
 
+	s := &stream{
+		readStreamChan:  make(chan *readStream, 1),
+		writeStreamChan: make(chan *writeStream, 1),
+		id:              id,
+		equivAuth:       equivAuth,
+	}
+
+	// Our tear down function will close the write side of the pipe, which
+	// will cause the goroutine below to get an EOF error when reading,
+	// which will cause it to close the other ends of the pipe.
+	s.tearDown = func() error {
+		err := writeWritePipe.Close()
+		if err != nil {
+			return err
+		}
+
+		s.wg.Wait()
+		return nil
+	}
+
+	s.wg.Add(1)
 	go func() {
+		defer s.wg.Done()
+
 		// Next, we'll launch a goroutine to copy over the bytes from
 		// the pipe the writer will write to into the pipe the reader
 		// will read from.
@@ -149,11 +201,6 @@ func newStream() *stream {
 		_ = readWritePipe.CloseWithError(err)
 		_ = writeReadPipe.CloseWithError(err)
 	}()
-
-	s := &stream{
-		readStreamChan:  make(chan *readStream, 1),
-		writeStreamChan: make(chan *writeStream, 1),
-	}
 
 	// We'll now initialize our stream by sending the read and write ends
 	// to their respective holding channels.
@@ -242,10 +289,10 @@ func newHashMailServer(cfg hashMailServerConfig) *hashMailServer {
 	}
 }
 
-// ValidateStreamInit attempts to validate the authentication mechanism that is
-// being used to claim a stream within the mail server.
-func (h *hashMailServer) ValidateStreamInit(ctx context.Context,
-	init *auctioneerrpc.CipherBoxInit) error {
+// ValidateStreamAuth attempts to validate the authentication mechanism that is
+// being used to claim or revoke a stream within the mail server.
+func (h *hashMailServer) ValidateStreamAuth(ctx context.Context,
+	init *auctioneerrpc.CipherBoxAuth) error {
 
 	// At this time we only support one of two validation mechanisms: the
 	// creator of the stream has an existing active Pool account, or we're
@@ -317,8 +364,19 @@ func (h *hashMailServer) ValidateStreamInit(ctx context.Context,
 	return nil
 }
 
+// rpcToAuthMethod maps the authentication type on the RPC level to our
+// internal auth type.
+func rpcToAuthMethod(auth *auctioneerrpc.CipherBoxAuth) authMethod {
+	authType := authAcct
+	if auth.GetSidecarAuth() != nil {
+		authType = authSidecar
+	}
+
+	return authType
+}
+
 // InitStream attempts to initialize a new stream given a valid descriptor.
-func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxInit,
+func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxAuth,
 ) (*auctioneerrpc.CipherInitResp, error) {
 
 	h.Lock()
@@ -335,7 +393,48 @@ func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxInit,
 			"already active")
 	}
 
-	freshStream := newStream()
+	ogAuthType := rpcToAuthMethod(init)
+
+	freshStream := newStream(streamID, func(auth *auctioneerrpc.CipherBoxAuth) error {
+		// First the type of authentication must match exactly.
+		if ogAuthType != rpcToAuthMethod(auth) {
+			return fmt.Errorf("auth type mismatch")
+		}
+
+		// Depending on the auth type, we'll then assert that the core
+		// authentication mechanism is the same.
+		switch ogAuthType {
+		case authAcct:
+			if !bytes.Equal(auth.GetAcctAuth().AcctKey,
+				init.GetAcctAuth().AcctKey) {
+				return fmt.Errorf("wrong pubkey")
+			}
+
+		case authSidecar:
+			newTicket, err := sidecar.DecodeString(
+				auth.GetSidecarAuth().Ticket,
+			)
+			if err != nil {
+				return err
+			}
+
+			oldTicket, err := sidecar.DecodeString(
+				init.GetSidecarAuth().Ticket,
+			)
+			if err != nil {
+				return err
+			}
+
+			if newTicket.Offer.SignPubKey !=
+				oldTicket.Offer.SignPubKey {
+
+				return fmt.Errorf("invalid pubkey")
+			}
+
+		}
+
+		return nil
+	})
 
 	h.streams[streamID] = freshStream
 
@@ -374,29 +473,76 @@ func (h *hashMailServer) LookUpWriteStream(streamID []byte) (*writeStream, error
 	return stream.RequestWriteStream()
 }
 
+// TearDownStream attempts to tear down a stream which renders both sides of
+// the stream unusable and also reclaims resources.
+func (h *hashMailServer) TearDownStream(ctx context.Context, streamID []byte,
+	auth *auctioneerrpc.CipherBoxAuth) error {
+
+	h.Lock()
+	defer h.Unlock()
+
+	sid := newStreamID(streamID)
+	stream, ok := h.streams[sid]
+	if !ok {
+		return fmt.Errorf("stream not found")
+	}
+
+	// We'll ensure that the same authentication type is used, to ensure
+	// only the creator can tea down a stream they created.
+	if err := stream.equivAuth(auth); err != nil {
+		return fmt.Errorf("invalid auth: %v", err)
+	}
+
+	// Now that we know the auth type has matched up, we'll validate the
+	// authentication mechanism as normal.
+	if err := h.ValidateStreamAuth(ctx, auth); err != nil {
+		return err
+	}
+
+	// At this point we know the auth was valid, so we'll tear down the
+	// stream.
+	if err := stream.tearDown(); err != nil {
+		return err
+	}
+
+	delete(h.streams, sid)
+
+	return nil
+}
+
+// validateAuthReq does some basic sanity checks on incoming auth methods.
+func validateAuthReq(req *auctioneerrpc.CipherBoxAuth) error {
+	switch {
+	case req.Desc == nil:
+		return fmt.Errorf("cipher box descriptor required")
+
+	case req.Desc.StreamId == nil:
+		return fmt.Errorf("stream_id required")
+
+	case req.Auth == nil:
+		return fmt.Errorf("auth type required")
+
+	default:
+		return nil
+	}
+}
+
 // NewCipherBox attempts to create a new cipher box stream given a valid
 // authentication mechanism. This call may fail if the stream is already
 // active, or the authentication mechanism invalid.
 func (h *hashMailServer) NewCipherBox(ctx context.Context,
-	init *auctioneerrpc.CipherBoxInit) (*auctioneerrpc.CipherInitResp, error) {
+	init *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.CipherInitResp, error) {
 
 	// Before we try to process the request, we'll do some basic user input
 	// validation.
-	switch {
-	case init.Desc == nil:
-		return nil, fmt.Errorf("cipher box descriptor required")
-
-	case init.Desc.StreamId == nil:
-		return nil, fmt.Errorf("stream_id required")
-
-	case init.Auth == nil:
-		return nil, fmt.Errorf("auth type required")
+	if err := validateAuthReq(init); err != nil {
+		return nil, err
 	}
 
 	log.Debugf("New HashMail stream init: id=%x, auth=%v",
 		init.Desc.StreamId, init.Auth)
 
-	if err := h.ValidateStreamInit(ctx, init); err != nil {
+	if err := h.ValidateStreamAuth(ctx, init); err != nil {
 		log.Debugf("Stream creation validation failed (id=%x): %v",
 			init.Desc.StreamId, err)
 		return nil, err
@@ -408,6 +554,28 @@ func (h *hashMailServer) NewCipherBox(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+// DelCipherBox attempts to tear down an existing cipher box pipe. The same
+// authentication mechanism used to initially create the stream MUST be
+// specified.
+func (h *hashMailServer) DelCipherBox(ctx context.Context,
+	auth *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.DelCipherBoxResp, error) {
+
+	// Before we try to process the request, we'll do some basic user input
+	// validation.
+	if err := validateAuthReq(auth); err != nil {
+		return nil, err
+	}
+
+	log.Debugf("New HashMail stream deletion: id=%x, auth=%v",
+		auth.Desc.StreamId, auth.Auth)
+
+	if err := h.TearDownStream(ctx, auth.Desc.StreamId, auth); err != nil {
+		return nil, err
+	}
+
+	return &auctioneerrpc.DelCipherBoxResp{}, nil
 }
 
 // SendStream implements the client streaming call to utilize the write end of
