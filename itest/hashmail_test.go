@@ -122,8 +122,15 @@ func testHashMailServer(t *harnessTest) {
 
 		// If we try to create the stream again, then we should get an
 		// error that it already exists.
-		_, err = mailClient.NewCipherBox(ctx, streamInit)
+		_, err = mailClient.NewCipherBox(ctx, streamAuth)
 		require.NotNil(tt, err, "stream should have failed")
+
+		// Make sure we get the precise error we expect.
+		statusCode, ok := status.FromError(err)
+		if !ok {
+			tt.Fatalf("expected status error")
+		}
+		require.Equal(tt, statusCode.Code(), codes.AlreadyExists)
 	})
 
 	// Now that we have the stream we'll attempt our first read anr write

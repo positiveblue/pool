@@ -327,7 +327,8 @@ func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxInit,
 	// The stream is already active, and we only allow a single session for
 	// a given stream to exist.
 	if _, ok := h.streams[streamID]; ok {
-		return nil, fmt.Errorf("stream already active")
+		return nil, status.Error(codes.AlreadyExists, "stream "+
+			"already active")
 	}
 
 	freshStream := newStream()
