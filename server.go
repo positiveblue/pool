@@ -190,6 +190,8 @@ type Server struct {
 	rpcServer   *rpcServer
 	adminServer *adminRPCServer
 
+	hashMailServer *hashMailServer
+
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
 
@@ -510,6 +512,30 @@ func NewServer(cfg *Config) (*Server, error) {
 		auctioneerServer.grpcServer, auctioneerServer,
 	)
 
+	server.hashMailServer = newHashMailServer(hashMailServerConfig{
+		IsAccountActive: func(ctx context.Context,
+			acctKey *btcec.PublicKey) bool {
+
+			acct, err := store.Account(ctx, acctKey, false)
+			if err != nil {
+				return false
+			}
+
+			switch acct.State {
+			case account.StatePendingUpdate,
+				account.StatePendingBatch, account.StateOpen:
+
+				return true
+			default:
+				return false
+			}
+		},
+		Signer: lnd.Signer,
+	})
+	auctioneerrpc.RegisterHashMailServer(
+		auctioneerServer.grpcServer, server.hashMailServer,
+	)
+
 	// Finally, create our admin RPC that is by default only exposed on the
 	// local loopback interface.
 	log.Infof("Starting admin gRPC listener")
@@ -690,6 +716,7 @@ func (s *Server) Stop() error {
 
 		s.adminServer.Stop()
 		s.rpcServer.Stop()
+		s.hashMailServer.Stop()
 
 		s.channelEnforcer.Stop()
 		if err := s.batchExecutor.Stop(); err != nil {

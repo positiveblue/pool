@@ -178,6 +178,21 @@ func (h *harnessTest) restartServer() {
 	}
 }
 
+// NewHashMailClient creates a new hash mail client independen tof any existing
+// node within the harness.
+func (h *harnessTest) NewHashMailClient() (auctioneerrpc.HashMailClient, error) {
+	rpcConn, err := dialServer(
+		h.auctioneer.serverCfg.RPCListen,
+		h.auctioneer.serverCfg.TLSCertPath, "",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("could not connect to %v: %v",
+			h.auctioneer.serverCfg.RPCListen, err)
+	}
+
+	return auctioneerrpc.NewHashMailClient(rpcConn), nil
+}
+
 // prepareServerConnection creates a new connection in the auctioneer server
 // that clients can connect to. This should only be called once after any
 // (re)start of the auctioneer.
