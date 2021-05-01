@@ -135,10 +135,10 @@ const (
 type stream struct {
 	sync.Mutex
 
+	id streamID
+
 	readStreamChan  chan *readStream
 	writeStreamChan chan *writeStream
-
-	id streamID
 
 	// equivAuth is a method used to determine if an authentication
 	// mechanism to tear down a stream is equivalent to the one used to
@@ -231,7 +231,7 @@ func (s *stream) ReturnWriteStream(w *writeStream) {
 // stream. If we're unable to obtain it before the timeout, then an error is
 // returned.
 func (s *stream) RequestReadStream() (*readStream, error) {
-	log.Tracef("HashMailStream(%s): requesting read stream")
+	log.Tracef("HashMailStream(%s): requesting read stream", s.id[:])
 
 	select {
 	case r := <-s.readStreamChan:
@@ -245,7 +245,7 @@ func (s *stream) RequestReadStream() (*readStream, error) {
 // stream. If we're unable to obtain it before the timeout, then an error is
 // returned.
 func (s *stream) RequestWriteStream() (*writeStream, error) {
-	log.Tracef("HashMailStream(%s): requesting write stream")
+	log.Tracef("HashMailStream(%x): requesting write stream", s.id[:])
 
 	select {
 	case w := <-s.writeStreamChan:
@@ -287,6 +287,20 @@ func newHashMailServer(cfg hashMailServerConfig) *hashMailServer {
 		quit:    make(chan struct{}),
 		cfg:     cfg,
 	}
+}
+
+// Stop attempts to gracefully stop the server by cancelling all pending user
+// streams and any goroutines active feeding off them.
+func (h *hashMailServer) Stop() {
+	h.Lock()
+	defer h.Unlock()
+
+	for _, stream := range h.streams {
+		if err := stream.tearDown(); err != nil {
+			log.Warnf("unable to tear down stream: %v", err)
+		}
+	}
+
 }
 
 // ValidateStreamAuth attempts to validate the authentication mechanism that is
@@ -625,8 +639,16 @@ func (h *hashMailServer) SendStream(readStream auctioneerrpc.HashMail_SendStream
 	}
 
 	for {
-		// TODO(roasbeef): trigger a flush? can at least do one send
-		// w/o blocking
+		// Check to see if the stream has been closed or if we need to
+		// exit before shutting down.
+		select {
+		case <-readStream.Context().Done():
+			return nil
+		case <-h.quit:
+			return fmt.Errorf("server shutting down")
+
+		default:
+		}
 
 		cipherBox, err := readStream.Recv()
 		if err != nil {
@@ -662,6 +684,17 @@ func (h *hashMailServer) RecvStream(desc *auctioneerrpc.CipherBoxDesc,
 	defer readStream.ReturnStream()
 
 	for {
+		// Check to see if the stream has been closed or if we need to
+		// exit before shutting down.
+		select {
+		case <-reader.Context().Done():
+			return nil
+		case <-h.quit:
+			return fmt.Errorf("server shutting down")
+
+		default:
+		}
+
 		nextMsg, err := readStream.ReadNextMsg()
 		if err != nil {
 			return err

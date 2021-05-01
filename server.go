@@ -190,6 +190,8 @@ type Server struct {
 	rpcServer   *rpcServer
 	adminServer *adminRPCServer
 
+	hashMailServer *hashMailServer
+
 	lnd            *lndclient.GrpcLndServices
 	identityPubkey [33]byte
 
@@ -510,7 +512,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		auctioneerServer.grpcServer, auctioneerServer,
 	)
 
-	hashMailServer := newHashMailServer(hashMailServerConfig{
+	server.hashMailServer = newHashMailServer(hashMailServerConfig{
 		IsAccountActive: func(ctx context.Context,
 			acctKey *btcec.PublicKey) bool {
 
@@ -531,7 +533,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		Signer: lnd.Signer,
 	})
 	auctioneerrpc.RegisterHashMailServer(
-		auctioneerServer.grpcServer, hashMailServer,
+		auctioneerServer.grpcServer, server.hashMailServer,
 	)
 
 	// Finally, create our admin RPC that is by default only exposed on the
@@ -714,6 +716,7 @@ func (s *Server) Stop() error {
 
 		s.adminServer.Stop()
 		s.rpcServer.Stop()
+		s.hashMailServer.Stop()
 
 		s.channelEnforcer.Stop()
 		if err := s.batchExecutor.Stop(); err != nil {
