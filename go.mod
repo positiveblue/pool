@@ -11,9 +11,9 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/grpc-ecosystem/grpc-gateway v1.14.6
 	github.com/jessevdk/go-flags v1.4.0
-	github.com/lightninglabs/aperture v0.1.5-beta
+	github.com/lightninglabs/aperture v0.1.6-beta
 	github.com/lightninglabs/lndclient v0.12.0-3
-	github.com/lightninglabs/pool v0.4.4-alpha.0.20210407121930-5f7f4cd7f4c1
+	github.com/lightninglabs/pool v0.4.4-alpha.0.20210510023028-a43019f24654
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.1
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.12.0-beta
