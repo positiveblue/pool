@@ -4,23 +4,21 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
+	"github.com/lightninglabs/pool/sidecar"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
 
-// testSidecarChannelsHappyPath tests that opening a sidecar channel through a
-// bid order is possible.
-func testSidecarChannelsHappyPath(t *harnessTest) {
-	ctx := context.Background()
-
+// sidecarChannelsHappyPath tests that opening a sidecar channel through a bid
+// order is possible.
+func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 	// We need a third and fourth lnd node for the additional participants.
 	// Charlie is the sidecar channel provider (has an account, submits the
 	// bid order) and Dave is the sidecar channel recipient (has no account
@@ -79,8 +77,8 @@ func testSidecarChannelsHappyPath(t *harnessTest) {
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
 	firstSidecarBid := makeSidecar(
-		t.t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, selfChanBalance,
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, selfChanBalance, auto,
 	)
 
 	// We are now ready to start the actual batch execution process.
@@ -184,8 +182,8 @@ func testSidecarChannelsHappyPath(t *harnessTest) {
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
 	secondSidecarBid := makeSidecar(
-		t.t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0,
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0, auto,
 	)
 
 	// Also add a normal bid order from the recipient's account.
@@ -225,6 +223,18 @@ func testSidecarChannelsHappyPath(t *harnessTest) {
 			firstBatchTXID, secondBatchTXID,
 		}, secondSidecarBid, 0,
 	)
+}
+
+// testSidecarChannelsHappyPath tests that opening a sidecar channel through a
+// bid order is possible.
+func testSidecarChannelsHappyPath(t *harnessTest) {
+	ctx := context.Background()
+
+	// We'll ensure that the protocol works when we're using both automated
+	// and manual negotiation.
+	for _, auto := range []bool{true, false} {
+		sidecarChannelsHappyPath(ctx, t, auto)
+	}
 }
 
 // testSidecarChannelsRejectNewNodesOnly makes sure that if a sidecar channel
@@ -305,8 +315,8 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
 	firstSidecarBid := makeSidecar(
-		t.t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0,
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0, false,
 	)
 
 	// We are now ready to start the actual batch execution process. Let's
@@ -415,8 +425,8 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
 	makeSidecar(
-		t.t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0,
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0, false,
 	)
 
 	// We are now ready to start the actual batch execution process. Let's
@@ -428,23 +438,49 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 // makeSidecar creates a sidecar ticket with an offer on the provider node,
 // registers the offer with the recipient node, creates a bid order for the
 // provider and finally adds the channel expectation to the recipient's node.
-func makeSidecar(t *testing.T, providerTrader, recipientTrader *traderHarness,
+func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 	providerAccountKey []byte, orderFixedRate uint32, // nolint:unparam
-	askAmt btcutil.Amount, selfChanBalance uint64) orderT.Nonce { // nolint:unparam
+	askAmt btcutil.Amount, selfChanBalance uint64, // nolint:unparam
+	auto bool) orderT.Nonce { // nolint:unparam
 
 	ctx := context.Background()
+
+	var bid *poolrpc.Bid
+	if auto {
+		bid = &poolrpc.Bid{
+			Details: &poolrpc.Order{
+				TraderKey:               providerAccountKey,
+				RateFixed:               orderFixedRate,
+				Amt:                     uint64(askAmt),
+				MinUnitsMatch:           2,
+				MaxBatchFeeRateSatPerKw: uint64(12500),
+			},
+			LeaseDurationBlocks: defaultOrderDuration,
+			Version:             uint32(orderT.VersionSidecarChannel),
+			SelfChanBalance:     selfChanBalance,
+			MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
+		}
+	} else {
+		bid = &poolrpc.Bid{
+			Details: &poolrpc.Order{
+				TraderKey: providerAccountKey,
+				Amt:       uint64(askAmt),
+			},
+			SelfChanBalance:     selfChanBalance,
+			LeaseDurationBlocks: defaultOrderDuration,
+		}
+	}
 
 	// The first step for creating a sidecar channel is creating an offer.
 	// This is the responsibility of the provider. We'll create an offer for
 	// 2 units of liquidity with 100k sats self channel balance.
 	offerResp, err := providerTrader.OfferSidecar(
 		ctx, &poolrpc.OfferSidecarRequest{
-			ChannelCapacitySat:  uint64(askAmt),
-			SelfChanBalance:     selfChanBalance,
-			LeaseDurationBlocks: defaultOrderDuration,
+			AutoNegotiate: auto,
+			Bid:           bid,
 		},
 	)
-	require.NoError(t, err)
+	require.NoError(t.t, err)
 
 	// The next step 2/4 is to register the offer with the recipient so they
 	// can add their information to the ticket.
@@ -453,7 +489,29 @@ func makeSidecar(t *testing.T, providerTrader, recipientTrader *traderHarness,
 			Ticket: offerResp.Ticket,
 		},
 	)
-	require.NoError(t, err)
+	require.NoError(t.t, err)
+
+	// If we're using automated negotiation, then the last two steps will
+	// be done automatically, so we can exit here.
+	//
+	// TODO(roasbeef): need additional synchronization to assert order
+	// details?
+	if auto {
+		// If this is an auto negotiated sidecar ticket, then we'll
+		// wait for the sidecar responder to connect as a new trader.
+		registeredTicket, err := sidecar.DecodeString(
+			registerResp.Ticket,
+		)
+		require.NoError(t.t, err)
+
+		assertSidecarTraderSubscribed(
+			t, registeredTicket.Recipient.MultiSigPubKey,
+		)
+
+		var bidNonce orderT.Nonce
+		copy(bidNonce[:], registeredTicket.Order.BidNonce[:])
+		return bidNonce
+	}
 
 	// Step 3/4 is for the provider to submit a bid order referencing the
 	// registered ticket.
@@ -467,15 +525,15 @@ func makeSidecar(t *testing.T, providerTrader, recipientTrader *traderHarness,
 			bid.Bid.SidecarTicket = registerResp.Ticket
 		},
 	)
-	require.NoError(t, err)
+	require.NoError(t.t, err)
 
 	// We need to query the order after submission to get the updated ticket
 	// with the order information inside.
 	bids, err := providerTrader.ListOrders(ctx, &poolrpc.ListOrdersRequest{
 		ActiveOnly: true,
 	})
-	require.NoError(t, err)
-	require.Len(t, bids.Bids, 1)
+	require.NoError(t.t, err)
+	require.Len(t.t, bids.Bids, 1)
 	offeredTicket := bids.Bids[0].SidecarTicket
 
 	// And the final step 4/4 is for the recipient to start expecting the
@@ -485,7 +543,7 @@ func makeSidecar(t *testing.T, providerTrader, recipientTrader *traderHarness,
 			Ticket: offeredTicket,
 		},
 	)
-	require.NoError(t, err)
+	require.NoError(t.t, err)
 
 	return bidNonce
 }
