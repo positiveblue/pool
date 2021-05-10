@@ -724,6 +724,42 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 	}
 }
 
+// assertSidecarTraderSubscribed is similar to assertTraderSubscribed but since
+// a new sidecar trader will connect out with a random LSAT token, we instead
+// use the multi-sig key in the ticket to detect them.
+func assertSidecarTraderSubscribed(t *harnessTest, multiSigKey *btcec.PublicKey) {
+	keyBytes := multiSigKey.SerializeCompressed()
+
+	err := wait.NoError(func() error {
+		ctx := context.Background()
+		client := t.auctioneer.AuctionAdminClient
+		resp, err := client.ConnectedTraders(
+			ctx, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("error getting connected traders: %v",
+				err)
+		}
+		traderStreams := resp.Streams
+
+		// Loop through all subscribed account keys to see if the one
+		// we are looking for is included.
+		for _, stream := range traderStreams {
+			for _, subscribedKey := range stream.RawKeyBytes {
+				if bytes.Equal(subscribedKey, keyBytes) {
+					return nil
+				}
+			}
+		}
+
+		return fmt.Errorf("account %x not subscribed", keyBytes)
+	}, defaultWaitTimeout)
+	if err != nil {
+		t.Fatalf("trader stream was not registered before timeout: %v",
+			err)
+	}
+}
+
 // assertOrderEvents makes sure the order with the given nonce has the correct
 // approximate creation timestamp and number of other events given.
 func assertOrderEvents(t *harnessTest, trader *traderHarness, nonce []byte,
