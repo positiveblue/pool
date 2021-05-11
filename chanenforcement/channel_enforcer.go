@@ -495,6 +495,23 @@ func isChannelInitiatorOffender(pkg *LifetimePackage,
 	// We'll then attempt to locate either script in the commitment
 	// transaction broadcast.
 	for _, txOut := range spendDetails.SpendingTx.TxOut {
+		// If we're able to find the initiator's non-delayed script
+		// in the commitment transaction, then the non-initiator
+		// force closed.
+		//
+		// NOTE: We perform the askNonDelayed check first in case the
+		// bidder is acting funny and echoing PaymentBasePoints in
+		// the AcceptChannel message.
+		if bytes.Equal(askNonDelayed, txOut.PkScript) {
+			log.Infof("Found node %x with account %x responsible "+
+				"for lifetime violation of channel %v",
+				pkg.BidNodeKey.SerializeCompressed(),
+				pkg.BidAccountKey.SerializeCompressed(),
+				pkg.ChannelPoint)
+
+			return false, nil
+		}
+
 		// If we're able to find the non-initiator's non-delayed script
 		// in the commitment transaction, then the initiator force
 		// closed.
@@ -506,19 +523,6 @@ func isChannelInitiatorOffender(pkg *LifetimePackage,
 				pkg.ChannelPoint)
 
 			return true, nil
-		}
-
-		// Similarly, if we're able to find the initiator's non-delayed
-		// script in the commitment transaction, then the non-initiator
-		// force closed.
-		if bytes.Equal(askNonDelayed, txOut.PkScript) {
-			log.Infof("Found node %x with account %x responsible "+
-				"for lifetime violation of channel %v",
-				pkg.BidNodeKey.SerializeCompressed(),
-				pkg.BidAccountKey.SerializeCompressed(),
-				pkg.ChannelPoint)
-
-			return false, nil
 		}
 	}
 
