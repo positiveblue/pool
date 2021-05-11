@@ -159,3 +159,67 @@ func TestResumeEnforcementAtStartup(t *testing.T) {
 	h.notifyMatureSpend(pkg2, confHeight)
 	h.assertNoViolation(pkg2)
 }
+
+// TestChannelEnforcementEchoBasePoint tests that if the Bidder echoes the
+// Asker's PaymentBasePoint and force closes, the Asker won't be punished.
+// Because we punish based on the script found on-chain and echoing the
+// PaymentBasePoint causes duplicate to_remote scripts, this would
+// previously punish the Asker by accident.
+func TestChannelEnforcementEchoBasePoint(t *testing.T) {
+	t.Parallel()
+
+	const confHeight = 100
+
+	testCases := []struct {
+		name    string
+		version chanbackup.SingleBackupVersion
+	}{
+		{
+			name:    "anchors echo basepoint",
+			version: chanbackup.AnchorsCommitVersion,
+		},
+		{
+			name:    "tweakless echo basepoint",
+			version: chanbackup.TweaklessCommitVersion,
+		},
+	}
+
+	for _, testCase := range testCases {
+		testCase := testCase
+		success := t.Run(testCase.name, func(t *testing.T) {
+			h := newTestHarness(t)
+
+			pkg := h.newLifetimePackage(testCase.version)
+
+			// Replace the BidPaymentBasePoint with the asker's
+			// base point.
+			pkg.BidPaymentBasePoint = testAskPaymentBasePoint
+
+			// Create the Bidder's version of the spending tx.
+			tx := h.createSpendTx(pkg, false, false, false)
+			txHash := tx.TxHash()
+
+			detail := &chainntnfs.SpendDetail{
+				SpentOutPoint:  &pkg.ChannelPoint,
+				SpendingHeight: confHeight,
+				SpendingTx:     tx,
+				SpenderTxHash:  &txHash,
+			}
+
+			// Assert that isChannelInitiatorOffender returns
+			// false.
+			offender, err := isChannelInitiatorOffender(pkg, detail)
+			if err != nil {
+				t.Fatalf("received unexpected error: %v", err)
+			}
+
+			if offender {
+				t.Fatalf("channel initiator was offender")
+			}
+		})
+		if !success {
+			return
+		}
+
+	}
+}
