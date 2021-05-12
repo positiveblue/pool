@@ -163,7 +163,7 @@ func testBatchExecution(t *harnessTest) {
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	if err != nil {
 		t.Fatalf("deposit transaction not found in mempool: %v", err)
@@ -525,7 +525,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 		// At this point, all batches created up to this point should
 		// be found in the mempool.
 		txids, err := waitForNTxsInMempool(
-			t.lndHarness.Miner.Node, i+1, minerMempoolTimeout,
+			t.lndHarness.Miner.Client, i+1, minerMempoolTimeout,
 		)
 		if err != nil {
 			t.Fatalf("txid not found in mempool: %v", err)
@@ -1457,7 +1457,7 @@ func testBatchMatchingConditions(t *harnessTest) {
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	require.NoError(t.t, err)
 	require.Equal(t.t, depositTxid, txids[0])

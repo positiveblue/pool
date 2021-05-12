@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/lightninglabs/subasta"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
 
 	// Blank import to set up profiling HTTP handlers.
@@ -19,14 +20,21 @@ type daemonCommand struct {
 }
 
 func (x *daemonCommand) Execute(_ []string) error {
+	// Hook interceptor for os signals.
+	shutdownInterceptor, err := signal.Intercept()
+	if err != nil {
+		return err
+	}
+
+	logWriter := build.NewRotatingLogWriter()
+	subasta.SetupLoggers(logWriter, shutdownInterceptor)
+
 	// Special show command to list supported subsystems and exit.
 	if x.cfg.DebugLevel == "show" {
 		fmt.Printf("Supported subsystems: %v\n",
-			subasta.SupportedSubsystems())
+			logWriter.SupportedSubsystems())
 		os.Exit(0)
 	}
-
-	_ = signal.Intercept()
 
 	// Enable http profiling and Validate profile port number if reqeusted.
 	if x.cfg.Profile != "" {
@@ -55,7 +63,7 @@ func (x *daemonCommand) Execute(_ []string) error {
 	}
 
 	// Wait for any external interrupt signal.
-	<-signal.ShutdownChannel()
+	<-shutdownInterceptor.ShutdownChannel()
 
 	return server.Stop()
 }

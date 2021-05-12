@@ -22,17 +22,19 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/pool"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
-	"github.com/lightningnetwork/lnd"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+	"github.com/lightningnetwork/lnd/signal"
 	"github.com/stretchr/testify/require"
 )
 
@@ -191,6 +193,16 @@ func (h *harnessTest) NewHashMailClient() (auctioneerrpc.HashMailClient, error) 
 	}
 
 	return auctioneerrpc.NewHashMailClient(rpcConn), nil
+}
+
+// setupLogging initializes the logging subsystem for the server and client
+// packages.
+func (h *harnessTest) setupLogging() {
+	logWriter := build.NewRotatingLogWriter()
+	interceptor, err := signal.Intercept()
+	require.NoError(h.t, err)
+	subasta.SetupLoggers(logWriter, interceptor)
+	pool.SetupLoggers(logWriter, interceptor)
 }
 
 // prepareServerConnection creates a new connection in the auctioneer server
@@ -369,7 +381,7 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 	var err error
 	if numTxs > 0 {
 		txids, err = waitForNTxsInMempool(
-			net.Miner.Node, numTxs, minerMempoolTimeout,
+			net.Miner.Client, numTxs, minerMempoolTimeout,
 		)
 		if err != nil {
 			t.Fatalf("unable to find txns in mempool: %v", err)
@@ -378,13 +390,13 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 
 	blocks := make([]*wire.MsgBlock, num)
 
-	blockHashes, err := net.Miner.Node.Generate(num)
+	blockHashes, err := net.Miner.Client.Generate(num)
 	if err != nil {
 		t.Fatalf("unable to generate blocks: %v", err)
 	}
 
 	for i, blockHash := range blockHashes {
-		block, err := net.Miner.Node.GetBlock(blockHash)
+		block, err := net.Miner.Client.GetBlock(blockHash)
 		if err != nil {
 			t.Fatalf("unable to get block: %v", err)
 		}
@@ -646,7 +658,7 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 	}
 
 	_, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	if err != nil {
 		t.t.Fatal(err)
@@ -953,7 +965,7 @@ func completePaymentRequests(ctx context.Context, client lnrpc.LightningClient,
 	ctxc, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	payStream, err := client.SendPayment(ctxc)
+	payStream, err := client.SendPayment(ctxc) // nolint:staticcheck
 	if err != nil {
 		return err
 	}
@@ -1274,7 +1286,7 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	closeUpdates lnrpc.Lightning_CloseChannelClient,
 	force bool) *chainhash.Hash {
 
-	txid, err := lnd.GetChanPointFundingTxid(fundingChanPoint)
+	txid, err := lnrpc.GetChanPointFundingTxid(fundingChanPoint)
 	if err != nil {
 		t.Fatalf("unable to get txid: %v", err)
 	}
@@ -1394,7 +1406,7 @@ func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
 	// that we're able to make a market. Eventually the batch execution
 	// transaction should be broadcast to the mempool.
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, expectedMempoolTxns,
+		t.lndHarness.Miner.Client, expectedMempoolTxns,
 		minerMempoolTimeout,
 	)
 	require.NoError(t.t, err)
@@ -1406,7 +1418,7 @@ func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
 
 	msgTxs := make([]*wire.MsgTx, len(txids))
 	for idx, txid := range txids {
-		tx, err := t.lndHarness.Miner.Node.GetRawTransaction(txid)
+		tx, err := t.lndHarness.Miner.Client.GetRawTransaction(txid)
 		require.NoError(t.t, err)
 		msgTxs[idx] = tx.MsgTx()
 
@@ -1473,7 +1485,7 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 	// We should expect to see the transaction causing the withdrawal.
 	withdrawTxid, _ := chainhash.NewHash(withdrawResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	require.NoError(t.t, err)
 	require.Equal(t.t, withdrawTxid, txids[0])

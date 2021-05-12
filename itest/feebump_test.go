@@ -74,7 +74,7 @@ func testManualFeeBump(t *harnessTest) {
 
 	// Ensure no transaction was created.
 	empty, err := isMempoolEmpty(
-		t.lndHarness.Miner.Node, 1*time.Second,
+		t.lndHarness.Miner.Client, 1*time.Second,
 	)
 	require.NoError(t.t, err)
 	require.True(t.t, empty, "mempool not empty")
@@ -142,7 +142,7 @@ func testManualFeeBump(t *harnessTest) {
 	// An empty batch should be created, since we want to use it to bump
 	// the previous, non-empty batch.
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 2, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 2, minerMempoolTimeout,
 	)
 	require.NoError(t.t, err)
 
@@ -176,7 +176,7 @@ func testManualFeeBump(t *harnessTest) {
 
 	// Still only two transactions should be found in the mempool.
 	_, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 2, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 2, minerMempoolTimeout,
 	)
 	require.NoError(t.t, err)
 
@@ -235,7 +235,7 @@ func getTxFeeRate(t *harnessTest, txids ...*chainhash.Hash) (int64, error) {
 		weight int64
 	)
 	for _, txid := range txids {
-		tx, err := t.lndHarness.Miner.Node.GetRawTransaction(txid)
+		tx, err := t.lndHarness.Miner.Client.GetRawTransaction(txid)
 		if err != nil {
 			return 0, err
 		}
@@ -245,7 +245,7 @@ func getTxFeeRate(t *harnessTest, txids ...*chainhash.Hash) (int64, error) {
 		for _, in := range tx.MsgTx().TxIn {
 			prev := in.PreviousOutPoint
 
-			parent, err := t.lndHarness.Miner.Node.GetRawTransaction(
+			parent, err := t.lndHarness.Miner.Client.GetRawTransaction(
 				&prev.Hash,
 			)
 			if err != nil {
