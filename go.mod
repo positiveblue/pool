@@ -23,6 +23,7 @@ require (
 	github.com/stretchr/testify v1.5.1
 	github.com/urfave/cli v1.20.0
 	go.etcd.io/etcd v3.3.22+incompatible
+	golang.org/x/time v0.0.0-20180412165947-fbb02b2291d2
 	google.golang.org/grpc v1.29.1
 	google.golang.org/protobuf v1.25.0
 	gopkg.in/macaroon.v2 v2.1.0
