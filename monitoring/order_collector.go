@@ -39,13 +39,15 @@ const (
 	// of active orders.
 	orderFeeRate = "order_fee_rate"
 
-	labelOrderType     = "order_type"
-	labelOrderState    = "order_state"
-	labelOrderNonce    = "order_nonce"
-	labelOrderRate     = "order_rate"
-	labelOrderDuration = "order_duration"
-	labelOrderFeeRate  = "order_fee_rate"
-	labelBidNodeTier   = "order_node_tier"
+	labelOrderType        = "order_type"
+	labelOrderState       = "order_state"
+	labelOrderNonce       = "order_nonce"
+	labelOrderRate        = "order_rate"
+	labelOrderDuration    = "order_duration"
+	labelOrderFeeRate     = "order_fee_rate"
+	labelBidNodeTier      = "order_node_tier"
+	labelOrderSidecar     = "order_sidecar"
+	labelOrderSelfBalance = "order_selfbalance"
 )
 
 // orderCollector is a collector that keeps track of our accounts.
@@ -197,14 +199,16 @@ func (c *orderCollector) observeOrder(o order.ServerOrder) {
 	}
 
 	labels = prometheus.Labels{
-		labelOrderType:     o.Type().String(),
-		labelOrderState:    o.Details().State.String(),
-		labelOrderNonce:    o.Nonce().String(),
-		labelOrderRate:     strconv.Itoa(int(o.Details().FixedRate)),
-		labelOrderDuration: strconv.Itoa(int(o.Details().LeaseDuration)),
-		labelOrderFeeRate:  strconv.Itoa(int(o.Details().MaxBatchFeeRate)),
-		labelBidNodeTier:   "N/A",
-		labelUserAgent:     userAgent,
+		labelOrderType:        o.Type().String(),
+		labelOrderState:       o.Details().State.String(),
+		labelOrderNonce:       o.Nonce().String(),
+		labelOrderRate:        strconv.Itoa(int(o.Details().FixedRate)),
+		labelOrderDuration:    strconv.Itoa(int(o.Details().LeaseDuration)),
+		labelOrderFeeRate:     strconv.Itoa(int(o.Details().MaxBatchFeeRate)),
+		labelBidNodeTier:      "N/A",
+		labelUserAgent:        userAgent,
+		labelOrderSelfBalance: "N/A",
+		labelOrderSidecar:     "N/A",
 	}
 
 	// Make the bid order rate negative as a hack for showing an order book
@@ -213,6 +217,9 @@ func (c *orderCollector) observeOrder(o order.ServerOrder) {
 		labels[labelOrderRate] = "-" + labels[labelOrderRate]
 
 		labels[labelBidNodeTier] = b.MinNodeTier.String()
+
+		labels[labelOrderSelfBalance] = strconv.Itoa(int(b.SelfChanBalance))
+		labels[labelOrderSidecar] = strconv.FormatBool(b.IsSidecar)
 	}
 
 	c.g[orderUnits].With(labels).Set(float64(o.Details().Units))

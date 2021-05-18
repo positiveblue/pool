@@ -8,14 +8,28 @@ import (
 	"io"
 	"io/ioutil"
 	"sync"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/sidecar"
 	"github.com/lightningnetwork/lnd/tlv"
+	"golang.org/x/time/rate"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+)
+
+const (
+	// DefaultMsgRate is the default message rate for a given mailbox that
+	// we'll allow. We'll allow one message every 500 milliseconds, or 2
+	// messages per second.
+	DefaultMsgRate = time.Millisecond * 500
+
+	// DefaultMsgBurstAllowance is the default burst rate that we'll allow
+	// for messages. If a new message is about to exceed the burst rate,
+	// then we'll allow it up to this burst allowance.
+	DefaultMsgBurstAllowance = 10
 )
 
 // streamID is the identifier of a stream.
@@ -86,9 +100,13 @@ type writeStream struct {
 //
 // NOTE: If the buffer is full, then this call will block until the reader
 // consumes bytes from the other end.
-func (w *writeStream) WriteMsg(msg []byte) error {
-	// TODO(roasbeef): max msg size?
-	//  * limit # of outstanding msgs
+func (w *writeStream) WriteMsg(ctx context.Context, msg []byte) error {
+	// Wait until until we have enough available event slots to write to
+	// the stream. This'll return an error if the referneded context has
+	// been cancelled.
+	if err := w.parentStream.limiter.Wait(ctx); err != nil {
+		return err
+	}
 
 	// As we're writing to a stream, we need to delimit each message with a
 	// length prefix so the reader knows how many bytes to consume for each
@@ -149,6 +167,8 @@ type stream struct {
 	tearDown func() error
 
 	wg sync.WaitGroup
+
+	limiter *rate.Limiter
 }
 
 // newStream creates a new stream independent of any given stream ID.
@@ -167,6 +187,10 @@ func newStream(id streamID,
 		writeStreamChan: make(chan *writeStream, 1),
 		id:              id,
 		equivAuth:       equivAuth,
+		limiter: rate.NewLimiter(
+			rate.Every(DefaultMsgRate),
+			DefaultMsgBurstAllowance,
+		),
 	}
 
 	// Our tear down function will close the write side of the pipe, which
@@ -407,6 +431,9 @@ func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxAuth,
 			"already active")
 	}
 
+	// TODO(roasbeef): validate that ticket or node doesn't already have
+	// the same stream going
+
 	ogAuthType := rpcToAuthMethod(init)
 
 	freshStream := newStream(streamID, func(auth *auctioneerrpc.CipherBoxAuth) error {
@@ -502,7 +529,7 @@ func (h *hashMailServer) TearDownStream(ctx context.Context, streamID []byte,
 	}
 
 	// We'll ensure that the same authentication type is used, to ensure
-	// only the creator can tea down a stream they created.
+	// only the creator can tear down a stream they created.
 	if err := stream.equivAuth(auth); err != nil {
 		return fmt.Errorf("invalid auth: %v", err)
 	}
@@ -634,7 +661,8 @@ func (h *hashMailServer) SendStream(readStream auctioneerrpc.HashMail_SendStream
 	// We'll send the first message into the stream, then enter our loop
 	// below to continue to read from the stream and send it to the read
 	// end.
-	if err := writeStream.WriteMsg(cipherBox.Msg); err != nil {
+	ctx := readStream.Context()
+	if err := writeStream.WriteMsg(ctx, cipherBox.Msg); err != nil {
 		return err
 	}
 
@@ -642,7 +670,7 @@ func (h *hashMailServer) SendStream(readStream auctioneerrpc.HashMail_SendStream
 		// Check to see if the stream has been closed or if we need to
 		// exit before shutting down.
 		select {
-		case <-readStream.Context().Done():
+		case <-ctx.Done():
 			return nil
 		case <-h.quit:
 			return fmt.Errorf("server shutting down")
@@ -658,7 +686,7 @@ func (h *hashMailServer) SendStream(readStream auctioneerrpc.HashMail_SendStream
 		log.Tracef("Sending msg_len=%v to stream_id=%x",
 			len(cipherBox.Msg), cipherBox.Desc.StreamId)
 
-		if err := writeStream.WriteMsg(cipherBox.Msg); err != nil {
+		if err := writeStream.WriteMsg(ctx, cipherBox.Msg); err != nil {
 			return err
 		}
 	}
