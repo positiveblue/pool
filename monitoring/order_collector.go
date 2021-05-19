@@ -62,7 +62,8 @@ func newOrderCollector(cfg *PrometheusConfig) *orderCollector {
 	baseLabels := []string{
 		labelOrderType, labelOrderState, labelOrderNonce,
 		labelOrderRate, labelOrderDuration, labelOrderFeeRate,
-		labelBidNodeTier, labelUserAgent,
+		labelBidNodeTier, labelUserAgent, labelOrderSidecar,
+		labelOrderSelfBalance,
 	}
 
 	g := make(gauges)
