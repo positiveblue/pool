@@ -101,6 +101,10 @@ func (s *mockStore) CompleteReservation(_ context.Context,
 	var accountKey [33]byte
 	copy(accountKey[:], account.TraderKeyRaw[:])
 
+	if _, ok := s.accounts[accountKey]; ok {
+		return ErrAccountExists
+	}
+
 	delete(s.reservations, account.TokenID)
 	s.accounts[accountKey] = *account
 	return nil

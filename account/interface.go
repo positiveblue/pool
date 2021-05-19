@@ -26,6 +26,11 @@ var (
 	// ErrNoAuctioneerAccount is returned when a caller attempts to fetch
 	// the auctioneer account, but it hasn't been initialized yet.
 	ErrNoAuctioneerAccount = errors.New("no auctioneer account")
+
+	// ErrAccountExists is an error returned when trying to initialize an
+	// account and the account already exists. This is a safety measure to
+	// avoid an arbitrary account overwrite by any user.
+	ErrAccountExists = errors.New("account alraedy exists")
 )
 
 // Reservation contains information about the different keys required for to

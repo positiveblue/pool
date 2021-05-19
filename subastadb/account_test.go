@@ -168,6 +168,52 @@ func TestAccountReservation(t *testing.T) {
 	}
 }
 
+// TestAccountAlreadyExists ensures that duplicate attempts to initialize the
+// account via CompleteReservation fails with ErrAccountExists.
+func TestAccountAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store, cleanup := newTestEtcdStore(t)
+	defer cleanup()
+
+	// Start by adding a new account.
+	a := testAccount
+	reservation := testReservation
+	err := store.ReserveAccount(ctx, testTokenID, &reservation)
+	if err != nil {
+		t.Fatalf("unable to reserve account: %v", err)
+	}
+	if err := store.CompleteReservation(ctx, &a); err != nil {
+		t.Fatalf("unable to complete reservation: %v", err)
+	}
+
+	// Ensure it exists within the store.
+	accounts, err := store.Accounts(ctx)
+	if err != nil {
+		t.Fatalf("unable to retrieve accounts: %v", err)
+	}
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, found %d", len(accounts))
+	}
+	if !reflect.DeepEqual(accounts[0], &testAccount) {
+		t.Fatalf("expected account: %v\ngot: %v",
+			spew.Sdump(testAccount), spew.Sdump(accounts[0]))
+	}
+
+	// Reserve the account again.
+	err = store.ReserveAccount(ctx, testTokenID, &reservation)
+	if err != nil {
+		t.Fatalf("unable to reserve account: %v", err)
+	}
+
+	// Assert that CompleteReservation now fails with ErrAccountExists.
+	err = store.CompleteReservation(ctx, &a)
+	if err != account.ErrAccountExists {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 // TestAccounts ensures we can properly add, update, and retrieve accounts from
 // the store.
 func TestAccounts(t *testing.T) {

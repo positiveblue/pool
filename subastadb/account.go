@@ -209,6 +209,12 @@ func (s *EtcdStore) CompleteReservation(ctx context.Context,
 			return err
 		}
 
+		accountKey := s.getAccountKey(traderKey)
+		acc := stm.Get(accountKey)
+		if acc != "" {
+			return account.ErrAccountExists
+		}
+
 		stm.Put(s.getAccountKey(traderKey), buf.String())
 
 		// Now write all remaining additional data as a tlv encoded
