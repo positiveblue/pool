@@ -507,8 +507,8 @@ func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxAuth,
 				return err
 			}
 
-			if newTicket.Offer.SignPubKey !=
-				oldTicket.Offer.SignPubKey {
+			if !newTicket.Offer.SignPubKey.IsEqual(
+				oldTicket.Offer.SignPubKey) {
 
 				return fmt.Errorf("invalid pubkey")
 			}
