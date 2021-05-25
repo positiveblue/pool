@@ -159,6 +159,7 @@ func (h *testHarness) initAccount() *Account {
 	if err != nil {
 		h.t.Fatalf("unable to reserve account: %v", err)
 	}
+	h.assertNewReservation()
 
 	params.OutPoint = zeroOutPoint
 	script, err := poolscript.AccountScript(
@@ -431,6 +432,51 @@ func TestAccountDifferentTraderKey(t *testing.T) {
 	err = h.manager.InitAccount(ctx, tokenID, params, heightHint)
 	if err == nil {
 		h.t.Fatalf("expected account initialization to fail")
+	}
+}
+
+// TestAccountAlreadyExists ensures that attempting to initialize an account that
+// already exists will fail with ErrAccountExists.
+func TestAccountAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	_ = h.initAccount()
+
+	// After the account is already initialized, call ReserveAccount and then
+	// InitAccount. Assert that InitAccount fails with ErrAccountExists.
+	ctx := context.Background()
+	heightHint := uint32(1)
+	params := &Parameters{
+		Value:     testAccountValue,
+		Expiry:    uint32(maxAccountExpiry),
+		TraderKey: testTraderKey,
+	}
+
+	reservation, err := h.manager.ReserveAccount(
+		ctx, params, testTokenID, heightHint,
+	)
+	if err != nil {
+		t.Fatalf("unable to reserve account: %v", err)
+	}
+	h.assertNewReservation()
+
+	script, err := poolscript.AccountScript(
+		params.Expiry, params.TraderKey,
+		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("unable to construct new account script: %v", err)
+	}
+	params.Script = script
+
+	err = h.manager.InitAccount(ctx, testTokenID, params, heightHint)
+	if err != ErrAccountExists {
+		t.Fatalf("unexpected err: %v", err)
 	}
 }
 
