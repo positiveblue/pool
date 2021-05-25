@@ -55,6 +55,10 @@ type readStream struct {
 	// scratchBuf is a scratch buffer we'll use for decoding message from
 	// the stream.
 	scratchBuf [8]byte
+
+	// Msgs is a channel that a reader of the stream can listen on in order
+	// to have new messages written to the stream delivered to it.
+	Msgs chan []byte
 }
 
 // ReadNextMsg attempts to read the next message in the stream.
@@ -168,6 +172,8 @@ type stream struct {
 
 	wg sync.WaitGroup
 
+	quit chan struct{}
+
 	limiter *rate.Limiter
 }
 
@@ -191,12 +197,15 @@ func newStream(id streamID,
 			rate.Every(DefaultMsgRate),
 			DefaultMsgBurstAllowance,
 		),
+		quit: make(chan struct{}),
 	}
 
 	// Our tear down function will close the write side of the pipe, which
 	// will cause the goroutine below to get an EOF error when reading,
 	// which will cause it to close the other ends of the pipe.
 	s.tearDown = func() error {
+		close(s.quit)
+
 		err := writeWritePipe.Close()
 		if err != nil {
 			return err
@@ -228,10 +237,42 @@ func newStream(id streamID,
 
 	// We'll now initialize our stream by sending the read and write ends
 	// to their respective holding channels.
-	s.readStreamChan <- &readStream{
+	rStream := &readStream{
 		Reader:       readReadPipe,
+		Msgs:         make(chan []byte),
 		parentStream: s,
 	}
+	s.readStreamChan <- rStream
+
+	// We'll now launch another goroutine that will continually try to read
+	// the next message off the stream and deliver it to the reader's Msg
+	// chan in a sync manner.
+	s.wg.Add(1)
+	go func() {
+		defer s.wg.Done()
+
+		for {
+			select {
+			case <-s.quit:
+				return
+			default:
+			}
+
+			nextMsg, err := rStream.ReadNextMsg()
+			if err != nil {
+				log.Errorf("unable to read msg for HashMail "+
+					"stream_id=%x", id[:])
+				return
+			}
+
+			select {
+			case rStream.Msgs <- nextMsg:
+			case <-s.quit:
+				return
+			}
+		}
+	}()
+
 	s.writeStreamChan <- &writeStream{
 		Writer:       writeWritePipe,
 		parentStream: s,
@@ -712,31 +753,25 @@ func (h *hashMailServer) RecvStream(desc *auctioneerrpc.CipherBoxDesc,
 	defer readStream.ReturnStream()
 
 	for {
-		// Check to see if the stream has been closed or if we need to
-		// exit before shutting down.
+
 		select {
+		case nextMsg := <-readStream.Msgs:
+			log.Tracef("Read %v bytes for HashMail stream_id=%x",
+				len(nextMsg), desc.StreamId)
+
+			err = reader.Send(&auctioneerrpc.CipherBox{
+				Desc: desc,
+				Msg:  nextMsg,
+			})
+			if err != nil {
+				return err
+			}
+
 		case <-reader.Context().Done():
 			return nil
 		case <-h.quit:
 			return fmt.Errorf("server shutting down")
 
-		default:
-		}
-
-		nextMsg, err := readStream.ReadNextMsg()
-		if err != nil {
-			return err
-		}
-
-		log.Tracef("Read %v bytes for HashMail stream_id=%x",
-			len(nextMsg), desc.StreamId)
-
-		err = reader.Send(&auctioneerrpc.CipherBox{
-			Desc: desc,
-			Msg:  nextMsg,
-		})
-		if err != nil {
-			return err
 		}
 	}
 }
