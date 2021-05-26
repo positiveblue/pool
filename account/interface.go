@@ -31,6 +31,13 @@ var (
 	// account and the account already exists. This is a safety measure to
 	// avoid an arbitrary account overwrite by any user.
 	ErrAccountExists = errors.New("account alraedy exists")
+
+	// ErrZeroHashDisallowed is an error returned when InitAccount is called
+	// with the ZeroHash. This prevents both the ZeroOutpoint and the ZeroHash
+	// from being used. Otherwise, the confirmation or spend notification may
+	// be dispatched because lnd's ChainNotifier system special-cases these
+	// two types.
+	ErrZeroHashDisallowed = errors.New("zero hash disallowed")
 )
 
 // Reservation contains information about the different keys required for to

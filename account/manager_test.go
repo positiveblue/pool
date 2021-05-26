@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -29,8 +30,15 @@ const (
 )
 
 var (
-	testTokenID      = lsat.TokenID{10, 11, 12}
-	zeroOutPoint     wire.OutPoint
+	testTokenID  = lsat.TokenID{10, 11, 12}
+	testOutPoint = wire.OutPoint{
+		Hash: [chainhash.HashSize]byte{
+			0x51, 0xb6, 0x37, 0xd8, 0xfc, 0xd2, 0xc6, 0xda,
+			0x48, 0x59, 0xe6, 0x96, 0x31, 0x13, 0xa1, 0x17,
+			0x2d, 0xe7, 0x93, 0xe4, 0xb7, 0x25, 0xb8, 0x4d,
+			0x1f, 0xb, 0x4c, 0xf9, 0x9e, 0xc5, 0x8c, 0xe9,
+		},
+	}
 	testAccountValue btcutil.Amount = btcutil.SatoshiPerBitcoin
 )
 
@@ -161,7 +169,7 @@ func (h *testHarness) initAccount() *Account {
 	}
 	h.assertNewReservation()
 
-	params.OutPoint = zeroOutPoint
+	params.OutPoint = testOutPoint
 	script, err := poolscript.AccountScript(
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
@@ -285,6 +293,47 @@ func (h *testHarness) obtainExpectedSig(account *Account,
 	}
 
 	return expectedSig
+}
+
+// TestZeroHashDisallowed ensures that if the zero hash is passed into the
+// InitAccount endpoint, then ErrZeroHashDisallowed is returned.
+func TestZeroHashDisallowed(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+	h.start()
+	defer h.stop()
+
+	ctx := context.Background()
+	heightHint := uint32(1)
+	params := &Parameters{
+		Value:     testAccountValue,
+		Expiry:    uint32(maxAccountExpiry),
+		TraderKey: testTraderKey,
+	}
+
+	reservation, err := h.manager.ReserveAccount(
+		ctx, params, testTokenID, heightHint,
+	)
+	if err != nil {
+		t.Fatalf("unable to reserve account: %v", err)
+	}
+	h.assertNewReservation()
+
+	script, err := poolscript.AccountScript(
+		params.Expiry, params.TraderKey,
+		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
+		sharedSecret,
+	)
+	if err != nil {
+		t.Fatalf("unable to construct new account script: %v", err)
+	}
+	params.Script = script
+
+	err = h.manager.InitAccount(ctx, testTokenID, params, heightHint)
+	if err != ErrZeroHashDisallowed {
+		t.Fatalf("unexpcted err: %v", err)
+	}
 }
 
 // TestReserveAccount ensures that traders are able to reserve a single account
@@ -418,7 +467,7 @@ func TestAccountDifferentTraderKey(t *testing.T) {
 	}
 
 	heightHint := uint32(1)
-	params.OutPoint = zeroOutPoint
+	params.OutPoint = testOutPoint
 	script, err := poolscript.AccountScript(
 		params.Expiry, testAuctioneerKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
@@ -473,6 +522,7 @@ func TestAccountAlreadyExists(t *testing.T) {
 		t.Fatalf("unable to construct new account script: %v", err)
 	}
 	params.Script = script
+	params.OutPoint = testOutPoint
 
 	err = h.manager.InitAccount(ctx, testTokenID, params, heightHint)
 	if err != ErrAccountExists {

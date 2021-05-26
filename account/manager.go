@@ -9,6 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -50,6 +51,10 @@ var (
 	// the client provided us does not match what's reflected on-chain.
 	errAccountScriptMismatch = errors.New("account script does not match " +
 		"on-chain")
+
+	// zeroHash is the default hash value of all zeroes. We don't accept
+	// outpoints from the user containing this hash.
+	zeroHash chainhash.Hash
 )
 
 // ManagerConfig contains all of the required dependencies for the Manager to
@@ -1053,10 +1058,32 @@ func validateAccountExpiry(expiry, bestHeight uint32) error {
 	return nil
 }
 
+// validateAccountOutpoint ensures that the account outpoint is not the
+// ZeroOutpoint and does not contain the ZeroHash.
+func validateAccountOutpoint(op wire.OutPoint) error {
+	// This check also ensures that the outpoint is not the zero
+	// outpoint.
+	if op.Hash == zeroHash {
+		return ErrZeroHashDisallowed
+	}
+
+	return nil
+}
+
 // validateAccountParams ensures that a trader has provided sane parameters for
 // the creation of a new account.
 func (m *Manager) validateAccountParams(params *Parameters,
 	bestHeight uint32) error {
+
+	// Since this function can be called from InitAccount and ReserveAccount
+	// and ReserveAccount will have the ZeroOutpoint, only perform the
+	// outpoint check if the length of the script is not 0.
+	if len(params.Script) != 0 {
+		err := validateAccountOutpoint(params.OutPoint)
+		if err != nil {
+			return err
+		}
+	}
 
 	if err := m.validateAccountValue(params.Value); err != nil {
 		return err
