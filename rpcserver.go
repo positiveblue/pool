@@ -719,6 +719,21 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 		s.readIncomingStream(trader, stream)
 	}()
 
+	// The trader is now registered and the below loop will run for as long
+	// as the connection is alive. Whatever happens to cause the loop to
+	// exit, we need to remove the trader from the active connection map and
+	// also the venue if it does, as essentially they need to re-establish
+	// their connection and we see them as offline.
+	defer func() {
+		rpcLog.Debugf("Removing trader connection (client_id=%x)",
+			traderID)
+
+		if err := s.disconnectTrader(traderID); err != nil {
+			rpcLog.Errorf("Unable to disconnect/unregister "+
+				"trader (client_id=%x): %v", traderID, err)
+		}
+	}()
+
 	// Handle de-multiplexed events and messages in one loop.
 	for {
 		select {
@@ -726,12 +741,6 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 		// the timeout ends.
 		case <-initialSubscriptionTimeout:
 			if len(trader.Subscriptions) == 0 {
-				err := s.disconnectTrader(traderID)
-				if err != nil {
-					return fmt.Errorf("unable to "+
-						"disconnect on initial "+
-						"timeout: %v", err)
-				}
 				return fmt.Errorf("no subscription received " +
 					"before timeout")
 			}
@@ -769,7 +778,7 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 		case toServerMsg := <-trader.comms.toServer:
 			err := s.batchExecutor.HandleTraderMsg(toServerMsg)
 			if err != nil {
-				return fmt.Errorf("error handlilng trader "+
+				return fmt.Errorf("error handling trader "+
 					"message: %v", err)
 			}
 
@@ -785,7 +794,7 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 		case <-trader.comms.quitConn:
 			rpcLog.Debugf("Trader client_id=%x is disconnecting",
 				trader.Lsat)
-			return s.disconnectTrader(traderID)
+			return nil
 
 		// An error happened anywhere in the process, we need to abort
 		// the connection.
@@ -860,12 +869,6 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 				"stream: %v", traderID, err)
 
 			trader.comms.abort()
-
-			err2 := s.disconnectTrader(traderID)
-			if err2 != nil {
-				rpcLog.Errorf("Unable to disconnect trader: %v",
-					err2)
-			}
 			return fmt.Errorf("error reading client=%x stream: %v",
 				traderID, err)
 
@@ -923,7 +926,7 @@ func (s *rpcServer) readIncomingStream(trader *TraderStream,
 		switch {
 		// The default disconnect signal from the client, if the trader
 		// is shut down.
-		case err == io.EOF:
+		case err == io.EOF || isCancel(err):
 			trader.comms.abort()
 			return
 
@@ -1538,7 +1541,7 @@ func (s *rpcServer) disconnectTrader(traderID lsat.TokenID) error {
 
 		err := s.activeTraders.UnregisterTrader(trader)
 		if err != nil {
-			return fmt.Errorf("error unregistering"+
+			return fmt.Errorf("error unregistering "+
 				"trader at venue: %v", err)
 		}
 	}
@@ -2699,4 +2702,19 @@ func checkUserAgent(userAgent string) (string, error) {
 	}
 
 	return trimmedUserAgent, nil
+}
+
+// isCancel returns true if the given error is either a context canceled error
+// directly or its equivalent wrapped as a gRPC error.
+func isCancel(err error) bool {
+	if err == context.Canceled {
+		return true
+	}
+
+	statusErr, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+
+	return statusErr.Code() == codes.Canceled
 }

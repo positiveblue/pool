@@ -318,11 +318,17 @@ func TestRPCServerReconnectAfterFailure(t *testing.T) {
 	_, err := h.testHandshake(testTraderKey)
 	require.Error(t, err)
 
-	// TODO(guggero): This is wrong and needs to be fixed!
-	// This serves as the demonstration of the bug: Even though the client
-	// never fully completed the handshake, the stream is still registered
-	// in the connectedStreams map.
-	h.assertStreamRegistered(testTokenID)
+	// Make sure the connected streams map is always properly cleaned up and
+	// the active trader unregistered.
+	require.Len(h.t, h.rpcServer.connectedStreams, 0)
+	require.Len(h.t, h.rpcServer.activeTraders.GetTraders(), 0)
+
+	// We should be able to start another stream now and authenticate
+	// successfully.
+	h.reset()
+	h.start()
+	_, err = h.testHandshake(testTraderKey)
+	require.NoError(t, err)
 }
 
 func newServer(store subastadb.Store,
@@ -397,6 +403,16 @@ func (h *testHarness) start() {
 			h.streamErr <- err
 		}
 	}()
+}
+
+func (h *testHarness) reset() {
+	h.mockStream = &mockStream{
+		ctx:      h.authCtx,
+		toClient: make(chan *auctioneerrpc.ServerAuctionMessage),
+		toServer: make(chan *auctioneerrpc.ClientAuctionMessage),
+		recErr:   make(chan error, 1),
+	}
+	h.streamErr = make(chan error, 1)
 }
 
 func (h *testHarness) assertNoError() {
