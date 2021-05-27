@@ -132,10 +132,11 @@ func TestRPCServerBatchAuction(t *testing.T) {
 
 	// Make sure we can normally complete the subscription handshake for our
 	// normal, completed account.
-	resp := h.testHandshake(testTraderKey)
-	if _, ok := resp.Msg.(*auctioneerrpc.ServerAuctionMessage_Success); !ok {
-		t.Fatalf("server didn't send expected success message")
-	}
+	resp, err := h.testHandshake(testTraderKey)
+	require.NoError(t, err)
+	require.IsType(
+		t, &auctioneerrpc.ServerAuctionMessage_Success{}, resp.Msg,
+	)
 
 	// Make sure the trader stream was registered.
 	h.assertStreamRegistered(testTokenID)
@@ -185,7 +186,8 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 
 	// We should get an error for the account where we only have created a
 	// reservation.
-	resp := h.testHandshake(testTraderKey2)
+	resp, err := h.testHandshake(testTraderKey2)
+	require.NoError(t, err)
 	if resp.GetError() == nil {
 		t.Fatalf("server didn't send expected error: %v", resp)
 	}
@@ -203,7 +205,8 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 
 	// Make sure we can normally complete the subscription handshake for our
 	// normal, completed account.
-	resp = h.testHandshake(testTraderKey)
+	resp, err = h.testHandshake(testTraderKey)
+	require.NoError(t, err)
 	if resp.GetSuccess() == nil {
 		t.Fatalf("server didn't send expected success message")
 	}
@@ -280,6 +283,46 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 	// The stream should close without an error on the server side as the
 	// client did an ordinary close.
 	h.assertError("no subscription received")
+}
+
+// TestRPCServerReconnectAfterFailure makes sure that a trader is always
+// properly disconnected once the event handler for it exits.
+func TestRPCServerReconnectAfterFailure(t *testing.T) {
+	t.Parallel()
+
+	h := newTestHarness(t)
+
+	// Start the stream. This will block until either the client disconnects
+	// or an error happens, so we'll run it in a goroutine.
+	h.start()
+
+	// Let's add an account to our store and register for updates on that
+	// account. This is the first message we'll get from new clients after
+	// connecting.
+	_ = h.mockStore.CompleteReservation(context.Background(), &testAccount)
+
+	// We want the call to `addStreamSubscription` in the RPC server to fail
+	// so we can reproduce the problem. This can be done easily by manually
+	// adding the trader to the active trader map. Any new subscription will
+	// error out and cause the handshake to fail. Whatever happens, the
+	// trader should be properly unregistered anyway.
+	_ = h.rpcServer.activeTraders.RegisterTrader(&venue.ActiveTrader{
+		TokenID: testTokenID,
+		Trader: &matching.Trader{
+			AccountKey: testAccount.TraderKeyRaw,
+		},
+	})
+
+	// Make sure we can normally complete the subscription handshake for our
+	// normal, completed account.
+	_, err := h.testHandshake(testTraderKey)
+	require.Error(t, err)
+
+	// TODO(guggero): This is wrong and needs to be fixed!
+	// This serves as the demonstration of the bug: Even though the client
+	// never fully completed the handshake, the stream is still registered
+	// in the connectedStreams map.
+	h.assertStreamRegistered(testTokenID)
 }
 
 func newServer(store subastadb.Store,
@@ -423,7 +466,8 @@ func (h *testHarness) receiveWithTimeout() *auctioneerrpc.ServerAuctionMessage {
 // testHandshake completes the default 3-way-handshake and returns the final
 // message sent by the auctioneer.
 func (h *testHarness) testHandshake(
-	traderPubKey *btcec.PublicKey) *auctioneerrpc.ServerAuctionMessage {
+	traderPubKey *btcec.PublicKey) (*auctioneerrpc.ServerAuctionMessage,
+	error) {
 
 	traderKey := toRawKey(traderPubKey)
 
@@ -467,7 +511,13 @@ func (h *testHarness) testHandshake(
 
 	// The server should find the account and acknowledge the successful
 	// subscription or return an error.
-	return <-h.mockStream.toClient
+	select {
+	case msg := <-h.mockStream.toClient:
+		return msg, nil
+
+	case err := <-h.streamErr:
+		return nil, err
+	}
 }
 
 func toRawKey(pubkey *btcec.PublicKey) [33]byte {
