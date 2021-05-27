@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/lndclient"
 	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/terms"
@@ -24,6 +24,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/test/bufconn"
 )
@@ -77,7 +78,6 @@ var (
 		TraderKeyRaw:    toRawKey(testTraderKey2),
 		HeightHint:      100,
 	}
-	mockSigner            = test.NewMockSigner()
 	defaultTimeout        = 100 * time.Millisecond
 	errGenericStreamError = errors.New("an expected error")
 )
@@ -117,67 +117,29 @@ var _ auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer = (*mockStream
 // opening a stream, registering a notification for an account, reading messages
 // and then disconnecting.
 func TestRPCServerBatchAuction(t *testing.T) {
-	var (
-		authCtx = lsat.AddToContext(
-			context.Background(), lsat.KeyTokenID, testTokenID,
-		)
-		mockStore  = subastadb.NewStoreMock(t)
-		rpcServer  = newServer(mockStore)
-		mockStream = &mockStream{
-			ctx:      authCtx,
-			toClient: make(chan *auctioneerrpc.ServerAuctionMessage),
-			toServer: make(chan *auctioneerrpc.ClientAuctionMessage),
-			recErr:   make(chan error, 1),
-		}
-		streamErr = make(chan error)
-		streamWg  sync.WaitGroup
-	)
-	mockSigner.Signature = testSignature
-	mockSigner.NodePubkey = testTraderKeyStr
+	t.Parallel()
+
+	h := newTestHarness(t)
 
 	// Start the stream. This will block until either the client disconnects
 	// or an error happens, so we'll run it in a goroutine.
-	streamWg.Add(1)
-	go func() {
-		defer streamWg.Done()
-
-		err := rpcServer.SubscribeBatchAuction(mockStream)
-		if err != nil {
-			t.Logf("Error in subscribe batch auction: %v", err)
-			streamErr <- err
-		}
-	}()
+	h.start()
 
 	// Let's add an account to our store and register for updates on that
 	// account. This is the first message we'll get from new clients after
 	// connecting.
-	_ = mockStore.CompleteReservation(context.Background(), &testAccount)
+	_ = h.mockStore.CompleteReservation(context.Background(), &testAccount)
 
 	// Make sure we can normally complete the subscription handshake for our
 	// normal, completed account.
-	resp := testHandshake(t, toRawKey(testTraderKey), mockStream)
+	resp := h.testHandshake(testTraderKey)
 	if _, ok := resp.Msg.(*auctioneerrpc.ServerAuctionMessage_Success); !ok {
 		t.Fatalf("server didn't send expected success message")
 	}
 
 	// Make sure the trader stream was registered.
-	err := wait.NoError(func() error {
-		if len(rpcServer.connectedStreams) != 1 {
-			return fmt.Errorf("unexpected number of trader "+
-				"streams, got %d expected %d",
-				len(rpcServer.connectedStreams), 1)
-		}
-		if _, ok := rpcServer.connectedStreams[testTokenID]; !ok {
-			return fmt.Errorf("trader stream for token %v not "+
-				"found", testTokenID)
-		}
-		return nil
-	}, defaultTimeout)
-	if err != nil {
-		t.Fatalf("trader stream was not registered before timeout: %v",
-			err)
-	}
-	comms := rpcServer.connectedStreams[testTokenID].comms
+	h.assertStreamRegistered(testTokenID)
+	comms := h.rpcServer.connectedStreams[testTokenID].comms
 
 	// Simulate a message from the batch executor to the trader and see that
 	// it is converted correctly to the gRPC message.
@@ -186,84 +148,44 @@ func TestRPCServerBatchAuction(t *testing.T) {
 	comms.toTrader <- &venue.PrepareMsg{
 		ExecutionFee: terms.NewLinearFeeSchedule(1, 100),
 	}
-	select {
-	case rpcMsg := <-mockStream.toClient:
-		switch typedMsg := rpcMsg.Msg.(type) {
-		case *auctioneerrpc.ServerAuctionMessage_Prepare:
-			// This is what we expected.
 
-		default:
-			t.Fatalf("received unexpected message: %v", typedMsg)
-		}
+	rpcMsg := h.receiveWithTimeout()
+	switch {
+	case rpcMsg.GetPrepare() != nil:
+		// This is what we expected.
 
-	case <-time.After(defaultTimeout):
-		t.Fatalf("trader client stream didn't receive a message")
+	default:
+		t.Fatalf("received unexpected message: %v", rpcMsg)
 	}
 
 	// Disconnect the trader client and make sure everything is cleaned up
 	// nicely and the streams are closed.
-	mockStream.recErr <- io.EOF
-	streamWg.Wait()
-	if len(rpcServer.connectedStreams) != 0 {
-		t.Fatalf("stream was not cleaned up after disconnect")
-	}
-	_, ok := <-comms.quitConn
-	if ok {
-		t.Fatalf("expected abort channel to be closed")
-	}
+	h.assertDisconnect(comms)
 
 	// The stream should close without an error on the server side as the
 	// client did an ordinary close.
-	select {
-	case err := <-streamErr:
-		t.Fatalf("unexpected error in server stream: %v", err)
-
-	default:
-	}
+	h.assertNoError()
 }
 
 // TestRPCServerBatchAuctionRecovery tests the recovery flow of a client
 // connecting, opening a stream, registering subscription for an account then
 // asking for recovery.
 func TestRPCServerBatchAuctionRecovery(t *testing.T) {
-	var (
-		ctxb    = context.Background()
-		authCtx = lsat.AddToContext(
-			ctxb, lsat.KeyTokenID, testTokenID,
-		)
-		mockStore  = subastadb.NewStoreMock(t)
-		rpcServer  = newServer(mockStore)
-		mockStream = &mockStream{
-			ctx:      authCtx,
-			toClient: make(chan *auctioneerrpc.ServerAuctionMessage),
-			toServer: make(chan *auctioneerrpc.ClientAuctionMessage),
-			recErr:   make(chan error, 1),
-		}
-		streamErr = make(chan error)
-		streamWg  sync.WaitGroup
-	)
-	mockSigner.Signature = testSignature
-	mockSigner.NodePubkey = testTraderKeyStr
+	t.Parallel()
+
+	h := newTestHarness(t)
 
 	// Start the stream. This will block until either the client disconnects
 	// or an error happens, so we'll run it in a goroutine.
-	streamWg.Add(1)
-	go func() {
-		defer streamWg.Done()
-
-		err := rpcServer.SubscribeBatchAuction(mockStream)
-		if err != nil {
-			t.Logf("Error in subscribe batch auction: %v", err)
-			streamErr <- err
-		}
-	}()
+	h.start()
 
 	// We'll add a reservation for an account that we later try to recover.
-	_ = mockStore.ReserveAccount(ctxb, testTokenID, &testReservation)
+	ctxb := context.Background()
+	_ = h.mockStore.ReserveAccount(ctxb, testTokenID, &testReservation)
 
 	// We should get an error for the account where we only have created a
 	// reservation.
-	resp := testHandshake(t, toRawKey(testTraderKey2), mockStream)
+	resp := h.testHandshake(testTraderKey2)
 	if resp.GetError() == nil {
 		t.Fatalf("server didn't send expected error: %v", resp)
 	}
@@ -277,160 +199,79 @@ func TestRPCServerBatchAuctionRecovery(t *testing.T) {
 	// Let's add an account to our store and register for updates on that
 	// account. This is the first message we'll get from new clients after
 	// connecting.
-	_ = mockStore.CompleteReservation(ctxb, &testAccount)
+	_ = h.mockStore.CompleteReservation(ctxb, &testAccount)
 
 	// Make sure we can normally complete the subscription handshake for our
 	// normal, completed account.
-	resp = testHandshake(t, toRawKey(testTraderKey), mockStream)
+	resp = h.testHandshake(testTraderKey)
 	if resp.GetSuccess() == nil {
 		t.Fatalf("server didn't send expected success message")
 	}
 
 	// Make sure the trader stream was registered.
-	err := wait.NoError(func() error {
-		if len(rpcServer.connectedStreams) != 1 {
-			return fmt.Errorf("unexpected number of trader "+
-				"streams, got %d expected %d",
-				len(rpcServer.connectedStreams), 1)
-		}
-		if _, ok := rpcServer.connectedStreams[testTokenID]; !ok {
-			return fmt.Errorf("trader stream for token %v not "+
-				"found", testTokenID)
-		}
-		return nil
-
-	}, defaultTimeout)
-	if err != nil {
-		t.Fatalf("trader stream was not registered before timeout: %v",
-			err)
-	}
-	comms := rpcServer.connectedStreams[testTokenID].comms
+	h.assertStreamRegistered(testTokenID)
+	comms := h.rpcServer.connectedStreams[testTokenID].comms
 
 	// Simulate a recovery message from the trader now.
-	mockStream.toServer <- &auctioneerrpc.ClientAuctionMessage{
+	h.mockStream.toServer <- &auctioneerrpc.ClientAuctionMessage{
 		Msg: &auctioneerrpc.ClientAuctionMessage_Recover{
 			Recover: &auctioneerrpc.AccountRecovery{
 				TraderKey: testRawTraderKey,
 			},
 		},
 	}
-	select {
-	case rpcMsg := <-mockStream.toClient:
-		switch {
-		case rpcMsg.GetAccount() != nil:
-			// This is what we expected.
 
-		default:
-			t.Fatalf("received unexpected message: %v", rpcMsg)
-		}
+	rpcMsg := h.receiveWithTimeout()
+	switch {
+	case rpcMsg.GetAccount() != nil:
+		// This is what we expected.
 
-	case <-time.After(defaultTimeout):
-		t.Fatalf("trader client stream didn't receive a message")
+	default:
+		t.Fatalf("received unexpected message: %v", rpcMsg)
 	}
 
 	// Disconnect the trader client and make sure everything is cleaned up
 	// nicely and the streams are closed.
-	mockStream.recErr <- io.EOF
-	streamWg.Wait()
-	if len(rpcServer.connectedStreams) != 0 {
-		t.Fatalf("stream was not cleaned up after disconnect")
-	}
-	_, ok := <-comms.quitConn
-	if ok {
-		t.Fatalf("expected abort channel to be closed")
-	}
+	h.assertDisconnect(comms)
 
 	// The stream should close without an error on the server side as the
 	// client did an ordinary close.
-	select {
-	case err := <-streamErr:
-		t.Fatalf("unexpected error in server stream: %v", err)
-
-	default:
-	}
+	h.assertNoError()
 }
 
 // TestRPCServerBatchAuctionStreamError tests the case when an error happens
 // during stream operations.
 func TestRPCServerBatchAuctionStreamError(t *testing.T) {
-	var (
-		authCtx = lsat.AddToContext(
-			context.Background(), lsat.KeyTokenID, testTokenID,
-		)
-		mockStore  = subastadb.NewStoreMock(t)
-		rpcServer  = newServer(mockStore)
-		mockStream = &mockStream{
-			ctx:      authCtx,
-			toClient: make(chan *auctioneerrpc.ServerAuctionMessage),
-			toServer: make(chan *auctioneerrpc.ClientAuctionMessage),
-			recErr:   make(chan error),
-		}
-		streamErr = make(chan error, 1)
-		streamWg  sync.WaitGroup
-	)
+	t.Parallel()
+
+	h := newTestHarness(t)
 
 	// Start the stream. This will block until either the client disconnects
 	// or an error happens, so we'll run it in a goroutine.
-	streamWg.Add(1)
-	go func() {
-		defer streamWg.Done()
-
-		err := rpcServer.SubscribeBatchAuction(mockStream)
-		if err != nil {
-			streamErr <- err
-		}
-	}()
+	h.start()
 
 	// Disconnect the trader client and make sure everything is cleaned up
 	// nicely and the streams are closed.
-	mockStream.recErr <- errGenericStreamError
-	streamWg.Wait()
-	if len(rpcServer.connectedStreams) != 0 {
+	h.mockStream.recErr <- errGenericStreamError
+	h.streamWg.Wait()
+	if len(h.rpcServer.connectedStreams) != 0 {
 		t.Fatalf("stream was not cleaned up after disconnect")
 	}
 
 	// The stream should close with the specific error.
-	select {
-	case err := <-streamErr:
-		if !strings.Contains(err.Error(), errGenericStreamError.Error()) {
-			t.Fatalf("unexpected error in server stream: %v", err)
-		}
-
-	default:
-		t.Fatalf("expected stream to be terminated with error")
-	}
+	h.assertError(errGenericStreamError.Error())
 }
 
 // TestRPCServerBatchAuctionStreamInitialTimeout tests the case when a trader
 // connects to the stream but doesn't send a subscription within the timeout.
 func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
-	var (
-		authCtx = lsat.AddToContext(
-			context.Background(), lsat.KeyTokenID, testTokenID,
-		)
-		mockStore  = subastadb.NewStoreMock(t)
-		rpcServer  = newServer(mockStore)
-		mockStream = &mockStream{
-			ctx:      authCtx,
-			toClient: make(chan *auctioneerrpc.ServerAuctionMessage),
-			toServer: make(chan *auctioneerrpc.ClientAuctionMessage),
-			recErr:   make(chan error),
-		}
-		streamErr = make(chan error, 1)
-		streamWg  sync.WaitGroup
-	)
+	t.Parallel()
+
+	h := newTestHarness(t)
 
 	// Start the stream. This will block until either the client disconnects
 	// or an error happens, so we'll run it in a goroutine.
-	streamWg.Add(1)
-	go func() {
-		defer streamWg.Done()
-
-		err := rpcServer.SubscribeBatchAuction(mockStream)
-		if err != nil {
-			streamErr <- err
-		}
-	}()
+	h.start()
 
 	// Now just wait and do nothing, we should be disconnected after a
 	// while.
@@ -438,18 +279,12 @@ func TestRPCServerBatchAuctionStreamInitialTimeout(t *testing.T) {
 
 	// The stream should close without an error on the server side as the
 	// client did an ordinary close.
-	select {
-	case err := <-streamErr:
-		if !strings.Contains(err.Error(), "no subscription received") {
-			t.Fatalf("unexpected error in server stream: %v", err)
-		}
-
-	default:
-		t.Fatalf("unexpected stream to be terminated with error")
-	}
+	h.assertError("no subscription received")
 }
 
-func newServer(store subastadb.Store) *rpcServer {
+func newServer(store subastadb.Store,
+	mockSigner lndclient.SignerClient) *rpcServer {
+
 	activeTraders := &activeTradersMap{
 		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),
 	}
@@ -473,15 +308,129 @@ func newServer(store subastadb.Store) *rpcServer {
 	)
 }
 
+type testHarness struct {
+	t          *testing.T
+	rpcServer  *rpcServer
+	authCtx    context.Context
+	mockSigner *test.MockSigner
+	mockStore  subastadb.Store
+	mockStream *mockStream
+	streamErr  chan error
+	streamWg   sync.WaitGroup
+}
+
+func newTestHarness(t *testing.T) *testHarness {
+	ctxb := context.Background()
+	authCtx := lsat.AddToContext(ctxb, lsat.KeyTokenID, testTokenID)
+	mockStore := subastadb.NewStoreMock(t)
+	mockSigner := test.NewMockSigner()
+	mockSigner.Signature = testSignature
+	mockSigner.NodePubkey = testTraderKeyStr
+
+	return &testHarness{
+		t:          t,
+		rpcServer:  newServer(mockStore, mockSigner),
+		authCtx:    authCtx,
+		mockSigner: mockSigner,
+		mockStore:  mockStore,
+		mockStream: &mockStream{
+			ctx:      authCtx,
+			toClient: make(chan *auctioneerrpc.ServerAuctionMessage),
+			toServer: make(chan *auctioneerrpc.ClientAuctionMessage),
+			recErr:   make(chan error, 1),
+		},
+		streamErr: make(chan error, 1),
+	}
+}
+
+func (h *testHarness) start() {
+	h.streamWg.Add(1)
+	go func() {
+		defer h.streamWg.Done()
+
+		err := h.rpcServer.SubscribeBatchAuction(h.mockStream)
+		if err != nil {
+			h.t.Logf("Error in subscribe batch auction: %v", err)
+			h.streamErr <- err
+		}
+	}()
+}
+
+func (h *testHarness) assertNoError() {
+	h.t.Helper()
+
+	select {
+	case err := <-h.streamErr:
+		h.t.Fatalf("unexpected error in server stream: %v", err)
+
+	default:
+	}
+}
+
+func (h *testHarness) assertError(expected string) {
+	h.t.Helper()
+
+	select {
+	case err := <-h.streamErr:
+		require.Error(h.t, err)
+		require.Contains(h.t, err.Error(), expected)
+
+	default:
+		h.t.Fatalf("expected stream to be terminated with error")
+	}
+}
+
+func (h *testHarness) assertStreamRegistered(tokenID lsat.TokenID) {
+	h.t.Helper()
+
+	err := wait.NoError(func() error {
+		if len(h.rpcServer.connectedStreams) != 1 {
+			return fmt.Errorf("unexpected number of trader "+
+				"streams, got %d expected %d",
+				len(h.rpcServer.connectedStreams), 1)
+		}
+		if _, ok := h.rpcServer.connectedStreams[tokenID]; !ok {
+			return fmt.Errorf("trader stream for token %v not "+
+				"found", tokenID)
+		}
+		return nil
+	}, defaultTimeout)
+	require.NoError(h.t, err)
+}
+
+func (h *testHarness) assertDisconnect(comms *commChannels) {
+	h.t.Helper()
+
+	h.mockStream.recErr <- io.EOF
+	h.streamWg.Wait()
+	require.Len(h.t, h.rpcServer.connectedStreams, 0)
+	_, ok := <-comms.quitConn
+	require.False(h.t, ok)
+}
+
+func (h *testHarness) receiveWithTimeout() *auctioneerrpc.ServerAuctionMessage {
+	select {
+	case rpcMsg := <-h.mockStream.toClient:
+		return rpcMsg
+
+	case <-time.After(defaultTimeout):
+		h.t.Fatalf("trader client stream didn't receive a message")
+
+		return nil
+	}
+}
+
 // testHandshake completes the default 3-way-handshake and returns the final
 // message sent by the auctioneer.
-func testHandshake(t *testing.T, traderKey [33]byte,
-	mockStream *mockStream) *auctioneerrpc.ServerAuctionMessage {
+func (h *testHarness) testHandshake(
+	traderPubKey *btcec.PublicKey) *auctioneerrpc.ServerAuctionMessage {
+
+	traderKey := toRawKey(traderPubKey)
 
 	// The 3-way handshake begins. The trader sends its commitment.
 	var challenge [32]byte
 	testCommitHash := accountT.CommitAccount(traderKey, testTraderNonce)
-	mockStream.toServer <- &auctioneerrpc.ClientAuctionMessage{
+	h.mockStream.toServer <- &auctioneerrpc.ClientAuctionMessage{
 		Msg: &auctioneerrpc.ClientAuctionMessage_Commit{
 			Commit: &auctioneerrpc.AccountCommitment{
 				CommitHash: testCommitHash[:],
@@ -491,21 +440,22 @@ func testHandshake(t *testing.T, traderKey [33]byte,
 
 	// The server sends the challenge next.
 	select {
-	case msg := <-mockStream.toClient:
+	case msg := <-h.mockStream.toClient:
 		challengeMsg, ok := msg.Msg.(*auctioneerrpc.ServerAuctionMessage_Challenge)
 		if !ok {
-			t.Fatalf("unexpected first message from server: %v", msg)
+			h.t.Fatalf("unexpected first message from server: %v",
+				msg)
 		}
 		copy(challenge[:], challengeMsg.Challenge.Challenge)
 
 	case <-time.After(defaultTimeout):
-		t.Fatalf("server didn't send expected challenge in time")
+		h.t.Fatalf("server didn't send expected challenge in time")
 	}
 
 	// Step 3 of 3 is the trader sending their signature over the auth hash.
 	authHash := accountT.AuthHash(testCommitHash, challenge)
-	mockSigner.SignatureMsg = string(authHash[:])
-	mockStream.toServer <- &auctioneerrpc.ClientAuctionMessage{
+	h.mockSigner.SignatureMsg = string(authHash[:])
+	h.mockStream.toServer <- &auctioneerrpc.ClientAuctionMessage{
 		Msg: &auctioneerrpc.ClientAuctionMessage_Subscribe{
 			Subscribe: &auctioneerrpc.AccountSubscription{
 				TraderKey:   traderKey[:],
@@ -517,7 +467,7 @@ func testHandshake(t *testing.T, traderKey [33]byte,
 
 	// The server should find the account and acknowledge the successful
 	// subscription or return an error.
-	return <-mockStream.toClient
+	return <-h.mockStream.toClient
 }
 
 func toRawKey(pubkey *btcec.PublicKey) [33]byte {
