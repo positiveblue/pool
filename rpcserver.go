@@ -806,7 +806,7 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 			// got to the next key after the last account key during
 			// recovery.
 			var e *subastadb.AccountNotFoundError
-			if errors.As(err, &e) {
+			if !trader.IsSidecar && errors.As(err, &e) {
 				errCode := auctioneerrpc.SubscribeError_ACCOUNT_DOES_NOT_EXIST
 				err = stream.Send(&auctioneerrpc.ServerAuctionMessage{
 					Msg: &auctioneerrpc.ServerAuctionMessage_Error{
@@ -835,7 +835,7 @@ func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
 			// recovery attempt. The trader normally would never try
 			// to subscribe to an account with a reservation only.
 			var e2 *auctioneer.AcctResNotCompletedError
-			if errors.As(err, &e2) {
+			if !trader.IsSidecar && errors.As(err, &e2) {
 				errCode := auctioneerrpc.SubscribeError_INCOMPLETE_ACCOUNT_RESERVATION
 				partialAcct := &auctioneerrpc.AuctionAccount{
 					Value:         uint64(e2.Value),
