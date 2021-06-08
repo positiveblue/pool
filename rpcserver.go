@@ -365,6 +365,10 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 func parseRPCAccountParams(
 	req *auctioneerrpc.ServerInitAccountRequest) (*account.Parameters, error) {
 
+	if req.AccountPoint == nil {
+		return nil, fmt.Errorf("missing account outpoint")
+	}
+
 	var txid chainhash.Hash
 	copy(txid[:], req.AccountPoint.Txid)
 	accountPoint := wire.OutPoint{
@@ -2383,7 +2387,7 @@ func (s *rpcServer) BatchSnapshots(ctx context.Context,
 // MarketInfo returns a simple set of statistics per active market, grouped by
 // node tier.
 func (s *rpcServer) MarketInfo(ctx context.Context,
-	req *auctioneerrpc.MarketInfoRequest) (*auctioneerrpc.MarketInfoResponse,
+	_ *auctioneerrpc.MarketInfoRequest) (*auctioneerrpc.MarketInfoResponse,
 	error) {
 
 	cachedOrders, err := s.store.GetOrders(ctx)
@@ -2573,7 +2577,7 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 }
 
 // NodeRating returns node rating for a set of nodes on LN.
-func (s *rpcServer) NodeRating(ctx context.Context,
+func (s *rpcServer) NodeRating(_ context.Context,
 	req *auctioneerrpc.ServerNodeRatingRequest) (*auctioneerrpc.ServerNodeRatingResponse, error) {
 
 	nodeRatings := make([]*auctioneerrpc.NodeRating, 0, len(req.NodePubkeys))
