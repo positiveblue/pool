@@ -169,7 +169,7 @@ func (a *activeTradersMap) IsActive(acctKey [33]byte) bool {
 	return ok
 }
 
-// GetTrades returns the current set of active traders.
+// GetTraders returns the current set of active traders.
 func (a *activeTradersMap) GetTraders() map[matching.AccountID]*venue.ActiveTrader {
 	a.RLock()
 	defer a.RUnlock()
