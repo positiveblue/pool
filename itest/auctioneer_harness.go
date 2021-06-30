@@ -8,7 +8,6 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
@@ -25,7 +24,6 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/macaroons"
-	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -93,6 +91,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			// being in the lowest tier unless we manually set
 			// their scores.
 			NodeRatingsActive: true,
+			AllowFakeTokens:   true,
 			BaseDir:           cfg.BaseDir,
 			TLSCertPath:       subastaTLSPath,
 			TLSKeyPath:        path.Join(cfg.BaseDir, "tls.key"),

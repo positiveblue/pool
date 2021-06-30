@@ -423,22 +423,32 @@ func NewServer(cfg *Config) (*Server, error) {
 	//
 	// First, we'll set up the series of interceptors for our gRPC server
 	// which we'll initialize shortly below.
-	var interceptor ServerInterceptor = &lsat.ServerInterceptor{}
-	if cfg.FakeAuth && cfg.Network == "mainnet" {
-		return nil, fmt.Errorf("cannot use fake LSAT auth for mainnet")
+	if cfg.AllowFakeTokens && cfg.Network == "mainnet" {
+		return nil, fmt.Errorf("cannot use fake LSAT tokens for mainnet")
 	}
-	if cfg.FakeAuth {
-		interceptor = &regtestInterceptor{}
-	}
-	serverOpts := []grpc.ServerOption{
-		grpc.ChainUnaryInterceptor(
-			interceptor.UnaryInterceptor,
+
+	// We'll always use the main (production) LSAT interceptor. But in case
+	// we also want to allow fake tokens to be set (itest only), we add the
+	// regtest interceptor in front of the main one.
+	var (
+		mainInterceptor   = &lsat.ServerInterceptor{}
+		unaryInterceptors = []grpc.UnaryServerInterceptor{
+			mainInterceptor.UnaryInterceptor,
 			errorLogUnaryServerInterceptor(rpcLog),
-		),
-		grpc.ChainStreamInterceptor(
-			interceptor.StreamInterceptor,
+		}
+		streamInterceptors = []grpc.StreamServerInterceptor{
+			mainInterceptor.StreamInterceptor,
 			errorLogStreamServerInterceptor(rpcLog),
-		),
+		}
+	)
+	if cfg.AllowFakeTokens {
+		fakeTokenInterceptor := &regtestInterceptor{}
+		unaryInterceptors = append([]grpc.UnaryServerInterceptor{
+			fakeTokenInterceptor.UnaryInterceptor,
+		}, unaryInterceptors...)
+		streamInterceptors = append([]grpc.StreamServerInterceptor{
+			fakeTokenInterceptor.StreamInterceptor,
+		}, streamInterceptors...)
 	}
 
 	// Prometheus itself needs a gRPC interceptor to measure performance of
@@ -448,18 +458,14 @@ func NewServer(cfg *Config) (*Server, error) {
 		cfg.Prometheus.Lnd = lnd.LndServices
 		cfg.Prometheus.FundingConflicts = fundingConflicts
 
-		serverOpts = []grpc.ServerOption{
-			grpc.ChainUnaryInterceptor(
-				interceptor.UnaryInterceptor,
-				errorLogUnaryServerInterceptor(rpcLog),
-				grpc_prometheus.UnaryServerInterceptor,
-			),
-			grpc.ChainStreamInterceptor(
-				interceptor.StreamInterceptor,
-				errorLogStreamServerInterceptor(rpcLog),
-				grpc_prometheus.StreamServerInterceptor,
-			),
-		}
+		unaryInterceptors = append(
+			unaryInterceptors,
+			grpc_prometheus.UnaryServerInterceptor,
+		)
+		streamInterceptors = append(
+			streamInterceptors,
+			grpc_prometheus.StreamServerInterceptor,
+		)
 	}
 
 	// Append TLS configuration to server options.
@@ -467,9 +473,11 @@ func NewServer(cfg *Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	serverOpts = append(
-		serverOpts, grpc.Creds(credentials.NewTLS(serverTLS)),
-	)
+	serverOpts := []grpc.ServerOption{
+		grpc.ChainUnaryInterceptor(unaryInterceptors...),
+		grpc.ChainStreamInterceptor(streamInterceptors...),
+		grpc.Creds(credentials.NewTLS(serverTLS)),
+	}
 
 	// Next, create our listeners, and initialize the primary gRPC and
 	// REST proxy server for HTTP/2 connections.
@@ -743,7 +751,7 @@ func (s *Server) Stop() error {
 	return stopErr
 }
 
-// newRegtestInterceptor creates an LSAT interceptor that reads the dummy LSAT
+// ServerInterceptor is an LSAT interceptor that reads the dummy LSAT
 // ID added by the client's counterpart and uses that as the client's main
 // identification. As its name suggests, this should only be used for testing on
 // local regtest networks.
@@ -790,7 +798,7 @@ func (i *regtestInterceptor) UnaryInterceptor(ctx context.Context,
 	return handler(idCtx, req)
 }
 
-// StreamingInterceptor intercepts streaming requests and reads the dummy LSAT
+// StreamInterceptor intercepts streaming requests and reads the dummy LSAT
 // ID.
 func (i *regtestInterceptor) StreamInterceptor(srv interface{},
 	ss grpc.ServerStream, _ *grpc.StreamServerInfo,
@@ -834,7 +842,7 @@ func idFromContext(ctx context.Context) (*lsat.TokenID, error) {
 	log.Debugf("Auth header present in request: %s", authHeader[0])
 	if !dummyRex.MatchString(authHeader[0]) {
 		log.Debugf("Auth header didn't match dummy ID")
-		return nil, nil
+		return nil, fmt.Errorf("request contains no fake LSAT")
 	}
 	matches := dummyRex.FindStringSubmatch(authHeader[0])
 	idHex, err := hex.DecodeString(matches[1])
