@@ -473,12 +473,6 @@ func testAccountSubscription(t *harnessTest) {
 // same seed the accounts originally were created with.
 func testServerAssistedAccountRecovery(t *harnessTest) {
 	ctxb := context.Background()
-	tokenID, err := t.trader.server.GetIdentity()
-	if err != nil {
-		t.Fatalf("could not get the trader's identity: %v", err)
-	}
-	idCtx := getTokenContext(tokenID)
-
 	const defaultRelativeExpiration uint32 = 1_000
 
 	// We create three full accounts. One that is closed again, one
@@ -515,6 +509,13 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("open tx not published in time: %v", err)
 	}
+
+	// Now that we've opened the account(s), we should also have an LSAT.
+	tokenID, err := t.trader.server.GetIdentity()
+	if err != nil {
+		t.Fatalf("could not get the trader's identity: %v", err)
+	}
+	idCtx := getTokenContext(tokenID)
 
 	// Also create an order for the open account so we can make sure it'll
 	// be canceled on recovery. We need to fetch the nonce of it so we can

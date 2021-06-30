@@ -20,6 +20,7 @@ before_install:
   - git config --global url."git@github.com:guggero".insteadOf "https://github.com/guggero"
   - git config --global url."git@github.com:roasbeef".insteadOf "https://github.com/roasbeef"
   - git config --global url."git@github.com:wpaulino".insteadOf "https://github.com/wpaulino"
+  - mkdir -p $HOME/.aperture
 
 env:
   global:

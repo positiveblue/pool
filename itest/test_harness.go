@@ -64,6 +64,13 @@ const (
 	defaultTimeout = time.Second * 5
 
 	defaultOrderDuration uint32 = 2016
+
+	// defaultLsatChannelSize is the capacity of the channel that we open
+	// between a trader's lnd node and the auctioneer's lnd node to pay for
+	// LSATs during integration tests. We use a specific number to make it
+	// easy to identify such channels so we don't open multiple channels if
+	// the same code is called more than once.
+	defaultLsatChannelSize btcutil.Amount = 54321
 )
 
 // testCase is a struct that holds a single test case.
@@ -206,6 +213,84 @@ func (h *harnessTest) setupLogging() {
 	subasta.SetupLoggers(logWriter, interceptor)
 	pool.SetupLoggers(logWriter, interceptor)
 	aperture.SetupLoggers(logWriter, interceptor)
+}
+
+// channelExists returns true if a channel with the given capacity exists
+// between the two nodes.
+func channelExists(t *testing.T, from, to *lntest.HarnessNode,
+	amount btcutil.Amount) bool {
+
+	t.Helper()
+
+	ctxb := context.Background()
+	resp, err := from.ListChannels(ctxb, &lnrpc.ListChannelsRequest{})
+	require.NoError(t, err)
+
+	chanPeerStr := hex.EncodeToString(to.PubKey[:])
+	for _, channel := range resp.Channels {
+		if channel.Capacity != int64(amount) {
+			continue
+		}
+
+		if channel.RemotePubkey != chanPeerStr {
+			continue
+		}
+
+		// Both size and peer match, we have a channel.
+		return true
+	}
+
+	return false
+}
+
+// enableLSAT turns on LSAT authentication in aperture and makes sure channels
+// exist from the given trader lnd nodes to the aperture lnd node in order to
+// be able to pay LSAT invoices.
+func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
+	h.t.Helper()
+
+	// First, turn on authentication in aperture.
+	services := h.auctioneer.apertureCfg.Services
+	services[0].Auth = "on"
+	err := h.auctioneer.aperture.UpdateServices(services)
+	require.NoError(h.t, err)
+
+	// Now open a channel from each trader node to Alice, which is the lnd
+	// node used for aperture.
+	ctxc, cancel := context.WithTimeout(
+		context.Background(), defaultWaitTimeout,
+	)
+	defer cancel()
+	err = h.lndHarness.EnsureConnected(ctxc, traderNode, h.lndHarness.Alice)
+	require.NoError(h.t, err)
+
+	// If we already have a channel for LSAT payments, we're done.
+	lsatChannelExists := channelExists(
+		h.t, traderNode, h.lndHarness.Alice, defaultLsatChannelSize,
+	)
+	if lsatChannelExists {
+		return
+	}
+
+	// If not, let's create one that is easily identifiable by its capacity.
+	stream, err := h.lndHarness.OpenChannel(
+		ctxc, traderNode, h.lndHarness.Alice, lntest.OpenChannelParams{
+			Amt:     defaultLsatChannelSize,
+			Private: true,
+		},
+	)
+	require.NoError(h.t, err)
+
+	// Mine a block and wait for the channel to be announced to the network.
+	_ = mineBlocks(h, h.lndHarness, 1, 1)
+	cp, err := h.lndHarness.WaitForChannelOpen(ctxc, stream)
+	require.NoError(h.t, err)
+	err = traderNode.WaitForNetworkChannelOpen(ctxc, cp)
+	require.NoError(h.t, err)
+
+	// Mine 5 more blocks to make sure the channel and the change is
+	// sufficiently confirmed.
+	_ = mineBlocks(h, h.lndHarness, 5, 0)
 }
 
 // prepareServerConnection creates a new connection in the auctioneer server
@@ -590,6 +675,12 @@ func assertAuctionState(t *harnessTest, state subasta.AuctionState) {
 // waits for it to be confirmed.
 func openAccountAndAssert(t *harnessTest, trader *traderHarness,
 	req *poolrpc.InitAccountRequest) *poolrpc.Account {
+
+	// Before we open an account, we need to make sure there is a channel
+	// between the trader's lnd node and aperture's lnd node (the same as
+	// used for the auctioneer, Alice). If not, we create one and also turn
+	// on LSAT auth in aperture to make sure we test that code path.
+	t.enableLSAT(trader.cfg.LndNode)
 
 	// Add the default conf target of the CLI to the request if it wasn't
 	// set. This removes the need for every test to specify the value
