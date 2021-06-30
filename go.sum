@@ -262,8 +262,9 @@ github.com/kr/pretty v0.1.0/go.mod h1:dAy3ld7l9f0ibDNOQOHHMYYIIbhfbHSm3C4ZsoJORN
 github.com/kr/pty v1.1.1/go.mod h1:pFQYn66WHrOpPYNljwOMqo10TkYh1fy3cYio2l3bCsQ=
 github.com/kr/text v0.1.0 h1:45sCR5RtlFHMR4UwH9sdQ5TC8v0qDQCHnXt+kaKSTVE=
 github.com/kr/text v0.1.0/go.mod h1:4Jbv+DJW3UT/LiOwJeYQe1efqtUx/iVham/4vfdArNI=
-github.com/lightninglabs/aperture v0.1.6-beta h1:bhpK4O9xa0YUBFQfkfg/h/3sMAY+AOMxi9YUjg6/l/E=
 github.com/lightninglabs/aperture v0.1.6-beta/go.mod h1:9xl4mx778ZAzrB87nLHMqk+XQcSz8Dx/DypjWzGN1xo=
+github.com/lightninglabs/aperture v0.1.7-beta.0.20210628133219-bb85fbe5e0a6 h1:ubquTVRwsfMVMmfSIFc3+8S0MYwnTU39e+eJWS7wkiw=
+github.com/lightninglabs/aperture v0.1.7-beta.0.20210628133219-bb85fbe5e0a6/go.mod h1:rL6OuztbLZo4Vzz8YhNpc2OAW9wGDxEM9/lLUQA4LtQ=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf h1:HZKvJUHlcXI/f/O0Avg7t8sqkPo78HFzjmeYFl6DPnc=
 github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf/go.mod h1:vxmQPeIQxPf6Jf9rM8R+B4rKBqLA2AjttNxkFBL2Plk=
 github.com/lightninglabs/lndclient v0.11.0-4/go.mod h1:8/cTKNwgL87NX123gmlv3Xh6p1a7pvzu+40Un3PhHiI=

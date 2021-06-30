@@ -8,10 +8,13 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcutil"
+	"github.com/lightninglabs/aperture"
+	"github.com/lightninglabs/aperture/proxy"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -22,6 +25,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/macaroons"
+	"github.com/stretchr/testify/require"
 	"go.etcd.io/etcd/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -43,6 +47,9 @@ type auctioneerHarness struct {
 
 	etcd  *embed.Etcd
 	store subastadb.Store
+
+	apertureCfg *aperture.Config
+	aperture    *aperture.Aperture
 
 	auctioneerrpc.ChannelAuctioneerClient
 	adminrpc.AuctionAdminClient
@@ -75,6 +82,8 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
 	)
 
+	subastaTLSPath := path.Join(cfg.BaseDir, "tls.cert")
+	subastaListenAddr := fmt.Sprintf("127.0.0.1:%d", nextAvailablePort())
 	return &auctioneerHarness{
 		cfg: &cfg,
 		serverCfg: &subasta.Config{
@@ -84,9 +93,8 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			// being in the lowest tier unless we manually set
 			// their scores.
 			NodeRatingsActive: true,
-			FakeAuth:          true,
 			BaseDir:           cfg.BaseDir,
-			TLSCertPath:       path.Join(cfg.BaseDir, "tls.cert"),
+			TLSCertPath:       subastaTLSPath,
 			TLSKeyPath:        path.Join(cfg.BaseDir, "tls.key"),
 			ExecFeeBase:       subasta.DefaultExecutionFeeBase,
 			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
@@ -109,10 +117,50 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			MaxLogFileSize: 999,
 			DebugLevel:     "debug",
 			LogDir:         ".",
-			RPCListen: fmt.Sprintf("127.0.0.1:%d",
-				nextAvailablePort()),
+			RPCListen:      subastaListenAddr,
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
 				nextAvailablePort()),
+		},
+		apertureCfg: &aperture.Config{
+			ListenAddr: fmt.Sprintf("127.0.0.1:%d",
+				nextAvailablePort()),
+			Etcd: &aperture.EtcdConfig{
+				Host:     etcdListenAddr,
+				User:     "",
+				Password: "",
+			},
+			Authenticator: &aperture.AuthConfig{
+				LndHost: cfg.LndNode.Cfg.RPCAddr(),
+				TLSPath: cfg.LndNode.Cfg.TLSCertPath,
+				MacDir:  rpcMacaroonDir,
+				Network: cfg.NetParams.Name,
+			},
+			Services: []*proxy.Service{{
+				Name:        "pool",
+				HostRegexp:  "^.*$",
+				PathRegexp:  "/poolrpc.*$",
+				Address:     subastaListenAddr,
+				TLSCertPath: subastaTLSPath,
+				Protocol:    "https",
+				Price:       1,
+				Auth:        "off",
+				// We turn off authentication by default so the
+				// whitelist will be ignored. But we still add
+				// the same rules we have in production so when
+				// we turn on authentication on a per-test basis
+				// they are already pre-configured.
+				AuthWhitelistPaths: []string{
+					"^/poolrpc.ChannelAuctioneer/Terms.*$",
+					"^/poolrpc.ChannelAuctioneer/NodeRating.*$",
+					"^/poolrpc.ChannelAuctioneer/BatchSnapshots.*$",
+					"^/poolrpc.ChannelAuctioneer/SubscribeSidecar.*$",
+					"^/poolrpc.HashMail/NewCipherBox.*$",
+					"^/poolrpc.HashMail/DelCipherBox.*$",
+					"^/poolrpc.HashMail/SendStream.*$",
+					"^/poolrpc.HashMail/RecvStream.*$",
+				},
+			}},
+			DebugLevel: "debug",
 		},
 	}, nil
 }
@@ -126,7 +174,16 @@ func (hs *auctioneerHarness) start() error {
 		return fmt.Errorf("could not start embedded etcd: %v", err)
 	}
 
-	return hs.runServer()
+	if err := hs.runServer(); err != nil {
+		return fmt.Errorf("could not start subasta server: %v", err)
+	}
+
+	// We need to start subasta before aperture so the cert already exists.
+	if err := hs.initAperture(); err != nil {
+		return fmt.Errorf("could not start aperture: %v", err)
+	}
+
+	return nil
 }
 
 // runServer starts the actual auctioneer server after the configuration and
@@ -177,14 +234,18 @@ func (hs *auctioneerHarness) halt() error {
 func (hs *auctioneerHarness) stop() error {
 	// Don't return the error immediately if stopping goes wrong, give etcd
 	// a chance to stop as well and always remove the temp directory.
-	err := hs.halt()
+	returnErr := hs.halt()
 	hs.etcd.Close()
+
+	if err := hs.aperture.Stop(); err != nil {
+		returnErr = err
+	}
 
 	// The etcd data dir is also below the base dir and will be removed as
 	// well.
 	_ = os.RemoveAll(hs.cfg.BaseDir)
 
-	return err
+	return returnErr
 }
 
 // initEtcdServer starts and initializes an embedded etcd server.
@@ -225,6 +286,25 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 	defer cancel()
 	if err := hs.store.Init(ctx); err != nil {
 		return fmt.Errorf("unable to initialize etcd: %v", err)
+	}
+
+	return nil
+}
+
+// initAperture starts the aperture proxy.
+func (hs *auctioneerHarness) initAperture() error {
+	hs.aperture = aperture.NewAperture(hs.apertureCfg)
+	errChan := make(chan error)
+
+	if err := hs.aperture.Start(errChan); err != nil {
+		return fmt.Errorf("unable to start aperture: %v", err)
+	}
+
+	// Any error while starting?
+	select {
+	case err := <-errChan:
+		return fmt.Errorf("error starting aperture: %v", err)
+	default:
 	}
 
 	return nil

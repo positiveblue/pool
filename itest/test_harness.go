@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"path"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
+	"github.com/lightninglabs/aperture"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/pool"
 	"github.com/lightninglabs/pool/auctioneerrpc"
@@ -203,6 +205,7 @@ func (h *harnessTest) setupLogging() {
 	require.NoError(h.t, err)
 	subasta.SetupLoggers(logWriter, interceptor)
 	pool.SetupLoggers(logWriter, interceptor)
+	aperture.SetupLoggers(logWriter, interceptor)
 }
 
 // prepareServerConnection creates a new connection in the auctioneer server
@@ -278,9 +281,11 @@ func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
 	node *lntest.HarnessNode, auctioneer *auctioneerHarness,
 	opts ...traderCfgOpt) *traderHarness {
 
+	apertureDataDir := btcutil.AppDataDir("aperture", false)
+
 	traderHarness, err := newTraderHarness(traderConfig{
-		AuctionServer: auctioneer.serverCfg.RPCListen,
-		ServerTLSPath: auctioneer.serverCfg.TLSCertPath,
+		AuctionServer: auctioneer.apertureCfg.ListenAddr,
+		ServerTLSPath: path.Join(apertureDataDir, "tls.cert"),
 		BackendCfg:    backend,
 		NetParams:     harnessNetParams,
 		LndNode:       node,
