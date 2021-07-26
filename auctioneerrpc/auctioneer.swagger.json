@@ -811,11 +811,6 @@
           "type": "string",
           "format": "byte",
           "description": "The final transaction ID of the published batch transaction."
-        },
-        "height_hint": {
-          "type": "integer",
-          "format": "int64",
-          "description": "The current block height at the time the batch transaction was published to\nthe network."
         }
       }
     },
@@ -876,6 +871,11 @@
             "$ref": "#/definitions/poolrpcMatchedMarket"
           },
           "description": "Maps the distinct lease duration markets to the orders that were matched\nwithin and the discovered market clearing price."
+        },
+        "batch_height_hint": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The earliest absolute height in the chain in which the batch transaction can\nbe found within. This will be used by traders to base off their absolute\nchannel lease maturity height."
         }
       }
     },

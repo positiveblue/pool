@@ -76,6 +76,11 @@ type PrepareMsg struct {
 
 	// BatchVersion is the batch version of this batch.
 	BatchVersion uint32
+
+	// BatchHeightHint is the earliest absolute height in the chain in which
+	// the batch transaction can be found within. This will be used by
+	// traders to base off their absolute channel lease maturity height.
+	BatchHeightHint uint32
 }
 
 // Batch returns the target batch ID this message refers to.

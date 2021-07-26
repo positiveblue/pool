@@ -1322,9 +1322,8 @@ func (s *rpcServer) sendToTrader(
 		return stream.Send(&auctioneerrpc.ServerAuctionMessage{
 			Msg: &auctioneerrpc.ServerAuctionMessage_Finalize{
 				Finalize: &auctioneerrpc.OrderMatchFinalize{
-					BatchId:    m.BatchID[:],
-					BatchTxid:  m.BatchTxID[:],
-					HeightHint: s.bestHeight() - 1,
+					BatchId:   m.BatchID[:],
+					BatchTxid: m.BatchTxID[:],
 				},
 			},
 		})
@@ -1458,6 +1457,7 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*auctioneerrpc.ServerAuctionMessag
 				BatchId:          m.BatchID[:],
 				BatchVersion:     m.BatchVersion,
 				MatchedMarkets:   markets,
+				BatchHeightHint:  m.BatchHeightHint,
 			},
 		},
 	}, nil

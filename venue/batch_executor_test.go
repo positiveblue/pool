@@ -187,7 +187,7 @@ func (e *executorTestHarness) newTestExecutionContext(
 
 	exeCtx, err := batchtx.NewExecutionContext(
 		startBatchKey, batch, masterAcct, &batchtx.BatchIO{}, feeRate,
-		&terms.LinearFeeSchedule{},
+		1337, &terms.LinearFeeSchedule{},
 	)
 	if err != nil {
 		e.t.Fatal(err)
