@@ -1220,7 +1220,7 @@ message AskSnapshot {
     uint32 rate_fixed = 3;
 
     // The channel type to be created.
-    uint32 chan_type = 4;
+    OrderChannelType chan_type = 4;
 }
 message BidSnapshot {
     // The version of the order.
@@ -1233,7 +1233,7 @@ message BidSnapshot {
     uint32 rate_fixed = 3;
 
     // The channel type to be created.
-    uint32 chan_type = 4;
+    OrderChannelType chan_type = 4;
 }
 message MatchedOrderSnapshot {
     // The full ask order that was matched.

@@ -250,10 +250,15 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 	rpcAsks := make([]*adminrpc.ServerAsk, 0, len(dbOrders)/2)
 	rpcBids := make([]*adminrpc.ServerBid, 0, len(dbOrders)/2)
 	for _, dbOrder := range dbOrders {
+		rpcDetails, err := marshallServerOrder(dbOrder)
+		if err != nil {
+			return nil, err
+		}
+
 		switch o := dbOrder.(type) {
 		case *order.Ask:
 			rpcAsks = append(rpcAsks, &adminrpc.ServerAsk{
-				Details:             marshallServerOrder(o),
+				Details:             rpcDetails,
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
 				State: auctioneerrpc.OrderState(
@@ -268,16 +273,14 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 			}
 
 			rpcBids = append(rpcBids, &adminrpc.ServerBid{
-				Details:             marshallServerOrder(o),
+				Details:             rpcDetails,
 				LeaseDurationBlocks: o.LeaseDuration(),
 				Version:             uint32(o.Version),
+				State:               auctioneerrpc.OrderState(o.Details().State),
 				MinNodeTier:         nodeTier,
-				State: auctioneerrpc.OrderState(
-					o.Details().State,
-				),
-				UserAgent:       o.UserAgent,
-				SelfChanBalance: uint64(o.SelfChanBalance),
-				IsSidecar:       o.IsSidecar,
+				UserAgent:           o.UserAgent,
+				SelfChanBalance:     uint64(o.SelfChanBalance),
+				IsSidecar:           o.IsSidecar,
 			})
 		}
 	}
@@ -582,18 +585,23 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 			bid := o.Details.Bid
 			quote := o.Details.Quote
 
+			askDetails, err := marshallServerOrder(ask)
+			if err != nil {
+				return nil, err
+			}
+			bidDetails, err := marshallServerOrder(bid)
+			if err != nil {
+				return nil, err
+			}
+
 			snapshots[i] = &adminrpc.AdminMatchedOrderSnapshot{
 				Ask: &auctioneerrpc.ServerAsk{
-					Details: marshallServerOrder(
-						ask,
-					),
+					Details:             askDetails,
 					LeaseDurationBlocks: ask.LeaseDuration(),
 					Version:             uint32(ask.Version),
 				},
 				Bid: &auctioneerrpc.ServerBid{
-					Details: marshallServerOrder(
-						bid,
-					),
+					Details:             bidDetails,
 					LeaseDurationBlocks: bid.LeaseDuration(),
 					Version:             uint32(bid.Version),
 					SelfChanBalance: uint64(

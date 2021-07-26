@@ -351,8 +351,7 @@
           "description": "The true bid price of the order in parts per billion."
         },
         "chan_type": {
-          "type": "integer",
-          "format": "int64",
+          "$ref": "#/definitions/poolrpcOrderChannelType",
           "description": "The channel type to be created."
         }
       }
@@ -507,8 +506,7 @@
           "description": "The true bid price of the order in parts per billion."
         },
         "chan_type": {
-          "type": "integer",
-          "format": "int64",
+          "$ref": "#/definitions/poolrpcOrderChannelType",
           "description": "The channel type to be created."
         }
       }
