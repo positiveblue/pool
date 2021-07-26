@@ -1228,10 +1228,8 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 				MaxBatchFeeRateSatPerKw: uint64(12500),
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
-			Version: uint32(
-				orderT.VersionLeaseDurationBuckets,
-			),
-			MinNodeTier: auctioneerrpc.NodeTier_TIER_0,
+			Version:             uint32(orderT.VersionChannelType),
+			MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
 		},
 	}
 	for _, modifier := range modifiers {
@@ -1274,9 +1272,7 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 				MaxBatchFeeRateSatPerKw: uint64(12500),
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
-			Version: uint32(
-				orderT.VersionLeaseDurationBuckets,
-			),
+			Version:             uint32(orderT.VersionChannelType),
 		},
 	}
 	for _, modifier := range modifiers {
