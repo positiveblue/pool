@@ -544,10 +544,11 @@
       "type": "string",
       "enum": [
         "TWEAKLESS",
-        "ANCHORS"
+        "ANCHORS",
+        "SCRIPT_ENFORCED_LEASE"
       ],
       "default": "TWEAKLESS",
-      "description": " - TWEAKLESS: The channel supports static to_remote keys.\n - ANCHORS: The channel uses an anchor-based commitment."
+      "description": " - TWEAKLESS: The channel supports static to_remote keys.\n - ANCHORS: The channel uses an anchor-based commitment.\n - SCRIPT_ENFORCED_LEASE: The channel build upon the anchor-based commitment and requires an\nadditional CLTV of the channel lease maturity on any commitment and HTLC\noutputs that pay directly to the channel initiator (the seller)."
     },
     "poolrpcDurationBucketState": {
       "type": "string",

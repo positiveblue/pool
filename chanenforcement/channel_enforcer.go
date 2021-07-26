@@ -341,7 +341,10 @@ func (e *ChannelEnforcer) enforceOnPrematureSpend(pkg *LifetimePackage,
 	// TODO(wilmer): With anchors, nodes can broadcast their commitment and
 	// not bump its fees until the maturity height is reached. How should we
 	// handle this?
-	absoluteMaturityHeight := confHeight + pkg.MaturityDelta
+	absoluteMaturityHeight := confHeight + pkg.MaturityHeight
+	if pkg.Version == chanbackup.ScriptEnforcedLeaseVersion {
+		absoluteMaturityHeight = pkg.MaturityHeight
+	}
 	select {
 	case spend := <-spendChan:
 		if uint32(spend.SpendingHeight) >= absoluteMaturityHeight {
@@ -474,6 +477,20 @@ func isChannelInitiatorOffender(pkg *LifetimePackage,
 		}
 		bidNonDelayedWitnessScript, err = input.CommitScriptToRemoteConfirmed(
 			pkg.BidPaymentBasePoint,
+		)
+		if err != nil {
+			return false, err
+		}
+
+	case chanbackup.ScriptEnforcedLeaseVersion:
+		askNonDelayedWitnessScript, err = input.LeaseCommitScriptToRemoteConfirmed(
+			pkg.AskPaymentBasePoint, pkg.MaturityHeight,
+		)
+		if err != nil {
+			return false, err
+		}
+		bidNonDelayedWitnessScript, err = input.LeaseCommitScriptToRemoteConfirmed(
+			pkg.BidPaymentBasePoint, pkg.MaturityHeight,
 		)
 		if err != nil {
 			return false, err

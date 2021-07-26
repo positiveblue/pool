@@ -2168,6 +2168,8 @@ func parseRPCChannelInfo(rpcChanInfos map[string]*auctioneerrpc.ChannelInfo) (
 			version = chanbackup.TweaklessCommitVersion
 		case auctioneerrpc.ChannelType_ANCHORS:
 			version = chanbackup.AnchorsCommitVersion
+		case auctioneerrpc.ChannelType_SCRIPT_ENFORCED_LEASE:
+			version = chanbackup.ScriptEnforcedLeaseVersion
 		default:
 			return nil, fmt.Errorf("unhandled channel type %v",
 				rpcChanInfo.Type)

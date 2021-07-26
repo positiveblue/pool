@@ -34,7 +34,7 @@ func TestLifetimePackages(t *testing.T) {
 		},
 		ChannelScript:       []byte{0x01, 0x03, 0x03, 0x07},
 		HeightHint:          100,
-		MaturityDelta:       1000,
+		MaturityHeight:      1000,
 		Version:             chanbackup.AnchorsCommitVersion,
 		AskAccountKey:       askAccountKey,
 		BidAccountKey:       bidAccountKey,

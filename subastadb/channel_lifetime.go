@@ -137,7 +137,7 @@ func serializeLifetimePackage(w *bytes.Buffer,
 
 	return WriteElements(
 		w, pkg.ChannelPoint, pkg.ChannelScript, pkg.HeightHint,
-		pkg.MaturityDelta, pkg.Version, pkg.AskAccountKey,
+		pkg.MaturityHeight, pkg.Version, pkg.AskAccountKey,
 		pkg.BidAccountKey, pkg.AskNodeKey, pkg.BidNodeKey,
 		pkg.AskPaymentBasePoint, pkg.BidPaymentBasePoint,
 	)
@@ -149,7 +149,7 @@ func deserializeLifetimePackage(r io.Reader) (*chanenforcement.LifetimePackage,
 	var pkg chanenforcement.LifetimePackage
 	err := ReadElements(
 		r, &pkg.ChannelPoint, &pkg.ChannelScript, &pkg.HeightHint,
-		&pkg.MaturityDelta, &pkg.Version, &pkg.AskAccountKey,
+		&pkg.MaturityHeight, &pkg.Version, &pkg.AskAccountKey,
 		&pkg.BidAccountKey, &pkg.AskNodeKey, &pkg.BidNodeKey,
 		&pkg.AskPaymentBasePoint, &pkg.BidPaymentBasePoint,
 	)
