@@ -428,10 +428,10 @@ func TestBookPrepareOrder(t *testing.T) {
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}, {
-		name:        "successful order submission",
-		expectedErr: "",
+		name:        "invalid version for channel type",
+		expectedErr: "cannot submit channel type preference",
 		run: func() error {
-			o := ask(orderT.Kit{
+			o := bid(orderT.Kit{
 				Amt:              100_000,
 				Units:            orderT.NewSupplyFromSats(100_000),
 				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
@@ -439,6 +439,24 @@ func TestBookPrepareOrder(t *testing.T) {
 				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
 				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 				MinUnitsMatch:    1,
+				ChannelType:      orderT.ChannelTypeScriptEnforced,
+			})
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name:        "successful order submission",
+		expectedErr: "",
+		run: func() error {
+			o := ask(orderT.Kit{
+				Version:          orderT.VersionChannelType,
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+				ChannelType:      orderT.ChannelTypeScriptEnforced,
 			})
 			err := book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 			if err != nil {

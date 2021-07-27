@@ -1813,7 +1813,6 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	copy(serverKit.NodeKey[:], nodeKey[:])
 	serverKit.NodeAddrs = addrs
 	copy(serverKit.MultiSigKey[:], multiSigKey[:])
-	serverKit.ChanType = order.ChanType(details.ChanType)
 
 	return clientKit, serverKit, nil
 }
@@ -2023,6 +2022,16 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 	kit.MinUnitsMatch = orderT.NewSupplyFromSats(
 		btcutil.Amount(details.MinChanAmt),
 	)
+
+	switch details.ChannelType {
+	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_PEER_DEPENDENT:
+		kit.ChannelType = orderT.ChannelTypePeerDependent
+	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED:
+		kit.ChannelType = orderT.ChannelTypeScriptEnforced
+	default:
+		return nil, [33]byte{}, nil, [33]byte{},
+			fmt.Errorf("unhandled channel type %v", details.ChannelType)
+	}
 
 	// The trader must supply a nonce.
 	if nonce == orderT.ZeroNonce {
