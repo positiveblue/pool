@@ -281,6 +281,7 @@ func dummyClientOrder(t *testing.T, amt btcutil.Amount,
 	kit.MaxBatchFeeRate = chainfee.FeePerKwFloor
 	kit.LeaseDuration = leaseDuration
 	copy(kit.AcctKey[:], testTraderKey.SerializeCompressed())
+	kit.ChannelType = orderT.ChannelTypeScriptEnforced
 	return kit
 }
 
@@ -294,7 +295,6 @@ func dummyOrder(t *testing.T) *order.Kit {
 	copy(kit.NodeKey[:], randomPubKey(t).SerializeCompressed())
 	copy(kit.MultiSigKey[:], randomPubKey(t).SerializeCompressed())
 	kit.NodeAddrs = []net.Addr{addr}
-	kit.ChanType = 7
 	kit.Lsat = lsat.TokenID{9, 8, 7, 6, 5}
 	kit.UserAgent = "poold/v0.4.3-alpha/commit=test"
 	return kit

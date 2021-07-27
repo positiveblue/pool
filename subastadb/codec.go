@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/pool/clientdb"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -56,7 +57,7 @@ func WriteElement(w *bytes.Buffer, element interface{}) error {
 	case account.State:
 		return lnwire.WriteElement(w, uint8(e))
 
-	case order.ChanType:
+	case orderT.ChannelType:
 		return lnwire.WriteElement(w, uint8(e))
 
 	case order.DurationBucketState:
@@ -122,12 +123,12 @@ func ReadElement(r io.Reader, element interface{}) error {
 		}
 		*e = account.State(s)
 
-	case *order.ChanType:
+	case *orderT.ChannelType:
 		var s uint8
 		if err := lnwire.ReadElement(r, &s); err != nil {
 			return err
 		}
-		*e = order.ChanType(s)
+		*e = orderT.ChannelType(s)
 
 	case *order.DurationBucketState:
 		var s uint8

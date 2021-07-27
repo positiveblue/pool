@@ -662,7 +662,7 @@ func serializeOrder(w *bytes.Buffer, o order.ServerOrder) error {
 	// We don't have to deserialize the nonce as it's part of the etcd key.
 	kit := o.ServerDetails()
 	return WriteElements(
-		w, kit.Sig, kit.NodeKey, kit.NodeAddrs, kit.ChanType,
+		w, kit.Sig, kit.NodeKey, kit.NodeAddrs, o.Details().ChannelType,
 		kit.Lsat, kit.MultiSigKey,
 	)
 }
@@ -683,7 +683,7 @@ func deserializeBaseOrder(r io.Reader, nonce orderT.Nonce) (order.ServerOrder,
 	// We don't serialize the nonce as it's part of the etcd key already.
 	err = ReadElements(
 		r, &kit.Sig, &kit.NodeKey, &kit.NodeAddrs,
-		&kit.ChanType, &kit.Lsat, &kit.MultiSigKey,
+		&clientOrder.Details().ChannelType, &kit.Lsat, &kit.MultiSigKey,
 	)
 	if err != nil {
 		return nil, err
