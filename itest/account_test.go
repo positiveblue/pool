@@ -215,7 +215,7 @@ func testAccountDeposit(t *harnessTest) {
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	if err != nil {
 		t.Fatalf("deposit transaction not found in mempool: %v", err)
@@ -247,7 +247,7 @@ func testAccountDeposit(t *harnessTest) {
 		t.Fatalf("unable to bump account fee: %v", err)
 	}
 	_, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 2, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 2, minerMempoolTimeout,
 	)
 	if err != nil {
 		t.Fatalf("deposit and bump transaction not found in mempool: %v",
@@ -288,7 +288,7 @@ func testAccountDeposit(t *harnessTest) {
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ = chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	if err != nil {
 		t.Fatalf("deposit transaction not found in mempool: %v", err)
@@ -299,7 +299,7 @@ func testAccountDeposit(t *harnessTest) {
 	}
 
 	// The deposit transaction should contain at least one NP2WKH input.
-	depositTx, err := t.lndHarness.Miner.Node.GetRawTransaction(depositTxid)
+	depositTx, err := t.lndHarness.Miner.Client.GetRawTransaction(depositTxid)
 	if err != nil {
 		t.Fatalf("unable to retrieve mempool transaction: %v", err)
 	}
@@ -352,7 +352,7 @@ func testAccountRenewal(t *harnessTest) {
 	// For our first case, we'll renew our account such that it expires in
 	// 144 blocks from now.
 	const newRelativeExpiry = 144
-	_, bestHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
+	_, bestHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
 	require.NoError(t.t, err)
 	absoluteExpiry := uint32(bestHeight) + newRelativeExpiry
 
@@ -417,7 +417,7 @@ func testAccountRenewal(t *harnessTest) {
 
 	// We'll then process another renewal request, this time specifying the
 	// expiration (144 blocks) as an absolute height.
-	_, bestHeight, err = t.lndHarness.Miner.Node.GetBestBlock()
+	_, bestHeight, err = t.lndHarness.Miner.Client.GetBestBlock()
 	require.NoError(t.t, err)
 	absoluteExpiry = uint32(bestHeight) + newRelativeExpiry
 
@@ -473,12 +473,6 @@ func testAccountSubscription(t *harnessTest) {
 // same seed the accounts originally were created with.
 func testServerAssistedAccountRecovery(t *harnessTest) {
 	ctxb := context.Background()
-	tokenID, err := t.trader.server.GetIdentity()
-	if err != nil {
-		t.Fatalf("could not get the trader's identity: %v", err)
-	}
-	idCtx := getTokenContext(tokenID)
-
 	const defaultRelativeExpiration uint32 = 1_000
 
 	// We create three full accounts. One that is closed again, one
@@ -510,11 +504,18 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		t.Fatalf("could not create account: %v", err)
 	}
 	_, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, minerMempoolTimeout,
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
 	if err != nil {
 		t.Fatalf("open tx not published in time: %v", err)
 	}
+
+	// Now that we've opened the account(s), we should also have an LSAT.
+	tokenID, err := t.trader.server.GetIdentity()
+	if err != nil {
+		t.Fatalf("could not get the trader's identity: %v", err)
+	}
+	idCtx := getTokenContext(tokenID)
 
 	// Also create an order for the open account so we can make sure it'll
 	// be canceled on recovery. We need to fetch the nonce of it so we can
@@ -553,7 +554,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// we don't. The trader won't know of any of them but when recovering
 	// will still try to recover them. We need to use a dummy token for the
 	// first one, otherwise we couldn't register the second one.
-	_, minerHeight, err := t.lndHarness.Miner.Node.GetBestBlock()
+	_, minerHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
 	if err != nil {
 		t.Fatalf("unable to retrieve miner height: %v", err)
 	}

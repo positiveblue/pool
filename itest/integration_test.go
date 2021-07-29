@@ -25,6 +25,7 @@ func TestAuctioneerServer(t *testing.T) {
 	}
 
 	ht := newHarnessTest(t, nil, nil, nil)
+	ht.setupLogging()
 
 	// Create an instance of the btcd's rpctest.Harness that will act as
 	// the miner for all tests. This will be used to fund the wallets of
@@ -85,7 +86,7 @@ func TestAuctioneerServer(t *testing.T) {
 	if err := miner.SetUp(false, 0); err != nil {
 		ht.Fatalf("unable to set up mining node: %v", err)
 	}
-	if err := miner.Node.NotifyNewTransactions(false); err != nil {
+	if err := miner.Client.NotifyNewTransactions(false); err != nil {
 		ht.Fatalf("unable to request transaction notifications: %v", err)
 	}
 	if err := chainBackend.ConnectMiner(); err != nil {
@@ -130,7 +131,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// Next mine enough blocks in order for segwit and the CSV package
 	// soft-fork to activate on SimNet.
 	numBlocks := harnessNetParams.MinerConfirmationWindow * 4
-	if _, err := miner.Node.Generate(numBlocks); err != nil {
+	if _, err := miner.Client.Generate(numBlocks); err != nil {
 		ht.Fatalf("unable to generate blocks: %v", err)
 	}
 
@@ -148,7 +149,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// the first nodes in the harness.
 	targetHeight := int32(numBlocks) + 10
 	err = wait.NoError(func() error {
-		_, blockHeight, err := miner.Node.GetBestBlock()
+		_, blockHeight, err := miner.Client.GetBestBlock()
 		if err != nil {
 			return fmt.Errorf("unable to get best block: %v", err)
 		}

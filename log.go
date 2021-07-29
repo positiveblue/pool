@@ -27,45 +27,74 @@ const Subsystem = "SRVR"
 
 var (
 	logWriter = build.NewRotatingLogWriter()
-	log       = build.NewSubLogger(Subsystem, logWriter.GenSubLogger)
-	rpcLog    = build.NewSubLogger("RPCS", logWriter.GenSubLogger)
-
-	// SupportedSubsystems is a function that returns a list of all
-	// supported logging sub systems.
-	SupportedSubsystems = logWriter.SupportedSubsystems
+	log       = build.NewSubLogger(Subsystem, nil)
+	rpcLog    = build.NewSubLogger("RPCS", nil)
 )
 
-func init() {
-	setSubLogger(Subsystem, log, nil)
-	setSubLogger("RPCS", rpcLog, nil)
-	addSubLogger(subastadb.Subsystem, subastadb.UseLogger)
-	addSubLogger("LNDC", lndclient.UseLogger)
-	addSubLogger("SGNL", signal.UseLogger)
-	addSubLogger(account.Subsystem, account.UseLogger)
-	addSubLogger(order.Subsystem, order.UseLogger)
-	addSubLogger(batchtx.Subsystem, batchtx.UseLogger)
-	addSubLogger(venue.Subsystem, venue.UseLogger)
-	addSubLogger(matching.Subsystem, matching.UseLogger)
-	addSubLogger(auth.Subsystem, auth.UseLogger)
-	addSubLogger(chanenforcement.Subsystem, chanenforcement.UseLogger)
-	addSubLogger(monitoring.Subsystem, monitoring.UseLogger)
-	addSubLogger(ratings.Subsystem, ratings.UseLogger)
-	addSubLogger(rejects.Subsystem, rejects.UseLogger)
+// SetupLoggers initializes all package-global logger variables.
+func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
+	genLogger := genSubLogger(root, intercept)
+
+	logWriter = root
+	log = build.NewSubLogger(Subsystem, genLogger)
+	rpcLog = build.NewSubLogger("RPCS", genLogger)
+
+	setSubLogger(root, Subsystem, log, nil)
+	setSubLogger(root, "RPCS", rpcLog, nil)
+	addSubLogger(root, subastadb.Subsystem, intercept, subastadb.UseLogger)
+	addSubLogger(root, "LNDC", intercept, lndclient.UseLogger)
+	addSubLogger(root, "SGNL", intercept, signal.UseLogger)
+	addSubLogger(root, account.Subsystem, intercept, account.UseLogger)
+	addSubLogger(root, order.Subsystem, intercept, order.UseLogger)
+	addSubLogger(root, batchtx.Subsystem, intercept, batchtx.UseLogger)
+	addSubLogger(root, venue.Subsystem, intercept, venue.UseLogger)
+	addSubLogger(root, matching.Subsystem, intercept, matching.UseLogger)
+	addSubLogger(root, auth.Subsystem, intercept, auth.UseLogger)
+	addSubLogger(
+		root, chanenforcement.Subsystem, intercept,
+		chanenforcement.UseLogger,
+	)
+	addSubLogger(root, monitoring.Subsystem, intercept, monitoring.UseLogger)
+	addSubLogger(root, ratings.Subsystem, intercept, ratings.UseLogger)
+	addSubLogger(root, rejects.Subsystem, intercept, rejects.UseLogger)
+}
+
+// genSubLogger creates a logger for a subsystem. We provide an instance of
+// a signal.Interceptor to be able to shutdown in the case of a critical error.
+func genSubLogger(root *build.RotatingLogWriter,
+	interceptor signal.Interceptor) func(string) btclog.Logger {
+
+	// Create a shutdown function which will request shutdown from our
+	// interceptor if it is listening.
+	shutdown := func() {
+		if !interceptor.Listening() {
+			return
+		}
+
+		interceptor.RequestShutdown()
+	}
+
+	// Return a function which will create a sublogger from our root
+	// logger without shutdown fn.
+	return func(tag string) btclog.Logger {
+		return root.GenSubLogger(tag, shutdown)
+	}
 }
 
 // addSubLogger is a helper method to conveniently create and register the
 // logger of a sub system.
-func addSubLogger(subsystem string, useLogger func(btclog.Logger)) {
-	logger := build.NewSubLogger(subsystem, logWriter.GenSubLogger)
-	setSubLogger(subsystem, logger, useLogger)
+func addSubLogger(root *build.RotatingLogWriter, subsystem string,
+	interceptor signal.Interceptor, useLogger func(btclog.Logger)) {
+	logger := build.NewSubLogger(subsystem, genSubLogger(root, interceptor))
+	setSubLogger(root, subsystem, logger, useLogger)
 }
 
 // setSubLogger is a helper method to conveniently register the logger of a sub
 // system.
-func setSubLogger(subsystem string, logger btclog.Logger,
-	useLogger func(btclog.Logger)) {
+func setSubLogger(root *build.RotatingLogWriter, subsystem string,
+	logger btclog.Logger, useLogger func(btclog.Logger)) {
 
-	logWriter.RegisterSubLogger(subsystem, logger)
+	root.RegisterSubLogger(subsystem, logger)
 	if useLogger != nil {
 		useLogger(logger)
 	}

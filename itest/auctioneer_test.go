@@ -18,7 +18,7 @@ func testMasterAcctInit(t *harnessTest) {
 	// Right off the bat, a transaction should enter the mempool as we go
 	// to init the system.
 	txid, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Node, 1, time.Second*10,
+		t.lndHarness.Miner.Client, 1, time.Second*10,
 	)
 	if err != nil {
 		t.Fatalf("transactions not found in the mempool: %v", err)
