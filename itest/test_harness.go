@@ -261,8 +261,7 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 		context.Background(), defaultWaitTimeout,
 	)
 	defer cancel()
-	err = h.lndHarness.EnsureConnected(ctxc, traderNode, h.lndHarness.Alice)
-	require.NoError(h.t, err)
+	h.lndHarness.EnsureConnected(ctxc, h.t, traderNode, h.lndHarness.Alice)
 
 	// If we already have a channel for LSAT payments, we're done.
 	lsatChannelExists := channelExists(

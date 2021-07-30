@@ -20,18 +20,12 @@ func testManualFeeBump(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
@@ -56,7 +50,7 @@ func testManualFeeBump(t *harnessTest) {
 	// requiring a fee for the next batch that is very low.
 	ctxb := context.Background()
 	var customFeeRate int64 = 500
-	_, err = t.auctioneer.AuctionAdminClient.BumpBatchFeeRate(
+	_, err := t.auctioneer.AuctionAdminClient.BumpBatchFeeRate(
 		ctxb, &adminrpc.BumpBatchFeeRateRequest{
 			FeeRateSatPerKw: uint32(customFeeRate),
 		},

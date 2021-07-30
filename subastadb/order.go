@@ -15,7 +15,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/tlv"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
+	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
 var (

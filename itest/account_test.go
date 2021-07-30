@@ -270,12 +270,9 @@ func testAccountDeposit(t *harnessTest) {
 	// We'll then attempt a deposit using a NP2WKH input. To do so, we'll
 	// need a NP2WKH available to spend. We send over 4 BTC and will attempt
 	// a 3 BTC deposit to ensure the NP2WKH input is chosen.
-	err = t.lndHarness.SendCoinsNP2WKH(
-		ctx, btcutil.SatoshiPerBitcoin*4, t.trader.cfg.LndNode,
+	t.lndHarness.SendCoinsNP2WKH(
+		ctx, t.t, btcutil.SatoshiPerBitcoin*4, t.trader.cfg.LndNode,
 	)
-	if err != nil {
-		t.Fatalf("unable to send np2wkh coins: %v", err)
-	}
 	depositReq.AmountSat = btcutil.SatoshiPerBitcoin * 3
 	valueAfterSecondDeposit := btcutil.Amount(
 		depositResp.Account.Value + depositReq.AmountSat,

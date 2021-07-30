@@ -96,7 +96,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// Now we can set up our test harness (LND instance), with the chain
 	// backend we just created.
 	lndHarness, err := lntest.NewNetworkHarness(
-		miner, chainBackend, "./lnd-itest", false,
+		miner, chainBackend, "./lnd-itest", lntest.BackendBbolt,
 	)
 	if err != nil {
 		ht.Fatalf("unable to create lightning network harness: %v", err)
@@ -138,7 +138,7 @@ func TestAuctioneerServer(t *testing.T) {
 	// With the btcd harness created, we can now complete the
 	// initialization of the network. args - list of lnd arguments,
 	// example: "--debuglevel=debug"
-	if err = lndHarness.SetUp("subasta-itest", nil); err != nil {
+	if err = lndHarness.SetUp(ht.t, "subasta-itest", nil); err != nil {
 		ht.Fatalf("unable to set up test lightning network: %v", err)
 	}
 
@@ -175,22 +175,18 @@ func TestAuctioneerServer(t *testing.T) {
 			// created and later discarded for each test run to
 			// assure no state is taken over between runs.
 			traderHarness, auctioneerHarness := setupHarnesses(
-				t, lndHarness,
+				t1, lndHarness,
 			)
-			err = lndHarness.EnsureConnected(
-				context.Background(), lndHarness.Alice,
+			lndHarness.EnsureConnected(
+				context.Background(), t1, lndHarness.Alice,
 				lndHarness.Bob,
 			)
-			if err != nil {
-				t.Fatalf("unable to connect alice to bob: %v",
-					err)
-			}
 
 			if err := lndHarness.Alice.AddToLog(logLine); err != nil {
-				t.Fatalf("unable to add to log: %v", err)
+				t1.Fatalf("unable to add to log: %v", err)
 			}
 			if err := lndHarness.Bob.AddToLog(logLine); err != nil {
-				t.Fatalf("unable to add to log: %v", err)
+				t1.Fatalf("unable to add to log: %v", err)
 			}
 
 			ht := newHarnessTest(
@@ -213,7 +209,7 @@ func TestAuctioneerServer(t *testing.T) {
 			// Shut down both client and server to remove all state.
 			err := ht.shutdown()
 			if err != nil {
-				t.Fatalf("error shutting down harness: %v", err)
+				t1.Fatalf("error shutting down harness: %v", err)
 			}
 		})
 

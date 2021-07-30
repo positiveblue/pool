@@ -35,18 +35,12 @@ func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders. To test the message multi-plexing between token IDs
@@ -78,18 +72,12 @@ func testBatchExecution(t *harnessTest) {
 
 	// We'll add a third trader that we will shut down after placing an
 	// order, to ensure batch execution still can proceed.
-	dave, err := t.lndHarness.NewNode("dave", nil)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	dave := t.lndHarness.NewNode(t.t, "dave", nil)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, thirdTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
 
 	account4 := openAccountAndAssert(
 		t, thirdTrader, &poolrpc.InitAccountRequest{
@@ -433,10 +421,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 	// We need a third lnd node, Charlie that is used for the second
 	// trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -447,14 +432,8 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 	walletAmt := btcutil.Amount(
 		(unconfirmedBatches + 1) * defaultAccountValue,
 	)
-	err = t.lndHarness.SendCoins(ctx, walletAmt, charlie)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
-	err = t.lndHarness.SendCoins(ctx, walletAmt, t.trader.cfg.LndNode)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, walletAmt, charlie)
+	t.lndHarness.SendCoins(ctx, t.t, walletAmt, t.trader.cfg.LndNode)
 
 	type accountPair struct {
 		account1 *poolrpc.Account
@@ -693,18 +672,12 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
@@ -728,7 +701,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
 	askAmt := btcutil.Amount(1_500_000)
-	_, err = submitAskOrder(t.trader, account1.TraderKey, 100, askAmt)
+	_, err := submitAskOrder(t.trader, account1.TraderKey, 100, askAmt)
 	if err != nil {
 		t.Fatalf("could not submit ask order: %v", err)
 	}
@@ -826,18 +799,12 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account for the maker with plenty of sats.
 	account1 := openAccountAndAssert(
@@ -875,7 +842,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	const durationBlocks = 2016
 
 	// Submit an ask an bid which will match exactly.
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, account1.TraderKey, matchRate, orderSize,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.LeaseDurationBlocks = durationBlocks
@@ -950,14 +917,12 @@ func testConsecutiveBatches(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
@@ -990,7 +955,7 @@ func testConsecutiveBatches(t *harnessTest) {
 	const askRate = 20
 
 	// Submit an ask an bid that matches one third of the ask.
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, askAccount.TraderKey, askRate, askSize,
 	)
 	require.NoError(t.t, err)
@@ -1081,24 +1046,20 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// We need a third and fourth lnd node, Charlie and Dave that are used
 	// for the second and third trader. Charlie is very picky and only wants
 	// channels from new nodes.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 		newNodesOnlyOpt(),
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
-	dave, err := t.lndHarness.NewNode("dave", nil)
-	require.NoError(t.t, err)
+	dave := t.lndHarness.NewNode(t.t, "dave", nil)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, thirdTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
 
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
@@ -1135,7 +1096,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	const durationBlocks = 2016
 
 	// Submit an ask an bid that matches half of the ask.
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, askAccount.TraderKey, askRate, askSize,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.LeaseDurationBlocks = durationBlocks
@@ -1210,27 +1171,23 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// We need a third lnd node, Charlie, that is used for the second
 	// trader. Charlie can only have one pending incoming channel (default
 	// setting of lnd).
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// And as an "innocent bystander" we also create Dave who will buy a
 	// channel during the second round so we can make sure being matched
 	// multiple times in the same batch (because another node rejected and
 	// the matchmaking had to be restarted) can still succeed.
-	dave, err := t.lndHarness.NewNode("dave", nil)
-	require.NoError(t.t, err)
+	dave := t.lndHarness.NewNode(t.t, "dave", nil)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, thirdTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, dave)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
 
 	// Create an account for the maker and taker with plenty of sats.
 	askAccount := openAccountAndAssert(
@@ -1279,8 +1236,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 
 	// We manually open a channel between Bob and Charlie now to saturate
 	// the maxpendingchannels setting.
-	err = t.lndHarness.EnsureConnected(ctx, t.trader.cfg.LndNode, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.EnsureConnected(ctx, t.t, t.trader.cfg.LndNode, charlie)
 	_, err = t.lndHarness.OpenPendingChannel(
 		ctx, t.trader.cfg.LndNode, charlie, 1_000_000, 0,
 	)
@@ -1398,14 +1354,12 @@ func testBatchMatchingConditions(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
@@ -1537,19 +1491,17 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 40_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 40_000_000, charlie)
 
 	// We'll create orders in three distinct lease duration buckets: The
 	// default 2016 block bucket that is already available on startup and
 	// the multiples 4032 and 6048 that we explicitly add now.
-	_, err = t.auctioneer.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
+	_, err := t.auctioneer.StoreLeaseDuration(ctx, &adminrpc.LeaseDuration{
 		Duration:    4032,
 		BucketState: auctioneerrpc.DurationBucketState_MARKET_OPEN,
 	})
@@ -1855,8 +1807,7 @@ func testBatchSponsor(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
@@ -1865,8 +1816,7 @@ func testBatchSponsor(t *harnessTest) {
 
 	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
-	err = t.lndHarness.SendCoins(ctxt, 5_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctxt, t.t, 5_000_000, charlie)
 
 	// To execute a batch, we'll need an asker and bidder.
 	askAccount := openAccountAndAssert(
@@ -1888,7 +1838,7 @@ func testBatchSponsor(t *harnessTest) {
 
 	const orderAmt = 500_000
 	const orderRate = 20
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, askAccount.TraderKey, orderRate, orderAmt,
 	)
 	require.NoError(t.t, err)

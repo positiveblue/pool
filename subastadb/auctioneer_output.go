@@ -7,7 +7,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/lightninglabs/subasta/account"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
+	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
 const (

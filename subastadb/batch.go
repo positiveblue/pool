@@ -18,7 +18,7 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
+	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
 var (

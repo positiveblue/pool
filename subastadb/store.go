@@ -20,8 +20,8 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/multimutex"
-	"go.etcd.io/etcd/clientv3"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
+	clientv3 "go.etcd.io/etcd/client/v3"
+	conc "go.etcd.io/etcd/client/v3/concurrency"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )

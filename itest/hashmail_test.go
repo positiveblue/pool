@@ -27,12 +27,10 @@ func testHashMailServer(t *harnessTest) {
 	// stream.
 	//
 	// TODO(roasbeef): create expired account as well?
-	aliceNode, err := t.lndHarness.NewNode("alice", nil)
-	require.NoError(t.t, err)
+	aliceNode := t.lndHarness.NewNode(t.t, "alice", nil)
 
 	// Fund the wallet to be able to open an account of the default size.
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, aliceNode)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, aliceNode)
 
 	aliceTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, aliceNode, t.auctioneer,
