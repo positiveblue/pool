@@ -78,7 +78,7 @@ var (
 		TraderKeyRaw:    toRawKey(testTraderKey2),
 		HeightHint:      100,
 	}
-	defaultTimeout        = 100 * time.Millisecond
+	defaultTimeout        = 500 * time.Millisecond
 	errGenericStreamError = errors.New("an expected error")
 )
 
