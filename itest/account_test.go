@@ -353,6 +353,12 @@ func testAccountRenewal(t *harnessTest) {
 	require.NoError(t.t, err)
 	absoluteExpiry := uint32(bestHeight) + newRelativeExpiry
 
+	// Wait for the lnd backend to catch up as well.
+	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	err = t.lndHarness.Bob.WaitForBlockchainSync(ctxt)
+	require.NoError(t.t, err)
+
 	updateReq := &poolrpc.RenewAccountRequest{
 		AccountKey: account.TraderKey,
 		AccountExpiry: &poolrpc.RenewAccountRequest_RelativeExpiry{
