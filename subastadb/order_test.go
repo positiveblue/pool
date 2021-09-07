@@ -17,7 +17,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
-	conc "go.etcd.io/etcd/clientv3/concurrency"
+	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
 // TestSubmitOrder tests that orders can be stored and retrieved correctly.

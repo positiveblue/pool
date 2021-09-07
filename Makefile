@@ -33,6 +33,7 @@ RM := rm -f
 CP := cp
 MAKE := make
 XARGS := xargs -L 1
+UNAME_S := $(shell uname -s)
 
 include make/testing_flags.mk
 
@@ -122,6 +123,12 @@ itest: build-itest itest-only
 
 itest-only:
 	@$(call print, "Running integration tests with ${backend} backend.")
+ifeq ($(UNAME_S),Linux)
+	mkdir -p $$HOME/.aperture
+endif
+ifeq ($(UNAME_S),Darwin)
+	mkdir -p "$$HOME/Library/Application Support/Aperture"
+endif
 	rm -rf itest/regtest; date
 	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
 

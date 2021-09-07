@@ -18,14 +18,12 @@ func testSelfChanBalance(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie, err := t.lndHarness.NewNode("charlie", nil)
-	require.NoError(t.t, err)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	require.NoError(t.t, err)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders. To test the message multi-plexing between token IDs
@@ -53,7 +51,7 @@ func testSelfChanBalance(t *harnessTest) {
 	// balance bid.
 	const orderFixedRate = 100
 	ask1Amt := btcutil.Amount(200_000)
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, makerAccount.TraderKey, orderFixedRate, ask1Amt,
 	)
 	require.NoError(t.t, err)

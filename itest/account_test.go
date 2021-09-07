@@ -270,12 +270,9 @@ func testAccountDeposit(t *harnessTest) {
 	// We'll then attempt a deposit using a NP2WKH input. To do so, we'll
 	// need a NP2WKH available to spend. We send over 4 BTC and will attempt
 	// a 3 BTC deposit to ensure the NP2WKH input is chosen.
-	err = t.lndHarness.SendCoinsNP2WKH(
-		ctx, btcutil.SatoshiPerBitcoin*4, t.trader.cfg.LndNode,
+	t.lndHarness.SendCoinsNP2WKH(
+		ctx, t.t, btcutil.SatoshiPerBitcoin*4, t.trader.cfg.LndNode,
 	)
-	if err != nil {
-		t.Fatalf("unable to send np2wkh coins: %v", err)
-	}
 	depositReq.AmountSat = btcutil.SatoshiPerBitcoin * 3
 	valueAfterSecondDeposit := btcutil.Amount(
 		depositResp.Account.Value + depositReq.AmountSat,
@@ -355,6 +352,12 @@ func testAccountRenewal(t *harnessTest) {
 	_, bestHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
 	require.NoError(t.t, err)
 	absoluteExpiry := uint32(bestHeight) + newRelativeExpiry
+
+	// Wait for the lnd backend to catch up as well.
+	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
+	defer cancel()
+	err = t.lndHarness.Bob.WaitForBlockchainSync(ctxt)
+	require.NoError(t.t, err)
 
 	updateReq := &poolrpc.RenewAccountRequest{
 		AccountKey: account.TraderKey,

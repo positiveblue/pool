@@ -19,31 +19,22 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 
 	// We need a third lnd node, Charlie that is used for the second trader.
 	lndArgs := []string{"--maxpendingchannels=2"}
-	charlie, err := t.lndHarness.NewNode("charlie", lndArgs)
-	if err != nil {
-		t.Fatalf("unable to set up charlie: %v", err)
-	}
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
 
-	err = t.lndHarness.SendCoins(ctx, 5_000_000, charlie)
-	if err != nil {
-		t.Fatalf("unable to send coins to carol: %v", err)
-	}
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Send some extra coins to the auctioneers LND node that we can use
 	// for batch IO.
 	const numInputs = 3
 	for i := 0; i < numInputs; i++ {
-		err = t.lndHarness.SendCoins(
-			ctx, 1*btcutil.SatoshiPerBitcoin,
+		t.lndHarness.SendCoins(
+			ctx, t.t, 1*btcutil.SatoshiPerBitcoin,
 			t.auctioneer.cfg.LndNode,
 		)
-		if err != nil {
-			t.Fatalf("unable to send coins to carol: %v", err)
-		}
 	}
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
@@ -69,7 +60,7 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	// default trader, selling 15 units (1.5M sats) of liquidity.
 	const orderFixedRate = 100
 	askAmt := btcutil.Amount(1_500_000)
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
 	)
 	if err != nil {
