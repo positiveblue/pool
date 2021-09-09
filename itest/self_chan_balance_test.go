@@ -26,8 +26,7 @@ func testSelfChanBalance(t *harnessTest) {
 	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
-	// for both traders. To test the message multi-plexing between token IDs
-	// and accounts, we add a secondary account to the second trader.
+	// for both traders.
 	makerAccount := openAccountAndAssert(
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
@@ -37,8 +38,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 	defer shutdownAndAssert(t, dave, recipientTrader)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
-	// for both traders. To test the message multi-plexing between token IDs
-	// and accounts, we add a secondary account to the second trader.
+	// for both traders.
 	makerAccount := openAccountAndAssert(
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
@@ -73,7 +73,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
-	firstSidecarBid := makeSidecar(
+	firstSidecarBid, _ := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
 		orderFixedRate, askAmt, selfChanBalance, auto,
 	)
@@ -178,7 +178,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
-	secondSidecarBid := makeSidecar(
+	secondSidecarBid, _ := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
 		orderFixedRate, askAmt, 0, auto,
 	)
@@ -262,8 +262,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 	defer shutdownAndAssert(t, dave, recipientTrader)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
-	// for both traders. To test the message multi-plexing between token IDs
-	// and accounts, we add a secondary account to the second trader.
+	// for both traders.
 	makerAccount := openAccountAndAssert(
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
@@ -307,7 +306,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 
 	// Create the sidecar channel ticket now, including the offer, order and
 	// channel expectation.
-	firstSidecarBid := makeSidecar(
+	firstSidecarBid, _ := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
 		orderFixedRate, askAmt, 0, false,
 	)
@@ -368,8 +367,7 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 	defer shutdownAndAssert(t, dave, recipientTrader)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
-	// for both traders. To test the message multi-plexing between token IDs
-	// and accounts, we add a secondary account to the second trader.
+	// for both traders.
 	makerAccount := openAccountAndAssert(
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
@@ -424,13 +422,141 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 	_, _ = executeBatch(t, 0)
 }
 
+// testSidecarTicketCancellation makes sure sidecar tickets can be canceled in
+// the various states they can be in during their lifecycle.
+func testSidecarTicketCancellation(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third and fourth lnd node for the additional participants.
+	// Charlie is the sidecar channel provider (has an account, submits the
+	// bid order) and Dave is the sidecar channel recipient (has no account
+	// and only receives the channel).
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	providerTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, providerTrader)
+	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+
+	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	recipientTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, dave, recipientTrader)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders.
+	makerAccount := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	providerAccount := openAccountAndAssert(
+		t, providerTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// maker, selling 200 units (200k sats) of liquidity.
+	const (
+		orderFixedRate  = 100
+		askAmt          = 200_000
+		selfChanBalance = 100_000
+	)
+	_, err := submitAskOrder(
+		t.trader, makerAccount.TraderKey, orderFixedRate, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.Version = uint32(orderT.VersionSidecarChannel)
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Create an offer from the provider account.
+	offerResp, err := providerTrader.OfferSidecar(
+		ctx, &poolrpc.OfferSidecarRequest{
+			AutoNegotiate: false,
+			Bid: &poolrpc.Bid{
+				Details: &poolrpc.Order{
+					TraderKey: providerAccount.TraderKey,
+					Amt:       uint64(askAmt),
+				},
+				SelfChanBalance:     selfChanBalance,
+				LeaseDurationBlocks: defaultOrderDuration,
+			},
+		},
+	)
+	require.NoError(t.t, err)
+
+	offeredTicket, err := sidecar.DecodeString(offerResp.Ticket)
+	require.NoError(t.t, err)
+
+	// The offer should now be listed and in the correct state.
+	assertSidecarState(
+		t.t, providerTrader, 1, offeredTicket.ID[:],
+		offeredTicket.State,
+	)
+
+	// Let's cancel the ticket.
+	_, err = providerTrader.CancelSidecar(
+		ctx, &poolrpc.CancelSidecarRequest{
+			SidecarId: offeredTicket.ID[:],
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Make sure the state is properly reflected.
+	assertSidecarState(
+		t.t, providerTrader, 1, offeredTicket.ID[:],
+		sidecar.StateCanceled,
+	)
+
+	// Create a full sidecar channel ticket now, including the offer, order
+	// and channel expectation. Then we cancel it on the offer side and
+	// check that the order is canceled as well.
+	sidecarBid, ticketID := makeSidecar(
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0, true,
+	)
+	assertSidecarState(
+		t.t, providerTrader, 2, ticketID, sidecar.StateExpectingChannel,
+	)
+	assertSidecarState(
+		t.t, recipientTrader, 1, ticketID,
+		sidecar.StateExpectingChannel,
+	)
+
+	// Let's cancel the ticket.
+	_, err = providerTrader.CancelSidecar(
+		ctx, &poolrpc.CancelSidecarRequest{
+			SidecarId: ticketID,
+		},
+	)
+	require.NoError(t.t, err)
+	assertSidecarState(
+		t.t, providerTrader, 2, ticketID, sidecar.StateCanceled,
+	)
+
+	// The order should be canceled as well.
+	assertBidOrderState(
+		t, providerTrader, sidecarBid,
+		auctioneerrpc.OrderState_ORDER_CANCELED,
+	)
+}
+
 // makeSidecar creates a sidecar ticket with an offer on the provider node,
 // registers the offer with the recipient node, creates a bid order for the
 // provider and finally adds the channel expectation to the recipient's node.
 func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 	providerAccountKey []byte, orderFixedRate uint32, // nolint:unparam
 	askAmt btcutil.Amount, selfChanBalance uint64, // nolint:unparam
-	auto bool) orderT.Nonce { // nolint:unparam
+	auto bool) (orderT.Nonce, []byte) {
 
 	ctx := context.Background()
 
@@ -479,6 +605,8 @@ func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 		},
 	)
 	require.NoError(t.t, err)
+	registeredTicket, err := sidecar.DecodeString(registerResp.Ticket)
+	require.NoError(t.t, err)
 
 	// If we're using automated negotiation, then the last two steps will
 	// be done automatically, so we can exit here.
@@ -488,18 +616,13 @@ func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 	if auto {
 		// If this is an auto negotiated sidecar ticket, then we'll
 		// wait for the sidecar responder to connect as a new trader.
-		registeredTicket, err := sidecar.DecodeString(
-			registerResp.Ticket,
-		)
-		require.NoError(t.t, err)
-
 		assertSidecarTraderSubscribed(
 			t, registeredTicket.Recipient.MultiSigPubKey,
 		)
 
 		var bidNonce orderT.Nonce
 		copy(bidNonce[:], registeredTicket.Order.BidNonce[:])
-		return bidNonce
+		return bidNonce, registeredTicket.ID[:]
 	}
 
 	// Step 3/4 is for the provider to submit a bid order referencing the
@@ -534,7 +657,7 @@ func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 	)
 	require.NoError(t.t, err)
 
-	return bidNonce
+	return bidNonce, registeredTicket.ID[:]
 }
 
 // assertSidecarLease makes sure that the leased sidecar channel can be found
@@ -627,5 +750,34 @@ func remoteActiveBalanceCheck(balance int64) activeChanCheck {
 		}
 
 		return nil
+	}
+}
+
+// assertSidecarState asserts the number of sidecar tickets and the state of a
+// single ticket within the list.
+func assertSidecarState(t *testing.T, trader *traderHarness, numTickets int,
+	id []byte, state sidecar.State) {
+
+	t.Helper()
+
+	sidecars, err := trader.ListSidecars(
+		context.Background(), &poolrpc.ListSidecarsRequest{},
+	)
+	require.NoError(t, err)
+	require.Len(t, sidecars.Tickets, numTickets)
+
+	found := false
+	for _, ticket := range sidecars.Tickets {
+		if !bytes.Equal(ticket.Id, id) {
+			continue
+		}
+
+		found = true
+		require.Equal(t, state.String(), ticket.State)
+		break
+	}
+
+	if !found {
+		require.Fail(t, "ticket with ID %x not found", id)
 	}
 }

@@ -1347,8 +1347,9 @@ func assertAskOrderState(t *harnessTest, trader *traderHarness,
 
 		var orderFound bool
 		for _, order := range resp.Asks {
-			if !bytes.Equal(order.Details.OrderNonce,
-				orderNonce[:]) {
+			if !bytes.Equal(
+				order.Details.OrderNonce, orderNonce[:],
+			) {
 				continue
 			}
 
@@ -1360,6 +1361,7 @@ func assertAskOrderState(t *harnessTest, trader *traderHarness,
 			}
 
 			orderFound = true
+			break
 		}
 
 		if !orderFound {
@@ -1368,9 +1370,45 @@ func assertAskOrderState(t *harnessTest, trader *traderHarness,
 
 		return nil
 	}, defaultWaitTimeout)
-	if err != nil {
-		t.Fatalf("order state doesn't match: %v", err)
-	}
+	require.NoError(t.t, err)
+}
+
+func assertBidOrderState(t *harnessTest, trader *traderHarness,
+	orderNonce orderT.Nonce, expectedState auctioneerrpc.OrderState) {
+
+	err := wait.NoError(func() error {
+		req := &poolrpc.ListOrdersRequest{}
+		resp, err := trader.ListOrders(context.Background(), req)
+		if err != nil {
+			return err
+		}
+
+		var orderFound bool
+		for _, order := range resp.Bids {
+			if !bytes.Equal(
+				order.Details.OrderNonce, orderNonce[:],
+			) {
+				continue
+			}
+
+			if order.Details.State != expectedState {
+				return fmt.Errorf("order has state %v, "+
+					" expected %v",
+					order.Details.State,
+					expectedState)
+			}
+
+			orderFound = true
+			break
+		}
+
+		if !orderFound {
+			return fmt.Errorf("order not found")
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	require.NoError(t.t, err)
 }
 
 // assertChannelClosed asserts that the channel is properly cleaned up after
