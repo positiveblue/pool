@@ -1,12 +1,14 @@
 package subastadb
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"net"
 	"strconv"
 	"strings"
 
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tor"
 )
 
@@ -102,4 +104,32 @@ func keyFromHexString(keyStr string) ([33]byte, error) {
 	}
 	copy(keyArr[:], key)
 	return keyArr, nil
+}
+
+func msgTxToString(tx *wire.MsgTx) (string, error) {
+	var buf bytes.Buffer
+	if err := tx.Serialize(&buf); err != nil {
+		return "", err
+	}
+
+	return hex.EncodeToString(buf.Bytes()), nil
+}
+
+func msgTxFromString(txStr string) (*wire.MsgTx, error) {
+	if txStr == "" {
+		return nil, nil
+	}
+
+	rawTx, err := hex.DecodeString(txStr)
+	if err != nil {
+		return nil, err
+	}
+
+	var tx wire.MsgTx
+	r := bytes.NewReader(rawTx)
+	if err := tx.Deserialize(r); err != nil {
+		return nil, err
+	}
+
+	return &tx, nil
 }
