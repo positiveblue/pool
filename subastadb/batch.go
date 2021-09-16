@@ -156,11 +156,11 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	defer s.nonceMtx.unlock(orders...)
 
 	// Wrap the whole batch update in one large isolated STM transaction.
-	var updateCache func()
+	var cacheUpdates map[orderT.Nonce]order.ServerOrder
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		// Update orders first.
 		var err error
-		updateCache, err = s.updateOrdersSTM(stm, orders, orderModifiers)
+		cacheUpdates, err = s.updateOrdersSTM(stm, orders, orderModifiers)
 		if err != nil {
 			return err
 		}
@@ -212,7 +212,7 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	}
 
 	// Now that the DB was successfully updated, also update the cache.
-	updateCache()
+	s.updateOrderCache(cacheUpdates)
 	return nil
 }
 

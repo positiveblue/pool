@@ -151,10 +151,10 @@ func (s *EtcdStore) UpdateOrder(ctx context.Context,
 	defer s.nonceMtx.unlock(nonce)
 
 	// Read and update the order in one single isolated STM transaction.
-	var updateCache func()
+	var cacheUpdates map[orderT.Nonce]order.ServerOrder
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		var err error
-		updateCache, err = s.updateOrdersSTM(
+		cacheUpdates, err = s.updateOrdersSTM(
 			stm, []orderT.Nonce{nonce},
 			[][]order.Modifier{modifiers},
 		)
@@ -165,17 +165,35 @@ func (s *EtcdStore) UpdateOrder(ctx context.Context,
 	}
 
 	// Now that the DB was successfully updated, also update the cache.
-	updateCache()
+	s.updateOrderCache(cacheUpdates)
 	return nil
+}
+
+// Return a function that will update the cache when called.
+func (s *EtcdStore) updateOrderCache(
+	cacheUpdates map[orderT.Nonce]order.ServerOrder) {
+
+	s.activeOrdersCacheMtx.Lock()
+	defer s.activeOrdersCacheMtx.Unlock()
+
+	for nonce, order := range cacheUpdates {
+		// If the order now is archived, delete it from the
+		// cache of active orders.
+		if order.Details().State.Archived() {
+			delete(s.activeOrdersCache, nonce)
+		} else {
+			s.activeOrdersCache[nonce] = order
+		}
+	}
 }
 
 // updateOrdersSTM adds all operations necessary to update multiple orders to
 // the given STM transaction. If any of the orders does not yet exist, the whole
-// STM transaction will fail. In case everything went through, a function that
-// updates the activeOrdersCache is returned that should be called after the
-// transactions successfully completes.
+// STM transaction will fail. In case everything went through, a map storing the
+// updated orders is returned that can be used to update the active orders cache.
 func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
-	modifiers [][]order.Modifier) (func(), error) {
+	modifiers [][]order.Modifier) (map[orderT.Nonce]order.ServerOrder,
+	error) {
 
 	if len(nonces) != len(modifiers) {
 		return nil, fmt.Errorf("invalid number of modifiers")
@@ -251,23 +269,7 @@ func (s *EtcdStore) updateOrdersSTM(stm conc.STM, nonces []orderT.Nonce,
 		cacheUpdates[nonce] = dbOrder
 	}
 
-	// Return a function that will update the cache when called.
-	updateCache := func() {
-		s.activeOrdersCacheMtx.Lock()
-		defer s.activeOrdersCacheMtx.Unlock()
-
-		for nonce, order := range cacheUpdates {
-			// If the order now is archived, delete it from the
-			// cache of active orders.
-			if order.Details().State.Archived() {
-				delete(s.activeOrdersCache, nonce)
-			} else {
-				s.activeOrdersCache[nonce] = order
-			}
-		}
-	}
-
-	return updateCache, nil
+	return cacheUpdates, nil
 }
 
 // orderNodeTierReader returns an io.Reader from which an order's min node tier
