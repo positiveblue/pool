@@ -63,6 +63,14 @@ func openPostgresDB(cfg *SQLConfig) (*gorm.DB, error) {
 	}
 	sqlDb.SetMaxOpenConns(maxOpenConnections)
 
+	if err := db.AutoMigrate(&SQLAskOrder{}); err != nil {
+		return nil, err
+	}
+
+	if err := db.AutoMigrate(&SQLBidOrder{}); err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }
 
