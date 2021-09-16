@@ -221,6 +221,13 @@ var DefaultConfig = &Config{
 	Bitcoin: &chain.BitcoinConfig{
 		Host: "localhost:8332",
 	},
+	SQL: &subastadb.SQLConfig{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "pool",
+		Password: "pool",
+		DBName:   "pool",
+	},
 	TLSCertPath:                  defaultTLSCertPath,
 	TLSKeyPath:                   defaultTLSKeyPath,
 	MaxLogFiles:                  defaultMaxLogFiles,
