@@ -126,6 +126,9 @@ func (s *EtcdStore) SubmitOrder(ctx context.Context,
 		return err
 	}
 
+	// Optionally mirror the new order to SQL.
+	UpdateOrdersSQL(ctx, s.sqlMirror, newOrder)
+
 	// Order was successfully submitted, update cache.
 	s.activeOrdersCacheMtx.Lock()
 	s.activeOrdersCache[newOrder.Nonce()] = newOrder
@@ -166,6 +169,12 @@ func (s *EtcdStore) UpdateOrder(ctx context.Context,
 
 	// Now that the DB was successfully updated, also update the cache.
 	s.updateOrderCache(cacheUpdates)
+
+	// Optionally mirror the updated orders to SQL.
+	for _, order := range cacheUpdates {
+		UpdateOrdersSQL(ctx, s.sqlMirror, order)
+	}
+
 	return nil
 }
 

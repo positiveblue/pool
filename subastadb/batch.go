@@ -213,6 +213,11 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 
 	// Now that the DB was successfully updated, also update the cache.
 	s.updateOrderCache(cacheUpdates)
+
+	// Optionally mirror the updated orders to SQL.
+	for _, o := range cacheUpdates {
+		UpdateOrdersSQL(ctx, s.sqlMirror, o)
+	}
 	return nil
 }
 
