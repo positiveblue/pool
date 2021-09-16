@@ -141,13 +141,17 @@ type EtcdStore struct {
 	// particular nonce to the DB, in order to ensure concurrent writes
 	// don't lead to inconsitencies between the cache and the DB.
 	nonceMtx *nonceMutex
+
+	// sqlMirror holds an optional SQLStore object which we'll use to mirror
+	// orders and accounts to a SQL backend.
+	sqlMirror *SQLStore
 }
 
 // NewEtcdStore creates a new etcd store instance. Chain indicates the chain to
 // use by its genesis block hash. The specified user and password should be
 // able to access al keys below that topLevelDir above.
 func NewEtcdStore(activeNet chaincfg.Params,
-	host, user, pass string) (*EtcdStore, error) {
+	host, user, pass string, sqlMirror *SQLStore) (*EtcdStore, error) {
 
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{host},
@@ -164,6 +168,7 @@ func NewEtcdStore(activeNet chaincfg.Params,
 		networkID:         activeNet.Name,
 		nonceMtx:          newNonceMutex(),
 		activeOrdersCache: make(map[orderT.Nonce]order.ServerOrder),
+		sqlMirror:         sqlMirror,
 	}
 
 	return s, nil
