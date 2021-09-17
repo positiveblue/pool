@@ -248,12 +248,13 @@ func TestAccounts(t *testing.T) {
 	}
 
 	// Update some of the fields of the account.
-	err = store.UpdateAccount(
+	updated, err := store.UpdateAccount(
 		ctx, &a, account.StateModifier(account.StateExpired),
 	)
 	if err != nil {
 		t.Fatalf("unable to update account: %v", err)
 	}
+	a = *updated
 
 	// The store should now reflect the updated fields.
 	accounts, err = store.Accounts(ctx)
@@ -272,7 +273,7 @@ func TestAccounts(t *testing.T) {
 	// the trader key's sign bit to create a valid point that does not exist
 	// in the database.
 	a.TraderKeyRaw[0] ^= 0x01
-	err = store.UpdateAccount(
+	_, err = store.UpdateAccount(
 		ctx, &a, account.StateModifier(account.StateOpen),
 	)
 	if !errors.Is(err, ErrAccountNotFound) {
@@ -294,7 +295,7 @@ func TestAccounts(t *testing.T) {
 		}},
 		TxOut: []*wire.TxOut{},
 	}
-	err = store.UpdateAccount(
+	_, err = store.UpdateAccount(
 		ctx, &a, account.StateModifier(account.StateClosed),
 		account.LatestTxModifier(closeTx),
 	)

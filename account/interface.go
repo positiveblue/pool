@@ -417,8 +417,8 @@ type Store interface {
 	CompleteReservation(context.Context, *Account) error
 
 	// UpdateAccount updates an account in the store according to the given
-	// modifiers.
-	UpdateAccount(context.Context, *Account, ...Modifier) error
+	// modifiers. Returns the updated account.
+	UpdateAccount(context.Context, *Account, ...Modifier) (*Account, error)
 
 	// StoreAccountDiff stores a pending set of updates that should be
 	// applied to an account after an invocation of CommitAccountDiff.

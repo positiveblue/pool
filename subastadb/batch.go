@@ -167,7 +167,7 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 
 		// Update accounts next.
 		for idx, acctKey := range accounts {
-			err := s.updateAccountSTM(
+			_, err := s.updateAccountSTM(
 				stm, acctKey, accountModifiers[idx]...,
 			)
 			if err != nil {

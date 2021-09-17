@@ -368,7 +368,7 @@ func (s *adminRPCServer) EditAccount(ctx context.Context,
 			return nil, err
 		}
 	} else {
-		err := s.store.UpdateAccount(ctx, acct, mods...)
+		acct, err = s.store.UpdateAccount(ctx, acct, mods...)
 		if err != nil {
 			return nil, err
 		}

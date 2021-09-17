@@ -746,7 +746,7 @@ func TestAccountSpendRecreatesOutput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to generate next account output: %v", err)
 	}
-	err = h.store.UpdateAccount(ctx, account, IncrementBatchKey())
+	_, err = h.store.UpdateAccount(ctx, account, IncrementBatchKey())
 	if err != nil {
 		t.Fatalf("unable to update account: %v", err)
 	}
@@ -1073,7 +1073,7 @@ func TestAccountConsecutiveBatches(t *testing.T) {
 			IncrementBatchKey(),
 			LatestTxModifier(batchTx),
 		}
-		err = h.store.UpdateAccount(
+		_, err = h.store.UpdateAccount(
 			context.Background(), account, mods...,
 		)
 		require.NoError(t, err)
