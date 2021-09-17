@@ -155,6 +155,13 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	s.nonceMtx.lock(orders...)
 	defer s.nonceMtx.unlock(orders...)
 
+	// Similarly we need to ensure that accounts are not updated until we
+	// can be sure that all account sate is mirrored to SQL.
+	s.accountUpdateMtx.Lock()
+	defer s.accountUpdateMtx.Unlock()
+
+	var updatedAccounts []*account.Account
+
 	// Wrap the whole batch update in one large isolated STM transaction.
 	var cacheUpdates map[orderT.Nonce]order.ServerOrder
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
@@ -167,12 +174,14 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 
 		// Update accounts next.
 		for idx, acctKey := range accounts {
-			_, err := s.updateAccountSTM(
+			acct, err := s.updateAccountSTM(
 				stm, acctKey, accountModifiers[idx]...,
 			)
 			if err != nil {
 				return err
 			}
+
+			updatedAccounts = append(updatedAccounts, acct)
 		}
 
 		// Update the master account output.
@@ -214,10 +223,34 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	// Now that the DB was successfully updated, also update the cache.
 	s.updateOrderCache(cacheUpdates)
 
-	// Optionally mirror the updated orders to SQL.
-	for _, o := range cacheUpdates {
-		UpdateOrdersSQL(ctx, s.sqlMirror, o)
+	// Optionally mirror the updated orders and accounts to SQL.
+	if s.sqlMirror != nil {
+		err := s.sqlMirror.Transaction(
+			ctx,
+			func(tx *SQLTransaction) error {
+				for _, o := range cacheUpdates {
+					err := tx.UpdateOrder(o)
+					if err != nil {
+						return err
+					}
+				}
+
+				for _, acct := range updatedAccounts {
+					err := tx.UpdateAccount(acct)
+					if err != nil {
+						return err
+					}
+				}
+
+				return nil
+			},
+		)
+		if err != nil {
+			log.Errorf("Unable to store batch updates to SQL db: "+
+				"%v", err)
+		}
 	}
+
 	return nil
 }
 

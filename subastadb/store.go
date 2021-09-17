@@ -139,8 +139,12 @@ type EtcdStore struct {
 
 	// nonceMtx is a mutex we'll lock when doing write operations for a
 	// particular nonce to the DB, in order to ensure concurrent writes
-	// don't lead to inconsitencies between the cache and the DB.
+	// don't lead to inconsistencies between the cache and the DB.
 	nonceMtx *nonceMutex
+
+	// accountUpdateMtx is a mutex to ensure consistency between the main
+	// etcd account database and the SQL mirror.
+	accountUpdateMtx sync.Mutex
 
 	// sqlMirror holds an optional SQLStore object which we'll use to mirror
 	// orders and accounts to a SQL backend.
