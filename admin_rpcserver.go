@@ -9,6 +9,7 @@ import (
 	"net"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg"
@@ -31,6 +32,12 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/sweep"
 	"google.golang.org/grpc"
+)
+
+var (
+	// defaultLeaseDuration is the default lease duration we use for locking
+	// additional inputs to our batch.
+	defaultLeaseDuration = time.Minute * 10
 )
 
 // adminRPCServer is a server that implements the admin server RPC interface and
@@ -1077,7 +1084,9 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 	}
 
 	for i, in := range io.Inputs {
-		_, err := s.wallet.LeaseOutput(ctx, s.lockID, in.PrevOutPoint)
+		_, err := s.wallet.LeaseOutput(
+			ctx, s.lockID, in.PrevOutPoint, defaultLeaseDuration,
+		)
 		if err != nil {
 			releaseOutputs(i)
 			return nil, fmt.Errorf("unable to lease output %v: %v",

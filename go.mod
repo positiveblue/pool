@@ -12,11 +12,11 @@ require (
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lightninglabs/aperture v0.1.9-beta.0.20210730071214-beed396b0ef6
-	github.com/lightninglabs/lndclient v0.12.0-9
-	github.com/lightninglabs/pool v0.5.1-alpha
+	github.com/lightninglabs/lndclient v0.13.0-7
+	github.com/lightninglabs/pool v0.5.1-alpha.0.20210930001328-53df9a308491
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.3
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210728112744-ebabda671786
+	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210802115842-44971f0c46c9
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/ticker v1.0.0
 	github.com/prometheus/client_golang v1.11.0
