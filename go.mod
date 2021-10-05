@@ -11,6 +11,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-prometheus v1.2.0
 	github.com/grpc-ecosystem/grpc-gateway v1.16.0
 	github.com/jessevdk/go-flags v1.4.0
+	github.com/lib/pq v1.10.2
 	github.com/lightninglabs/aperture v0.1.9-beta.0.20210730071214-beed396b0ef6
 	github.com/lightninglabs/lndclient v0.13.0-7
 	github.com/lightninglabs/pool v0.5.1-alpha.0.20210930001328-53df9a308491
@@ -19,16 +20,17 @@ require (
 	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20210802115842-44971f0c46c9
 	github.com/lightningnetwork/lnd/cert v1.0.3
 	github.com/lightningnetwork/lnd/ticker v1.0.0
+	github.com/ory/dockertest/v3 v3.8.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/stretchr/testify v1.7.0
-	github.com/urfave/cli v1.20.0
+	github.com/urfave/cli v1.22.1
 	go.etcd.io/etcd/client/v3 v3.5.0
 	go.etcd.io/etcd/server/v3 v3.5.0
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.26.0
 	gopkg.in/macaroon.v2 v2.1.0
-	gorm.io/driver/postgres v1.1.1
+	gorm.io/driver/postgres v1.1.2
 	gorm.io/gorm v1.21.15
 )
 
