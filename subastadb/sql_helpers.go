@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightningnetwork/lnd/tor"
 )
@@ -132,4 +133,23 @@ func msgTxFromString(txStr string) (*wire.MsgTx, error) {
 	}
 
 	return &tx, nil
+}
+
+func outpointFromString(outPointStr string) (*wire.OutPoint, error) {
+	outpointParts := strings.Split(outPointStr, ":")
+	if len(outpointParts) != 2 {
+		return nil, fmt.Errorf("invalid outpoint")
+	}
+
+	hash, err := chainhash.NewHashFromStr(outpointParts[0])
+	if err != nil {
+		return nil, err
+	}
+
+	outIdx, err := strconv.Atoi(outpointParts[1])
+	if err != nil {
+		return nil, err
+	}
+
+	return wire.NewOutPoint(hash, uint32(outIdx)), nil
 }

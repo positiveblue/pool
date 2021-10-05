@@ -299,34 +299,49 @@ func clientOrderKit(kit *orderT.Kit) SQLOrderKit {
 	}
 }
 
-func (s *SQLTransaction) updateAskOrder(o *order.Ask) error {
+func newSQLAskOrder(o *order.Ask) (*SQLAskOrder, error) {
 	serverDetailsKit, err := serverDetailsKit(&o.Kit)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	askOrder := &SQLAskOrder{
+	return &SQLAskOrder{
 		SQLOrderKit:              clientOrderKit(&o.Ask.Kit),
 		SQLOrderServerDetailsKit: *serverDetailsKit,
+	}, nil
+}
+
+func (s *SQLTransaction) updateAskOrder(o *order.Ask) error {
+	askOrder, err := newSQLAskOrder(o)
+	if err != nil {
+		return err
 	}
 	return s.tx.Clauses(
 		clause.OnConflict{UpdateAll: true},
 	).Create(askOrder).Error
 }
 
-func (s *SQLTransaction) updateBidOrder(o *order.Bid) error {
+func newSQLBidOrder(o *order.Bid) (*SQLBidOrder, error) {
 	serverDetailsKit, err := serverDetailsKit(&o.Kit)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	bidOrder := &SQLBidOrder{
+	return &SQLBidOrder{
 		SQLOrderKit:              clientOrderKit(&o.Bid.Kit),
 		SQLOrderServerDetailsKit: *serverDetailsKit,
 		MinNodeTier:              uint32(o.MinNodeTier),
 		SelfChanBalance:          int64(o.SelfChanBalance),
 		IsSidecar:                o.IsSidecar,
+	}, nil
+}
+
+func (s *SQLTransaction) updateBidOrder(o *order.Bid) error {
+	bidOrder, err := newSQLBidOrder(o)
+	if err != nil {
+		return err
 	}
+
 	return s.tx.Clauses(
 		clause.OnConflict{UpdateAll: true},
 	).Create(bidOrder).Error
