@@ -242,7 +242,7 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 					}
 				}
 
-				return nil
+				return tx.UpdateBatch(batchID, batchSnapshot)
 			},
 		)
 		if err != nil {
