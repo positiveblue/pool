@@ -270,108 +270,85 @@ func NewBosScoreRatingsDatabase(webSource NodeRatingWebSource,
 
 // updateNodeRatings attempts to update the current set of node ratings using
 // the latest state of the bos score end point.
+func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
+	httpClient *http.Client) error {
+
+	log.Infof("Scraping Bos Score Endpoint")
+
+	// With the client provided, we'll query the API source to fetch
+	// the URL that we should use to query for the fee estimation.
+	targetURL := m.webSource.GenQueryURL()
+	resp, err := httpClient.Get(targetURL)
+	if err != nil {
+		return fmt.Errorf("unable to query web api for rating "+
+			"response: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Once we've obtained the response, we'll instruct the
+	// WebAPIFeeSource to parse out the body to obtain our final
+	// result.
+	nodeRatings, err := m.webSource.ParseResponse(resp.Body)
+	if err != nil {
+		return fmt.Errorf("unable to query web api for rating "+
+			"response: %v", err)
+	}
+
+	log.Infof("Retrieved %v Bos Score nodes", len(nodeRatings))
+
+	// Rather than replace, we'll merge in this new response to
+	// make sure we don't override any of the existing scores.
+	//
+	// TODO(roasbeef): can/should also commit to disk here as well
+	//
+	// TODO(roasbeef): this also means nodees may stay on the list
+	// for a longer period of time if they're volatile and are
+	// right on the order
+	for nodeKey, newRating := range nodeRatings {
+		if err := m.ratingsDB.ModifyNodeRating(
+			ctx, nodeKey, newRating,
+		); err != nil {
+			return fmt.Errorf("unable to modify rating for %x: %v",
+				nodeKey[:], err)
+		}
+	}
+
+	return nil
+}
+
+// setUpPeriodicNodeRatingsUpdate kicks off the periodic node ratings
+// update process.
 //
 // NOTE: This method should only be called ONCE, as it creates a time.AfterFunc
 // to refresh the scores after an interval.
-func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
-	doneChan chan struct{}) func() {
+func (m *BosScoreRatingsDatabase) setUpPeriodicNodeRatingsUpdate(
+	ctx context.Context, httpClient *http.Client) error {
+
+	if m.refreshFunc != nil {
+		return fmt.Errorf("setUpUpdateNodeRatings cannot be called " +
+			"more than once")
+	}
 
 	// TODO(roasbeef): if empty at this point, then read from disk or
 	// accept existing ratings as args
 
-	// We use an internal closure to be able to pass the return value
-	// directly into time.AfterFunc, while also being able to give the
-	// caller a sync call back.
-	scrape := func() {
-		log.Infof("Scraping Bos Score Endpoint")
-
-		// Regardless of if we succeed or not, we'll queue up another
-		// scraping run, as it may have been the case that the main
-		// endpoint was down when we tried initially.
-		defer func() {
-			// If this is our first run, then we'll set up the next
-			// invocation after our wait interval.
-			if m.refreshFunc == nil {
-				log.Infof("Setting Bos Score Re Scrape Timer")
-
-				m.refreshFunc = time.AfterFunc(
-					m.refreshInterval,
-					m.updateNodeRatings(ctx, nil),
-				)
-
-				// The very first time around, we'll close the
-				// done chan if it exists to give the caller a
-				// synchronous hook.
-				if doneChan != nil {
-					close(doneChan)
-				}
-				return
-			}
-
-			// Otherwiwe, we've already done a run, so can just
-			// rteset our timer.
-			m.refreshFunc.Reset(m.refreshInterval)
-		}()
-
-		// Rather than use the default http.Client, we'll make a custom
-		// one which will allow us to control how long we'll wait to
-		// read the response from the service. This way, if the service
-		// is down or overloaded, we can exit early and use our default
-		// fee.
-		netTransport := &http.Transport{
-			Dial: (&net.Dialer{
-				Timeout: 5 * time.Second,
-			}).Dial,
-			TLSHandshakeTimeout: 5 * time.Second,
-		}
-		netClient := &http.Client{
-			Timeout:   time.Second * 10,
-			Transport: netTransport,
-		}
-
-		// With the client created, we'll query the API source to fetch
-		// the URL that we should use to query for the fee estimation.
-		targetURL := m.webSource.GenQueryURL()
-		resp, err := netClient.Get(targetURL)
-		if err != nil {
-			log.Errorf("unable to query web api for rating response: %v",
-				err)
-			return
-		}
-		defer resp.Body.Close()
-
-		// Once we've obtained the response, we'll instruct the
-		// WebAPIFeeSource to parse out the body to obtain our final
-		// result.
-		nodeRatings, err := m.webSource.ParseResponse(resp.Body)
-		if err != nil {
-			log.Errorf("unable to query web api for rating response: %v",
-				err)
-			return
-		}
-
-		log.Infof("Retrieved %v Bos Score nodes", len(nodeRatings))
-
-		// Rather than replace, we'll merge in this new response to
-		// make sure we don't override any of the existing scores.
-		//
-		// TODO(roasbeef): can/should also commit to disk here as well
-		//
-		// TODO(roasbeef): this also means nodees may stay on the list
-		// for a longer period of time if they're volatile and are
-		// right on the order
-		for nodeKey, newRating := range nodeRatings {
-			err := m.ratingsDB.ModifyNodeRating(
-				ctx, nodeKey, newRating,
-			)
+	m.refreshFunc = time.AfterFunc(
+		m.refreshInterval,
+		// This function tries to update the node ratings
+		// + reset the timer so it gets executed again.
+		func() {
+			err := m.updateNodeRatings(ctx, httpClient)
 			if err != nil {
-				log.Errorf("unable to modify rating for %x: %v",
-					nodeKey[:], err)
+				log.Errorf("unable to update node "+
+					"ratings: %v", err)
 			}
-		}
-	}
+			// Reset our timer so we execute this function again
+			// in `refreshInterval` time.
+			m.refreshFunc.Reset(m.refreshInterval)
+		},
+	)
 
-	return scrape
+	return nil
 }
 
 // IndexRatings indexes the set of ratings to get the most up to date state. No
@@ -383,23 +360,34 @@ func (m *BosScoreRatingsDatabase) IndexRatings(ctx context.Context) error {
 
 	log.Infof("Indexing Bos Score Database")
 
-	doneChan := make(chan struct{})
+	// Rather than use the default http.Client, we'll make a custom
+	// one which will allow us to control how long we'll wait to
+	// read the response from the service. This way, if the service
+	// is down or overloaded, we can exit early and use our default
+	// fee.
+	netTransport := &http.Transport{
+		Dial: (&net.Dialer{
+			Timeout: 5 * time.Second,
+		}).Dial,
+		TLSHandshakeTimeout: 5 * time.Second,
+	}
+	netClient := &http.Client{
+		Timeout:   time.Second * 10,
+		Transport: netTransport,
+	}
 
-	// We want to make this first instance synchronous to ensure that once
-	// this method returns the indexing has been completed, so we'll pass
-	// in a done channel, then wait on it below.
-	m.updateNodeRatings(ctx, doneChan)()
-
-	select {
-	case <-doneChan:
-		break
-
+	// We want to make this first update synchronous to ensure that once
+	// this method returns the indexing has been completed.
 	// If things don't complete within 1 minute (should be a pretty quick
 	// operation, we'll return an error.
-	case <-time.After(time.Minute):
-		return fmt.Errorf("initial DB index for bos score " +
-			"didn't complete in time")
+	timeoutCtx, cancel := context.WithTimeout(ctx, time.Minute)
+	defer cancel()
+	if err := m.updateNodeRatings(timeoutCtx, netClient); err != nil {
+		log.Errorf("unable to update node ratings: %v", err)
+	}
 
+	if err := m.setUpPeriodicNodeRatingsUpdate(ctx, netClient); err != nil {
+		return err
 	}
 
 	log.Infof("Bos Score Indexing Complete: scrape_time=%v",
