@@ -1,6 +1,7 @@
 package subastadb
 
 import (
+	"context"
 	"encoding/hex"
 	"time"
 
@@ -594,4 +595,27 @@ func (s *SQLTransaction) GetBatch(batchID orderT.BatchID) ( // nolint: interface
 	}
 
 	return batches[0].toBatchSnapshot()
+}
+
+// UpdateBatchesSQL upserts more batches in one transaction to SQL.
+func UpdateBatchesSQL(ctx context.Context, store *SQLStore,
+	batches map[orderT.BatchID]*BatchSnapshot) {
+
+	if store == nil {
+		return
+	}
+
+	err := store.Transaction(ctx, func(tx *SQLTransaction) error {
+		for batchID, snapshot := range batches {
+			if err := tx.UpdateBatch(batchID, snapshot); err != nil {
+				return err
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		log.Errorf("Unable to store batches to SQL: %v", err)
+	}
+
 }

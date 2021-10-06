@@ -289,6 +289,51 @@ func (s *EtcdStore) ConfirmBatch(ctx context.Context,
 	return err
 }
 
+// Batches retrieves all existing batches.
+func (s *EtcdStore) Batches(ctx context.Context) (
+	map[orderT.BatchID]*BatchSnapshot, error) {
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	resp, err := s.getAllValuesByPrefix(ctx, s.getKeyPrefix(batchDir))
+	if err != nil {
+		return nil, err
+	}
+
+	batches := make(map[orderT.BatchID]*BatchSnapshot)
+	for k, v := range resp {
+		if strings.HasSuffix(k, perBatchKey) ||
+			strings.HasSuffix(k, batchStatusKey) {
+			continue
+		}
+
+		snapshot, err := deserializeBatchSnapshot(bytes.NewReader(v))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+			return s.supplementSnapshotData(stm, snapshot)
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		var batchID orderT.BatchID
+		keyParts := strings.Split(k, keyDelimiter)
+		rawBatchID, err := hex.DecodeString(keyParts[len(keyParts)-1])
+		if err != nil {
+			return nil, err
+		}
+		copy(batchID[:], rawBatchID)
+
+		batches[batchID] = snapshot
+	}
+
+	return batches, nil
+}
+
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (

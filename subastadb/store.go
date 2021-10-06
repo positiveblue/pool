@@ -178,6 +178,108 @@ func NewEtcdStore(activeNet chaincfg.Params,
 	return s, nil
 }
 
+// mirrorToSQL attempts to mirror accounts, orders and batches to the configured
+// SQL database. As this operation is not ciritical and can be retried anytime,
+// SQL failures are only logged.
+func (s *EtcdStore) mirrorToSQL(ctx context.Context) error {
+	if s.sqlMirror == nil {
+		log.Infof("SQL mirror not configured, skipping mirroring")
+		return nil
+	}
+
+	log.Infof("Mirroring state to SQL")
+	const itemsPerTxn = 50
+
+	// Mirror accounts
+	s.accountUpdateMtx.Lock()
+	accounts, err := s.Accounts(ctx)
+	if err != nil {
+		s.accountUpdateMtx.Unlock()
+		log.Errorf("Unable to fetch accounts: %v", err)
+		return err
+	}
+
+	// define a helper to select min to simplify pagination code below.
+	min := func(a, b int) int {
+		if a < b {
+			return a
+		}
+		return b
+	}
+
+	cnt := 0
+	for start := 0; start < len(accounts); start += itemsPerTxn {
+		end := min(start+itemsPerTxn, len(accounts))
+		UpdateAccountsSQL(ctx, s.sqlMirror, accounts[start:end]...)
+		cnt += end - start
+	}
+
+	log.Infof("Mirrored %v accounts to SQL", cnt)
+	s.accountUpdateMtx.Unlock()
+
+	// Mirror active orders.
+	cnt = 0
+	s.activeOrdersCacheMtx.Lock()
+	txnOrders := make([]order.ServerOrder, 0, itemsPerTxn)
+	for _, order := range s.activeOrdersCache {
+		txnOrders = append(txnOrders, order)
+		cnt++
+
+		if len(txnOrders) < itemsPerTxn {
+			continue
+		}
+
+		UpdateOrdersSQL(ctx, s.sqlMirror, txnOrders...)
+		txnOrders = txnOrders[:0]
+	}
+
+	UpdateOrdersSQL(ctx, s.sqlMirror, txnOrders...)
+	log.Infof("Mirrored %v active orders to SQL", cnt)
+	s.activeOrdersCacheMtx.Unlock()
+
+	// Mirror archived orders.
+	archivedOrders, err := s.GetArchivedOrders(ctx)
+	if err != nil {
+		log.Errorf("Unable to fetch archived orders: %v", err)
+		return err
+	}
+
+	cnt = 0
+	for start := 0; start < len(archivedOrders); start += itemsPerTxn {
+		end := min(start+itemsPerTxn, len(archivedOrders))
+		UpdateOrdersSQL(ctx, s.sqlMirror, archivedOrders[start:end]...)
+		cnt += end - start
+	}
+
+	log.Infof("Mirrored %v archived orders to SQL", cnt)
+
+	// Mirror batches.
+	cnt = 0
+	batches, err := s.Batches(ctx)
+	if err != nil {
+		log.Errorf("Unable to fetch batches: %v", err)
+		return err
+	}
+
+	txnBatches := make(map[orderT.BatchID]*BatchSnapshot, itemsPerTxn)
+	for batchID, snapshot := range batches {
+		txnBatches[batchID] = snapshot
+		cnt++
+
+		if len(txnBatches) < itemsPerTxn {
+			continue
+		}
+
+		UpdateBatchesSQL(ctx, s.sqlMirror, txnBatches)
+		txnBatches = make(map[orderT.BatchID]*BatchSnapshot, itemsPerTxn)
+	}
+
+	UpdateBatchesSQL(ctx, s.sqlMirror, txnBatches)
+	log.Infof("Mirrored %v batches to SQL", cnt)
+
+	return nil
+}
+
 // getKeyPrefix returns the key prefix path for the given prefix.
 func (s *EtcdStore) getKeyPrefix(prefix string) string {
 	// bitcoin/clm/subasta/<network>/<prefix>.
@@ -228,7 +330,12 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 	}
 
 	// We end initialization by filling the active orders cache.
-	return s.fillActiveOrdersCache(ctxt)
+	if err := s.fillActiveOrdersCache(ctxt); err != nil {
+		return err
+	}
+
+	// Finally mirror accounts, orders and batches to SQL (if configured).
+	return s.mirrorToSQL(ctx)
 }
 
 // firstTimeInit stores all initial required key-value pairs throughout the
