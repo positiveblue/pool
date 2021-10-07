@@ -628,25 +628,17 @@ func (s *rpcServer) SubscribeBatchAuction(
 	s.wg.Add(1)
 	defer s.wg.Done()
 
-	// First let's make sure the trader isn't trying to open more than one
-	// connection. Pinning this to the LSAT is not a 100% guarantee there
-	// won't be two streams with the same accounts, but it should prevent
-	// a badly implemented client from draining our TCP connections by
-	// accident. The token ID can only be zero when testing locally without
-	// aperture (or during the integration tests). In a real deployment,
-	// aperture enforces the token to be set so we don't need an explicit
-	// check here.
 	traderID := tokenIDFromContext(stream.Context())
-	s.connectedStreamsMutex.Lock()
-	_, ok := s.connectedStreams[traderID]
-	s.connectedStreamsMutex.Unlock()
-	if ok {
-		return fmt.Errorf("client_id=%x already connected, only one "+
-			"stream per trader is allowed", traderID)
+	isSidecar := false
+	trader, err := s.connectTrader(traderID, isSidecar)
+	if err != nil {
+		return err
 	}
-	rpcLog.Debugf("New trader client_id=%x connected to stream", traderID)
 
-	return s.handleTraderStream(traderID, false, stream)
+	rpcLog.Debugf("New trader client_id=%x connected to stream",
+		traderID)
+
+	return s.handleTraderStream(trader, stream)
 }
 
 // SubscribeSidecar is a streaming RPC that allows a trader to subscribe to
@@ -669,46 +661,28 @@ func (s *rpcServer) SubscribeSidecar(
 	if _, err := rand.Read(traderID[:]); err != nil {
 		return err
 	}
-	rpcLog.Debugf("New sidecar connected to stream, assigned random "+
-		"client_id=%x", traderID[:])
+
+	isSidecar := true
+	trader, err := s.connectTrader(traderID, isSidecar)
+	if err != nil {
+		return err
+	}
+
+	rpcLog.Debugf("New sidecar connected to stream, assigned "+
+		"random client_id=%x", traderID)
 
 	// Prepare the structure that we are going to use to track the trader
 	// over the duration of this stream.
-	return s.handleTraderStream(traderID, true, stream)
+	return s.handleTraderStream(trader, stream)
 }
 
 // newTraderStream creates a new trader stream and starts the goroutine that
 // receives incoming messages from that trader.
-func (s *rpcServer) handleTraderStream(traderID lsat.TokenID, isSidecar bool,
+func (s *rpcServer) handleTraderStream(trader *TraderStream,
 	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
 
-	// Prepare the structure that we are going to use to track the trader
-	// over the duration of this stream.
-	trader := &TraderStream{
-		Lsat:          traderID,
-		Subscriptions: make(map[[33]byte]*venue.ActiveTrader),
-		comms: &commChannels{
-			newSub: make(chan *venue.ActiveTrader),
-			// The following two channels must be buffered with the
-			// same number as the maximum number of accounts per
-			// trader! The reason is, messages from the trader
-			// client are de-multiplexed for the venue as it only
-			// knows about the individual accounts and doesn't know
-			// which belong to the same client!
-			toTrader: make(
-				chan venue.ExecutionMsg, maxAccountsPerTrader,
-			),
-			toServer: make(
-				chan venue.TraderMsg, maxAccountsPerTrader,
-			),
-			quitConn: make(chan struct{}),
-			err:      make(chan error),
-		},
-		IsSidecar: isSidecar,
-	}
-	s.connectedStreamsMutex.Lock()
-	s.connectedStreams[traderID] = trader
-	s.connectedStreamsMutex.Unlock()
+	traderID := trader.Lsat
+
 	initialSubscriptionTimeout := time.After(s.subscribeTimeout)
 
 	// Start the goroutine that just accepts incoming subscription requests.
@@ -1519,6 +1493,58 @@ func (s *rpcServer) addStreamSubscription(traderID lsat.TokenID,
 		return fmt.Errorf("error registering trader at venue: %v", err)
 	}
 	return nil
+}
+
+// connectTrader adds a trading client stream connection. Only one trading
+// stream is allowed per client
+func (s *rpcServer) connectTrader(traderID lsat.TokenID,
+	isSidecar bool) (*TraderStream, error) {
+
+	s.connectedStreamsMutex.Lock()
+	defer s.connectedStreamsMutex.Unlock()
+
+	// First let's make sure the trader isn't trying to open more than one
+	// connection. Pinning this to the LSAT is not a 100% guarantee there
+	// won't be two streams with the same accounts, but it should prevent
+	// a badly implemented client from draining our TCP connections by
+	// accident. The token ID can only be zero when testing locally without
+	// aperture (or during the integration tests). In a real deployment,
+	// aperture enforces the token to be set so we don't need an explicit
+	// check here.
+	_, ok := s.connectedStreams[traderID]
+	if ok {
+		return nil, fmt.Errorf("client_id=%x already connected, only one "+
+			"stream per trader is allowed", traderID)
+	}
+
+	// Prepare the structure that we are going to use to track the trader
+	// over the duration of this stream.
+	trader := &TraderStream{
+		Lsat:          traderID,
+		Subscriptions: make(map[[33]byte]*venue.ActiveTrader),
+		comms: &commChannels{
+			newSub: make(chan *venue.ActiveTrader),
+			// The following two channels must be buffered with the
+			// same number as the maximum number of accounts per
+			// trader! The reason is, messages from the trader
+			// client are de-multiplexed for the venue as it only
+			// knows about the individual accounts and doesn't know
+			// which belong to the same client!
+			toTrader: make(
+				chan venue.ExecutionMsg, maxAccountsPerTrader,
+			),
+			toServer: make(
+				chan venue.TraderMsg, maxAccountsPerTrader,
+			),
+			quitConn: make(chan struct{}),
+			err:      make(chan error),
+		},
+		IsSidecar: isSidecar,
+	}
+
+	s.connectedStreams[traderID] = trader
+
+	return trader, nil
 }
 
 // disconnectTrader removes a trading client stream connection and unregisters
