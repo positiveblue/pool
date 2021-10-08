@@ -3289,7 +3289,7 @@ var file_admin_proto_rawDesc = []byte{
 	0x49, 0x6e, 0x70, 0x75, 0x74, 0x52, 0x06, 0x69, 0x6e, 0x70, 0x75, 0x74, 0x73, 0x12, 0x2a, 0x0a,
 	0x07, 0x6f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x73, 0x18, 0x02, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x10,
 	0x2e, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x72, 0x70, 0x63, 0x2e, 0x4f, 0x75, 0x74, 0x70, 0x75, 0x74,
-	0x52, 0x07, 0x6f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x73, 0x32, 0xf5, 0x0e, 0x0a, 0x0c, 0x41, 0x75,
+	0x52, 0x07, 0x6f, 0x75, 0x74, 0x70, 0x75, 0x74, 0x73, 0x32, 0xb8, 0x0f, 0x0a, 0x0c, 0x41, 0x75,
 	0x63, 0x74, 0x69, 0x6f, 0x6e, 0x41, 0x64, 0x6d, 0x69, 0x6e, 0x12, 0x48, 0x0a, 0x0d, 0x4d, 0x61,
 	0x73, 0x74, 0x65, 0x72, 0x41, 0x63, 0x63, 0x6f, 0x75, 0x6e, 0x74, 0x12, 0x16, 0x2e, 0x61, 0x64,
 	0x6d, 0x69, 0x6e, 0x72, 0x70, 0x63, 0x2e, 0x45, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x65, 0x71, 0x75,
@@ -3409,10 +3409,14 @@ var file_admin_proto_rawDesc = []byte{
 	0x64, 0x6d, 0x69, 0x6e, 0x72, 0x70, 0x63, 0x2e, 0x4d, 0x6f, 0x76, 0x65, 0x46, 0x75, 0x6e, 0x64,
 	0x73, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x61, 0x64, 0x6d, 0x69, 0x6e,
 	0x72, 0x70, 0x63, 0x2e, 0x45, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x65, 0x73, 0x70, 0x6f, 0x6e, 0x73,
-	0x65, 0x42, 0x2b, 0x5a, 0x29, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63, 0x6f, 0x6d, 0x2f,
-	0x6c, 0x69, 0x67, 0x68, 0x74, 0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73, 0x2f, 0x73, 0x75,
-	0x62, 0x61, 0x73, 0x74, 0x61, 0x2f, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x72, 0x70, 0x63, 0x62, 0x06,
-	0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
+	0x65, 0x12, 0x41, 0x0a, 0x0e, 0x4d, 0x69, 0x72, 0x72, 0x6f, 0x72, 0x44, 0x61, 0x74, 0x61, 0x62,
+	0x61, 0x73, 0x65, 0x12, 0x16, 0x2e, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x72, 0x70, 0x63, 0x2e, 0x45,
+	0x6d, 0x70, 0x74, 0x79, 0x52, 0x65, 0x71, 0x75, 0x65, 0x73, 0x74, 0x1a, 0x17, 0x2e, 0x61, 0x64,
+	0x6d, 0x69, 0x6e, 0x72, 0x70, 0x63, 0x2e, 0x45, 0x6d, 0x70, 0x74, 0x79, 0x52, 0x65, 0x73, 0x70,
+	0x6f, 0x6e, 0x73, 0x65, 0x42, 0x2b, 0x5a, 0x29, 0x67, 0x69, 0x74, 0x68, 0x75, 0x62, 0x2e, 0x63,
+	0x6f, 0x6d, 0x2f, 0x6c, 0x69, 0x67, 0x68, 0x74, 0x6e, 0x69, 0x6e, 0x67, 0x6c, 0x61, 0x62, 0x73,
+	0x2f, 0x73, 0x75, 0x62, 0x61, 0x73, 0x74, 0x61, 0x2f, 0x61, 0x64, 0x6d, 0x69, 0x6e, 0x72, 0x70,
+	0x63, 0x62, 0x06, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x33,
 }
 
 var (
@@ -3553,34 +3557,36 @@ var file_admin_proto_depIdxs = []int32{
 	39, // 60: adminrpc.AuctionAdmin.StoreLeaseDuration:input_type -> adminrpc.LeaseDuration
 	39, // 61: adminrpc.AuctionAdmin.RemoveLeaseDuration:input_type -> adminrpc.LeaseDuration
 	42, // 62: adminrpc.AuctionAdmin.MoveFunds:input_type -> adminrpc.MoveFundsRequest
-	2,  // 63: adminrpc.AuctionAdmin.MasterAccount:output_type -> adminrpc.MasterAccountResponse
-	3,  // 64: adminrpc.AuctionAdmin.ConnectedTraders:output_type -> adminrpc.ConnectedTradersResponse
-	1,  // 65: adminrpc.AuctionAdmin.BatchTick:output_type -> adminrpc.EmptyResponse
-	1,  // 66: adminrpc.AuctionAdmin.PauseBatchTicker:output_type -> adminrpc.EmptyResponse
-	1,  // 67: adminrpc.AuctionAdmin.ResumeBatchTicker:output_type -> adminrpc.EmptyResponse
-	9,  // 68: adminrpc.AuctionAdmin.ListOrders:output_type -> adminrpc.ListOrdersResponse
-	16, // 69: adminrpc.AuctionAdmin.AccountDetails:output_type -> adminrpc.Account
-	15, // 70: adminrpc.AuctionAdmin.ListAccounts:output_type -> adminrpc.ListAccountsResponse
-	16, // 71: adminrpc.AuctionAdmin.EditAccount:output_type -> adminrpc.Account
-	1,  // 72: adminrpc.AuctionAdmin.DeleteAccountDiff:output_type -> adminrpc.EmptyResponse
-	17, // 73: adminrpc.AuctionAdmin.AuctionStatus:output_type -> adminrpc.AuctionStatusResponse
-	18, // 74: adminrpc.AuctionAdmin.ListBatches:output_type -> adminrpc.ListBatchesResponse
-	27, // 75: adminrpc.AuctionAdmin.BatchSnapshot:output_type -> adminrpc.AdminBatchSnapshotResponse
-	21, // 76: adminrpc.AuctionAdmin.ListBans:output_type -> adminrpc.ListBansResponse
-	1,  // 77: adminrpc.AuctionAdmin.RemoveBan:output_type -> adminrpc.EmptyResponse
-	1,  // 78: adminrpc.AuctionAdmin.AddBan:output_type -> adminrpc.EmptyResponse
-	1,  // 79: adminrpc.AuctionAdmin.RemoveReservation:output_type -> adminrpc.EmptyResponse
-	29, // 80: adminrpc.AuctionAdmin.FundingConflicts:output_type -> adminrpc.FundingConflictsResponse
-	1,  // 81: adminrpc.AuctionAdmin.ClearConflicts:output_type -> adminrpc.EmptyResponse
-	1,  // 82: adminrpc.AuctionAdmin.BumpBatchFeeRate:output_type -> adminrpc.EmptyResponse
-	33, // 83: adminrpc.AuctionAdmin.QueryNodeRating:output_type -> adminrpc.RatingQueryResponse
-	35, // 84: adminrpc.AuctionAdmin.ModifyNodeRatings:output_type -> adminrpc.ModifyRatingResponse
-	38, // 85: adminrpc.AuctionAdmin.ListNodeRatings:output_type -> adminrpc.ListNodeRatingsResponse
-	1,  // 86: adminrpc.AuctionAdmin.StoreLeaseDuration:output_type -> adminrpc.EmptyResponse
-	1,  // 87: adminrpc.AuctionAdmin.RemoveLeaseDuration:output_type -> adminrpc.EmptyResponse
-	1,  // 88: adminrpc.AuctionAdmin.MoveFunds:output_type -> adminrpc.EmptyResponse
-	63, // [63:89] is the sub-list for method output_type
-	37, // [37:63] is the sub-list for method input_type
+	0,  // 63: adminrpc.AuctionAdmin.MirrorDatabase:input_type -> adminrpc.EmptyRequest
+	2,  // 64: adminrpc.AuctionAdmin.MasterAccount:output_type -> adminrpc.MasterAccountResponse
+	3,  // 65: adminrpc.AuctionAdmin.ConnectedTraders:output_type -> adminrpc.ConnectedTradersResponse
+	1,  // 66: adminrpc.AuctionAdmin.BatchTick:output_type -> adminrpc.EmptyResponse
+	1,  // 67: adminrpc.AuctionAdmin.PauseBatchTicker:output_type -> adminrpc.EmptyResponse
+	1,  // 68: adminrpc.AuctionAdmin.ResumeBatchTicker:output_type -> adminrpc.EmptyResponse
+	9,  // 69: adminrpc.AuctionAdmin.ListOrders:output_type -> adminrpc.ListOrdersResponse
+	16, // 70: adminrpc.AuctionAdmin.AccountDetails:output_type -> adminrpc.Account
+	15, // 71: adminrpc.AuctionAdmin.ListAccounts:output_type -> adminrpc.ListAccountsResponse
+	16, // 72: adminrpc.AuctionAdmin.EditAccount:output_type -> adminrpc.Account
+	1,  // 73: adminrpc.AuctionAdmin.DeleteAccountDiff:output_type -> adminrpc.EmptyResponse
+	17, // 74: adminrpc.AuctionAdmin.AuctionStatus:output_type -> adminrpc.AuctionStatusResponse
+	18, // 75: adminrpc.AuctionAdmin.ListBatches:output_type -> adminrpc.ListBatchesResponse
+	27, // 76: adminrpc.AuctionAdmin.BatchSnapshot:output_type -> adminrpc.AdminBatchSnapshotResponse
+	21, // 77: adminrpc.AuctionAdmin.ListBans:output_type -> adminrpc.ListBansResponse
+	1,  // 78: adminrpc.AuctionAdmin.RemoveBan:output_type -> adminrpc.EmptyResponse
+	1,  // 79: adminrpc.AuctionAdmin.AddBan:output_type -> adminrpc.EmptyResponse
+	1,  // 80: adminrpc.AuctionAdmin.RemoveReservation:output_type -> adminrpc.EmptyResponse
+	29, // 81: adminrpc.AuctionAdmin.FundingConflicts:output_type -> adminrpc.FundingConflictsResponse
+	1,  // 82: adminrpc.AuctionAdmin.ClearConflicts:output_type -> adminrpc.EmptyResponse
+	1,  // 83: adminrpc.AuctionAdmin.BumpBatchFeeRate:output_type -> adminrpc.EmptyResponse
+	33, // 84: adminrpc.AuctionAdmin.QueryNodeRating:output_type -> adminrpc.RatingQueryResponse
+	35, // 85: adminrpc.AuctionAdmin.ModifyNodeRatings:output_type -> adminrpc.ModifyRatingResponse
+	38, // 86: adminrpc.AuctionAdmin.ListNodeRatings:output_type -> adminrpc.ListNodeRatingsResponse
+	1,  // 87: adminrpc.AuctionAdmin.StoreLeaseDuration:output_type -> adminrpc.EmptyResponse
+	1,  // 88: adminrpc.AuctionAdmin.RemoveLeaseDuration:output_type -> adminrpc.EmptyResponse
+	1,  // 89: adminrpc.AuctionAdmin.MoveFunds:output_type -> adminrpc.EmptyResponse
+	1,  // 90: adminrpc.AuctionAdmin.MirrorDatabase:output_type -> adminrpc.EmptyResponse
+	64, // [64:91] is the sub-list for method output_type
+	37, // [37:64] is the sub-list for method input_type
 	37, // [37:37] is the sub-list for extension type_name
 	37, // [37:37] is the sub-list for extension extendee
 	0,  // [0:37] is the sub-list for field type_name
@@ -4179,6 +4185,7 @@ type AuctionAdminClient interface {
 	StoreLeaseDuration(ctx context.Context, in *LeaseDuration, opts ...grpc.CallOption) (*EmptyResponse, error)
 	RemoveLeaseDuration(ctx context.Context, in *LeaseDuration, opts ...grpc.CallOption) (*EmptyResponse, error)
 	MoveFunds(ctx context.Context, in *MoveFundsRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
+	MirrorDatabase(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error)
 }
 
 type auctionAdminClient struct {
@@ -4423,6 +4430,15 @@ func (c *auctionAdminClient) MoveFunds(ctx context.Context, in *MoveFundsRequest
 	return out, nil
 }
 
+func (c *auctionAdminClient) MirrorDatabase(ctx context.Context, in *EmptyRequest, opts ...grpc.CallOption) (*EmptyResponse, error) {
+	out := new(EmptyResponse)
+	err := c.cc.Invoke(ctx, "/adminrpc.AuctionAdmin/MirrorDatabase", in, out, opts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AuctionAdminServer is the server API for AuctionAdmin service.
 type AuctionAdminServer interface {
 	MasterAccount(context.Context, *EmptyRequest) (*MasterAccountResponse, error)
@@ -4451,6 +4467,7 @@ type AuctionAdminServer interface {
 	StoreLeaseDuration(context.Context, *LeaseDuration) (*EmptyResponse, error)
 	RemoveLeaseDuration(context.Context, *LeaseDuration) (*EmptyResponse, error)
 	MoveFunds(context.Context, *MoveFundsRequest) (*EmptyResponse, error)
+	MirrorDatabase(context.Context, *EmptyRequest) (*EmptyResponse, error)
 }
 
 // UnimplementedAuctionAdminServer can be embedded to have forward compatible implementations.
@@ -4534,6 +4551,9 @@ func (*UnimplementedAuctionAdminServer) RemoveLeaseDuration(context.Context, *Le
 }
 func (*UnimplementedAuctionAdminServer) MoveFunds(context.Context, *MoveFundsRequest) (*EmptyResponse, error) {
 	return nil, status.Errorf(codes.Unimplemented, "method MoveFunds not implemented")
+}
+func (*UnimplementedAuctionAdminServer) MirrorDatabase(context.Context, *EmptyRequest) (*EmptyResponse, error) {
+	return nil, status.Errorf(codes.Unimplemented, "method MirrorDatabase not implemented")
 }
 
 func RegisterAuctionAdminServer(s *grpc.Server, srv AuctionAdminServer) {
@@ -5008,6 +5028,24 @@ func _AuctionAdmin_MoveFunds_Handler(srv interface{}, ctx context.Context, dec f
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AuctionAdmin_MirrorDatabase_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(EmptyRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AuctionAdminServer).MirrorDatabase(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: "/adminrpc.AuctionAdmin/MirrorDatabase",
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AuctionAdminServer).MirrorDatabase(ctx, req.(*EmptyRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 var _AuctionAdmin_serviceDesc = grpc.ServiceDesc{
 	ServiceName: "adminrpc.AuctionAdmin",
 	HandlerType: (*AuctionAdminServer)(nil),
@@ -5115,6 +5153,10 @@ var _AuctionAdmin_serviceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "MoveFunds",
 			Handler:    _AuctionAdmin_MoveFunds_Handler,
+		},
+		{
+			MethodName: "MirrorDatabase",
+			Handler:    _AuctionAdmin_MirrorDatabase_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

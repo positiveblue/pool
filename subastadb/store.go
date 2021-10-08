@@ -178,10 +178,10 @@ func NewEtcdStore(activeNet chaincfg.Params,
 	return s, nil
 }
 
-// mirrorToSQL attempts to mirror accounts, orders and batches to the configured
+// MirrorToSQL attempts to mirror accounts, orders and batches to the configured
 // SQL database. As this operation is not ciritical and can be retried anytime,
 // SQL failures are only logged.
-func (s *EtcdStore) mirrorToSQL(ctx context.Context) error {
+func (s *EtcdStore) MirrorToSQL(ctx context.Context) error {
 	if s.sqlMirror == nil {
 		log.Infof("SQL mirror not configured, skipping mirroring")
 		return nil
@@ -335,7 +335,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 	}
 
 	// Finally mirror accounts, orders and batches to SQL (if configured).
-	return s.mirrorToSQL(ctx)
+	return s.MirrorToSQL(ctx)
 }
 
 // firstTimeInit stores all initial required key-value pairs throughout the
