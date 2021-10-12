@@ -2,6 +2,7 @@ package venue
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
@@ -27,19 +28,11 @@ func (e *ErrMissingTraders) Error() string {
 
 // traderKeysToString returns the trader keys as a string for printing.
 func traderKeysToString(keys map[matching.AccountID]struct{}) string {
-	s := "["
-	first := true
+	accountIDs := make([]string, 0, len(keys))
 	for k := range keys {
-		if first {
-			s += fmt.Sprintf("%x", k)
-			first = false
-			continue
-		}
-
-		s += fmt.Sprintf(", %x, ", k)
+		accountIDs = append(accountIDs, fmt.Sprintf("%x", k))
 	}
-	s += "]"
-	return s
+	return fmt.Sprintf("[%s]", strings.Join(accountIDs, ","))
 }
 
 // ErrMsgTimeout is returned if a trader doesn't send an expected response in
