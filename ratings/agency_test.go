@@ -87,18 +87,12 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	require.NoError(t, err)
 	defer closeOrFail(t, listener)
 
-	// Start a server that'll serve the response of the web server within
-	// our tests.
-	server := &http.Server{
-		Handler: http.HandlerFunc(bosScoreAPI.ServeHTTP),
-	}
-	go func() { _ = server.Serve(listener) }()
-
 	// Next, we'll set up the set of struct we need, as well as set up the
 	// write thru DB as well to test the caching logic.
+	scrapeUpdates := make(chan struct{})
 	refreshInterval := time.Second * 2
-	writeThruDB := NewMemRatingsDatabase(nil, nil)
-	ratingsDB := NewMemRatingsDatabase(writeThruDB, nil)
+	writeThruDB := NewMemRatingsDatabase(nil, nil, scrapeUpdates)
+	ratingsDB := NewMemRatingsDatabase(writeThruDB, nil, nil)
 	scoreWebSource := BosScoreWebRatings{
 		URL: fmt.Sprintf("http://%s/", listener.Addr()),
 	}
@@ -107,9 +101,30 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	)
 
 	// First, we'll kick off the indexing of the ratings for the first
-	// time.
+	// time, however, we haven't actually started the endpoint yet, so a
+	// scrape shouldn't actually happen.
 	err = bosScoreDB.IndexRatings(ctx)
 	require.NoError(t, err)
+
+	// At this point, there should be no items within the ratings databse
+	// as the initila scrape should have failed.
+	require.Equal(t, len(writeThruDB.nodeTierCache), 0)
+
+	// Now start the server that'll serve the response of the web server
+	// within our tests.
+	server := &http.Server{
+		Handler: http.HandlerFunc(bosScoreAPI.ServeHTTP),
+	}
+	go func() { _ = server.Serve(listener) }()
+
+	// Give the scraper time to do a proper scrape now that the endpoint is
+	// back up.
+	select {
+	case <-scrapeUpdates:
+
+	case <-time.After(refreshInterval * 2):
+		t.Fatal("no scrape update made in time")
+	}
 
 	// We'll manually pause the ticker here to make the test a bit easier
 	// to work with.

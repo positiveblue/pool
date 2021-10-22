@@ -131,6 +131,10 @@ type MemRatingsDatabase struct {
 	// writeThroughDB is set, will have all modifications to the in-memory
 	// database applied to it as well.
 	writeThroughDB NodeRatingsDatabase
+
+	// scrapeUpdates is an option channel that will be sent across each
+	// time an update is made to the database.
+	scrapeUpdates chan<- struct{}
 }
 
 // NodeRatingsMap is a type alias for a map that lets us look up a node to
@@ -141,7 +145,8 @@ type NodeRatingsMap map[[33]byte]order.NodeTier
 // purely by an initially in-memory source. The writeThroughDB is an optional
 // existing database to have all modifications replicated to.
 func NewMemRatingsDatabase(writeThroughDB NodeRatingsDatabase,
-	seedRatings NodeRatingsMap) *MemRatingsDatabase {
+	seedRatings NodeRatingsMap,
+	scrapeUpdates chan<- struct{}) *MemRatingsDatabase {
 
 	nodeTierCache := make(NodeRatingsMap)
 	for node, rating := range seedRatings {
@@ -151,6 +156,20 @@ func NewMemRatingsDatabase(writeThroughDB NodeRatingsDatabase,
 	return &MemRatingsDatabase{
 		nodeTierCache:  nodeTierCache,
 		writeThroughDB: writeThroughDB,
+		scrapeUpdates:  scrapeUpdates,
+	}
+}
+
+// notifyRatingsUpdate attempts to notify that there was an update to the
+// scraping database on a best effort basis.
+func (m *MemRatingsDatabase) notifyRatingsUpdate() {
+	if m.scrapeUpdates == nil {
+		return
+	}
+
+	select {
+	case m.scrapeUpdates <- struct{}{}:
+	default:
 	}
 }
 
@@ -173,6 +192,8 @@ func (m *MemRatingsDatabase) ModifyNodeRating(ctx context.Context,
 
 	m.Lock()
 	defer m.Unlock()
+
+	defer m.notifyRatingsUpdate()
 
 	// First write through to the other DB if it's available.
 	if m.writeThroughDB != nil {
@@ -264,6 +285,34 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
 	scrape := func() {
 		log.Infof("Scraping Bos Score Endpoint")
 
+		// Regardless of if we succeed or not, we'll queue up another
+		// scraping run, as it may have been the case that the main
+		// endpoint was down when we tried initially.
+		defer func() {
+			// If this is our first run, then we'll set up the next
+			// invocation after our wait interval.
+			if m.refreshFunc == nil {
+				log.Infof("Setting Bos Score Re Scrape Timer")
+
+				m.refreshFunc = time.AfterFunc(
+					m.refreshInterval,
+					m.updateNodeRatings(ctx, nil),
+				)
+
+				// The very first time around, we'll close the
+				// done chan if it exists to give the caller a
+				// synchronous hook.
+				if doneChan != nil {
+					close(doneChan)
+				}
+				return
+			}
+
+			// Otherwiwe, we've already done a run, so can just
+			// rteset our timer.
+			m.refreshFunc.Reset(m.refreshInterval)
+		}()
+
 		// Rather than use the default http.Client, we'll make a custom
 		// one which will allow us to control how long we'll wait to
 		// read the response from the service. This way, if the service
@@ -320,29 +369,6 @@ func (m *BosScoreRatingsDatabase) updateNodeRatings(ctx context.Context,
 					nodeKey[:], err)
 			}
 		}
-
-		// If this is our first run, then we'll set up the next
-		// invocation after our wait interval.
-		if m.refreshFunc == nil {
-			log.Infof("Setting Bos Score Re Scrape Timer")
-
-			m.refreshFunc = time.AfterFunc(
-				m.refreshInterval, m.updateNodeRatings(ctx, nil),
-			)
-
-			// The very first time around, we'll close the done
-			// chan if it exists to give the caller a synchronous
-			// hook.
-			if doneChan != nil {
-				close(doneChan)
-			}
-
-			return
-		}
-
-		// Otherwise, we'll just reset the timer as it's already
-		// active.
-		m.refreshFunc.Reset(m.refreshInterval)
 	}
 
 	return scrape

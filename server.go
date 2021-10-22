@@ -337,7 +337,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, fmt.Errorf("unable to retrieve stored node "+
 			"ratings: %v", err)
 	}
-	ratingsDB = ratings.NewMemRatingsDatabase(store, nodeRatings)
+	ratingsDB = ratings.NewMemRatingsDatabase(store, nodeRatings, nil)
 	ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
 
 	// We'll only activate the BOS score backed ratings agency if it has
