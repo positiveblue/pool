@@ -145,6 +145,11 @@ list:
 		grep -v Makefile | \
 		sort
 
+gen: rpc mock
+
+mock:
+	@$(call print, "Generating mock packages.")
+	cd ./gen; ./gen_mock_docker.sh
 rpc:
 	@$(call print, "Compiling protos.")
 	cd ./poolrpc; ./gen_protos_docker.sh
