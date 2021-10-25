@@ -41,3 +41,5 @@ go 1.13
 // it in the client binary as well. We need to import it with its declared name
 // everywhere too, otherwise the replace won't work properly.
 replace github.com/lightninglabs/pool/auctioneerrpc => ./auctioneerrpc
+
+replace github.com/lightninglabs/pool => github.com/lightninglabs/pool v0.5.1-alpha.0.20211028141218-baee0e57b853

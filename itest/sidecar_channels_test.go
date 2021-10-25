@@ -546,6 +546,48 @@ func testSidecarTicketCancellation(t *harnessTest) {
 		t, providerTrader, sidecarBid,
 		auctioneerrpc.OrderState_ORDER_CANCELED,
 	)
+
+	// The recipient should also have gotten an update that the ticket was
+	// canceled.
+	assertSidecarState(
+		t.t, recipientTrader, 1, ticketID, sidecar.StateCanceled,
+	)
+
+	// Let's make sure we can still execute a successful sidecar channel
+	// even after cancelling the first two.
+	_, ticketID2 := makeSidecar(
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, 0, true,
+	)
+	assertSidecarState(
+		t.t, providerTrader, 3, ticketID2,
+		sidecar.StateExpectingChannel,
+	)
+	assertSidecarState(
+		t.t, recipientTrader, 2, ticketID2,
+		sidecar.StateExpectingChannel,
+	)
+
+	// We are now ready to start the actual batch execution process.
+	// Let's kick the auctioneer again to try and create a batch.
+	_, _ = executeBatch(t, 1)
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker, so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, askAmt, true, dave.PubKey,
+	)
+	assertPendingChannel(
+		t, dave, askAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// Clear the mempool and all channels for the following tests.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+	closeAllChannels(ctx, t, dave)
 }
 
 // makeSidecar creates a sidecar ticket with an offer on the provider node,
