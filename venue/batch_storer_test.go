@@ -144,7 +144,7 @@ var (
 		smallAcct.TraderKeyRaw: {
 			StartingState: &smallTrader,
 			AccountTally: &orderT.AccountTally{
-				EndingBalance: 500,
+				EndingBalance: 434,
 			},
 		},
 	}
@@ -267,7 +267,7 @@ func TestBatchStorer(t *testing.T) {
 		t.Fatalf("invalid account state, got %d wanted %d",
 			smallAcct.State, account.StateClosed)
 	}
-	if smallAcct.Value != 500 {
+	if smallAcct.Value != 434 {
 		t.Fatalf("invalid account balance, got %d wanted %d",
 			smallAcct.Value, 500)
 	}
