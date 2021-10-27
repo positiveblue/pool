@@ -1,4 +1,6 @@
+//go:build itest
 // +build itest
+
 // remove this build tag as soon as lnd#3382 is merged
 
 package itest

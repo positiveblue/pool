@@ -7,7 +7,7 @@ go:
   # If you change this value, please change it in the following files as well:
   # /Dockerfile
   # /.github/workflows/main.yml
-  - "1.15.6"
+  - "1.17.2"
 
 # Remove Travis' default flag --depth=50 from the git clone command to make sure
 # we have the whole git history, including the commit we lint against.
