@@ -254,11 +254,20 @@ func NewServer(cfg *Config) (*Server, error) {
 		return nil, err
 	}
 
+	// Attempt to create a new SQL connection for data optional mirroring.
+	var sqlStore *subastadb.SQLStore
+	if cfg.SQLMirror {
+		sqlStore, err = subastadb.NewSQLStore(cfg.SQL)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Next, we'll open our primary connection to the main backing
 	// database.
 	store, err := subastadb.NewEtcdStore(
 		*lnd.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
-		cfg.Etcd.Password,
+		cfg.Etcd.Password, sqlStore,
 	)
 	if err != nil {
 		return nil, err

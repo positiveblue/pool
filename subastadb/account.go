@@ -270,52 +270,57 @@ func (s *EtcdStore) removeReservation(stm conc.STM, id lsat.TokenID) error {
 
 // UpdateAccount updates an account in the database according to the given
 // modifiers.
-func (s *EtcdStore) UpdateAccount(ctx context.Context, account *account.Account,
-	modifiers ...account.Modifier) error {
+func (s *EtcdStore) UpdateAccount(ctx context.Context, a *account.Account,
+	modifiers ...account.Modifier) (*account.Account, error) {
 
 	if !s.initialized {
-		return errNotInitialized
+		return nil, errNotInitialized
 	}
+
+	s.accountUpdateMtx.Lock()
+	defer s.accountUpdateMtx.Unlock()
 
 	// Get the parsed key from the account.
-	traderKey, err := account.TraderKey()
+	traderKey, err := a.TraderKey()
 	if err != nil {
-		return err
+		return nil, errNotInitialized
 	}
 
+	var dbAccount *account.Account
 	// Wrap the update in an STM and execute it.
 	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
-		return s.updateAccountSTM(stm, traderKey, modifiers...)
+		var updateErr error
+		dbAccount, updateErr = s.updateAccountSTM(
+			stm, traderKey, modifiers...,
+		)
+		return updateErr
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
 
-	// With the on-disk state successfully updated, apply the modifications
-	// to the in-memory account state.
-	for _, modifier := range modifiers {
-		modifier(account)
-	}
+	// Optionally mirror account to SQL.
+	UpdateAccountsSQL(ctx, s.sqlMirror, dbAccount)
 
-	return nil
+	return dbAccount, nil
 }
 
 // updateAccountSTM adds all operations necessary to update an account to the
 // given STM transaction. If the account does not yet exist, the whole STM
 // transaction will fail.
 func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
-	modifiers ...account.Modifier) error {
+	modifiers ...account.Modifier) (*account.Account, error) {
 
 	// Retrieve the account stored in the database. In STM an empty string
 	// means that the key does not exist.
 	k := s.getAccountKey(acctKey)
 	resp := stm.Get(k)
 	if resp == "" {
-		return NewAccountNotFoundError(acctKey)
+		return nil, NewAccountNotFoundError(acctKey)
 	}
 	dbAccount, err := deserializeAccount(bytes.NewReader([]byte(resp)))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Decode any additional data that's stored in a tlv encoded stream.
@@ -324,7 +329,7 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 		strings.NewReader(stm.Get(tlvKey)), dbAccount,
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Apply the given modifications to it and serialize it back.
@@ -334,14 +339,18 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 
 	var buf bytes.Buffer
 	if err := serializeAccount(&buf, dbAccount); err != nil {
-		return err
+		return nil, err
 	}
 
 	// Add the put operation to the queue.
 	stm.Put(k, buf.String())
 
 	// Now write all remaining additional data as a tlv encoded stream.
-	return s.storeAccountTlv(stm, dbAccount, acctKey)
+	if err := s.storeAccountTlv(stm, dbAccount, acctKey); err != nil {
+		return nil, err
+	}
+
+	return dbAccount, nil
 }
 
 // StoreAccountDiff stores a pending set of updates that should be applied to an
@@ -401,6 +410,10 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 		return errNotInitialized
 	}
 
+	s.accountUpdateMtx.Lock()
+	defer s.accountUpdateMtx.Unlock()
+
+	var rawAccountDiff string
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		accountKey := s.getAccountKey(traderKey)
 		if len(stm.Get(accountKey)) == 0 {
@@ -408,16 +421,33 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 		}
 
 		accountDiffKey := s.getAccountDiffKey(traderKey)
-		rawAccountDiff := stm.Get(accountDiffKey)
+		rawAccountDiff = stm.Get(accountDiffKey)
 		if len(rawAccountDiff) == 0 {
 			return account.ErrNoDiff
 		}
 
 		stm.Put(accountKey, rawAccountDiff)
 		stm.Del(accountDiffKey)
+
 		return nil
 	})
-	return err
+	if err != nil {
+		return err
+	}
+
+	// Optionally update the accunt in SQL.
+	if s.sqlMirror != nil {
+		dbAccount, err := deserializeAccount(
+			bytes.NewReader([]byte(rawAccountDiff)),
+		)
+		if err != nil {
+			return err
+		}
+
+		UpdateAccountsSQL(ctx, s.sqlMirror, dbAccount)
+	}
+
+	return nil
 }
 
 // UpdateAccountDiff updates an account's pending diff.

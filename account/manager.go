@@ -547,11 +547,13 @@ func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
 		return fmt.Errorf("unhandled state %v after confirmation",
 			account.State)
 	}
-	if err := m.cfg.Store.UpdateAccount(ctx, account, mods...); err != nil {
+
+	updatedAccount, err := m.cfg.Store.UpdateAccount(ctx, account, mods...)
+	if err != nil {
 		return err
 	}
 
-	return m.resumeAccount(account)
+	return m.resumeAccount(updatedAccount)
 }
 
 // validateAccountOutput ensures that the on-chain account output matches what
@@ -646,10 +648,12 @@ func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
 	log.Infof("Account %x has been closed on-chain with transaction %v",
 		account.TraderKeyRaw, spendTx.TxHash())
 
-	return m.cfg.Store.UpdateAccount(
+	_, err = m.cfg.Store.UpdateAccount(
 		ctx, account, ValueModifier(0), StateModifier(StateClosed),
 		LatestTxModifier(spendTx),
 	)
+
+	return err
 }
 
 // WatchMatchedAccounts resumes accounts that were just matched in a batch and
@@ -738,7 +742,11 @@ func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey,
 	log.Infof("Account %x has expired as of height %v",
 		traderKey.SerializeCompressed(), account.Expiry)
 
-	return m.cfg.Store.UpdateAccount(ctx, account, StateModifier(expiredState))
+	_, err = m.cfg.Store.UpdateAccount(
+		ctx, account, StateModifier(expiredState),
+	)
+
+	return err
 }
 
 // ModifyAccount handles a trader's intent to modify an account. Since accounts

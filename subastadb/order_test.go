@@ -162,11 +162,11 @@ func TestUpdateOrders(t *testing.T) {
 	// Bulk update the state of both orders and check that they are
 	// persisted correctly and moved out of the active bucket into the
 	// archive.
-	var updateCache func()
 	stateModifier := order.StateModifier(orderT.StateExecuted)
+	var cacheUpdates map[orderT.Nonce]order.ServerOrder
 	_, err = store.defaultSTM(ctxb, func(stm conc.STM) error {
 		var err error
-		updateCache, err = store.updateOrdersSTM(
+		cacheUpdates, err = store.updateOrdersSTM(
 			stm, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
 			[][]order.Modifier{{stateModifier}, {stateModifier}},
 		)
@@ -176,7 +176,7 @@ func TestUpdateOrders(t *testing.T) {
 		t.Fatalf("unable to update orders: %v", err)
 	}
 
-	updateCache()
+	store.updateOrderCache(cacheUpdates)
 
 	allOrders, err := store.GetOrders(ctxb)
 	if err != nil {

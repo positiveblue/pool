@@ -358,14 +358,8 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	}
 }
 
-// TestPersistBatchSnapshot makes sure a batch snapshot can be stored and
-// retrieved again correctly.
-func TestPersistBatchSnapshot(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
-	defer cleanup()
+func makeTestOrderBatches(ctx context.Context, t *testing.T,
+	store *EtcdStore) []*matching.OrderBatch {
 
 	// Create an order batch that contains dummy data.
 	askLegacyClientKit := dummyClientOrder(
@@ -467,7 +461,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	}}
 	feeReport := matching.TradingFeeReport{
 		AccountDiffs: map[matching.AccountID]matching.AccountDiff{
-			{1, 2, 3}: {
+			trader2.AccountKey: {
 				AccountTally: &orderT.AccountTally{
 					EndingBalance:          123,
 					TotalExecutionFeesPaid: 234,
@@ -478,7 +472,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 				StartingState:   &trader2,
 				RecreatedOutput: nil,
 			},
-			{99, 88, 77, 66, 55, 44}: {
+			trader1.AccountKey: {
 				AccountTally: &orderT.AccountTally{
 					EndingBalance:          99,
 					TotalExecutionFeesPaid: 88,
@@ -496,21 +490,24 @@ func TestPersistBatchSnapshot(t *testing.T) {
 		AuctioneerFeesAccrued: 1337,
 	}
 
-	// All the orders above also need to be inserted as normal orders to
-	// ensure we're able to retrieve all the supplemental data we need.
-	for _, o := range legacyOrders {
-		err := store.SubmitOrder(ctx, o.Details.Ask)
-		require.NoError(t, err)
+	if store != nil {
+		// All the orders above also need to be inserted as normal
+		// orders to ensure we're able to retrieve all the supplemental
+		// data we need.
+		for _, o := range legacyOrders {
+			err := store.SubmitOrder(ctx, o.Details.Ask)
+			require.NoError(t, err)
 
-		err = store.SubmitOrder(ctx, o.Details.Bid)
-		require.NoError(t, err)
-	}
-	for _, o := range newOrders {
-		err := store.SubmitOrder(ctx, o.Details.Ask)
-		require.NoError(t, err)
+			err = store.SubmitOrder(ctx, o.Details.Bid)
+			require.NoError(t, err)
+		}
+		for _, o := range newOrders {
+			err := store.SubmitOrder(ctx, o.Details.Ask)
+			require.NoError(t, err)
 
-		err = store.SubmitOrder(ctx, o.Details.Bid)
-		require.NoError(t, err)
+			err = store.SubmitOrder(ctx, o.Details.Bid)
+			require.NoError(t, err)
+		}
 	}
 
 	batchV0 := matching.NewBatch(
@@ -520,7 +517,6 @@ func TestPersistBatchSnapshot(t *testing.T) {
 			orderT.LegacyLeaseDurationBucket: 123,
 		},
 	)
-	assertBatchSerialization(t, store, batchV0)
 
 	batchV1 := matching.NewBatch(
 		map[uint32][]matching.MatchedOrder{
@@ -531,7 +527,22 @@ func TestPersistBatchSnapshot(t *testing.T) {
 			12345:                            321,
 		},
 	)
-	assertBatchSerialization(t, store, batchV1)
+
+	return []*matching.OrderBatch{batchV0, batchV1}
+}
+
+// TestPersistBatchSnapshot makes sure a batch snapshot can be stored and
+// retrieved again correctly.
+func TestPersistBatchSnapshot(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	store, cleanup := newTestEtcdStore(t)
+	defer cleanup()
+
+	batches := makeTestOrderBatches(ctx, t, store)
+	assertBatchSerialization(t, store, batches[0])
+	assertBatchSerialization(t, store, batches[1])
 }
 
 func assertBatchSerialization(t *testing.T, store *EtcdStore,

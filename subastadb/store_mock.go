@@ -101,17 +101,17 @@ func (s *StoreMock) CompleteReservation(_ context.Context,
 // UpdateAccount updates an account in the database according to the given
 // modifiers.
 func (s *StoreMock) UpdateAccount(_ context.Context, acct *account.Account,
-	modifiers ...account.Modifier) error {
+	modifiers ...account.Modifier) (*account.Account, error) {
 
 	a, ok := s.Accs[acct.TraderKeyRaw]
 	if !ok {
-		return &AccountNotFoundError{AcctKey: acct.TraderKeyRaw}
+		return nil, &AccountNotFoundError{AcctKey: acct.TraderKeyRaw}
 	}
 	for _, modifier := range modifiers {
 		modifier(a)
 	}
 	s.Accs[acct.TraderKeyRaw] = a
-	return nil
+	return a, nil
 }
 
 // StoreAccountDiff stores a pending set of updates that should be applied to an
@@ -301,7 +301,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 		if err != nil {
 			return err
 		}
-		err = s.UpdateAccount(ctx, acct, accountModifiers[idx]...)
+		_, err = s.UpdateAccount(ctx, acct, accountModifiers[idx]...)
 		if err != nil {
 			return err
 		}

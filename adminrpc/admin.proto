@@ -34,6 +34,7 @@ service AuctionAdmin {
     rpc StoreLeaseDuration (LeaseDuration) returns (EmptyResponse);
     rpc RemoveLeaseDuration (LeaseDuration) returns (EmptyResponse);
     rpc MoveFunds (MoveFundsRequest) returns (EmptyResponse);
+    rpc MirrorDatabase (EmptyRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {

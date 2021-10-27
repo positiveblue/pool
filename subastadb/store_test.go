@@ -70,7 +70,7 @@ func newTestEtcdStore(t *testing.T) (*EtcdStore, func()) {
 		t.Fatal("server took too long to start")
 	}
 
-	store, err := NewEtcdStore(netParams, clientURL, "user", "pass")
+	store, err := NewEtcdStore(netParams, clientURL, "user", "pass", nil)
 	if err != nil {
 		t.Fatalf("unable to create etcd store: %v", err)
 	}

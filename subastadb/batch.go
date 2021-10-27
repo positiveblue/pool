@@ -155,24 +155,33 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	s.nonceMtx.lock(orders...)
 	defer s.nonceMtx.unlock(orders...)
 
+	// Similarly we need to ensure that accounts are not updated until we
+	// can be sure that all account sate is mirrored to SQL.
+	s.accountUpdateMtx.Lock()
+	defer s.accountUpdateMtx.Unlock()
+
+	var updatedAccounts []*account.Account
+
 	// Wrap the whole batch update in one large isolated STM transaction.
-	var updateCache func()
+	var cacheUpdates map[orderT.Nonce]order.ServerOrder
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		// Update orders first.
 		var err error
-		updateCache, err = s.updateOrdersSTM(stm, orders, orderModifiers)
+		cacheUpdates, err = s.updateOrdersSTM(stm, orders, orderModifiers)
 		if err != nil {
 			return err
 		}
 
 		// Update accounts next.
 		for idx, acctKey := range accounts {
-			err := s.updateAccountSTM(
+			acct, err := s.updateAccountSTM(
 				stm, acctKey, accountModifiers[idx]...,
 			)
 			if err != nil {
 				return err
 			}
+
+			updatedAccounts = append(updatedAccounts, acct)
 		}
 
 		// Update the master account output.
@@ -212,7 +221,36 @@ func (s *EtcdStore) PersistBatchResult(ctx context.Context,
 	}
 
 	// Now that the DB was successfully updated, also update the cache.
-	updateCache()
+	s.updateOrderCache(cacheUpdates)
+
+	// Optionally mirror the updated orders and accounts to SQL.
+	if s.sqlMirror != nil {
+		err := s.sqlMirror.Transaction(
+			ctx,
+			func(tx *SQLTransaction) error {
+				for _, o := range cacheUpdates {
+					err := tx.UpdateOrder(o)
+					if err != nil {
+						return err
+					}
+				}
+
+				for _, acct := range updatedAccounts {
+					err := tx.UpdateAccount(acct)
+					if err != nil {
+						return err
+					}
+				}
+
+				return tx.UpdateBatch(batchID, batchSnapshot)
+			},
+		)
+		if err != nil {
+			log.Errorf("Unable to store batch updates to SQL db: "+
+				"%v", err)
+		}
+	}
+
 	return nil
 }
 
@@ -249,6 +287,51 @@ func (s *EtcdStore) ConfirmBatch(ctx context.Context,
 		return nil
 	})
 	return err
+}
+
+// Batches retrieves all existing batches.
+func (s *EtcdStore) Batches(ctx context.Context) (
+	map[orderT.BatchID]*BatchSnapshot, error) {
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	resp, err := s.getAllValuesByPrefix(ctx, s.getKeyPrefix(batchDir))
+	if err != nil {
+		return nil, err
+	}
+
+	batches := make(map[orderT.BatchID]*BatchSnapshot)
+	for k, v := range resp {
+		if strings.HasSuffix(k, perBatchKey) ||
+			strings.HasSuffix(k, batchStatusKey) {
+			continue
+		}
+
+		snapshot, err := deserializeBatchSnapshot(bytes.NewReader(v))
+		if err != nil {
+			return nil, err
+		}
+
+		_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+			return s.supplementSnapshotData(stm, snapshot)
+		})
+		if err != nil {
+			return nil, err
+		}
+
+		var batchID orderT.BatchID
+		keyParts := strings.Split(k, keyDelimiter)
+		rawBatchID, err := hex.DecodeString(keyParts[len(keyParts)-1])
+		if err != nil {
+			return nil, err
+		}
+		copy(batchID[:], rawBatchID)
+
+		batches[batchID] = snapshot
+	}
+
+	return batches, nil
 }
 
 // GetBatchSnapshot returns the self-contained snapshot of a batch with

@@ -111,7 +111,7 @@ func (s *mockStore) CompleteReservation(_ context.Context,
 }
 
 func (s *mockStore) UpdateAccount(_ context.Context, account *Account,
-	modifiers ...Modifier) error {
+	modifiers ...Modifier) (*Account, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -120,7 +120,7 @@ func (s *mockStore) UpdateAccount(_ context.Context, account *Account,
 	copy(accountKey[:], account.TraderKeyRaw[:])
 
 	if _, ok := s.accounts[accountKey]; !ok {
-		return errors.New("account not found")
+		return nil, errors.New("account not found")
 	}
 
 	for _, modifier := range modifiers {
@@ -128,7 +128,7 @@ func (s *mockStore) UpdateAccount(_ context.Context, account *Account,
 	}
 
 	s.accounts[accountKey] = *account
-	return nil
+	return account, nil
 }
 
 func (s *mockStore) StoreAccountDiff(_ context.Context,

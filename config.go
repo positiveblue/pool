@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
+	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -184,10 +185,13 @@ type Config struct {
 	FundingConflictResetInterval time.Duration `long:"fundingconflictresetinterval" description:"the reset interval for funding conflicts (errors during channel opens), set to 0 for no automatic reset"`
 	TraderRejectResetInterval    time.Duration `long:"traderrejectresetinterval" description:"the reset interval for trader rejects (partial rejects because of --newnodesonly flag)"`
 
+	SQLMirror bool `long:"sqlmirror" description:"if true, then bids and accounts will be mirrored to the SQL db"`
+
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
 	Bitcoin    *chain.BitcoinConfig         `group:"bitcoin" namespace:"bitcoin"`
+	SQL        *subastadb.SQLConfig         `group:"sql" namespace:"sql"`
 
 	// RPCListener is a network listener that the default auctionserver
 	// should listen on.
@@ -220,6 +224,13 @@ var DefaultConfig = &Config{
 	},
 	Bitcoin: &chain.BitcoinConfig{
 		Host: "localhost:8332",
+	},
+	SQL: &subastadb.SQLConfig{
+		Host:     "localhost",
+		Port:     5432,
+		User:     "pool",
+		Password: "pool",
+		DBName:   "pool",
 	},
 	TLSCertPath:                  defaultTLSCertPath,
 	TLSKeyPath:                   defaultTLSKeyPath,

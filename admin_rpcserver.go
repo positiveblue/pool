@@ -368,7 +368,7 @@ func (s *adminRPCServer) EditAccount(ctx context.Context,
 			return nil, err
 		}
 	} else {
-		err := s.store.UpdateAccount(ctx, acct, mods...)
+		acct, err = s.store.UpdateAccount(ctx, acct, mods...)
 		if err != nil {
 			return nil, err
 		}
@@ -1100,6 +1100,13 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 	}
 
 	return &adminrpc.EmptyResponse{}, nil
+}
+
+// MirrorDatabase mirrors accounts, orders and batches from etcd to SQL.
+func (s *adminRPCServer) MirrorDatabase(ctx context.Context,
+	req *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
+
+	return &adminrpc.EmptyResponse{}, s.store.MirrorToSQL(ctx)
 }
 
 // marshallAdminAccount translates an account.Account into its admin RPC
