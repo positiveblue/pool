@@ -823,9 +823,9 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 		account.AuctioneerWitnessSize,
 	)
 
-	// We'll use a fee rate for batch assembly that will leave only 500
+	// We'll use a fee rate for batch assembly that will leave only 434
 	// sats left for the auctioneer after chain fees.
-	feeRate := chainfee.SatPerKWeight(masterAcct.Balance-500) * 1000 /
+	feeRate := chainfee.SatPerKWeight(masterAcct.Balance-434) * 1000 /
 		chainfee.SatPerKWeight(weightEstimator.Weight())
 
 	// Now execute the batch assembly using this fee rate. We expect this
