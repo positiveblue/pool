@@ -507,7 +507,7 @@ func (s *EtcdStore) fetchTlvSTM(stm conc.STM, o order.ServerOrder) error {
 
 // serializeBatchSnapshot binary serializes a batch snapshot by using the LN
 // wire format.
-func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
+func serializeBatchSnapshot(w *bytes.Buffer, b *BatchSnapshot) error {
 	// First, we'll encode the finalized batch tx itself.
 	if err := b.BatchTx.Serialize(w); err != nil {
 		return err
@@ -561,7 +561,7 @@ func serializeBatchSnapshot(w io.Writer, b *BatchSnapshot) error {
 
 // serializeMatchedOrder binary serializes a matched order by using the LN wire
 // format.
-func serializeMatchedOrder(w io.Writer, m *matching.MatchedOrder) error {
+func serializeMatchedOrder(w *bytes.Buffer, m *matching.MatchedOrder) error {
 	err := serializeTrader(w, &m.Asker)
 	if err != nil {
 		return err
@@ -574,7 +574,7 @@ func serializeMatchedOrder(w io.Writer, m *matching.MatchedOrder) error {
 }
 
 // serializeTrader binary serializes a trader by using the LN wire format.
-func serializeTrader(w io.Writer, t *matching.Trader) error {
+func serializeTrader(w *bytes.Buffer, t *matching.Trader) error {
 	return WriteElements(
 		w, t.AccountKey, t.BatchKey, t.VenueSecret,
 		t.AccountExpiry, t.AccountOutPoint, t.AccountBalance,
@@ -582,7 +582,7 @@ func serializeTrader(w io.Writer, t *matching.Trader) error {
 }
 
 // serializeTrader binary serializes an order pair by using the LN wire format.
-func serializeOrderPair(w io.Writer, p *matching.OrderPair) error {
+func serializeOrderPair(w *bytes.Buffer, p *matching.OrderPair) error {
 	err := WriteElements(w, p.Ask.Nonce(), p.Bid.Nonce())
 	if err != nil {
 		return err
@@ -600,7 +600,7 @@ func serializeOrderPair(w io.Writer, p *matching.OrderPair) error {
 
 // serializePriceQuote binary serializes a price quote by using the LN wire
 // format.
-func serializePriceQuote(w io.Writer, q *matching.PriceQuote) error {
+func serializePriceQuote(w *bytes.Buffer, q *matching.PriceQuote) error {
 	return WriteElements(
 		w, q.MatchingRate, q.TotalSatsCleared, q.UnitsMatched,
 		q.UnitsUnmatched, q.Type,
@@ -609,7 +609,7 @@ func serializePriceQuote(w io.Writer, q *matching.PriceQuote) error {
 
 // serializeTradingFeeReport binary serializes a trading fee report by using the
 // LN wire format.
-func serializeTradingFeeReport(w io.Writer, f *matching.TradingFeeReport) error {
+func serializeTradingFeeReport(w *bytes.Buffer, f *matching.TradingFeeReport) error {
 	// We'll need to flatten the map of the account diffs. For this, we'll
 	// first write the number of keys n, then write n pairs of key and
 	// value. But first, let's write the easy, scalar values.
@@ -638,7 +638,7 @@ func serializeTradingFeeReport(w io.Writer, f *matching.TradingFeeReport) error 
 
 // serializeAccountDiff binary serializes an account diff by using the LN wire
 // format.
-func serializeAccountDiff(w io.Writer, d *matching.AccountDiff) error {
+func serializeAccountDiff(w *bytes.Buffer, d *matching.AccountDiff) error {
 	err := serializeAccountTally(w, d.AccountTally)
 	if err != nil {
 		return err
@@ -652,7 +652,7 @@ func serializeAccountDiff(w io.Writer, d *matching.AccountDiff) error {
 
 // serializeAccountTally binary serializes an account tally by using the LN wire
 // format.
-func serializeAccountTally(w io.Writer, t *orderT.AccountTally) error {
+func serializeAccountTally(w *bytes.Buffer, t *orderT.AccountTally) error {
 	return WriteElements(
 		w, t.EndingBalance, t.TotalExecutionFeesPaid,
 		t.TotalTakerFeesPaid, t.TotalMakerFeesAccrued,

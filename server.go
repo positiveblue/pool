@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -46,6 +47,23 @@ var (
 	lsatTokenREST = lsat.TokenID{
 		// This is hex for the string "restproxy".
 		0x72, 0x65, 0x73, 0x74, 0x70, 0x72, 0x6f, 0x78, 0x79,
+	}
+
+	// minimalCompatibleVersion is the minimum version and build tags
+	// required in lnd to run subasta.
+	minimalCompatibleVersion = &verrpc.Version{
+		AppMajor: 0,
+		AppMinor: 13,
+		AppPatch: 0,
+
+		// We don't actually require the invoicesrpc calls. But if we
+		// try to use lndclient on an lnd that doesn't have it enabled,
+		// the library will try to load the invoices.macaroon anyway and
+		// fail. So until that bug is fixed in lndclient, we require the
+		// build tag to be active.
+		BuildTags: []string{
+			"signrpc", "walletrpc", "chainrpc", "invoicesrpc",
+		},
 	}
 )
 
@@ -245,10 +263,11 @@ func NewServer(cfg *Config) (*Server, error) {
 	// to the backing lnd instance.
 	network := lndclient.Network(cfg.Network)
 	lnd, err := lndclient.NewLndServices(&lndclient.LndServicesConfig{
-		LndAddress:  cfg.Lnd.Host,
-		Network:     network,
-		MacaroonDir: cfg.Lnd.MacaroonDir,
-		TLSPath:     cfg.Lnd.TLSPath,
+		LndAddress:   cfg.Lnd.Host,
+		Network:      network,
+		MacaroonDir:  cfg.Lnd.MacaroonDir,
+		TLSPath:      cfg.Lnd.TLSPath,
+		CheckVersion: minimalCompatibleVersion,
 	})
 	if err != nil {
 		return nil, err

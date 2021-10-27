@@ -643,7 +643,7 @@ func nonceFromKey(key string) (orderT.Nonce, error) {
 }
 
 // serializeOrder binary serializes an order by using the LN wire format.
-func serializeOrder(w io.Writer, o order.ServerOrder) error {
+func serializeOrder(w *bytes.Buffer, o order.ServerOrder) error {
 	// Serialize the client part first.
 	switch t := o.(type) {
 	case *order.Ask:

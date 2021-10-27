@@ -40,7 +40,7 @@ func testBatchExecution(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders. To test the message multi-plexing between token IDs
@@ -77,7 +77,7 @@ func testBatchExecution(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, thirdTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
 
 	account4 := openAccountAndAssert(
 		t, thirdTrader, &poolrpc.InitAccountRequest{
@@ -399,7 +399,7 @@ func closeAllChannels(ctx context.Context, t *harnessTest,
 			OutputIndex: uint32(index),
 		}
 		closeUpdates, _, err := t.lndHarness.CloseChannel(
-			ctx, node, chanPoint, false,
+			node, chanPoint, false,
 		)
 		if err != nil {
 			t.Fatalf("unable to close channel: %v", err)
@@ -432,8 +432,8 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 	walletAmt := btcutil.Amount(
 		(unconfirmedBatches + 1) * defaultAccountValue,
 	)
-	t.lndHarness.SendCoins(ctx, t.t, walletAmt, charlie)
-	t.lndHarness.SendCoins(ctx, t.t, walletAmt, t.trader.cfg.LndNode)
+	t.lndHarness.SendCoins(t.t, walletAmt, charlie)
+	t.lndHarness.SendCoins(t.t, walletAmt, t.trader.cfg.LndNode)
 
 	type accountPair struct {
 		account1 *poolrpc.Account
@@ -677,7 +677,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
@@ -758,10 +758,8 @@ func testServiceLevelEnforcement(t *harnessTest) {
 
 	// Proceed to force close the channel from the initiator. They should be
 	// banned accordingly.
-	ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
-	defer cancel()
 	closeUpdates, _, err := t.lndHarness.CloseChannel(
-		ctxt, t.trader.cfg.LndNode, chanPoint, true,
+		t.trader.cfg.LndNode, chanPoint, true,
 	)
 	if err != nil {
 		t.Fatalf("unable to force close channel: %v", err)
@@ -804,7 +802,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Create an account for the maker with plenty of sats.
 	account1 := openAccountAndAssert(
@@ -914,15 +912,13 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 // batches if their account state doesn't include any pending state from a
 // withdrawal or deposit.
 func testConsecutiveBatches(t *harnessTest) {
-	ctx := context.Background()
-
 	// We need a third lnd node, Charlie that is used for the second trader.
 	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
@@ -1041,8 +1037,6 @@ func testConsecutiveBatches(t *harnessTest) {
 // match making process is started. We also test that trader accounts can take
 // part in subsequent batches and don't need 3 confirmations first.
 func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
-	ctx := context.Background()
-
 	// We need a third and fourth lnd node, Charlie and Dave that are used
 	// for the second and third trader. Charlie is very picky and only wants
 	// channels from new nodes.
@@ -1052,14 +1046,14 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 		newNodesOnlyOpt(),
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	dave := t.lndHarness.NewNode(t.t, "dave", nil)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, thirdTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
 
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
@@ -1176,7 +1170,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// And as an "innocent bystander" we also create Dave who will buy a
 	// channel during the second round so we can make sure being matched
@@ -1187,7 +1181,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, thirdTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
 
 	// Create an account for the maker and taker with plenty of sats.
 	askAccount := openAccountAndAssert(
@@ -1236,9 +1230,9 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 
 	// We manually open a channel between Bob and Charlie now to saturate
 	// the maxpendingchannels setting.
-	t.lndHarness.EnsureConnected(ctx, t.t, t.trader.cfg.LndNode, charlie)
+	t.lndHarness.EnsureConnected(t.t, t.trader.cfg.LndNode, charlie)
 	_, err = t.lndHarness.OpenPendingChannel(
-		ctx, t.trader.cfg.LndNode, charlie, 1_000_000, 0,
+		t.trader.cfg.LndNode, charlie, 1_000_000, 0,
 	)
 	require.NoError(t.t, err)
 
@@ -1359,7 +1353,7 @@ func testBatchMatchingConditions(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
@@ -1496,7 +1490,7 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 40_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 40_000_000, charlie)
 
 	// We'll create orders in three distinct lease duration buckets: The
 	// default 2016 block bucket that is already available on startup and
@@ -1814,9 +1808,7 @@ func testBatchSponsor(t *harnessTest) {
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
 
-	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-	t.lndHarness.SendCoins(ctxt, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// To execute a batch, we'll need an asker and bidder.
 	askAccount := openAccountAndAssert(
@@ -1865,7 +1857,7 @@ func testBatchSponsor(t *harnessTest) {
 	//
 	// TODO: Perform fee validation to assert new package fee rate after
 	// sponsor.
-	ctxt, cancel = context.WithTimeout(ctx, defaultTimeout)
+	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
 	defer cancel()
 	const newRelativeExpiry = 144
 	_, err = secondTrader.RenewAccount(ctxt, &poolrpc.RenewAccountRequest{

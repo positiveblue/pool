@@ -30,7 +30,7 @@ func testHashMailServer(t *harnessTest) {
 	aliceNode := t.lndHarness.NewNode(t.t, "alice", nil)
 
 	// Fund the wallet to be able to open an account of the default size.
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, aliceNode)
+	t.lndHarness.SendCoins(t.t, 5_000_000, aliceNode)
 
 	aliceTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, aliceNode, t.auctioneer,

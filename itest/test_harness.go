@@ -119,7 +119,7 @@ func (h *harnessTest) Skipf(format string, args ...interface{}) {
 // the error stack traces it produces.
 func (h *harnessTest) Fatalf(format string, a ...interface{}) {
 	if h.lndHarness != nil {
-		h.lndHarness.SaveProfilesPages()
+		h.lndHarness.SaveProfilesPages(h.t)
 	}
 
 	stacktrace := errors.Wrap(fmt.Sprintf(format, a...), 1).ErrorStack()
@@ -261,7 +261,7 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 		context.Background(), defaultWaitTimeout,
 	)
 	defer cancel()
-	h.lndHarness.EnsureConnected(ctxc, h.t, traderNode, h.lndHarness.Alice)
+	h.lndHarness.EnsureConnected(h.t, traderNode, h.lndHarness.Alice)
 
 	// If we already have a channel for LSAT payments, we're done.
 	lsatChannelExists := channelExists(
@@ -273,7 +273,7 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 
 	// If not, let's create one that is easily identifiable by its capacity.
 	stream, err := h.lndHarness.OpenChannel(
-		ctxc, traderNode, h.lndHarness.Alice, lntest.OpenChannelParams{
+		traderNode, h.lndHarness.Alice, lntest.OpenChannelParams{
 			Amt:     defaultLsatChannelSize,
 			Private: true,
 		},
@@ -282,7 +282,7 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 
 	// Mine a block and wait for the channel to be announced to the network.
 	_ = mineBlocks(h, h.lndHarness, 1, 1)
-	cp, err := h.lndHarness.WaitForChannelOpen(ctxc, stream)
+	cp, err := h.lndHarness.WaitForChannelOpen(stream)
 	require.NoError(h.t, err)
 	err = traderNode.WaitForNetworkChannelOpen(ctxc, cp)
 	require.NoError(h.t, err)
@@ -1455,7 +1455,7 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 	// block.
 	block := mineBlocks(t, net, 1, 1)[0]
 
-	closingTxid, err := net.WaitForChannelClose(ctx, closeUpdates)
+	closingTxid, err := net.WaitForChannelClose(closeUpdates)
 	if err != nil {
 		t.Fatalf("error while waiting for channel close: %v", err)
 	}

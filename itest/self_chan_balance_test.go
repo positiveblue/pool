@@ -1,7 +1,6 @@
 package itest
 
 import (
-	"context"
 	"fmt"
 
 	"github.com/btcsuite/btcutil"
@@ -15,15 +14,13 @@ import (
 // testSelfChanBalance tests that opening a channel with a self channel balance
 // through a bid order is possible.
 func testSelfChanBalance(t *harnessTest) {
-	ctx := context.Background()
-
 	// We need a third lnd node, Charlie that is used for the second trader.
 	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.

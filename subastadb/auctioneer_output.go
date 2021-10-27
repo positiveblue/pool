@@ -101,7 +101,7 @@ func (s *EtcdStore) updateAuctioneerAccountSTM(stm conc.STM,
 	return nil
 }
 
-func serializeAuctioneerAccount(w io.Writer, acct *account.Auctioneer) error {
+func serializeAuctioneerAccount(w *bytes.Buffer, acct *account.Auctioneer) error {
 	return WriteElements(
 		w, acct.OutPoint, acct.Balance, acct.AuctioneerKey,
 		acct.IsPending,

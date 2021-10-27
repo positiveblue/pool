@@ -607,7 +607,7 @@ func (s *EtcdStore) Accounts(ctx context.Context) ([]*account.Account, error) {
 	return accounts, nil
 }
 
-func serializeReservation(w io.Writer, reservation *account.Reservation) error {
+func serializeReservation(w *bytes.Buffer, reservation *account.Reservation) error {
 	return WriteElements(
 		w, reservation.Value, reservation.AuctioneerKey,
 		reservation.InitialBatchKey, reservation.Expiry,
@@ -625,7 +625,7 @@ func deserializeReservation(r io.Reader) (*account.Reservation, error) {
 	return &reservation, err
 }
 
-func serializeAccount(w io.Writer, a *account.Account) error {
+func serializeAccount(w *bytes.Buffer, a *account.Account) error {
 	err := WriteElements(
 		w, a.TokenID, a.Value, a.Expiry, a.TraderKeyRaw,
 		a.AuctioneerKey, a.BatchKey, a.Secret, a.State,

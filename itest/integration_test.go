@@ -4,7 +4,6 @@
 package itest
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"testing"
@@ -178,16 +177,11 @@ func TestAuctioneerServer(t *testing.T) {
 				t1, lndHarness,
 			)
 			lndHarness.EnsureConnected(
-				context.Background(), t1, lndHarness.Alice,
-				lndHarness.Bob,
+				t1, lndHarness.Alice, lndHarness.Bob,
 			)
 
-			if err := lndHarness.Alice.AddToLog(logLine); err != nil {
-				t1.Fatalf("unable to add to log: %v", err)
-			}
-			if err := lndHarness.Bob.AddToLog(logLine); err != nil {
-				t1.Fatalf("unable to add to log: %v", err)
-			}
+			lndHarness.Alice.AddToLog(logLine)
+			lndHarness.Bob.AddToLog(logLine)
 
 			ht := newHarnessTest(
 				t1, lndHarness, auctioneerHarness,

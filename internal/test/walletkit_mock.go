@@ -13,6 +13,7 @@ import (
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
@@ -148,7 +149,7 @@ func (m *MockWalletKit) ListSweeps(_ context.Context) ([]string, error) {
 	return m.Sweeps, nil
 }
 
-// AddRelevantTx marks the given transaction as relevant.
+// AddTx marks the given transaction as relevant.
 func (m *MockWalletKit) AddTx(tx *wire.MsgTx) {
 	m.lock.Lock()
 	m.Transactions = append(m.Transactions, tx.Copy())
@@ -159,4 +160,10 @@ func (m *MockWalletKit) BumpFee(context.Context, wire.OutPoint,
 	chainfee.SatPerKWeight) error {
 
 	panic("unimplemented")
+}
+
+func (m *MockWalletKit) ListAccounts(context.Context, string,
+	walletrpc.AddressType) ([]*walletrpc.Account, error) {
+
+	return nil, nil
 }
