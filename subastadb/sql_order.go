@@ -73,6 +73,9 @@ type SQLOrderKit struct {
 	// MinUnitsMatch signals the minimum number of units that must be
 	// matched against an order.
 	MinUnitsMatch uint64
+
+	// ChannelType is the type of the channel that should be opened.
+	ChannelType uint8
 }
 
 // SQLOrderServerDetailsKit stores all the common order details matching the
@@ -93,9 +96,6 @@ type SQLOrderServerDetailsKit struct {
 	// order. Stored as a comma separated list.
 	NodeAddrs string
 
-	// ChanType is the type of the channel that should be opened.
-	ChanType uint8
-
 	// Lsat is the LSAT token that was used to submit the order.
 	Lsat string
 
@@ -104,7 +104,7 @@ type SQLOrderServerDetailsKit struct {
 	UserAgent string
 }
 
-// SQLBidOrder is the SQL model server side ask orders matching
+// SQLAskOrder is the SQL model server side ask orders matching
 // subasta.ServerOrder where the encapsulated order is a pool order.Ask.
 type SQLAskOrder struct {
 	SQLOrderKit
@@ -168,6 +168,7 @@ func toClientKit(sqlKit *SQLOrderKit) (*orderT.Kit, error) {
 	clientKit.MaxBatchFeeRate = chainfee.SatPerKWeight(
 		sqlKit.MaxBatchFeeRate,
 	)
+	clientKit.ChannelType = orderT.ChannelType(sqlKit.ChannelType)
 
 	clientKit.AcctKey, err = keyFromHexString(sqlKit.AcctKey)
 	if err != nil {
@@ -215,7 +216,6 @@ func toServerKit(sqlKit *SQLOrderServerDetailsKit) (*order.Kit, error) {
 		MultiSigKey: multisigKey,
 		NodeKey:     nodeKey,
 		NodeAddrs:   addrs,
-		ChanType:    order.ChanType(sqlKit.ChanType),
 		Lsat:        tokenID,
 		UserAgent:   sqlKit.UserAgent,
 	}, nil
@@ -274,7 +274,6 @@ func serverDetailsKit(kit *order.Kit) (*SQLOrderServerDetailsKit, error) {
 		MultiSigKey: hex.EncodeToString(kit.MultiSigKey[:]),
 		NodeKey:     hex.EncodeToString(kit.NodeKey[:]),
 		NodeAddrs:   nodeAddrsStr,
-		ChanType:    uint8(kit.ChanType),
 		Lsat:        kit.Lsat.String(),
 		UserAgent:   kit.UserAgent,
 	}, nil
@@ -296,6 +295,7 @@ func clientOrderKit(kit *orderT.Kit) SQLOrderKit {
 		AcctKey:                  hex.EncodeToString(kit.AcctKey[:]),
 		LeaseDuration:            kit.LeaseDuration,
 		MinUnitsMatch:            uint64(kit.MinUnitsMatch),
+		ChannelType:              uint8(kit.ChannelType),
 	}
 }
 
@@ -347,7 +347,7 @@ func (s *SQLTransaction) updateBidOrder(o *order.Bid) error {
 	).Create(bidOrder).Error
 }
 
-// UpdateOrderSQL attempts to insert or update a ServerOrder in the parent SQL
+// UpdateOrder attempts to insert or update a ServerOrder in the parent SQL
 // transaction.
 func (s *SQLTransaction) UpdateOrder(o order.ServerOrder) error {
 	switch t := o.(type) {

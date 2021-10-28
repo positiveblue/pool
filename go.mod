@@ -14,7 +14,7 @@ require (
 	github.com/lib/pq v1.10.3
 	github.com/lightninglabs/aperture v0.1.10-beta
 	github.com/lightninglabs/lndclient v0.14.0-2
-	github.com/lightninglabs/pool v0.5.1-alpha.0.20211028140925-4327e35aff7c
+	github.com/lightninglabs/pool v0.5.1-alpha.0.20211102234808-644f3e1eef66
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.3
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.13.0-beta.rc5.0.20211021015325-cac8da819ff9
@@ -41,5 +41,3 @@ go 1.13
 // it in the client binary as well. We need to import it with its declared name
 // everywhere too, otherwise the replace won't work properly.
 replace github.com/lightninglabs/pool/auctioneerrpc => ./auctioneerrpc
-
-replace github.com/lightninglabs/pool => github.com/lightninglabs/pool v0.5.1-alpha.0.20211028141218-baee0e57b853
