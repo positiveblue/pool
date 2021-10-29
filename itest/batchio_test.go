@@ -25,14 +25,14 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
 
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// Send some extra coins to the auctioneers LND node that we can use
 	// for batch IO.
 	const numInputs = 3
 	for i := 0; i < numInputs; i++ {
 		t.lndHarness.SendCoins(
-			ctx, t.t, 1*btcutil.SatoshiPerBitcoin,
+			t.t, 1*btcutil.SatoshiPerBitcoin,
 			t.auctioneer.cfg.LndNode,
 		)
 	}

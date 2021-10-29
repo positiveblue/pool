@@ -1,6 +1,7 @@
 package subastadb
 
 import (
+	"bytes"
 	"io"
 
 	"github.com/btcsuite/btcd/wire"
@@ -31,7 +32,7 @@ const (
 
 // WriteElements is writes each element in the elements slice to the passed
 // io.Writer using WriteElement.
-func WriteElements(w io.Writer, elements ...interface{}) error {
+func WriteElements(w *bytes.Buffer, elements ...interface{}) error {
 	for _, element := range elements {
 		err := WriteElement(w, element)
 		if err != nil {
@@ -45,7 +46,7 @@ func WriteElements(w io.Writer, elements ...interface{}) error {
 // any element which is to be serialized. The passed io.Writer should be backed
 // by an appropriately sized byte slice, or be able to dynamically expand to
 // accommodate additional data.
-func WriteElement(w io.Writer, element interface{}) error {
+func WriteElement(w *bytes.Buffer, element interface{}) error {
 	switch e := element.(type) {
 	case lsat.TokenID:
 		if _, err := w.Write(e[:]); err != nil {

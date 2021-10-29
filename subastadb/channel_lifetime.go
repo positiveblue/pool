@@ -132,7 +132,7 @@ func (s *EtcdStore) EnforceLifetimeViolation(ctx context.Context,
 	return err
 }
 
-func serializeLifetimePackage(w io.Writer,
+func serializeLifetimePackage(w *bytes.Buffer,
 	pkg *chanenforcement.LifetimePackage) error {
 
 	return WriteElements(

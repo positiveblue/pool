@@ -390,6 +390,9 @@ func readMacaroon(macaroonPath string) (grpc.DialOption, error) {
 	}
 
 	// Now we append the macaroon credentials to the dial options.
-	cred := macaroons.NewMacaroonCredential(mac)
+	cred, err := macaroons.NewMacaroonCredential(mac)
+	if err != nil {
+		return nil, fmt.Errorf("error creating mac cred: %v", err)
+	}
 	return grpc.WithPerRPCCredentials(cred), nil
 }

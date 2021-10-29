@@ -23,14 +23,14 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, charlieTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	dave := t.lndHarness.NewNode(t.t, "dave", nil)
 	daveTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, dave, daveTrader)
-	t.lndHarness.SendCoins(ctx, t.t, 5_000_000, dave)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
 
 	// Next, we'll have both of them open a new account.
 	charlieAccount := openAccountAndAssert(

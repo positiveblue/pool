@@ -472,7 +472,7 @@ func rawKeyFromBanKey(key string) ([33]byte, error) {
 	return rawKey, nil
 }
 
-func serializeBanInfo(w io.Writer, info *BanInfo) error {
+func serializeBanInfo(w *bytes.Buffer, info *BanInfo) error {
 	return WriteElements(w, info.Height, info.Duration)
 }
 
