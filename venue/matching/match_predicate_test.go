@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 var (
@@ -120,4 +121,48 @@ func TestMinNodeRatingPredicate(t *testing.T) {
 	if !predicate.IsMatchable(node1Ask, node4Bid) {
 		t.Fatalf("node tier should be compatible")
 	}
+}
+
+// TestChannelTypePredicate test that two orders will only match if their
+// desired channel types are compatible.
+func TestChannelTypePredicate(t *testing.T) {
+	t.Parallel()
+
+	ask := *node1Ask
+	bid := *node2Bid
+
+	// Both orders can specify their desired channel type. They'll match as
+	// long as their channel types are compatible.
+	ask.Version = orderT.VersionChannelType
+	ask.ChannelType = orderT.ChannelTypePeerDependent
+	bid.Version = orderT.VersionChannelType
+	bid.ChannelType = orderT.ChannelTypePeerDependent
+	require.True(t, MatchChannelType(&ask, &bid))
+
+	ask.ChannelType = orderT.ChannelTypeScriptEnforced
+	bid.ChannelType = orderT.ChannelTypeScriptEnforced
+	require.True(t, MatchChannelType(&ask, &bid))
+
+	bid.ChannelType = orderT.ChannelTypePeerDependent
+	require.False(t, MatchChannelType(&ask, &bid))
+
+	// Only the ask can specify its desired channel type. They'll match as
+	// long as the ask isn't specifying a channel type.
+	ask.Version = orderT.VersionChannelType
+	ask.ChannelType = orderT.ChannelTypePeerDependent
+	bid.Version = orderT.VersionChannelType - 1
+	require.True(t, MatchChannelType(&ask, &bid))
+
+	ask.ChannelType = orderT.ChannelTypeScriptEnforced
+	require.False(t, MatchChannelType(&ask, &bid))
+
+	// Only the bid can specify its desired channel type. They'll match as
+	// long as the bid isn't specifying a channel type.
+	ask.Version = orderT.VersionChannelType - 1
+	bid.Version = orderT.VersionChannelType
+	bid.ChannelType = orderT.ChannelTypePeerDependent
+	require.True(t, MatchChannelType(&ask, &bid))
+
+	bid.ChannelType = orderT.ChannelTypeScriptEnforced
+	require.False(t, MatchChannelType(&ask, &bid))
 }

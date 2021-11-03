@@ -351,8 +351,7 @@
           "description": "The true bid price of the order in parts per billion."
         },
         "chan_type": {
-          "type": "integer",
-          "format": "int64",
+          "$ref": "#/definitions/poolrpcOrderChannelType",
           "description": "The channel type to be created."
         }
       }
@@ -507,8 +506,7 @@
           "description": "The true bid price of the order in parts per billion."
         },
         "chan_type": {
-          "type": "integer",
-          "format": "int64",
+          "$ref": "#/definitions/poolrpcOrderChannelType",
           "description": "The channel type to be created."
         }
       }
@@ -546,10 +544,11 @@
       "type": "string",
       "enum": [
         "TWEAKLESS",
-        "ANCHORS"
+        "ANCHORS",
+        "SCRIPT_ENFORCED_LEASE"
       ],
       "default": "TWEAKLESS",
-      "description": " - TWEAKLESS: The channel supports static to_remote keys.\n - ANCHORS: The channel uses an anchor-based commitment."
+      "description": " - TWEAKLESS: The channel supports static to_remote keys.\n - ANCHORS: The channel uses an anchor-based commitment.\n - SCRIPT_ENFORCED_LEASE: The channel build upon the anchor-based commitment and requires an\nadditional CLTV of the channel lease maturity on any commitment and HTLC\noutputs that pay directly to the channel initiator (the seller)."
     },
     "poolrpcDurationBucketState": {
       "type": "string",
@@ -781,6 +780,16 @@
       "default": "TIER_DEFAULT",
       "description": " - TIER_DEFAULT: The default node tier. This value will be determined at run-time by the\ncurrent order version.\n - TIER_0: Tier 0, bid with this tier are opting out of the smaller \"higher\nquality\" pool of nodes to match their bids. Nodes in this tier are\nconsidered to have \"no rating\".\n - TIER_1: Tier 1, the \"base\" node tier. Nodes in this tier are shown to have a\nhigher degree of up time and route-ability compared to the rest of the\nnodes in the network. This is the current default node tier when\nsubmitting bid orders."
     },
+    "poolrpcOrderChannelType": {
+      "type": "string",
+      "enum": [
+        "ORDER_CHANNEL_TYPE_UNKNOWN",
+        "ORDER_CHANNEL_TYPE_PEER_DEPENDENT",
+        "ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED"
+      ],
+      "default": "ORDER_CHANNEL_TYPE_UNKNOWN",
+      "description": " - ORDER_CHANNEL_TYPE_UNKNOWN: Used to set defaults when a trader doesn't specify a channel type.\n - ORDER_CHANNEL_TYPE_PEER_DEPENDENT: The channel type will vary per matched channel based on the features shared\nbetween its participants.\n - ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED: A channel type that builds upon the anchors commitment format to enforce\nchannel lease maturities in the commitment and HTLC outputs that pay to the\nchannel initiator/seller."
+    },
     "poolrpcOrderMatchAccept": {
       "type": "object",
       "properties": {
@@ -803,11 +812,6 @@
           "type": "string",
           "format": "byte",
           "description": "The final transaction ID of the published batch transaction."
-        },
-        "height_hint": {
-          "type": "integer",
-          "format": "int64",
-          "description": "The current block height at the time the batch transaction was published to\nthe network."
         }
       }
     },
@@ -868,6 +872,11 @@
             "$ref": "#/definitions/poolrpcMatchedMarket"
           },
           "description": "Maps the distinct lease duration markets to the orders that were matched\nwithin and the discovered market clearing price."
+        },
+        "batch_height_hint": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The earliest absolute height in the chain in which the batch transaction can\nbe found within. This will be used by traders to base off their absolute\nchannel lease maturity height."
         }
       }
     },
@@ -1238,9 +1247,8 @@
           },
           "description": "The network addresses of the node creating the order."
         },
-        "chan_type": {
-          "type": "integer",
-          "format": "int64",
+        "channel_type": {
+          "$ref": "#/definitions/poolrpcOrderChannelType",
           "description": "The type of the channel that should be opened."
         },
         "max_batch_fee_rate_sat_per_kw": {

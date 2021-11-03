@@ -378,7 +378,7 @@ func TestBatchTransactionAssembly(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
 		test.batchKey, test.orderBatch, test.masterAcct, &BatchIO{},
-		feeRate, feeSchedule,
+		feeRate, 1337, feeSchedule,
 	)
 	require.NoError(t, err)
 
@@ -535,7 +535,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	// transaction and all the relevant indexes ere constructed properly.
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
-		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
 		&feeSchedule,
 	)
 	if err != nil {
@@ -771,7 +771,8 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	// size is the same as the account size).
 	feeRate := chainfee.SatPerKWeight(200)
 	_, err = NewExecutionContext(
-		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, &feeSchedule,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
+		&feeSchedule,
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -831,7 +832,7 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 	// Now execute the batch assembly using this fee rate. We expect this
 	// to fail since the master account balance is now dust.
 	_, err := NewExecutionContext(
-		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate,
+		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
 		&feeSchedule,
 	)
 	if err != ErrMasterBalanceDust {
@@ -915,8 +916,8 @@ func TestBatchTransactionExtraIO(t *testing.T) {
 	// auctioneer, since we don't have to account for chain fees.
 	feeRate := chainfee.SatPerKWeight(0)
 	batchTxCtx, err := NewExecutionContext(
-		test.batchKey, test.orderBatch, test.masterAcct, extraIO, feeRate,
-		feeSchedule,
+		test.batchKey, test.orderBatch, test.masterAcct, extraIO,
+		feeRate, 1337, feeSchedule,
 	)
 	require.NoError(t, err)
 

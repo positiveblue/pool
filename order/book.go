@@ -2,6 +2,7 @@ package order
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 
@@ -288,7 +289,6 @@ func (b *Book) validateAccountState(ctx context.Context,
 // order.
 func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	kit := srvOrder.ServerDetails()
-	kit.ChanType = ChanTypeDefault
 	srvOrder.Details().State = order.StateSubmitted
 
 	// Anything below the supply unit size cannot be filled anyway so we
@@ -390,6 +390,14 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	default:
 		return fmt.Errorf("bucket for duration %v is in state: %v",
 			leaseDuration, marketState)
+	}
+
+	// Only traders that understand channel types can provide one other than
+	// the legacy default.
+	if srvOrder.Details().Version < order.VersionChannelType &&
+		srvOrder.Details().ChannelType != order.ChannelTypePeerDependent {
+		return errors.New("cannot submit channel type preference with " +
+			"old trader client, please update your software")
 	}
 
 	return nil

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -21,6 +22,7 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
@@ -789,6 +791,167 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	if err != nil {
 		t.Fatalf("expected order submission to succeed: %v", err)
 	}
+}
+
+// testScriptLevelEnforcement ensures that the channel output scripts and the
+// auctioneer correctly enforce a channel's lifetime by punishing the offending
+// trader (the maker).
+func testScriptLevelEnforcement(t *harnessTest) {
+	ctx := context.Background()
+
+	extraArgs := []string{
+		"--protocol.anchors",
+		"--protocol.script-enforced-lease",
+	}
+
+	charlie := t.lndHarness.NewNode(t.t, "charlie", extraArgs)
+	charlieTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, charlieTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	dave := t.lndHarness.NewNode(t.t, "dave", extraArgs)
+	daveTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, dave, daveTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders.
+	charlieAccount := openAccountAndAssert(
+		t, charlieTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	daveAccount := openAccountAndAssert(
+		t, daveTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// default trader, selling 15 units (1.5M sats) of liquidity.
+	askAmt := btcutil.Amount(1_500_000)
+	_, err := submitAskOrder(
+		charlieTrader, charlieAccount.TraderKey, 100, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.Details.ChannelType =
+				auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Our second trader, connected to Charlie, wants to buy 8 units of
+	// liquidity. So let's submit an order for that.
+	bidAmt := btcutil.Amount(800_000)
+	_, err = submitBidOrder(
+		daveTrader, daveAccount.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.Details.ChannelType =
+				auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Let's kick the auctioneer now to try and create a batch.
+	_, batchTXIDs := executeBatch(t, 1)
+	batchTXID := batchTXIDs[0]
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(t, charlie, bidAmt, true, dave.PubKey)
+	assertPendingChannel(t, dave, bidAmt, false, charlie.PubKey)
+
+	_, heightBeforeBatch, err := t.lndHarness.Miner.Client.GetBestBlock()
+	require.NoError(t.t, err)
+	leaseExpiry := uint32(heightBeforeBatch) + defaultOrderDuration
+
+	// We'll now mine a block to confirm the channel. We should find the
+	// channel in the listchannels output for both nodes, and the
+	// thaw_height should be set accordingly.
+	blocks := mineBlocks(t, t.lndHarness, 1, 1)
+
+	// The block above should contain the batch transaction found in the
+	// mempool above.
+	assertTxInBlock(t, blocks[0], batchTXID)
+
+	// We'll now mine another 3 blocks to ensure the channel itself is
+	// fully confirmed.
+	_ = mineBlocks(t, t.lndHarness, 3, 0)
+
+	// Now that the channels are confirmed, they should both be active, and
+	// we should be able to make a payment between this new channel
+	// established.
+	chanPoint := assertActiveChannel(
+		t, charlie, int64(bidAmt), *batchTXID, dave.PubKey, leaseExpiry,
+	)
+	_ = assertActiveChannel(
+		t, dave, int64(bidAmt), *batchTXID, charlie.PubKey, leaseExpiry,
+	)
+
+	// Proceed to force close the channel from the initiator. They should be
+	// banned accordingly.
+	_, _, err = t.lndHarness.CloseChannel(charlie, chanPoint, true)
+	require.NoError(t.t, err)
+
+	_ = mineBlocks(t, t.lndHarness, 1, 1)
+
+	err = wait.NoError(func() error {
+		ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+		defer cancel()
+		resp, err := charlie.PendingChannels(
+			ctxt, &lnrpc.PendingChannelsRequest{},
+		)
+		if err != nil {
+			return err
+		}
+
+		if len(resp.PendingForceClosingChannels) != 1 {
+			return fmt.Errorf("expected %d pending force closing "+
+				"channel, got %d", 1,
+				len(resp.PendingForceClosingChannels))
+		}
+
+		channel := resp.PendingForceClosingChannels[0]
+		if channel.MaturityHeight != leaseExpiry {
+			return fmt.Errorf("expected maturity height %d, got %d",
+				leaseExpiry, channel.MaturityHeight)
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	require.NoError(t.t, err)
+
+	// The trader responsible should no longer be able to modify their
+	// account or submit orders.
+	_, err = submitAskOrder(charlieTrader, charlieAccount.TraderKey, 100, 100_000)
+	if err == nil || !strings.Contains(err.Error(), "banned") {
+		t.Fatalf("expected order submission to fail due to account ban")
+	}
+	_, err = charlieTrader.DepositAccount(ctx, &poolrpc.DepositAccountRequest{
+		TraderKey:       charlieAccount.TraderKey,
+		AmountSat:       1000,
+		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+	})
+	if err == nil || !strings.Contains(err.Error(), "banned") {
+		t.Fatalf("expected account deposit to fail due to account ban")
+	}
+
+	// The offended trader should still be able to however.
+	_, err = submitAskOrder(daveTrader, daveAccount.TraderKey, 100, 100_000)
+	require.NoError(t.t, err)
 }
 
 // testBatchExecutionDustOutputs checks that an account is considered closed if

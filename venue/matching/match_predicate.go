@@ -18,6 +18,7 @@ var (
 		MatchPredicateFunc(AskRateSmallerOrEqualPredicate),
 		MatchPredicateFunc(AskDurationGreaterOrEqualPredicate),
 		MatchPredicateFunc(SelfChanBalanceEnabledPredicate),
+		MatchPredicateFunc(MatchChannelType),
 	}
 )
 
@@ -81,6 +82,35 @@ func AskDurationGreaterOrEqualPredicate(ask *order.Ask, bid *order.Bid) bool {
 func SelfChanBalanceEnabledPredicate(ask *order.Ask, bid *order.Bid) bool {
 	return bid.SelfChanBalance == 0 ||
 		ask.Version >= orderT.VersionSelfChanBalance
+}
+
+// MatchChannelType is a matching predicate that makes sure the channel type of
+// an ask and bid are compatible with each other.
+func MatchChannelType(ask *order.Ask, bid *order.Bid) bool {
+	switch {
+	// Both orders can specify their desired channel type, match if they're
+	// compatible.
+	case ask.Version >= orderT.VersionChannelType &&
+		bid.Version >= orderT.VersionChannelType:
+		return ask.ChannelType == bid.ChannelType
+
+	// Only the ask can specify its desired channel type. We'll attempt to
+	// match it with any bids that can't specify their desired channel type,
+	// as long as the ask does not want a specific channel type.
+	case ask.Version >= orderT.VersionChannelType &&
+		bid.Version < orderT.VersionChannelType:
+		return ask.ChannelType == orderT.ChannelTypePeerDependent
+
+	// Only the bid can specify its desired channel type. We'll attempt to
+	// match it with any asks that can't specify their desired channel type,
+	// as long as the bid does not want a specific channel type.
+	case ask.Version < orderT.VersionChannelType &&
+		bid.Version >= orderT.VersionChannelType:
+		return bid.ChannelType == orderT.ChannelTypePeerDependent
+
+	default:
+		return true
+	}
 }
 
 // MinPartialMatchPredicate is a matching predicate that returns true if the

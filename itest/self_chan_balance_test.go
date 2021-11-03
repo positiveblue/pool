@@ -49,6 +49,9 @@ func testSelfChanBalance(t *harnessTest) {
 	ask1Amt := btcutil.Amount(200_000)
 	_, err := submitAskOrder(
 		t.trader, makerAccount.TraderKey, orderFixedRate, ask1Amt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.Version = uint32(orderT.VersionLeaseDurationBuckets)
+		},
 	)
 	require.NoError(t.t, err)
 

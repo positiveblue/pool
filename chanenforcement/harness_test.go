@@ -22,7 +22,7 @@ import (
 const (
 	timeout = time.Second
 
-	testMaturityDelta = 1337
+	testMaturityHeight = 1337
 )
 
 var (
@@ -104,7 +104,7 @@ func (h *testHarness) newLifetimePackage(
 		},
 		ChannelScript:       nil,
 		HeightHint:          100,
-		MaturityDelta:       testMaturityDelta,
+		MaturityHeight:      testMaturityHeight,
 		Version:             version,
 		AskAccountKey:       testAskAccountKey,
 		BidAccountKey:       testBidAccountKey,
@@ -203,7 +203,7 @@ func (h *testHarness) notifyPrematureSpend(pkg *LifetimePackage,
 
 	err := h.notifier.notifySpend(pkg.ChannelPoint, &chainntnfs.SpendDetail{
 		SpentOutPoint:  &pkg.ChannelPoint,
-		SpendingHeight: int32(confHeight + testMaturityDelta - 1),
+		SpendingHeight: int32(confHeight + testMaturityHeight - 1),
 		SpendingTx:     tx,
 		SpenderTxHash:  &txHash,
 	})
@@ -220,7 +220,7 @@ func (h *testHarness) notifyMatureSpend(pkg *LifetimePackage, confHeight uint32)
 
 	err := h.notifier.notifySpend(pkg.ChannelPoint, &chainntnfs.SpendDetail{
 		SpentOutPoint:  &pkg.ChannelPoint,
-		SpendingHeight: int32(confHeight + testMaturityDelta),
+		SpendingHeight: int32(confHeight + testMaturityHeight),
 		SpendingTx:     tx,
 		SpenderTxHash:  &txHash,
 	})

@@ -198,6 +198,11 @@ type ExecutionContext struct {
 	// execution transaction.
 	BatchFeeRate chainfee.SatPerKWeight
 
+	// BatchHeightHint is the earliest absolute height in the chain in which
+	// the batch transaction can be found within. This will be used by
+	// traders to base off their absolute channel lease maturity height.
+	BatchHeightHint uint32
+
 	// MasterAcct is the auctioneers account at the point at which this
 	// batch is executed.
 	MasterAcct *account.Auctioneer
@@ -698,7 +703,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 // information needed to execute the passed OrderBatch.
 func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	masterAcct *account.Auctioneer, masterIO *BatchIO,
-	batchFeeRate chainfee.SatPerKWeight,
+	batchFeeRate chainfee.SatPerKWeight, batchHeightHint uint32,
 	feeSchedule terms.FeeSchedule) (*ExecutionContext, error) {
 
 	// When we create this master account state, we'll ensure that
@@ -725,6 +730,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 		BatchID:            batchID,
 		FeeSchedule:        feeSchedule,
 		BatchFeeRate:       batchFeeRate,
+		BatchHeightHint:    batchHeightHint,
 		MasterAcct:         masterAcct,
 		OrderBatch:         batch,
 		orderIndex:         make(map[orderT.Nonce][]*OrderOutput),

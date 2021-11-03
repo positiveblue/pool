@@ -168,7 +168,7 @@ func TestPersistBatchResult(t *testing.T) {
 		ChannelPoint:        wire.OutPoint{Index: 1},
 		ChannelScript:       []byte{0x1, 0x2, 0x3},
 		HeightHint:          1,
-		MaturityDelta:       100,
+		MaturityHeight:      100,
 		Version:             0,
 		AskAccountKey:       randomPubKey(t),
 		BidAccountKey:       randomPubKey(t),

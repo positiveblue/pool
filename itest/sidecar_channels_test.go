@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcutil"
@@ -13,6 +14,7 @@ import (
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/sidecar"
 	"github.com/lightningnetwork/lnd/lnrpc"
+	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 )
@@ -800,24 +802,27 @@ func assertSidecarState(t *testing.T, trader *traderHarness, numTickets int,
 
 	t.Helper()
 
-	sidecars, err := trader.ListSidecars(
-		context.Background(), &poolrpc.ListSidecarsRequest{},
-	)
-	require.NoError(t, err)
-	require.Len(t, sidecars.Tickets, numTickets)
+	err := wait.Predicate(func() bool {
+		sidecars, err := trader.ListSidecars(
+			context.Background(), &poolrpc.ListSidecarsRequest{},
+		)
+		require.NoError(t, err)
+		require.Len(t, sidecars.Tickets, numTickets)
 
-	found := false
-	for _, ticket := range sidecars.Tickets {
-		if !bytes.Equal(ticket.Id, id) {
-			continue
+		found := false
+		for _, ticket := range sidecars.Tickets {
+			if !bytes.Equal(ticket.Id, id) {
+				continue
+			}
+
+			found = true
+			require.Equal(t, state.String(), ticket.State)
+			break
 		}
 
-		found = true
-		require.Equal(t, state.String(), ticket.State)
-		break
-	}
-
-	if !found {
+		return found
+	}, time.Second*15)
+	if err != nil {
 		require.Fail(t, "ticket with ID %x not found", id)
 	}
 }

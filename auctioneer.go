@@ -1659,7 +1659,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
-			a.cfg.FeeSchedule,
+			a.BestHeight(), a.cfg.FeeSchedule,
 		)
 
 		// If we had non-nil batchIO requested, it could be the reason
@@ -1673,7 +1673,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			io = &batchtx.BatchIO{}
 			exeCtx, err = batchtx.NewExecutionContext(
 				batchKey, orderBatch, masterAcct, io,
-				s.batchFeeRate, a.cfg.FeeSchedule,
+				s.batchFeeRate, a.BestHeight(), a.cfg.FeeSchedule,
 			)
 		}
 

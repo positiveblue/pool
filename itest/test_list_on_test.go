@@ -42,6 +42,10 @@ var testCases = []*testCase{
 		test: testServiceLevelEnforcement,
 	},
 	{
+		name: "script level enforcement",
+		test: testScriptLevelEnforcement,
+	},
+	{
 		name: "unconfirmed batch chain",
 		test: testUnconfirmedBatchChain,
 	},

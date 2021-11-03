@@ -1322,9 +1322,8 @@ func (s *rpcServer) sendToTrader(
 		return stream.Send(&auctioneerrpc.ServerAuctionMessage{
 			Msg: &auctioneerrpc.ServerAuctionMessage_Finalize{
 				Finalize: &auctioneerrpc.OrderMatchFinalize{
-					BatchId:    m.BatchID[:],
-					BatchTxid:  m.BatchTxID[:],
-					HeightHint: s.bestHeight() - 1,
+					BatchId:   m.BatchID[:],
+					BatchTxid: m.BatchTxID[:],
 				},
 			},
 		})
@@ -1384,20 +1383,25 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*auctioneerrpc.ServerAuctionMessag
 				// If the client had their bid matched, then
 				// we'll send over the ask information and the
 				// other way around if it's a bid.
-				ask, bid := o.Details.Ask, o.Details.Bid
+				matchedAsk, err := marshallMatchedAsk(
+					o.Details.Ask, unitsFilled,
+				)
+				if err != nil {
+					return nil, err
+				}
+				matchedBid, err := marshallMatchedBid(
+					o.Details.Bid, unitsFilled,
+				)
+				if err != nil {
+					return nil, err
+				}
 				if !isAsk {
 					mo.MatchedAsks = append(
-						mo.MatchedAsks,
-						marshallMatchedAsk(
-							ask, unitsFilled,
-						),
+						mo.MatchedAsks, matchedAsk,
 					)
 				} else {
 					mo.MatchedBids = append(
-						mo.MatchedBids,
-						marshallMatchedBid(
-							bid, unitsFilled,
-						),
+						mo.MatchedBids, matchedBid,
 					)
 				}
 			}
@@ -1453,6 +1457,7 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*auctioneerrpc.ServerAuctionMessag
 				BatchId:          m.BatchID[:],
 				BatchVersion:     m.BatchVersion,
 				MatchedMarkets:   markets,
+				BatchHeightHint:  m.BatchHeightHint,
 			},
 		},
 	}, nil
@@ -1744,10 +1749,13 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 		for _, o := range subBatch {
 			if _, ok := accounts[o.Asker.AccountKey]; ok {
 				nonce := o.Details.Ask.Nonce().String()
-				matchedBid := marshallMatchedBid(
+				matchedBid, err := marshallMatchedBid(
 					o.Details.Bid,
 					o.Details.Quote.UnitsMatched,
 				)
+				if err != nil {
+					return nil, err
+				}
 				resp.MatchedOrders[nonce].MatchedBids = append( // nolint:staticcheck
 					resp.MatchedOrders[nonce].MatchedBids, matchedBid, // nolint:staticcheck
 				)
@@ -1760,10 +1768,13 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 
 			if _, ok := accounts[o.Bidder.AccountKey]; ok {
 				nonce := o.Details.Bid.Nonce().String()
-				matchedAsk := marshallMatchedAsk(
+				matchedAsk, err := marshallMatchedAsk(
 					o.Details.Ask,
 					o.Details.Quote.UnitsMatched,
 				)
+				if err != nil {
+					return nil, err
+				}
 				resp.MatchedOrders[nonce].MatchedAsks = append( // nolint:staticcheck
 					resp.MatchedOrders[nonce].MatchedAsks, matchedAsk, // nolint:staticcheck
 				)
@@ -1813,7 +1824,6 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	copy(serverKit.NodeKey[:], nodeKey[:])
 	serverKit.NodeAddrs = addrs
 	copy(serverKit.MultiSigKey[:], multiSigKey[:])
-	serverKit.ChanType = order.ChanType(details.ChanType)
 
 	return clientKit, serverKit, nil
 }
@@ -1938,52 +1948,80 @@ func marshallServerAccount(acct *account.Account) (*auctioneerrpc.AuctionAccount
 
 // marshallMatchedAsk translates an order.Ask to its RPC counterpart.
 func marshallMatchedAsk(ask *order.Ask,
-	unitsFilled orderT.SupplyUnit) *auctioneerrpc.MatchedAsk {
+	unitsFilled orderT.SupplyUnit) (*auctioneerrpc.MatchedAsk, error) {
+
+	details, err := marshallServerOrder(ask)
+	if err != nil {
+		return nil, err
+	}
 
 	return &auctioneerrpc.MatchedAsk{
 		Ask: &auctioneerrpc.ServerAsk{
-			Details:             marshallServerOrder(ask),
+			Details:             details,
 			LeaseDurationBlocks: ask.LeaseDuration(),
 			Version:             uint32(ask.Version),
 		},
 		UnitsFilled: uint32(unitsFilled),
-	}
+	}, nil
 }
 
 // marshallMatchedBid translates an order.Bid to its RPC counterpart.
 func marshallMatchedBid(bid *order.Bid,
-	unitsFilled orderT.SupplyUnit) *auctioneerrpc.MatchedBid {
+	unitsFilled orderT.SupplyUnit) (*auctioneerrpc.MatchedBid, error) {
+
+	details, err := marshallServerOrder(bid)
+	if err != nil {
+		return nil, err
+	}
 
 	return &auctioneerrpc.MatchedBid{
 		Bid: &auctioneerrpc.ServerBid{
-			Details:             marshallServerOrder(bid),
+			Details:             details,
 			LeaseDurationBlocks: bid.LeaseDuration(),
 			Version:             uint32(bid.Version),
 			SelfChanBalance:     uint64(bid.SelfChanBalance),
 			IsSidecarChannel:    bid.IsSidecar,
 		},
 		UnitsFilled: uint32(unitsFilled),
+	}, nil
+}
+
+// marshallOrderChannelType translates an orderT.ChannelType to its RPC
+// counterpart.
+func marshallOrderChannelType(typ orderT.ChannelType) (
+	auctioneerrpc.OrderChannelType, error) {
+
+	switch typ {
+	case orderT.ChannelTypePeerDependent:
+		return auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_PEER_DEPENDENT, nil
+	case orderT.ChannelTypeScriptEnforced:
+		return auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED, nil
+	default:
+		return 0, fmt.Errorf("unhandled channel type %v", typ)
 	}
 }
 
 // marshallServerOrder translates an order.ServerOrder to its RPC counterpart.
-func marshallServerOrder(order order.ServerOrder) *auctioneerrpc.ServerOrder {
+func marshallServerOrder(order order.ServerOrder) (*auctioneerrpc.ServerOrder, error) {
 	nonce := order.Nonce()
+	channelType, err := marshallOrderChannelType(order.Details().ChannelType)
+	if err != nil {
+		return nil, err
+	}
 
 	return &auctioneerrpc.ServerOrder{
-		TraderKey:   order.Details().AcctKey[:],
-		RateFixed:   order.Details().FixedRate,
-		Amt:         uint64(order.Details().Amt),
-		OrderNonce:  nonce[:],
-		OrderSig:    order.ServerDetails().Sig.ToSignatureBytes(),
-		MultiSigKey: order.ServerDetails().MultiSigKey[:],
-		NodePub:     order.ServerDetails().NodeKey[:],
-		NodeAddr:    marshallNodeAddrs(order.ServerDetails().NodeAddrs),
-		// TODO: ChanType should be an enum in RPC?
-		ChanType:                uint32(order.ServerDetails().ChanType),
+		TraderKey:               order.Details().AcctKey[:],
+		RateFixed:               order.Details().FixedRate,
+		Amt:                     uint64(order.Details().Amt),
+		OrderNonce:              nonce[:],
+		OrderSig:                order.ServerDetails().Sig.ToSignatureBytes(),
+		MultiSigKey:             order.ServerDetails().MultiSigKey[:],
+		NodePub:                 order.ServerDetails().NodeKey[:],
+		NodeAddr:                marshallNodeAddrs(order.ServerDetails().NodeAddrs),
+		ChannelType:             channelType,
 		MaxBatchFeeRateSatPerKw: uint64(order.Details().MaxBatchFeeRate),
 		MinChanAmt:              uint64(order.Details().MinUnitsMatch.ToSatoshis()),
-	}
+	}, nil
 }
 
 // marshallNodeAddrs tranlates a []net.Addr to its RPC counterpart.
@@ -2023,6 +2061,16 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 	kit.MinUnitsMatch = orderT.NewSupplyFromSats(
 		btcutil.Amount(details.MinChanAmt),
 	)
+
+	switch details.ChannelType {
+	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_PEER_DEPENDENT:
+		kit.ChannelType = orderT.ChannelTypePeerDependent
+	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED:
+		kit.ChannelType = orderT.ChannelTypeScriptEnforced
+	default:
+		return nil, [33]byte{}, nil, [33]byte{},
+			fmt.Errorf("unhandled channel type %v", details.ChannelType)
+	}
 
 	// The trader must supply a nonce.
 	if nonce == orderT.ZeroNonce {
@@ -2120,6 +2168,8 @@ func parseRPCChannelInfo(rpcChanInfos map[string]*auctioneerrpc.ChannelInfo) (
 			version = chanbackup.TweaklessCommitVersion
 		case auctioneerrpc.ChannelType_ANCHORS:
 			version = chanbackup.AnchorsCommitVersion
+		case auctioneerrpc.ChannelType_SCRIPT_ENFORCED_LEASE:
+			version = chanbackup.ScriptEnforcedLeaseVersion
 		default:
 			return nil, fmt.Errorf("unhandled channel type %v",
 				rpcChanInfo.Type)
@@ -2564,18 +2614,31 @@ func marshallBatchSnapshot(batchKey *btcec.PublicKey,
 			bid := o.Details.Bid
 			quote := o.Details.Quote
 
+			askChannelType, err := marshallOrderChannelType(
+				ask.Details().ChannelType,
+			)
+			if err != nil {
+				return nil, err
+			}
+			bidChannelType, err := marshallOrderChannelType(
+				bid.Details().ChannelType,
+			)
+			if err != nil {
+				return nil, err
+			}
+
 			rpcSnapshot := &auctioneerrpc.MatchedOrderSnapshot{
 				Ask: &auctioneerrpc.AskSnapshot{
 					Version:             uint32(ask.Version),
 					LeaseDurationBlocks: ask.LeaseDuration(),
 					RateFixed:           ask.Details().FixedRate,
-					ChanType:            uint32(ask.ServerDetails().ChanType),
+					ChanType:            askChannelType,
 				},
 				Bid: &auctioneerrpc.BidSnapshot{
 					Version:             uint32(bid.Version),
 					LeaseDurationBlocks: bid.LeaseDuration(),
 					RateFixed:           bid.Details().FixedRate,
-					ChanType:            uint32(bid.ServerDetails().ChanType),
+					ChanType:            bidChannelType,
 				},
 				MatchingRate:     uint32(quote.MatchingRate),
 				TotalSatsCleared: uint64(quote.TotalSatsCleared),

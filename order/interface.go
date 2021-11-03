@@ -10,15 +10,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
-// ChanType is a numerical type that represents all possible channel types that
-// are supported to be opened through the auction process.
-type ChanType uint8
-
-const (
-	// ChanTypeDefault is the default channel type.
-	ChanTypeDefault ChanType = 0
-)
-
 var (
 	// ErrInvalidAmt is returned if the amount chosen for an order is
 	// invalid either because it is outside of the system's limits or the
@@ -55,9 +46,6 @@ type Kit struct {
 	// NodeAddrs is the list of network addresses of the node creating the
 	// order.
 	NodeAddrs []net.Addr
-
-	// ChanType is the type of the channel that should be opened.
-	ChanType ChanType
 
 	// Lsat is the LSAT token that was used to submit the order.
 	Lsat lsat.TokenID

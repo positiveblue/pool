@@ -355,6 +355,7 @@ func (e *environment) sendPrepareMsg() error {
 			FeeRate:          e.exeCtx.BatchFeeRate,
 			BatchID:          e.exeCtx.BatchID,
 			BatchVersion:     batchVersion,
+			BatchHeightHint:  e.exeCtx.BatchHeightHint,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
