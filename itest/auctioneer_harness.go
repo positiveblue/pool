@@ -114,7 +114,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			Bitcoin:        &chain.BitcoinConfig{},
 			MaxLogFiles:    99,
 			MaxLogFileSize: 999,
-			DebugLevel:     "debug",
+			DebugLevel:     "debug,PRXY=info,AUTH=info,LSAT=info",
 			LogDir:         ".",
 			RPCListen:      subastaListenAddr,
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
