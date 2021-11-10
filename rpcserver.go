@@ -2063,6 +2063,8 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 	)
 
 	switch details.ChannelType {
+	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_UNKNOWN:
+		fallthrough
 	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_PEER_DEPENDENT:
 		kit.ChannelType = orderT.ChannelTypePeerDependent
 	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED:
