@@ -601,7 +601,7 @@ func (s *SQLTransaction) GetBatch(batchID orderT.BatchID) ( // nolint: interface
 func UpdateBatchesSQL(ctx context.Context, store *SQLStore,
 	batches map[orderT.BatchID]*BatchSnapshot) {
 
-	if store == nil {
+	if store == nil || len(batches) == 0 {
 		return
 	}
 
