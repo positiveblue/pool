@@ -299,6 +299,11 @@
           "type": "string",
           "format": "byte",
           "description": "The trader's account key this diff is referring to."
+        },
+        "new_expiry": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The new account expiry height used to verify the batch. If the batch is\nsuccessfully executed the account must update its expiry height to this\nvalue. This field can be safely ignored if its value is 0 (zero)."
         }
       }
     },
