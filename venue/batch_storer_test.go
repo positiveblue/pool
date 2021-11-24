@@ -190,6 +190,7 @@ var (
 		}, feeReport, map[uint32]orderT.FixedRatePremium{
 			testLeaseDuration: 1234,
 		},
+		CurrentServerBatchVersion,
 	)
 )
 

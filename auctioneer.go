@@ -1599,6 +1599,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		matchTimeStart := time.Now()
 		orderBatch, err := a.cfg.CallMarket.MaybeClear(
 			accountFilter, filterChain, predicateChain,
+			venue.CurrentServerBatchVersion,
 		)
 		matchLatency := time.Since(matchTimeStart)
 
@@ -1633,7 +1634,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 			log.Infof("Have pending batches, attempting " +
 				"empty batch")
-			orderBatch = matching.EmptyBatch()
+			orderBatch = matching.EmptyBatch(
+				venue.CurrentServerBatchVersion,
+			)
 
 		case err != nil:
 			return nil, err

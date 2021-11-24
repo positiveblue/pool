@@ -189,7 +189,8 @@ type OrderBatch struct {
 // NewBatch returns a new batch with the given match data, the latest batch
 // version and the current timestamp.
 func NewBatch(subBatches map[uint32][]MatchedOrder, feeReport TradingFeeReport,
-	prices map[uint32]orderT.FixedRatePremium) *OrderBatch {
+	prices map[uint32]orderT.FixedRatePremium,
+	version orderT.BatchVersion) *OrderBatch {
 
 	// For quick access to all orders, we also copy them along in a flat
 	// slice that contains the same data as the bucketed map.
@@ -199,7 +200,7 @@ func NewBatch(subBatches map[uint32][]MatchedOrder, feeReport TradingFeeReport,
 	}
 
 	return &OrderBatch{
-		Version:           orderT.CurrentBatchVersion,
+		Version:           version,
 		Orders:            allOrders,
 		SubBatches:        subBatches,
 		FeeReport:         feeReport,
@@ -210,9 +211,9 @@ func NewBatch(subBatches map[uint32][]MatchedOrder, feeReport TradingFeeReport,
 
 // EmptyBatch returns a batch that has only the version set to the latest batch
 // version and the creation timestamp with the current time.
-func EmptyBatch() *OrderBatch {
+func EmptyBatch(version orderT.BatchVersion) *OrderBatch {
 	return &OrderBatch{
-		Version:           orderT.CurrentBatchVersion,
+		Version:           version,
 		SubBatches:        make(map[uint32][]MatchedOrder),
 		CreationTimestamp: time.Now(),
 		ClearingPrices:    make(map[uint32]orderT.FixedRatePremium),
@@ -296,7 +297,8 @@ type BatchAuctioneer interface {
 	// because the estimated batch fee rate is higher than their set
 	// maximum.
 	MaybeClear(acctCacher AccountCacher, filterChain []OrderFilter,
-		predicateChain []MatchPredicate) (*OrderBatch, error)
+		predicateChain []MatchPredicate, version orderT.BatchVersion,
+	) (*OrderBatch, error)
 
 	// RemoveMatches updates the order book by subtracting the given
 	// matches filled volume.

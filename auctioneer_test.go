@@ -387,8 +387,8 @@ func newMockCallMarket() *mockCallMarket {
 }
 
 func (m *mockCallMarket) MaybeClear(_ matching.AccountCacher,
-	_ []matching.OrderFilter, _ []matching.MatchPredicate) (
-	*matching.OrderBatch, error) {
+	_ []matching.OrderFilter, _ []matching.MatchPredicate,
+	_ orderT.BatchVersion) (*matching.OrderBatch, error) {
 
 	m.Lock()
 	defer m.Unlock()
@@ -473,7 +473,10 @@ func (m *mockCallMarket) MaybeClear(_ matching.AccountCacher,
 		subBatches, defaultFeeSchedule, clearingPrices,
 	)
 
-	return matching.NewBatch(subBatches, feeReport, clearingPrices), nil
+	return matching.NewBatch(
+		subBatches, feeReport, clearingPrices,
+		orderT.DefaultBatchVersion,
+	), nil
 }
 
 func (m *mockCallMarket) RemoveMatches(matches ...matching.MatchedOrder) error {
