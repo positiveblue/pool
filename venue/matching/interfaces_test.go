@@ -26,7 +26,7 @@ var (
 		},
 	}}
 	feeReport = TradingFeeReport{
-		AccountDiffs: map[AccountID]AccountDiff{
+		AccountDiffs: map[AccountID]*AccountDiff{
 			orders[0].Asker.AccountKey: {
 				StartingState: &orders[0].Asker,
 				AccountTally: &orderT.AccountTally{

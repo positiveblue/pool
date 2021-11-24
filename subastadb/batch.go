@@ -629,7 +629,7 @@ func serializeTradingFeeReport(w *bytes.Buffer, f *matching.TradingFeeReport) er
 			return err
 		}
 		diff := f.AccountDiffs[key]
-		err = serializeAccountDiff(w, &diff)
+		err = serializeAccountDiff(w, diff)
 		if err != nil {
 			return err
 		}
@@ -905,7 +905,7 @@ func deserializeTradingFeeReport(r io.Reader) (*matching.TradingFeeReport,
 
 	// Now that we know how many pairs there are, just loop as many times
 	// and read pair by pair.
-	f.AccountDiffs = make(map[matching.AccountID]matching.AccountDiff)
+	f.AccountDiffs = make(map[matching.AccountID]*matching.AccountDiff)
 	for i := uint32(0); i < numKeys; i++ {
 		var key matching.AccountID
 		err := ReadElement(r, &key)
@@ -916,7 +916,7 @@ func deserializeTradingFeeReport(r io.Reader) (*matching.TradingFeeReport,
 		if err != nil {
 			return nil, err
 		}
-		f.AccountDiffs[key] = *diff
+		f.AccountDiffs[key] = diff
 	}
 	return f, nil
 }

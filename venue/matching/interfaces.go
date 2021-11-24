@@ -239,7 +239,7 @@ func (o *OrderBatch) Copy() OrderBatch {
 	}
 
 	feeReport := TradingFeeReport{
-		AccountDiffs:          make(map[AccountID]AccountDiff),
+		AccountDiffs:          make(map[AccountID]*AccountDiff),
 		AuctioneerFeesAccrued: o.FeeReport.AuctioneerFeesAccrued,
 	}
 	for acctID, accountDiff := range o.FeeReport.AccountDiffs {
@@ -252,7 +252,7 @@ func (o *OrderBatch) Copy() OrderBatch {
 		trader := *accountDiff.StartingState
 		tally := *accountDiff.AccountTally
 
-		feeReport.AccountDiffs[acctID] = AccountDiff{
+		feeReport.AccountDiffs[acctID] = &AccountDiff{
 			StartingState:   &trader,
 			RecreatedOutput: output,
 			AccountTally:    &tally,

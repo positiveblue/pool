@@ -133,7 +133,7 @@ var (
 		}},
 	}
 
-	accountDiffs = map[matching.AccountID]matching.AccountDiff{
+	accountDiffs = map[matching.AccountID]*matching.AccountDiff{
 		bigAcct.TraderKeyRaw: {
 			StartingState:   &bigTrader,
 			RecreatedOutput: batchTx.TxOut[0],

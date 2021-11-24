@@ -472,7 +472,7 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 		},
 	}}
 	feeReport := matching.TradingFeeReport{
-		AccountDiffs: map[matching.AccountID]matching.AccountDiff{
+		AccountDiffs: map[matching.AccountID]*matching.AccountDiff{
 			trader2.AccountKey: {
 				AccountTally: &orderT.AccountTally{
 					EndingBalance:          123,

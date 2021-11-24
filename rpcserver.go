@@ -1880,7 +1880,7 @@ func tokenIDFromContext(ctx context.Context) lsat.TokenID {
 }
 
 // marshallAccountDiff translates a matching.AccountDiff to its RPC counterpart.
-func marshallAccountDiff(diff matching.AccountDiff,
+func marshallAccountDiff(diff *matching.AccountDiff,
 	acctOutPoint wire.OutPoint) (*auctioneerrpc.AccountDiff, error) {
 
 	// TODO: Need to extend account.OnChainState with DustExtendedOffChain

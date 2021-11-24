@@ -26,7 +26,7 @@ type AccountDiff struct {
 // account during this batch.
 type TradingFeeReport struct {
 	// AccountDiffs maps a trader's account ID to an account diff.
-	AccountDiffs map[AccountID]AccountDiff
+	AccountDiffs map[AccountID]*AccountDiff
 
 	// AuctioneerFees is the total amount of satoshis the auctioneer gained
 	// in this batch. This should be the sum of the TotalExecutionFeesPaid
@@ -41,7 +41,7 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 	feeSchedule terms.FeeSchedule,
 	clearingPrices map[uint32]orderT.FixedRatePremium) TradingFeeReport {
 
-	accountDiffs := make(map[AccountID]AccountDiff)
+	accountDiffs := make(map[AccountID]*AccountDiff)
 	var totalFeesAccrued btcutil.Amount
 
 	// For each order pair, we'll compute the exchange of funds due to
@@ -55,7 +55,7 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 			// the account diff map, we'll initialize them with
 			// their starting balance before clearing of this batch.
 			if _, ok := accountDiffs[taker.AccountKey]; !ok {
-				accountDiffs[taker.AccountKey] = AccountDiff{
+				accountDiffs[taker.AccountKey] = &AccountDiff{
 					StartingState: &taker,
 					AccountTally: &orderT.AccountTally{
 						EndingBalance: taker.AccountBalance,
@@ -63,7 +63,7 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 				}
 			}
 			if _, ok := accountDiffs[maker.AccountKey]; !ok {
-				accountDiffs[maker.AccountKey] = AccountDiff{
+				accountDiffs[maker.AccountKey] = &AccountDiff{
 					StartingState: &maker,
 					AccountTally: &orderT.AccountTally{
 						EndingBalance: maker.AccountBalance,

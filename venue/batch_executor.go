@@ -54,7 +54,7 @@ type PrepareMsg struct {
 
 	// ChargedAccounts is the set of accounts that the trader used in this
 	// batch.
-	ChargedAccounts []matching.AccountDiff
+	ChargedAccounts []*matching.AccountDiff
 
 	// AccountOutPoints is the list of new outpoint of user's accounts on
 	// the new batch execution transaction.

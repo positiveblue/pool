@@ -26,7 +26,7 @@ type multiplexMessage struct {
 	commLine         *DuplexLine
 	matchedOrders    map[uint32]map[orderT.Nonce][]*matching.MatchedOrder
 	clearingPrices   map[uint32]orderT.FixedRatePremium
-	chargedAccounts  []matching.AccountDiff
+	chargedAccounts  []*matching.AccountDiff
 	accountOutpoints []wire.OutPoint
 	batchVersion     uint32
 }
