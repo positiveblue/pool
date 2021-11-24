@@ -2,6 +2,7 @@ package venue
 
 import (
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
@@ -33,6 +34,10 @@ type ActiveTrader struct {
 	// IsSidecar indicates that this trader is exclusively handling sidecar
 	// channels. Such a trader doesn't have their own account.
 	IsSidecar bool
+
+	// BatchVersion indicates the version that this trader will use to verify
+	// the batches.
+	BatchVersion order.BatchVersion
 }
 
 // DuplexLine is the communication line between a trader and the batch

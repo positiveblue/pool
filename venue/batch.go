@@ -21,3 +21,9 @@ type BatchStorer interface {
 	// atomically stored to the database.
 	Store(context.Context, *ExecutionResult) error
 }
+
+// SupportedBatchVersion returns if the server implements a given
+// batch version or not.
+func SupportedBatchVersion(version order.BatchVersion) bool {
+	return version <= CurrentServerBatchVersion
+}

@@ -98,6 +98,13 @@ type TraderStream struct {
 	// in their responses to be set.
 	IsSidecar bool
 
+	// BatchVersion indicates the batch version supported by the client.
+	// A client can use any of the supported batch version by the server.
+	// At any point, multiple connected clients may have different batch versions.
+	// The server needs to take the client version into account when creating a
+	// new batch to ensure that the client is able to verify it.
+	BatchVersion orderT.BatchVersion
+
 	// authNonce is the nonce the auctioneer picks to create the challenge,
 	// together with the commitment the trader sends. This is sent back to
 	// the trader as step 2 of the 3-way authentication handshake.
@@ -940,14 +947,17 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 	case *auctioneerrpc.ClientAuctionMessage_Commit:
 		commit := msg.Commit
 
-		// First check that they are using the latest version of the
-		// batch execution protocol. If not, they need to update. Better
+		// First check that they are using a version of the
+		// batch execution protocol that we support. If not, better
 		// reject them now instead of waiting for a batch to be prepared
 		// and then everybody bailing out because of a version mismatch.
-		if commit.BatchVersion != uint32(orderT.CurrentBatchVersion) {
-			comms.err <- orderT.ErrVersionMismatch
+		batchVersion := orderT.BatchVersion(commit.BatchVersion)
+		if !venue.SupportedBatchVersion(batchVersion) {
+			comms.err <- orderT.ErrUnsupportedVersion
 			return
 		}
+
+		trader.BatchVersion = batchVersion
 
 		// We don't know what's in the commit yet so we can only make
 		// sure it's long enough and not zero.
@@ -1042,7 +1052,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 				Send: comms.toTrader,
 				Recv: comms.toServer,
 			},
-			TokenID: trader.Lsat,
+			TokenID:      trader.Lsat,
+			BatchVersion: trader.BatchVersion,
 		}
 
 		// This is a trader that's subscribing as a sidecar channel

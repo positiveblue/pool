@@ -1429,9 +1429,10 @@ func (b *BatchExecutor) syncTraderState(
 			diskTraderAcct,
 		)
 		refreshed[acctID] = &ActiveTrader{
-			Trader:   &refreshedTrader,
-			TokenID:  trader.TokenID,
-			CommLine: trader.CommLine,
+			Trader:       &refreshedTrader,
+			TokenID:      trader.TokenID,
+			CommLine:     trader.CommLine,
+			BatchVersion: trader.BatchVersion,
 		}
 
 	}
