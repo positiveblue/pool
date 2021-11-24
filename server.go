@@ -409,12 +409,13 @@ func NewServer(cfg *Config) (*Server, error) {
 				&matching.LastAcceptedBid{},
 				auctionTerms.FeeSchedule(), durationBuckets,
 			),
-			OrderFeed:           orderBook,
-			BatchExecutor:       batchExecutor,
-			FeeSchedule:         auctionTerms.FeeSchedule(),
-			ChannelEnforcer:     channelEnforcer,
-			ConfTarget:          cfg.BatchConfTarget,
-			AccountExpiryOffset: cfg.AccountExpiryOffset,
+			OrderFeed:              orderBook,
+			BatchExecutor:          batchExecutor,
+			FeeSchedule:            auctionTerms.FeeSchedule(),
+			ChannelEnforcer:        channelEnforcer,
+			ConfTarget:             cfg.BatchConfTarget,
+			AccountExpiryExtension: cfg.AccountExpiryExtension,
+			AccountExpiryOffset:    cfg.AccountExpiryOffset,
 			AccountFetcher: func(acctID matching.AccountID) (
 				*account.Account, error) {
 
