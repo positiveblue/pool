@@ -20,6 +20,10 @@ type AccountDiff struct {
 	// transaction. This is only set if the account had sufficient balance
 	// left for a new on-chain output and wasn't considered to be dust.
 	RecreatedOutput *wire.TxOut
+
+	// NewExpiry is the new expiry height for this account. This field
+	// can be safely ignored if its value is 0.
+	NewExpiry uint32
 }
 
 // TradingFeeReport is the breakdown of the balance fluctuations to a trade's

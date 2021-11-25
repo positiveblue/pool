@@ -214,6 +214,10 @@ type AuctioneerConfig struct {
 	// for onchain transactions.
 	ConfTarget int32
 
+	// AccountExpiryExtension is the value we'll use to determine if an
+	// account needs to be extended and for how long.
+	AccountExpiryExtension uint32
+
 	// AccountExpiryOffset is the value we'll use to determine if an
 	// account expires "too soon". This value is added to the current block
 	// height to determine what the expiry cut off is.
@@ -223,6 +227,9 @@ type AuctioneerConfig struct {
 	// state of an account from disk so we can do things like compute the
 	// fee report using the latest account balance for a trader.
 	AccountFetcher matching.AccountFetcher
+
+	// GetActiveTrader returns the information of a given active trader.
+	GetActiveTrader func(matching.AccountID) *venue.ActiveTrader
 
 	// FundingConflicts is a map that keeps track of nodes that have a
 	// conflict between each other that arose from them having failed
@@ -1660,6 +1667,11 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			return nil, err
 		}
 
+		// Check if any of the traders supports account autorenewal
+		// after participating in a new batch. If they do,
+		// set the new account expiry height to the AccountDiff.
+		a.CalculateAccountExtensions(orderBatch)
+
 		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
 			a.BestHeight(), a.cfg.FeeSchedule,
@@ -2072,5 +2084,36 @@ func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
 	// Account updates are allowed within any other auction state.
 	default:
 		return true
+	}
+}
+
+// CalculateAccountExtensions updates the NewExpiry field in the AccountDiffs
+// for the active traders that run a batch version that supports automatic account
+// renewal.
+func (a *Auctioneer) CalculateAccountExtensions(orderBatch *matching.OrderBatch) {
+	newExpiry := a.bestHeight + a.cfg.AccountExpiryExtension
+
+	for _, diff := range orderBatch.FeeReport.AccountDiffs {
+		at := a.cfg.GetActiveTrader(diff.StartingState.AccountKey)
+
+		// This should never happen. If we have the account diff of a
+		// user in the FeeReport, that user should be active.
+		if at == nil {
+			continue
+		}
+
+		// If the account does not support account extension we do
+		// not have to change anything.
+		if !at.BatchVersion.SupportsAccountExtension() {
+			continue
+		}
+
+		// If the account does not expire "soon" we do not have
+		// to change anything.
+		if newExpiry <= at.AccountExpiry {
+			continue
+		}
+
+		diff.NewExpiry = newExpiry
 	}
 }

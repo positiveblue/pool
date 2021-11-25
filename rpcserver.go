@@ -1905,6 +1905,7 @@ func marshallAccountDiff(diff *matching.AccountDiff,
 		EndingState:   endingState,
 		OutpointIndex: opIdx,
 		TraderKey:     diff.StartingState.AccountKey[:],
+		NewExpiry:     diff.NewExpiry,
 	}, nil
 }
 

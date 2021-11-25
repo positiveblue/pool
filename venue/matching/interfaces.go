@@ -256,6 +256,7 @@ func (o *OrderBatch) Copy() OrderBatch {
 			StartingState:   &trader,
 			RecreatedOutput: output,
 			AccountTally:    &tally,
+			NewExpiry:       accountDiff.NewExpiry,
 		}
 	}
 

@@ -44,6 +44,10 @@ var (
 	_, pubKey = btcec.PrivKeyFromBytes(btcec.S256(), key[:])
 
 	defaultFeeSchedule = terms.NewLinearFeeSchedule(1, 1000)
+
+	activeTraders = activeTradersMap{
+		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),
+	}
 )
 
 func randomPubKey(t *testing.T) *btcec.PublicKey {
@@ -678,17 +682,19 @@ func newAuctioneerTestHarness(t *testing.T,
 	// We always use a batch ticker w/ a very long interval so it'll only
 	// tick when we force one.
 	auctioneer := NewAuctioneer(AuctioneerConfig{
-		DB:                mockDB,
-		Wallet:            wallet,
-		ChainNotifier:     notifier,
-		OrderFeed:         orderFeeder,
-		StartingAcctValue: 1_000_000,
-		BatchTicker:       NewIntervalAwareForceTicker(time.Hour * 24),
-		CallMarket:        callMarket,
-		BatchExecutor:     executor,
-		ChannelEnforcer:   channelEnforcer,
-		TraderRejected:    matching.NewNodeConflictPredicate(),
-		FundingConflicts:  matching.NewNodeConflictPredicate(),
+		DB:                     mockDB,
+		Wallet:                 wallet,
+		ChainNotifier:          notifier,
+		OrderFeed:              orderFeeder,
+		StartingAcctValue:      1_000_000,
+		BatchTicker:            NewIntervalAwareForceTicker(time.Hour * 24),
+		CallMarket:             callMarket,
+		BatchExecutor:          executor,
+		ChannelEnforcer:        channelEnforcer,
+		TraderRejected:         matching.NewNodeConflictPredicate(),
+		FundingConflicts:       matching.NewNodeConflictPredicate(),
+		GetActiveTrader:        activeTraders.GetTrader,
+		AccountExpiryExtension: 1000,
 	})
 
 	return &auctioneerTestHarness{
@@ -822,12 +828,14 @@ func (a *auctioneerTestHarness) RestartAuctioneer() {
 	a.db.quit = make(chan struct{})
 
 	a.auctioneer = NewAuctioneer(AuctioneerConfig{
-		DB:                a.db,
-		Wallet:            a.wallet,
-		ChainNotifier:     a.notifier,
-		OrderFeed:         a.orderFeed,
-		StartingAcctValue: 1_000_000,
-		BatchTicker:       NewIntervalAwareForceTicker(time.Hour * 24),
+		DB:                     a.db,
+		Wallet:                 a.wallet,
+		ChainNotifier:          a.notifier,
+		OrderFeed:              a.orderFeed,
+		StartingAcctValue:      1_000_000,
+		BatchTicker:            NewIntervalAwareForceTicker(time.Hour * 24),
+		GetActiveTrader:        a.auctioneer.cfg.GetActiveTrader,
+		AccountExpiryExtension: a.auctioneer.cfg.AccountExpiryExtension,
 	})
 
 	a.StartAuctioneer()
@@ -1051,7 +1059,7 @@ func (a *auctioneerTestHarness) OrderFeederResume() {
 }
 
 func (a *auctioneerTestHarness) AddDiskOrder(isAsk bool, fixedRate uint32,
-	duration uint32) order.ServerOrder {
+	duration uint32, version orderT.BatchVersion) order.ServerOrder {
 
 	a.db.Lock()
 	defer a.db.Unlock()
@@ -1068,6 +1076,15 @@ func (a *auctioneerTestHarness) AddDiskOrder(isAsk bool, fixedRate uint32,
 
 	if err != nil {
 		a.t.Fatalf("unable to gen order: %v", err)
+	}
+
+	if err = activeTraders.RegisterTrader(&venue.ActiveTrader{
+		Trader: &matching.Trader{
+			AccountKey: order.Details().AcctKey,
+		},
+		BatchVersion: version,
+	}); err != nil {
+		a.t.Fatalf("unable to add active trader: %v", err)
 	}
 
 	nonce := order.Nonce()
@@ -1240,6 +1257,43 @@ func (a *auctioneerTestHarness) AssertOrdersRemoved(nonces []orderT.Nonce) {
 		if !ok {
 			a.t.Fatalf("order %v not removed", nonce)
 		}
+	}
+}
+
+// AssertExtendedAccount tests that the traders that support
+// account autorenew get extended after participating in a new
+// batch.
+func (a *auctioneerTestHarness) AssertExtendedAccount(nonce orderT.Nonce) {
+	a.executor.Lock()
+	defer a.executor.Unlock()
+
+	var order matching.MatchedOrder
+	found := false
+	for _, o := range a.executor.submittedBatch.OrderBatch.Orders {
+		if o.Details.Bid.Nonce() == nonce {
+			order = o
+			found = true
+		}
+	}
+	if !found {
+		a.t.Fatalf("order %v not found", nonce)
+	}
+
+	diffs := a.executor.submittedBatch.OrderBatch.FeeReport.AccountDiffs
+	diff := diffs[order.Bidder.AccountKey]
+
+	accountID := order.Bidder.AccountKey
+	expiry := order.Bidder.AccountExpiry
+	newExpiry := diff.NewExpiry
+
+	if newExpiry == 0 {
+		a.t.Fatalf("account expiry not extended for trader %v with "+
+			"batch version supporting account renewal", accountID)
+	}
+
+	if newExpiry <= expiry {
+		a.t.Fatalf("invalid account expiry for trader %v with "+
+			"batch version supporting account renewal", accountID)
 	}
 }
 
@@ -1417,10 +1471,14 @@ func TestAuctioneerOrderFeederCancel(t *testing.T) {
 	// Add both an ask and a bid to the DB and call market.
 	orderPrice := uint32(100)
 	orderDuration := uint32(10)
-	ask := testHarness.AddDiskOrder(true, orderPrice, orderDuration)
+	ask := testHarness.AddDiskOrder(
+		true, orderPrice, orderDuration, orderT.DefaultBatchVersion,
+	)
 	err = testHarness.callMarket.ConsiderAsks(ask.(*order.Ask))
 	require.NoError(t, err)
-	bid := testHarness.AddDiskOrder(false, orderPrice, orderDuration)
+	bid := testHarness.AddDiskOrder(
+		false, orderPrice, orderDuration, orderT.DefaultBatchVersion,
+	)
 	err = testHarness.callMarket.ConsiderBids(bid.(*order.Bid))
 	require.NoError(t, err)
 	askNonce, bidNonce := ask.Nonce(), bid.Nonce()
@@ -1482,7 +1540,10 @@ func TestAuctioneerLoadDiskOrders(t *testing.T) {
 		orderNonces = append(
 			orderNonces,
 			testHarness.AddDiskOrder(
-				isAsk, orderPrice, orderDuration,
+				isAsk,
+				orderPrice,
+				orderDuration,
+				orderT.DefaultBatchVersion,
 			).Nonce(),
 		)
 	}
@@ -1663,15 +1724,30 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 			duration = 5
 		}
 
+		batchVersion := orderT.DefaultBatchVersion
+
 		var o order.ServerOrder
 		if i%2 == 0 {
-			o = testHarness.AddDiskOrder(true, fixedRate, duration)
+			o = testHarness.AddDiskOrder(
+				true,
+				fixedRate,
+				duration,
+				batchVersion,
+			)
 			err := testHarness.callMarket.ConsiderAsks(o.(*order.Ask))
 			if err != nil {
 				t.Fatalf("unable to consider ask: %v", err)
 			}
 		} else {
-			o = testHarness.AddDiskOrder(false, fixedRate, duration)
+			if i == 13 {
+				batchVersion = orderT.ExtendAccountBatchVersion
+			}
+			o = testHarness.AddDiskOrder(
+				false,
+				fixedRate,
+				duration,
+				batchVersion,
+			)
 			err := testHarness.callMarket.ConsiderBids(o.(*order.Bid))
 			if err != nil {
 				t.Fatalf("unable to consider ask: %v", err)
@@ -1899,6 +1975,8 @@ func TestAuctioneerMarketLifecycle(t *testing.T) {
 	// The last bid should not be found as it was fully matched.
 	testHarness.AssertOrdersNotPresent(nonces[numOrders-1])
 
+	testHarness.AssertExtendedAccount(nonces[numOrders-1])
+
 	// Make sure the ask order that matched with the smaller bid is still
 	// in the call market, and has had 50 of its 100 units matched.
 	testHarness.AssertSingleOrder(
@@ -1947,10 +2025,20 @@ func TestAuctioneerAllowAccountUpdate(t *testing.T) {
 	// enter the batch execution phase.
 	const fixedRate = 10
 	const duration = 10
-	ask := testHarness.AddDiskOrder(true, fixedRate, duration)
+	ask := testHarness.AddDiskOrder(
+		true,
+		fixedRate,
+		duration,
+		orderT.DefaultBatchVersion,
+	)
 	err = testHarness.callMarket.ConsiderAsks(ask.(*order.Ask))
 	require.NoErrorf(t, err, "unable to consider ask: %v", err)
-	bid := testHarness.AddDiskOrder(false, fixedRate, duration)
+	bid := testHarness.AddDiskOrder(
+		false,
+		fixedRate,
+		duration,
+		orderT.DefaultBatchVersion,
+	)
 	err = testHarness.callMarket.ConsiderBids(bid.(*order.Bid))
 	require.NoErrorf(t, err, "unable to consider bid: %v", err)
 
@@ -2041,10 +2129,20 @@ func TestAuctioneerRequestBatchFeeBump(t *testing.T) {
 		if !emptyBatch {
 			const fixedRate = 10
 			const duration = 10
-			ask := testHarness.AddDiskOrder(true, fixedRate, duration)
+			ask := testHarness.AddDiskOrder(
+				true,
+				fixedRate,
+				duration,
+				orderT.DefaultBatchVersion,
+			)
 			err = testHarness.callMarket.ConsiderAsks(ask.(*order.Ask))
 			require.NoErrorf(t, err, "unable to consider ask: %v", err)
-			bid := testHarness.AddDiskOrder(false, fixedRate, duration)
+			bid := testHarness.AddDiskOrder(
+				false,
+				fixedRate,
+				duration,
+				orderT.DefaultBatchVersion,
+			)
 			err = testHarness.callMarket.ConsiderBids(bid.(*order.Bid))
 			require.NoErrorf(t, err, "unable to consider bid: %v", err)
 
