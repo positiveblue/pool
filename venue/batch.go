@@ -11,7 +11,7 @@ const (
 	// this server implements.
 	//
 	// NOTE: a sever may support more than one version.
-	CurrentServerBatchVersion = order.DefaultBatchVersion
+	CurrentServerBatchVersion = order.ExtendAccountBatchVersion
 )
 
 // BatchStorer is an interface that can store a batch to the local database by
