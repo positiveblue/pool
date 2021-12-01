@@ -1395,6 +1395,11 @@
             "$ref": "#/definitions/poolrpcDurationBucketState"
           },
           "description": "The set of lease durations the market is currently accepting and the state\nthe duration buckets currently are in."
+        },
+        "auto_renew_extension_blocks": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The value used by the auctioneer to determine if an account expiry height\nneeds to be extended after participating in a batch and for how long."
         }
       }
     },

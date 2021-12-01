@@ -1645,6 +1645,7 @@ func (s *rpcServer) Terms(ctx context.Context, _ *auctioneerrpc.TermsRequest) (
 		NextBatchFeeRateSatPerKw: uint64(nextBatchFeeRate),
 		NextBatchClearTimestamp:  uint64(nextBatchClear.Unix()),
 		LeaseDurationBuckets:     make(map[uint32]auctioneerrpc.DurationBucketState),
+		AutoRenewExtensionBlocks: s.auctioneer.cfg.AccountExpiryExtension,
 	}
 
 	durationBuckets := s.orderBook.DurationBuckets()
