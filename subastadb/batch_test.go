@@ -71,8 +71,15 @@ var (
 // TestDecodeEmptyBatch tests that an empty batch (which has clearingPrice of 0)
 // can still be correctly decoded.
 func TestDecodeEmptyBatch(t *testing.T) {
-	_, err := deserializeBatchSnapshot(bytes.NewReader(testEmptyBatch))
+	b, err := deserializeBatchSnapshot(bytes.NewReader(testEmptyBatch))
 	require.NoError(t, err)
+
+	// The empty batch didn't have a version or creation timestamp, so we
+	// expect those fields to be set to the default values.
+	require.Equal(t, b.OrderBatch.Version, orderT.BatchVersion(0))
+	require.Equal(
+		t, uint64(b.OrderBatch.CreationTimestamp.UnixNano()), uint64(0),
+	)
 }
 
 // TestPersistBatchResult tests the different database operations that are

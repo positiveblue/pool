@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/wire"
@@ -668,6 +669,15 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 		b     = &matching.OrderBatch{
 			SubBatches:     make(map[uint32][]matching.MatchedOrder),
 			ClearingPrices: make(map[uint32]orderT.FixedRatePremium),
+
+			// The default value of an empty date resolves to
+			// 11651379494838206464 when converting to UnixNano()
+			// and then uint64 (which is what we do on the RPC
+			// interface). That value is a timestamp far in the
+			// future, which doesn't make sense. By explicitly
+			// setting the timestamp to 0 we make it more apparent
+			// that it's an empty date.
+			CreationTimestamp: time.Unix(0, 0),
 		}
 		numMatchedOrders uint32
 		clearingPrice    orderT.FixedRatePremium
