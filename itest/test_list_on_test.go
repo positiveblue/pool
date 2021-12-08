@@ -86,10 +86,6 @@ var testCases = []*testCase{
 		test: testBatchExecutionDurationBuckets,
 	},
 	{
-		name: "batch sponsor",
-		test: testBatchSponsor,
-	},
-	{
 		name: "batch extra inputs outputs",
 		test: testBatchIO,
 	},
