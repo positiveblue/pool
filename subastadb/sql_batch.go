@@ -333,7 +333,7 @@ func (s *SQLBatchSnapshot) toBatchSnapshot() (*BatchSnapshot, error) {
 		SubBatches: make(map[uint32][]matching.MatchedOrder),
 		FeeReport: matching.TradingFeeReport{
 			AccountDiffs: make(
-				map[matching.AccountID]matching.AccountDiff,
+				map[matching.AccountID]*matching.AccountDiff,
 			),
 			AuctioneerFeesAccrued: btcutil.Amount(
 				s.SQLOrderBatch.SQLTradingFeeReport.AuctioneerFeesAccrued,
@@ -421,7 +421,7 @@ func (s *SQLBatchSnapshot) toBatchSnapshot() (*BatchSnapshot, error) {
 		}
 
 		tally := &sqlAccoundDiff.Tally
-		accountDiff := matching.AccountDiff{
+		accountDiff := &matching.AccountDiff{
 			AccountTally: &orderT.AccountTally{
 				EndingBalance: btcutil.Amount(
 					tally.EndingBalance,

@@ -185,6 +185,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 
 	_, err := callMarket.MaybeClear(
 		acctCacher, dummyFilterChain, predicates,
+		orderT.DefaultBatchVersion,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, instead got: %v", err)
@@ -221,6 +222,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 	// ErrNoMarketPossible error.
 	_, err := callMarket.MaybeClear(
 		acctCacher, dummyFilterChain, predicates,
+		orderT.DefaultBatchVersion,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
@@ -283,6 +285,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 		// made, then we'll go to the next scenario.
 		orderBatch, err := callMarket.MaybeClear(
 			acctCacher, dummyFilterChain, predicates,
+			orderT.DefaultBatchVersion,
 		)
 		if err != nil {
 			t.Logf("clear error: %v", err)
@@ -524,7 +527,7 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	_, err := callMarket.MaybeClear(
 		acctCacher, []OrderFilter{NewBatchFeeRateFilter(
 			7 * chainfee.FeePerKwFloor,
-		)}, predicates,
+		)}, predicates, orderT.DefaultBatchVersion,
 	)
 	if err != ErrNoMarketPossible {
 		t.Fatalf("expected ErrNoMarketPossible, got: %v", err)
@@ -535,7 +538,7 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 	orderBatch, err := callMarket.MaybeClear(
 		acctCacher, []OrderFilter{NewBatchFeeRateFilter(
 			4 * chainfee.FeePerKwFloor,
-		)}, predicates,
+		)}, predicates, orderT.DefaultBatchVersion,
 	)
 	if err != nil {
 		t.Fatalf("expected no error, got: %v", err)
@@ -573,6 +576,7 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 
 		orderBatch, err := callMarket.MaybeClear(
 			acctCacher, dummyFilterChain, predicates,
+			orderT.DefaultBatchVersion,
 		)
 		switch {
 		case err == ErrNoMarketPossible:
@@ -750,6 +754,7 @@ func assertNotInBatch(t *testing.T, acctCacher *AccountFilter,
 
 	orderBatch, err := callMarket.MaybeClear(
 		acctCacher, filterChain, predicates,
+		orderT.DefaultBatchVersion,
 	)
 
 	require.Error(t, err)

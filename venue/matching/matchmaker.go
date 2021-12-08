@@ -100,8 +100,8 @@ func (u *UniformPriceCallMarket) resetOrderState() {
 //
 // NOTE: This method is a part of the BatchAuctioneer interface.
 func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
-	filterChain []OrderFilter,
-	predicateChain []MatchPredicate) (*OrderBatch, error) {
+	filterChain []OrderFilter, predicateChain []MatchPredicate,
+	version orderT.BatchVersion) (*OrderBatch, error) {
 
 	u.Lock()
 	defer u.Unlock()
@@ -165,7 +165,7 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	// easily update all the order/account state in a single atomic
 	// transaction.
 	feeReport := NewTradingFeeReport(subBatches, u.feeSchedule, prices)
-	return NewBatch(subBatches, feeReport, prices), nil
+	return NewBatch(subBatches, feeReport, prices, version), nil
 }
 
 // clearSubBatch creates a new filter chain to clear a sub batch and reports

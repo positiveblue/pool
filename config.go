@@ -87,6 +87,14 @@ const (
 	// if no other configuration value is set.
 	defaultMaxAcctValue int64 = btcutil.SatoshiPerBitcoin
 
+	// defaultAccountExpiryExtension is a value expressed in blocks used
+	// to automatically extend the expiry height of account close to expiry
+	// after participating in a batch. The default value is 3024 (~3 weeks).
+	// That means that if an account participating in  a batch is set to
+	// expire in less than 3024 blocks it will be extended to 3024 blocks from
+	// the current bestHeight.
+	defaultAccountExpiryExtension = 3024
+
 	// defaultAccountExpiryOffset is a value expressed in blocks that subtracted
 	// from the expiry of an account in order to determine if it expires
 	// "too soon". This value should essentially represent an upper bound
@@ -181,7 +189,8 @@ type Config struct {
 	Profile         string `long:"profile" description:"Enable HTTP profiling on given port -- NOTE port must be between 1024 and 65535"`
 	AllowFakeTokens bool   `long:"allowfaketokens" description:"Also allow traders to set fake LSAT IDs if needed. Normal LSATs still work. For testing only, cannot be set on mainnet."`
 
-	AccountExpiryOffset uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
+	AccountExpiryExtension uint32 `long:"accountexpiryextension" description:"block height threshold to determine if an account needs to be extended and for how long"`
+	AccountExpiryOffset    uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
 
 	NodeRatingsActive          bool          `long:"noderatingsactive" description:"if true node ratings will be used in order matching"`
 	NodeRatingsRefreshInterval time.Duration `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
@@ -243,6 +252,7 @@ var DefaultConfig = &Config{
 	MaxLogFileSize:               defaultMaxLogFileSize,
 	DebugLevel:                   defaultLogLevel,
 	LogDir:                       defaultLogDir,
+	AccountExpiryExtension:       defaultAccountExpiryExtension,
 	AccountExpiryOffset:          defaultAccountExpiryOffset,
 	NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
 	BosScoreWebURL:               defaultBosScoreURL,

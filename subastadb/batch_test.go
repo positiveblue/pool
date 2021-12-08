@@ -192,8 +192,10 @@ func TestPersistBatchResult(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{testTraderKey}, accountModifiers,
-		ma1, batchID, &BatchSnapshot{batchTx, 0, matching.EmptyBatch()},
-		nextBatchKey, lifetimePkgs,
+		ma1, batchID, &BatchSnapshot{
+			batchTx, 0,
+			matching.EmptyBatch(orderT.DefaultBatchVersion),
+		}, nextBatchKey, lifetimePkgs,
 	)
 	if err != nil {
 		t.Fatalf("error persisting batch result: %v", err)
@@ -333,7 +335,10 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{invalidAccountKey}, accountModifiers,
-		ma1, batchID, &BatchSnapshot{batchTx, 0, matching.EmptyBatch()},
+		ma1, batchID, &BatchSnapshot{
+			batchTx, 0,
+			matching.EmptyBatch(orderT.DefaultBatchVersion),
+		},
 		testTraderKey, nil,
 	)
 	if err == nil {
@@ -467,7 +472,7 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 		},
 	}}
 	feeReport := matching.TradingFeeReport{
-		AccountDiffs: map[matching.AccountID]matching.AccountDiff{
+		AccountDiffs: map[matching.AccountID]*matching.AccountDiff{
 			trader2.AccountKey: {
 				AccountTally: &orderT.AccountTally{
 					EndingBalance:          123,
@@ -523,6 +528,7 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 		}, feeReport, map[uint32]orderT.FixedRatePremium{
 			orderT.LegacyLeaseDurationBucket: 123,
 		},
+		orderT.DefaultBatchVersion,
 	)
 
 	batchV1 := matching.NewBatch(
@@ -533,6 +539,7 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 			orderT.LegacyLeaseDurationBucket: 123,
 			12345:                            321,
 		},
+		orderT.DefaultBatchVersion,
 	)
 
 	return []*matching.OrderBatch{batchV0, batchV1}

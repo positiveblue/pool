@@ -480,6 +480,12 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			if err != nil {
 				return err
 			}
+
+			// If the client supported account expiry height extension after
+			// participating in a batch, set the expiry to the new height.
+			if trader.NewExpiry != 0 {
+				acctParams.AccountExpiry = trader.NewExpiry
+			}
 			accountScript, err := poolscript.AccountScript(
 				acctParams.AccountExpiry, acctKey,
 				auctioneerKey, batchKey, acctParams.VenueSecret,

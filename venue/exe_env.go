@@ -19,9 +19,6 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
-// batchVersion is the current version for batch transactions.
-const batchVersion = uint32(orderT.CurrentBatchVersion)
-
 // multiplexMessage is a helper struct that holds all data that is multi-plexed
 // from multiple venue traders to a single trader daemon/connection identified
 // by an LSAT.
@@ -29,8 +26,9 @@ type multiplexMessage struct {
 	commLine         *DuplexLine
 	matchedOrders    map[uint32]map[orderT.Nonce][]*matching.MatchedOrder
 	clearingPrices   map[uint32]orderT.FixedRatePremium
-	chargedAccounts  []matching.AccountDiff
+	chargedAccounts  []*matching.AccountDiff
 	accountOutpoints []wire.OutPoint
+	batchVersion     uint32
 }
 
 // traderChannelInfo is a helper struct regarding a specific trader's channel
@@ -249,6 +247,7 @@ func (e *environment) sendPrepareMsg() error {
 			clearingPrices: make(
 				map[uint32]orderT.FixedRatePremium,
 			),
+			batchVersion: uint32(trader.BatchVersion),
 		}
 	}
 
@@ -354,7 +353,7 @@ func (e *environment) sendPrepareMsg() error {
 			BatchTx:          batchTxBuf.Bytes(),
 			FeeRate:          e.exeCtx.BatchFeeRate,
 			BatchID:          e.exeCtx.BatchID,
-			BatchVersion:     batchVersion,
+			BatchVersion:     msg.batchVersion,
 			BatchHeightHint:  e.exeCtx.BatchHeightHint,
 		}:
 		case <-e.quit:

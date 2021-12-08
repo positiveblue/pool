@@ -201,6 +201,18 @@ func (a *activeTradersMap) GetTraders() map[matching.AccountID]*venue.ActiveTrad
 	return c
 }
 
+// GetTrader returns the ActiveTrader information if it exists.
+func (a *activeTradersMap) GetTrader(id matching.AccountID) *venue.ActiveTrader {
+	a.RLock()
+	defer a.RUnlock()
+
+	if trader, ok := a.activeTraders[id]; ok {
+		return trader
+	}
+
+	return nil
+}
+
 var _ venue.ExecutorStore = (*executorStore)(nil)
 
 // Server is the main auction auctioneer server.
@@ -409,12 +421,13 @@ func NewServer(cfg *Config) (*Server, error) {
 				&matching.LastAcceptedBid{},
 				auctionTerms.FeeSchedule(), durationBuckets,
 			),
-			OrderFeed:           orderBook,
-			BatchExecutor:       batchExecutor,
-			FeeSchedule:         auctionTerms.FeeSchedule(),
-			ChannelEnforcer:     channelEnforcer,
-			ConfTarget:          cfg.BatchConfTarget,
-			AccountExpiryOffset: cfg.AccountExpiryOffset,
+			OrderFeed:              orderBook,
+			BatchExecutor:          batchExecutor,
+			FeeSchedule:            auctionTerms.FeeSchedule(),
+			ChannelEnforcer:        channelEnforcer,
+			ConfTarget:             cfg.BatchConfTarget,
+			AccountExpiryExtension: cfg.AccountExpiryExtension,
+			AccountExpiryOffset:    cfg.AccountExpiryOffset,
 			AccountFetcher: func(acctID matching.AccountID) (
 				*account.Account, error) {
 
@@ -433,6 +446,7 @@ func NewServer(cfg *Config) (*Server, error) {
 					context.Background(), acctKey, true,
 				)
 			},
+			GetActiveTrader:               activeTraders.GetTrader,
 			FundingConflicts:              fundingConflicts,
 			FundingConflictsResetInterval: cfg.FundingConflictResetInterval,
 			TraderRejected:                traderRejected,

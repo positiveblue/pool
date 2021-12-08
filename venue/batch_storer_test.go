@@ -133,7 +133,7 @@ var (
 		}},
 	}
 
-	accountDiffs = map[matching.AccountID]matching.AccountDiff{
+	accountDiffs = map[matching.AccountID]*matching.AccountDiff{
 		bigAcct.TraderKeyRaw: {
 			StartingState:   &bigTrader,
 			RecreatedOutput: batchTx.TxOut[0],
@@ -190,6 +190,7 @@ var (
 		}, feeReport, map[uint32]orderT.FixedRatePremium{
 			testLeaseDuration: 1234,
 		},
+		CurrentServerBatchVersion,
 	)
 )
 

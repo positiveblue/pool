@@ -172,6 +172,13 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 				account.EndingState(diff.EndingBalance))
 		}
 
+		if diff.NewExpiry != 0 {
+			modifiers = append(
+				modifiers,
+				account.ExpiryModifier(diff.NewExpiry),
+			)
+		}
+
 		// Finally update the account value and its latest transaction.
 		accountModifiers[accountIndex] = append(
 			modifiers, account.LatestTxModifier(result.BatchTx),
