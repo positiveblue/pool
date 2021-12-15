@@ -25,6 +25,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
@@ -145,6 +146,7 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 }
 
 type activeTradersMap struct {
+	store              traderterms.Store
 	activeTraders      map[matching.AccountID]*venue.ActiveTrader
 	defaultFeeSchedule terms.FeeSchedule
 	sync.RWMutex
@@ -215,14 +217,29 @@ func (a *activeTradersMap) GetTrader(id matching.AccountID) *venue.ActiveTrader 
 }
 
 // AccountFeeSchedule returns the fee schedule for a specific account.
-func (a *activeTradersMap) AccountFeeSchedule(_ [33]byte) terms.FeeSchedule {
-	return a.defaultFeeSchedule
+func (a *activeTradersMap) AccountFeeSchedule(
+	acctKey [33]byte) terms.FeeSchedule {
+
+	a.RLock()
+	defer a.RUnlock()
+
+	trader, ok := a.activeTraders[acctKey]
+	if !ok {
+		return a.defaultFeeSchedule
+	}
+
+	return a.TraderFeeSchedule(trader.TokenID)
 }
 
 // TraderFeeSchedule returns the fee schedule for a trader identified by
 // their LSAT ID.
-func (a *activeTradersMap) TraderFeeSchedule(_ [32]byte) terms.FeeSchedule {
-	return a.defaultFeeSchedule
+func (a *activeTradersMap) TraderFeeSchedule(id [32]byte) terms.FeeSchedule {
+	t, err := a.store.GetTraderTerms(context.Background(), id)
+	if err != nil {
+		return a.defaultFeeSchedule
+	}
+
+	return t.FeeSchedule(a.defaultFeeSchedule)
 }
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
@@ -349,6 +366,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		Store: store,
 	}
 	activeTraders := &activeTradersMap{
+		store: store,
 		activeTraders: make(
 			map[matching.AccountID]*venue.ActiveTrader,
 		),
