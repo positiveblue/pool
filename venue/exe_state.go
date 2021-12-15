@@ -117,7 +117,7 @@ const (
 	NewBatch
 )
 
-// Strings returns a human-readble version of the target VenueEvent.
+// Strings returns a human-readable version of the target VenueEvent.
 func (e ExecutionEvent) String() string {
 	switch e {
 	case NoEvent:
@@ -150,7 +150,7 @@ type msgTimeoutEvent struct {
 	trader matching.AccountID
 }
 
-// Trigger returns the VenueEvent which trigged this event.
+// Trigger returns the VenueEvent which triggered this event.
 //
 // NOTE: This method is part of the EventTrigger interface.
 func (m *msgTimeoutEvent) Trigger() ExecutionEvent {
@@ -165,7 +165,7 @@ type msgRecvEvent struct {
 	// TODO(roasbeef): also add msg type?? or there above, need to validate
 }
 
-// Trigger returns the VenueEvent which trigged this event.
+// Trigger returns the VenueEvent which triggered this event.
 //
 // NOTE: This method is part of the EventTrigger interface.
 func (m *msgRecvEvent) Trigger() ExecutionEvent {
@@ -177,7 +177,7 @@ type newBatchEvent struct {
 	batch *matching.OrderBatch
 }
 
-// Trigger returns the VenueEvent which trigged this event.
+// Trigger returns the VenueEvent which triggered this event.
 //
 // NOTE: This method is part of the EventTrigger interface.
 func (n *newBatchEvent) Trigger() ExecutionEvent {

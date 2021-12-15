@@ -1956,3 +1956,110 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 	// all the created nodes have a clean state after this test execution.
 	closeAllChannels(ctx, t, charlie)
 }
+
+// testCustomExecutionFee tests that a trader can be given a custom execution
+// fee and that doesn't interfere with what other traders calculate.
+func testCustomExecutionFee(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader.
+	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	// To execute a batch, we'll need an asker and bidder.
+	askAccount := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	bidAccount := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	const orderAmt = 500_000
+	const orderRate = 20
+	_, err := submitAskOrder(
+		t.trader, askAccount.TraderKey, orderRate, orderAmt,
+	)
+	require.NoError(t.t, err)
+	_, err = submitBidOrder(
+		secondTrader, bidAccount.TraderKey, orderRate, orderAmt,
+	)
+	require.NoError(t.t, err)
+
+	// Before we execute the batch, we give the bidder a special discount
+	// based upon their LSAT token ID.
+	bidderTokenID, err := secondTrader.server.GetIdentity()
+	require.NoError(t.t, err)
+	_, err = t.auctioneer.StoreTraderTerms(ctx, &adminrpc.TraderTerms{
+		LsatId:  bidderTokenID[:],
+		BaseFee: 42,
+		FeeRate: 0,
+	})
+	require.NoError(t.t, err)
+
+	// Execute the batch and make sure there's a channel between Bob and
+	// Charlie now.
+	_, chainTxns := executeBatch(t, 1)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, orderAmt, true, charlie.PubKey,
+	)
+	assertTraderAccountState(
+		t.t, secondTrader, bidAccount.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH,
+	)
+	assertAuctioneerAccountState(
+		t, bidAccount.TraderKey, auctioneerAccount.StatePendingBatch,
+	)
+	_ = mineBlocks(t, t.lndHarness, 6, 1)
+
+	// Make sure the bidder only paid the 42 sats of base fee.
+	assertTraderAssets(
+		t, secondTrader, 1, chainTxns,
+		func(leases []*poolrpc.Lease) error {
+			if len(leases) > 1 {
+				return fmt.Errorf("invalid number of leases")
+			}
+
+			if leases[0].ExecutionFeeSat != 42 {
+				return fmt.Errorf("invalid execution fee "+
+					"of %d sats paid, expected %d",
+					leases[0].ExecutionFeeSat, 42)
+			}
+
+			return nil
+		},
+	)
+
+	// The asker should pay the default 1+1ppm fee.
+	assertTraderAssets(
+		t, t.trader, 1, chainTxns,
+		func(leases []*poolrpc.Lease) error {
+			if len(leases) > 1 {
+				return fmt.Errorf("invalid number of leases")
+			}
+
+			if leases[0].ExecutionFeeSat != 501 {
+				return fmt.Errorf("invalid execution fee "+
+					"of %d sats paid, expected %d",
+					leases[0].ExecutionFeeSat, 501)
+			}
+
+			return nil
+		},
+	)
+}

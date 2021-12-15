@@ -11,7 +11,6 @@ import (
 	"github.com/lightninglabs/pool/order"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
-	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -86,7 +85,7 @@ type RequestedInput struct {
 // RequestedOutput holds information about an extra output that has been
 // requested added to the batch transaction.
 type RequestedOutput struct {
-	// Value is the valu of the output.
+	// Value is the value of the output.
 	Value btcutil.Amount
 
 	// PkScript is the script to send to.
@@ -190,9 +189,9 @@ type ExecutionContext struct {
 	// BatchID is the current batch ID.
 	BatchID [33]byte
 
-	// FeeSchedule is the fee schedule that was used to construct this
-	// batch.
-	FeeSchedule terms.FeeSchedule
+	// FeeScheduler is a function that returns the fee schedule for a
+	// specific account ID.
+	FeeScheduler matching.FeeScheduler
 
 	// BatchFeeRate is the target fee rate used when assembling the batch
 	// execution transaction.
@@ -215,7 +214,7 @@ type ExecutionContext struct {
 	ExeTx *wire.MsgTx
 
 	// FeeInfoEstimate holds a fee info estimate for the unsigned execution
-	// transacion.
+	// transaction.
 	FeeInfoEstimate *feebump.TxFeeInfo
 
 	// MasterAccountDiff is a diff that describes the prior and current
@@ -710,7 +709,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	masterAcct *account.Auctioneer, masterIO *BatchIO,
 	batchFeeRate chainfee.SatPerKWeight, batchHeightHint uint32,
-	feeSchedule terms.FeeSchedule) (*ExecutionContext, error) {
+	feeScheduler matching.FeeScheduler) (*ExecutionContext, error) {
 
 	// When we create this master account state, we'll ensure that
 	// we provide the "next" batch key, as this is what will be
@@ -734,7 +733,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 
 	exeCtx := ExecutionContext{
 		BatchID:            batchID,
-		FeeSchedule:        feeSchedule,
+		FeeScheduler:       feeScheduler,
 		BatchFeeRate:       batchFeeRate,
 		BatchHeightHint:    batchHeightHint,
 		MasterAcct:         masterAcct,
@@ -755,7 +754,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	return &exeCtx, nil
 }
 
-// OutputForOrder returns the corresponding output within the execution
+// OutputsForOrder returns the corresponding output within the execution
 // transaction for the passed order nonce.
 func (e *ExecutionContext) OutputsForOrder(nonce orderT.Nonce) ([]*OrderOutput, bool) {
 	output, ok := e.orderIndex[nonce]

@@ -25,6 +25,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
@@ -145,7 +146,10 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 }
 
 type activeTradersMap struct {
-	activeTraders map[matching.AccountID]*venue.ActiveTrader
+	store              traderterms.Store
+	activeTraders      map[matching.AccountID]*venue.ActiveTrader
+	termsCache         map[lsat.TokenID]*traderterms.Custom
+	defaultFeeSchedule terms.FeeSchedule
 	sync.RWMutex
 }
 
@@ -211,6 +215,61 @@ func (a *activeTradersMap) GetTrader(id matching.AccountID) *venue.ActiveTrader 
 	}
 
 	return nil
+}
+
+// AccountFeeSchedule returns the fee schedule for a specific account.
+func (a *activeTradersMap) AccountFeeSchedule(
+	acctKey [33]byte) terms.FeeSchedule {
+
+	// Can't use the defer pattern here because TraderFeeSchedule also tries
+	// to acquire the lock.
+	a.RLock()
+	trader, ok := a.activeTraders[acctKey]
+	a.RUnlock()
+
+	if !ok {
+		return a.defaultFeeSchedule
+	}
+
+	return a.TraderFeeSchedule(trader.TokenID)
+}
+
+// TraderFeeSchedule returns the fee schedule for a trader identified by
+// their LSAT ID.
+func (a *activeTradersMap) TraderFeeSchedule(id [32]byte) terms.FeeSchedule {
+	a.Lock()
+	defer a.Unlock()
+
+	// Anything in the cache for this trader? Can use that directly, we
+	// know the cache is invalidated on terms mutation.
+	t, ok := a.termsCache[id]
+	if !ok {
+		// Need to fetch the latest terms from the DB so we can populate
+		// the cache.
+		var err error
+		t, err = a.store.GetTraderTerms(context.Background(), id)
+		if err != nil {
+			// If there is no record in the store, we create an
+			// empty one that will fall back to the default schedule
+			// because no custom terms are set on it. That way we
+			// don't need to query the store for this trader again.
+			t = &traderterms.Custom{
+				TraderID: id,
+			}
+		}
+
+		a.termsCache[id] = t
+	}
+
+	return t.FeeSchedule(a.defaultFeeSchedule)
+}
+
+// invalidateCache removes the cache entry for a given trader if it exists.
+func (a *activeTradersMap) invalidateCache(id [32]byte) {
+	a.Lock()
+	defer a.Unlock()
+
+	delete(a.termsCache, id)
 }
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
@@ -337,7 +396,12 @@ func NewServer(cfg *Config) (*Server, error) {
 		Store: store,
 	}
 	activeTraders := &activeTradersMap{
-		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),
+		store: store,
+		activeTraders: make(
+			map[matching.AccountID]*venue.ActiveTrader,
+		),
+		termsCache:         make(map[lsat.TokenID]*traderterms.Custom),
+		defaultFeeSchedule: auctionTerms.FeeSchedule(),
 	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
 		Store:            exeStore,
@@ -419,11 +483,11 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{},
-				auctionTerms.FeeSchedule(), durationBuckets,
+				activeTraders, durationBuckets,
 			),
 			OrderFeed:              orderBook,
 			BatchExecutor:          batchExecutor,
-			FeeSchedule:            auctionTerms.FeeSchedule(),
+			FeeScheduler:           activeTraders,
 			ChannelEnforcer:        channelEnforcer,
 			ConfTarget:             cfg.BatchConfTarget,
 			AccountExpiryExtension: cfg.AccountExpiryExtension,

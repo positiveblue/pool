@@ -10,8 +10,8 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
+	mock "github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/input"
@@ -24,21 +24,6 @@ var (
 	auctioneerKey, _ = btcec.NewPrivateKey(btcec.S256())
 )
 
-type mockFeeSchedule struct {
-	baseFee    btcutil.Amount
-	exeFeeRate orderT.FixedRatePremium
-}
-
-func (m *mockFeeSchedule) BaseFee() btcutil.Amount {
-	return m.baseFee
-}
-
-func (m *mockFeeSchedule) ExecutionFee(amt btcutil.Amount) btcutil.Amount {
-	return btcutil.Amount(orderT.PerBlockPremium(amt, uint32(m.exeFeeRate)))
-}
-
-var _ terms.FeeSchedule = (*mockFeeSchedule)(nil)
-
 type testSetup struct {
 	batchKey         *btcec.PublicKey
 	orderBatch       *matching.OrderBatch
@@ -48,7 +33,7 @@ type testSetup struct {
 	ordersForBidders map[matching.AccountID]map[orderT.Nonce]struct{}
 }
 
-func setupTestBatch(feeSchedule terms.FeeSchedule) (*testSetup, error) {
+func setupTestBatch(feeSchedule matching.FeeScheduler) (*testSetup, error) {
 	// For simplicity, we'll use the same clearing price of 1% for the
 	// entire batch.
 	const clearingPrice = orderT.FixedRatePremium(10000)
@@ -365,11 +350,7 @@ func checkContext(t *testing.T, test *testSetup, batchTxCtx *ExecutionContext) {
 func TestBatchTransactionAssembly(t *testing.T) {
 	t.Parallel()
 
-	feeSchedule := &mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
-
+	feeSchedule := mock.NewMockFeeSchedule(1, 10000)
 	test, err := setupTestBatch(feeSchedule)
 	require.NoError(t, err)
 
@@ -445,10 +426,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	// For simplicity, we'll use the same clearing price of 1% for the
 	// entire batch.
 	const clearingPrice = orderT.FixedRatePremium(10000)
-	feeSchedule := mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
+	feeSchedule := mock.NewMockFeeSchedule(1, 10)
 
 	acctValue := btcutil.Amount(btcutil.SatoshiPerBitcoin)
 	numRandTraders := 6
@@ -513,7 +491,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
 	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		subBatches, &feeSchedule, clearingPrices,
+		subBatches, feeSchedule, clearingPrices,
 	)
 	orderBatch.ClearingPrices = clearingPrices
 
@@ -536,7 +514,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		&feeSchedule,
+		feeSchedule,
 	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
@@ -651,10 +629,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	t.Parallel()
 
 	const clearingPrice = orderT.FixedRatePremium(10000)
-	feeSchedule := mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
+	feeSchedule := mock.NewMockFeeSchedule(1, 10000)
 
 	// We'll just do a simple batch with two traders, one match.
 	acctValue := btcutil.Amount(btcutil.SatoshiPerBitcoin)
@@ -749,7 +724,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 		orderT.LegacyLeaseDurationBucket: orderBatch.Orders,
 	}
 	orderBatch.FeeReport = matching.NewTradingFeeReport(
-		subBatches, &feeSchedule, clearingPrices,
+		subBatches, feeSchedule, clearingPrices,
 	)
 	orderBatch.ClearingPrices = clearingPrices
 
@@ -772,7 +747,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	_, err = NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		&feeSchedule,
+		feeSchedule,
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -797,10 +772,7 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 
 	// We'll just use an empty batch for this test.
 	orderBatch := &matching.OrderBatch{}
-	feeSchedule := mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
+	feeSchedule := mock.NewMockFeeSchedule(1, 10000)
 
 	// With all our set up done, we'll now create our master account diff,
 	// then construct the batch transaction.
@@ -833,7 +805,7 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 	// to fail since the master account balance is now dust.
 	_, err := NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		&feeSchedule,
+		feeSchedule,
 	)
 	if err != ErrMasterBalanceDust {
 		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
@@ -846,10 +818,7 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 func TestBatchTransactionExtraIO(t *testing.T) {
 	t.Parallel()
 
-	feeSchedule := &mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
+	feeSchedule := mock.NewMockFeeSchedule(1, 10000)
 
 	test, err := setupTestBatch(feeSchedule)
 	require.NoError(t, err)

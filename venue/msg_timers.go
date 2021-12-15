@@ -15,7 +15,7 @@ type timerWithQuit struct {
 	quit chan struct{}
 }
 
-// newTimerWithQuit createsa a new timerWithQuit instance backed by the passed
+// newTimerWithQuit creates a new timerWithQuit instance backed by the passed
 // quit channel.
 func newTimerWithQuit(t *time.Timer) *timerWithQuit {
 	return &timerWithQuit{

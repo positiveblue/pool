@@ -109,6 +109,10 @@ var testCases = []*testCase{
 		name: "sidecar channels cancellation",
 		test: testSidecarTicketCancellation,
 	},
+	{
+		name: "custom execution fee",
+		test: testCustomExecutionFee,
+	},
 
 	{
 		name: "hashmail server",

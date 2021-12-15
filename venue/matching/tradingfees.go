@@ -4,7 +4,6 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/pool/terms"
 )
 
 // AccountDiff represents a matching+clearing event for a trader's account.
@@ -42,7 +41,7 @@ type TradingFeeReport struct {
 // orders, the clearing price for the batch, and the feeSchedule of the
 // auctioneer.
 func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
-	feeSchedule terms.FeeSchedule,
+	feeScheduler FeeScheduler,
 	clearingPrices map[uint32]orderT.FixedRatePremium) TradingFeeReport {
 
 	accountDiffs := make(map[AccountID]*AccountDiff)
@@ -76,7 +75,13 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 			}
 
 			takerDiff := accountDiffs[taker.AccountKey]
+			takerSchedule := feeScheduler.AccountFeeSchedule(
+				taker.AccountKey,
+			)
 			makerDiff := accountDiffs[maker.AccountKey]
+			makerSchedule := feeScheduler.AccountFeeSchedule(
+				maker.AccountKey,
+			)
 
 			// Now that we know we have state initialized for both
 			// sides, we'll evaluate the order they belong to clear
@@ -93,11 +98,11 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 			// the premium derived from the uniform clearing price
 			// for this.
 			totalFeesAccrued += makerDiff.CalcMakerDelta(
-				feeSchedule, clearingPrice, totalSats,
+				makerSchedule, clearingPrice, totalSats,
 				order.Details.Bid.LeaseDuration(),
 			)
 			totalFeesAccrued += takerDiff.CalcTakerDelta(
-				feeSchedule, clearingPrice, totalSats,
+				takerSchedule, clearingPrice, totalSats,
 				order.Details.Bid.SelfChanBalance,
 				order.Details.Bid.LeaseDuration(),
 			)

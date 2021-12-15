@@ -46,6 +46,9 @@ var auctionCommands = []cli.Command{
 			listNodeRatingsCommand,
 			storeLeaseDuration,
 			removeLeaseDuration,
+			listTraderTermsCommand,
+			storeTraderTermsCommand,
+			removeTraderTermsCommand,
 		},
 	},
 }
@@ -733,6 +736,97 @@ var removeLeaseDuration = cli.Command{
 
 		return client.RemoveLeaseDuration(ctx, &adminrpc.LeaseDuration{
 			Duration: duration,
+		})
+	}),
+}
+
+var listTraderTermsCommand = cli.Command{
+	Name:      "listtraderterms",
+	ShortName: "ltt",
+	Usage:     "list the current set of custom trader terms",
+	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.ListTraderTerms(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var storeTraderTermsCommand = cli.Command{
+	Name:      "storetraderterms",
+	ShortName: "stt",
+	Usage:     "add or update a custom trader terms record",
+	ArgsUsage: "lsat-id",
+	Flags: []cli.Flag{
+		cli.Int64Flag{
+			Name: "base_fee",
+			Usage: "the base fee in satoshis to charge, -1 means " +
+				"use default base fee",
+			Value: -1,
+		},
+		cli.Int64Flag{
+			Name: "fee_rate",
+			Usage: "the fee rate in parts per million to charge, " +
+				"-1 means use default fee rate",
+			Value: -1,
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		var (
+			traderID []byte
+			err      error
+			args     = cliCtx.Args()
+		)
+
+		if args.Present() {
+			traderID, err = hex.DecodeString(args.First())
+			if err != nil {
+				return nil, fmt.Errorf("error decoding lsat "+
+					"ID: %v", err)
+			}
+		}
+
+		if len(traderID) == 0 {
+			return nil, fmt.Errorf("invalid lsat ID")
+		}
+
+		return client.StoreTraderTerms(ctx, &adminrpc.TraderTerms{
+			LsatId:  traderID,
+			BaseFee: cliCtx.Int64("base_fee"),
+			FeeRate: cliCtx.Int64("fee_rate"),
+		})
+	}),
+}
+
+var removeTraderTermsCommand = cli.Command{
+	Name:      "removetraderterms",
+	ShortName: "rtt",
+	Usage:     "remove a custom trader terms record",
+	ArgsUsage: "lsat-id",
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		var (
+			traderID []byte
+			err      error
+			args     = cliCtx.Args()
+		)
+
+		if args.Present() {
+			traderID, err = hex.DecodeString(args.First())
+			if err != nil {
+				return nil, fmt.Errorf("error decoding lsat "+
+					"ID: %v", err)
+			}
+		}
+
+		if len(traderID) == 0 {
+			return nil, fmt.Errorf("invalid lsat ID")
+		}
+
+		return client.RemoveTraderTerms(ctx, &adminrpc.TraderTerms{
+			LsatId: traderID,
 		})
 	}),
 }

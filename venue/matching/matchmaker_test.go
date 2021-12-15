@@ -11,6 +11,7 @@ import (
 
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
@@ -42,7 +43,7 @@ func TestCallMarketConsiderForgetOrders(t *testing.T) {
 	// bids index should also be blank at this point.
 	scenario := func(orders orderSet) bool {
 		callMarket := NewUniformPriceCallMarket(
-			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 			defaultBuckets(),
 		)
 
@@ -179,7 +180,7 @@ func TestMaybeClearNoOrders(t *testing.T) {
 
 	_, acctCacher, predicates := newAcctCacher()
 	callMarket := NewUniformPriceCallMarket(
-		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 		defaultBuckets(),
 	)
 
@@ -208,7 +209,7 @@ func TestMaybeClearNoClearPossible(t *testing.T) {
 	// Next, we'll create our call market, and add these two incompatible
 	// orders.
 	callMarket := NewUniformPriceCallMarket(
-		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 		defaultBuckets(),
 	)
 	if err := callMarket.ConsiderBids(bid); err != nil {
@@ -250,7 +251,7 @@ func TestMaybeClearClearingPriceConsistency(t *testing.T) { // nolint:gocyclo
 	scenario := func(orders orderSet) bool {
 		// We'll start with making a new call market,
 		callMarket := NewUniformPriceCallMarket(
-			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 			defaultBuckets(),
 		)
 		if err := callMarket.ConsiderBids(orders.Bids...); err != nil {
@@ -512,7 +513,7 @@ func TestMaybeClearFilterFeeRates(t *testing.T) {
 
 	// Next, we'll create our call market, and add the orders.
 	callMarket := NewUniformPriceCallMarket(
-		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 		defaultBuckets(),
 	)
 	if err := callMarket.ConsiderBids(bids...); err != nil {
@@ -561,7 +562,7 @@ func TestMaybeClearClearingPriceInvariant(t *testing.T) {
 	scenario := func(orders orderSet) bool {
 		// LastAcceptedBid is the clearing price model used.
 		callMarket := NewUniformPriceCallMarket(
-			&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+			&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 			defaultBuckets(),
 		)
 
@@ -738,7 +739,7 @@ func assertNotInBatch(t *testing.T, acctCacher *AccountFilter,
 
 	// LastAcceptedBid is the clearing price model used.
 	callMarket := NewUniformPriceCallMarket(
-		&LastAcceptedBid{}, &mockFeeSchedule{1, 100000},
+		&LastAcceptedBid{}, test.NewMockFeeSchedule(1, 100000),
 		defaultBuckets(),
 	)
 	filterChain := []OrderFilter{acctCacher}

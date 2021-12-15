@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/stretchr/testify/require"
@@ -40,9 +41,10 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 
 	env := &environment{
 		exeCtx: &batchtx.ExecutionContext{
-			OrderBatch: orderBatch,
-			BatchID:    [33]byte{12, 34, 56},
-			ExeTx:      batchTx,
+			OrderBatch:   orderBatch,
+			BatchID:      [33]byte{12, 34, 56},
+			ExeTx:        batchTx,
+			FeeScheduler: test.NewMockFeeSchedule(1, 1000),
 		},
 		traders: traders,
 	}
@@ -127,7 +129,7 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 }
 
 // TestEnvironmentBatchIsolation tests that a trader that isn't part of a batch
-// can't actually causae any messages to be processed.
+// can't actually cause any messages to be processed.
 func TestEnvironmentBatchIsolation(t *testing.T) {
 	// Create a set of test traders that'll be added to the batch.
 	traders := make(map[matching.AccountID]*ActiveTrader)

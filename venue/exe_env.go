@@ -342,19 +342,21 @@ func (e *environment) sendPrepareMsg() error {
 	}
 
 	// Send out the batched messages now.
-	for _, msg := range msgs {
+	for tokenID, msg := range msgs {
 		select {
 		case msg.commLine.Send <- &PrepareMsg{
 			MatchedOrders:    msg.matchedOrders,
 			ClearingPrices:   msg.clearingPrices,
 			ChargedAccounts:  msg.chargedAccounts,
 			AccountOutPoints: msg.accountOutpoints,
-			ExecutionFee:     e.exeCtx.FeeSchedule,
-			BatchTx:          batchTxBuf.Bytes(),
-			FeeRate:          e.exeCtx.BatchFeeRate,
-			BatchID:          e.exeCtx.BatchID,
-			BatchVersion:     msg.batchVersion,
-			BatchHeightHint:  e.exeCtx.BatchHeightHint,
+			ExecutionFee: e.exeCtx.FeeScheduler.TraderFeeSchedule(
+				tokenID,
+			),
+			BatchTx:         batchTxBuf.Bytes(),
+			FeeRate:         e.exeCtx.BatchFeeRate,
+			BatchID:         e.exeCtx.BatchID,
+			BatchVersion:    msg.batchVersion,
+			BatchHeightHint: e.exeCtx.BatchHeightHint,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")

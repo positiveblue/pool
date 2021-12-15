@@ -35,6 +35,9 @@ service AuctionAdmin {
     rpc RemoveLeaseDuration (LeaseDuration) returns (EmptyResponse);
     rpc MoveFunds (MoveFundsRequest) returns (EmptyResponse);
     rpc MirrorDatabase (EmptyRequest) returns (EmptyResponse);
+    rpc ListTraderTerms (EmptyRequest) returns (ListTraderTermsResponse);
+    rpc StoreTraderTerms (TraderTerms) returns (EmptyResponse);
+    rpc RemoveTraderTerms (TraderTerms) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -592,4 +595,14 @@ message Output {
 message MoveFundsRequest {
     repeated Input inputs = 1;
     repeated Output outputs = 2;
+}
+
+message TraderTerms {
+    bytes lsat_id = 1;
+    int64 base_fee = 2;
+    int64 fee_rate = 3;
+}
+
+message ListTraderTermsResponse {
+    repeated TraderTerms terms = 1;
 }

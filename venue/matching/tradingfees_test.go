@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
+	"github.com/lightninglabs/subasta/internal/test"
 )
 
 type mockFeeSchedule struct {
@@ -75,10 +76,7 @@ func TestTradingReportCompletion(t *testing.T) {
 
 	acctDB, _, _ := newAcctCacher()
 
-	feeSchedule := mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
+	feeSchedule := test.NewMockFeeSchedule(1, 100000)
 	n, y := 0, 0
 	scenario := func(matchedOrders []MatchedOrder) bool {
 		clearingPrices := map[uint32]orderT.FixedRatePremium{
@@ -88,7 +86,7 @@ func TestTradingReportCompletion(t *testing.T) {
 			orderT.LegacyLeaseDurationBucket: matchedOrders,
 		}
 		report := NewTradingFeeReport(
-			subBatches, &feeSchedule, clearingPrices,
+			subBatches, feeSchedule, clearingPrices,
 		)
 
 		// First, we'll gather up all the traders that were in this
@@ -133,10 +131,7 @@ func TestTradingReportGeneration(t *testing.T) {
 
 	acctDB, _, _ := newAcctCacher()
 
-	feeSchedule := mockFeeSchedule{
-		baseFee:    1,
-		exeFeeRate: orderT.FixedRatePremium(10000),
-	}
+	feeSchedule := test.NewMockFeeSchedule(1, 100000)
 	n, y := 0, 0
 	scenario := func(matchedOrders []MatchedOrder) bool {
 		clearingPrices := map[uint32]orderT.FixedRatePremium{
@@ -146,7 +141,7 @@ func TestTradingReportGeneration(t *testing.T) {
 			orderT.LegacyLeaseDurationBucket: matchedOrders,
 		}
 		report := NewTradingFeeReport(
-			subBatches, &feeSchedule, clearingPrices,
+			subBatches, feeSchedule, clearingPrices,
 		)
 
 		// The total amount of fees that each trader paid should

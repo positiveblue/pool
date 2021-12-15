@@ -15,10 +15,10 @@ import (
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
-	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
+	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
@@ -43,7 +43,7 @@ var (
 
 	_, pubKey = btcec.PrivKeyFromBytes(btcec.S256(), key[:])
 
-	defaultFeeSchedule = terms.NewLinearFeeSchedule(1, 1000)
+	defaultFeeSchedule = test.NewMockFeeSchedule(1, 1000)
 
 	activeTraders = activeTradersMap{
 		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),

@@ -332,9 +332,9 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 	req *auctioneerrpc.ReserveAccountRequest) (*auctioneerrpc.ReserveAccountResponse,
 	error) {
 
-	// The token ID can only be zero when testing locally without Kirin (or
-	// during the integration tests). In a real deployment, Kirin enforces
-	// the token to be set so we don't need an explicit check here.
+	// The token ID can only be zero when testing locally without Aperture
+	// (or during the integration tests). In a real deployment, Aperture
+	// enforces the token to be set so we don't need an explicit check here.
 	tokenID := tokenIDFromContext(ctx)
 
 	// TODO(guggero): Make sure we enforce maxAccountsPerTrader here.
@@ -1627,7 +1627,17 @@ func (s *rpcServer) Terms(ctx context.Context, _ *auctioneerrpc.TermsRequest) (
 		return nil, fmt.Errorf("unable to estimate fee rate for next "+
 			"batch: %v", err)
 	}
-	nextBatchClear := time.Now().Add(s.auctioneer.cfg.BatchTicker.NextTickIn())
+	nextBatchClear := time.Now().Add(
+		s.auctioneer.cfg.BatchTicker.NextTickIn(),
+	)
+
+	// The token ID can only be zero when testing locally without Aperture
+	// (or during the integration tests). In a real deployment, Aperture
+	// enforces the token to be set so we don't need an explicit check here.
+	tokenID := tokenIDFromContext(ctx)
+
+	// Do we have a custom execution fee?
+	feeSchedule := s.activeTraders.TraderFeeSchedule(tokenID)
 
 	resp := &auctioneerrpc.TermsResponse{
 		MaxAccountValue: uint64(s.terms.MaxAccountValue),
@@ -1637,22 +1647,28 @@ func (s *rpcServer) Terms(ctx context.Context, _ *auctioneerrpc.TermsRequest) (
 		// orders outside of the duration buckets in later commits.
 		MaxOrderDurationBlocks: 365 * 144,
 		ExecutionFee: &auctioneerrpc.ExecutionFee{
-			BaseFee: uint64(s.terms.OrderExecBaseFee),
-			FeeRate: uint64(s.terms.OrderExecFeeRate),
+			BaseFee: uint64(feeSchedule.BaseFee()),
+
+			// The fee rate is parts per million. Therefore,
+			// multiplying by a million gives us the fee rate as an
+			// integer.
+			FeeRate: uint64(feeSchedule.ExecutionFee(1_000_000)),
 		},
 		LeaseDurations:           make(map[uint32]bool),
 		NextBatchConfTarget:      uint32(s.auctioneer.cfg.ConfTarget),
 		NextBatchFeeRateSatPerKw: uint64(nextBatchFeeRate),
 		NextBatchClearTimestamp:  uint64(nextBatchClear.Unix()),
-		LeaseDurationBuckets:     make(map[uint32]auctioneerrpc.DurationBucketState),
+		LeaseDurationBuckets: make(
+			map[uint32]auctioneerrpc.DurationBucketState,
+		),
 		AutoRenewExtensionBlocks: s.auctioneer.cfg.AccountExpiryExtension,
 	}
 
 	durationBuckets := s.orderBook.DurationBuckets()
 	err = durationBuckets.IterBuckets(
 		func(d uint32, s order.DurationBucketState) error {
-			marketOpen := (s != order.BucketStateMarketClosed &&
-				s != order.BucketStateNoMarket)
+			marketOpen := s != order.BucketStateMarketClosed &&
+				s != order.BucketStateNoMarket
 
 			rpcState, err := marshallDurationBucketState(s)
 			if err != nil {
