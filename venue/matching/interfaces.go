@@ -305,19 +305,19 @@ type BatchAuctioneer interface {
 	// matches filled volume.
 	RemoveMatches(...MatchedOrder) error
 
-	// ConsiderBid adds a set of bids to the staging arena for match
+	// ConsiderBids adds a set of bids to the staging arena for match
 	// making. Only once a bid has been considered will it be eligible to
 	// be included in an OrderBatch.
 	ConsiderBids(...*order.Bid) error
 
-	// ForgetBid removes a set of bids from the staging area.
+	// ForgetBids removes a set of bids from the staging area.
 	ForgetBids(...orderT.Nonce) error
 
-	// ConsiderAsk adds a set of asks to the staging arena for match
+	// ConsiderAsks adds a set of asks to the staging arena for match
 	// making. Only once an ask has been considered will it be eligible to
 	// be included in an OrderBatch.
 	ConsiderAsks(...*order.Ask) error
 
-	// ForgetAsk removes a set of asks from the staging area.
+	// ForgetAsks removes a set of asks from the staging area.
 	ForgetAsks(...orderT.Nonce) error
 }

@@ -1610,7 +1610,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		)
 		matchLatency := time.Since(matchTimeStart)
 
-		// TODO(roasbeef): export stuff like # confclits, etc?
+		// TODO(roasbeef): export stuff like # conflicts, etc?
 		monitoring.ObserveMatchingLatency(batchID[:], matchLatency)
 
 		switch {

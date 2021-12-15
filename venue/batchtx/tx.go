@@ -86,7 +86,7 @@ type RequestedInput struct {
 // RequestedOutput holds information about an extra output that has been
 // requested added to the batch transaction.
 type RequestedOutput struct {
-	// Value is the valu of the output.
+	// Value is the value of the output.
 	Value btcutil.Amount
 
 	// PkScript is the script to send to.
@@ -215,7 +215,7 @@ type ExecutionContext struct {
 	ExeTx *wire.MsgTx
 
 	// FeeInfoEstimate holds a fee info estimate for the unsigned execution
-	// transacion.
+	// transaction.
 	FeeInfoEstimate *feebump.TxFeeInfo
 
 	// MasterAccountDiff is a diff that describes the prior and current
@@ -755,7 +755,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	return &exeCtx, nil
 }
 
-// OutputForOrder returns the corresponding output within the execution
+// OutputsForOrder returns the corresponding output within the execution
 // transaction for the passed order nonce.
 func (e *ExecutionContext) OutputsForOrder(nonce orderT.Nonce) ([]*OrderOutput, bool) {
 	output, ok := e.orderIndex[nonce]

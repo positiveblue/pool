@@ -127,7 +127,7 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 }
 
 // TestEnvironmentBatchIsolation tests that a trader that isn't part of a batch
-// can't actually causae any messages to be processed.
+// can't actually cause any messages to be processed.
 func TestEnvironmentBatchIsolation(t *testing.T) {
 	// Create a set of test traders that'll be added to the batch.
 	traders := make(map[matching.AccountID]*ActiveTrader)
