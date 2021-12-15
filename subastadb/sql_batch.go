@@ -533,10 +533,16 @@ func (s *SQLTransaction) UpdateBatch(batchID orderT.BatchID,
 		}
 	}
 
-	if err := s.tx.Clauses(
-		clause.OnConflict{UpdateAll: true},
-	).Create(sqlOrders).Error; err != nil {
-		return err
+	if len(sqlOrders) > 0 {
+		if err := s.tx.Clauses(
+			clause.OnConflict{UpdateAll: true},
+		).Create(sqlOrders).Error; err != nil {
+			return err
+		}
+	}
+
+	if len(orderBatch.FeeReport.AccountDiffs) == 0 {
+		return nil
 	}
 
 	sqlAccountDiffs := make(
