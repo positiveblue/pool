@@ -17,6 +17,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/multimutex"
@@ -62,6 +63,8 @@ type Store interface {
 	account.Store
 
 	order.Store
+
+	traderterms.Store
 
 	// UpdateAuctioneerAccount updates the current auctioneer output
 	// in-place and also updates the per batch key according to the state in

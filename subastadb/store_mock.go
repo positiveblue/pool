@@ -11,6 +11,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/traderterms"
 )
 
 // StoreMock is a type to hold mocked orders.
@@ -23,6 +24,7 @@ type StoreMock struct {
 	MasterAcct       *account.Auctioneer
 	Snapshots        map[orderT.BatchID]*BatchSnapshot
 	LifetimePackages []*chanenforcement.LifetimePackage
+	TraderTerms      map[lsat.TokenID]*traderterms.Custom
 	t                *testing.T
 }
 
@@ -35,6 +37,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		Orders:      make(map[orderT.Nonce]order.ServerOrder),
 		BatchPubkey: InitialBatchKey,
 		Snapshots:   make(map[orderT.BatchID]*BatchSnapshot),
+		TraderTerms: make(map[lsat.TokenID]*traderterms.Custom),
 		t:           t,
 	}
 }
@@ -374,6 +377,51 @@ func (s *StoreMock) LeaseDurations(ctx context.Context) (
 	map[uint32]order.DurationBucketState, error) {
 
 	return nil, nil
+}
+
+// AllTraderTerms returns all trader terms currently in the store.
+func (s *StoreMock) AllTraderTerms(_ context.Context) ([]*traderterms.Custom,
+	error) {
+
+	result := make([]*traderterms.Custom, 0, len(s.TraderTerms))
+	for _, terms := range s.TraderTerms {
+		result = append(result, terms)
+	}
+
+	return result, nil
+}
+
+// GetTraderTerms returns the trader terms for the given trader or
+// ErrNoTerms if there are no terms stored for that trader.
+func (s *StoreMock) GetTraderTerms(_ context.Context,
+	traderID lsat.TokenID) (*traderterms.Custom, error) {
+
+	terms, ok := s.TraderTerms[traderID]
+	if !ok {
+		return nil, ErrNoTerms
+	}
+
+	return terms, nil
+}
+
+// PutTraderTerms stores a trader terms item, replacing the previous one
+// if an item with the same ID existed.
+func (s *StoreMock) PutTraderTerms(_ context.Context,
+	terms *traderterms.Custom) error {
+
+	s.TraderTerms[terms.TraderID] = terms
+
+	return nil
+}
+
+// DelTraderTerms removes the trader specific terms for the given trader
+// ID.
+func (s *StoreMock) DelTraderTerms(_ context.Context,
+	traderID lsat.TokenID) error {
+
+	delete(s.TraderTerms, traderID)
+
+	return nil
 }
 
 // A compile-time check to make sure StoreMock implements the Store interface.
