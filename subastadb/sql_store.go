@@ -81,6 +81,10 @@ func openPostgresDB(cfg *SQLConfig) (*gorm.DB, error) {
 		return nil, err
 	}
 
+	if err := db.AutoMigrate(&SQLTraderTerms{}); err != nil {
+		return nil, err
+	}
+
 	return db, nil
 }
 

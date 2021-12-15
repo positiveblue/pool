@@ -249,6 +249,8 @@ func TestUpdateOrders(t *testing.T) {
 // structures that are not compatible with reflect.DeepEqual, for example
 // anything that contains net.Addr fields.
 func assertJSONDeepEqual(t *testing.T, o1, o2 interface{}) {
+	t.Helper()
+
 	expected, err := json.Marshal(o1)
 	if err != nil {
 		t.Fatalf("cannot marshal: %v", err)

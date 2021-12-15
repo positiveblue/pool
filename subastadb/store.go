@@ -280,6 +280,22 @@ func (s *EtcdStore) MirrorToSQL(ctx context.Context) error {
 	UpdateBatchesSQL(ctx, s.sqlMirror, txnBatches)
 	log.Infof("Mirrored %v batches to SQL", cnt)
 
+	// Mirror custom trader terms.
+	cnt = 0
+	allTerms, err := s.AllTraderTerms(ctx)
+	if err != nil {
+		log.Errorf("Unable to fetch trader terms: %v", err)
+		return err
+	}
+
+	for start := 0; start < len(allTerms); start += itemsPerTxn {
+		end := min(start+itemsPerTxn, len(allTerms))
+		UpdateTraderTermsSQL(ctx, s.sqlMirror, allTerms[start:end]...)
+		cnt += end - start
+	}
+
+	log.Infof("Mirrored %v custom trader terms to SQL", cnt)
+
 	return nil
 }
 
