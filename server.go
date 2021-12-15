@@ -249,7 +249,13 @@ func (a *activeTradersMap) TraderFeeSchedule(id [32]byte) terms.FeeSchedule {
 		var err error
 		t, err = a.store.GetTraderTerms(context.Background(), id)
 		if err != nil {
-			return a.defaultFeeSchedule
+			// If there is no record in the store, we create an
+			// empty one that will fall back to the default schedule
+			// because no custom terms are set on it. That way we
+			// don't need to query the store for this trader again.
+			t = &traderterms.Custom{
+				TraderID: id,
+			}
 		}
 
 		a.termsCache[id] = t
