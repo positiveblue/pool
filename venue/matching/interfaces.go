@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/order"
 )
 
@@ -151,6 +152,17 @@ type PriceClearer interface {
 	// possible algorithms exists to determine a uniform clearing price
 	// such as: first-rejected-bid, last-accepted-bid, and so on.
 	ExtractClearingPrice(*MatchSet) (orderT.FixedRatePremium, error)
+}
+
+// FeeScheduler is an interface for returning the fee schedule of a specific
+// account or trader.
+type FeeScheduler interface {
+	// AccountFeeSchedule returns the fee schedule for an account.
+	AccountFeeSchedule(id [33]byte) terms.FeeSchedule
+
+	// TraderFeeSchedule returns the fee schedule for a trader identified by
+	// their LSAT ID.
+	TraderFeeSchedule(lsatID [32]byte) terms.FeeSchedule
 }
 
 // OrderBatch is a final matched+cleared auction batch. This batch contains

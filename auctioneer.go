@@ -18,7 +18,6 @@ import (
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
-	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
@@ -202,9 +201,9 @@ type AuctioneerConfig struct {
 	// broadcast a batch execution transaction.
 	BatchExecutor BatchExecutor
 
-	// FeeSchedule describes how we charge the traders in an executed
-	// batch.
-	FeeSchedule terms.FeeSchedule
+	// FeeScheduler is a function that returns the fee schedule for a
+	// specific account ID.
+	FeeScheduler matching.FeeScheduler
 
 	// ChannelEnforcer enforces the service lifetime of channels created as
 	// part of a finalized batch.
@@ -1674,7 +1673,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
-			a.BestHeight(), a.cfg.FeeSchedule,
+			a.BestHeight(), a.cfg.FeeScheduler,
 		)
 
 		// If we had non-nil batchIO requested, it could be the reason
@@ -1688,7 +1687,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			io = &batchtx.BatchIO{}
 			exeCtx, err = batchtx.NewExecutionContext(
 				batchKey, orderBatch, masterAcct, io,
-				s.batchFeeRate, a.BestHeight(), a.cfg.FeeSchedule,
+				s.batchFeeRate, a.BestHeight(), a.cfg.FeeScheduler,
 			)
 		}
 

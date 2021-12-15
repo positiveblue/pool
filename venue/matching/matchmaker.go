@@ -7,7 +7,6 @@ import (
 	"sync"
 
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/order"
 )
 
@@ -46,10 +45,10 @@ type UniformPriceCallMarket struct {
 	// arrive at the uniform clearing price.
 	priceClearer PriceClearer
 
-	// feeSchedule is the current fee schedule of the auctioneer. This will
-	// be used to determine how much to charge traders in venue and
-	// execution fees.
-	feeSchedule terms.FeeSchedule
+	// feeScheduler is a function to retrieve the current fee schedule of
+	// the auctioneer for a specific account. This will be used to determine
+	// how much to charge traders in venue and execution fees.
+	feeScheduler FeeScheduler
 
 	sync.Mutex
 
@@ -62,12 +61,12 @@ type UniformPriceCallMarket struct {
 // UniformPriceCallMarket struct given the price clearer and fee schedule for
 // this current batch epoch.
 func NewUniformPriceCallMarket(priceClearer PriceClearer,
-	feeSchedule terms.FeeSchedule,
+	feeScheduler FeeScheduler,
 	durationBuckets *order.DurationBuckets) *UniformPriceCallMarket {
 
 	u := &UniformPriceCallMarket{
 		priceClearer:    priceClearer,
-		feeSchedule:     feeSchedule,
+		feeScheduler:    feeScheduler,
 		durationBuckets: durationBuckets,
 	}
 
@@ -164,7 +163,7 @@ func (u *UniformPriceCallMarket) MaybeClear(acctCacher AccountCacher,
 	// With this final piece of information, the caller will be able to
 	// easily update all the order/account state in a single atomic
 	// transaction.
-	feeReport := NewTradingFeeReport(subBatches, u.feeSchedule, prices)
+	feeReport := NewTradingFeeReport(subBatches, u.feeScheduler, prices)
 	return NewBatch(subBatches, feeReport, prices, version), nil
 }
 

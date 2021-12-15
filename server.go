@@ -145,7 +145,8 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 }
 
 type activeTradersMap struct {
-	activeTraders map[matching.AccountID]*venue.ActiveTrader
+	activeTraders      map[matching.AccountID]*venue.ActiveTrader
+	defaultFeeSchedule terms.FeeSchedule
 	sync.RWMutex
 }
 
@@ -211,6 +212,17 @@ func (a *activeTradersMap) GetTrader(id matching.AccountID) *venue.ActiveTrader 
 	}
 
 	return nil
+}
+
+// AccountFeeSchedule returns the fee schedule for a specific account.
+func (a *activeTradersMap) AccountFeeSchedule(_ [33]byte) terms.FeeSchedule {
+	return a.defaultFeeSchedule
+}
+
+// TraderFeeSchedule returns the fee schedule for a trader identified by
+// their LSAT ID.
+func (a *activeTradersMap) TraderFeeSchedule(_ [32]byte) terms.FeeSchedule {
+	return a.defaultFeeSchedule
 }
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
@@ -337,7 +349,10 @@ func NewServer(cfg *Config) (*Server, error) {
 		Store: store,
 	}
 	activeTraders := &activeTradersMap{
-		activeTraders: make(map[matching.AccountID]*venue.ActiveTrader),
+		activeTraders: make(
+			map[matching.AccountID]*venue.ActiveTrader,
+		),
+		defaultFeeSchedule: auctionTerms.FeeSchedule(),
 	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
 		Store:            exeStore,
@@ -419,11 +434,11 @@ func NewServer(cfg *Config) (*Server, error) {
 			),
 			CallMarket: matching.NewUniformPriceCallMarket(
 				&matching.LastAcceptedBid{},
-				auctionTerms.FeeSchedule(), durationBuckets,
+				activeTraders, durationBuckets,
 			),
 			OrderFeed:              orderBook,
 			BatchExecutor:          batchExecutor,
-			FeeSchedule:            auctionTerms.FeeSchedule(),
+			FeeScheduler:           activeTraders,
 			ChannelEnforcer:        channelEnforcer,
 			ConfTarget:             cfg.BatchConfTarget,
 			AccountExpiryExtension: cfg.AccountExpiryExtension,

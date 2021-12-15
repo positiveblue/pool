@@ -18,8 +18,8 @@ import (
 	"github.com/lightninglabs/pool/chaninfo"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
-	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
@@ -187,7 +187,7 @@ func (e *executorTestHarness) newTestExecutionContext(
 
 	exeCtx, err := batchtx.NewExecutionContext(
 		startBatchKey, batch, masterAcct, &batchtx.BatchIO{}, feeRate,
-		1337, &terms.LinearFeeSchedule{},
+		1337, test.NewMockFeeSchedule(1, 1000),
 	)
 	if err != nil {
 		e.t.Fatal(err)

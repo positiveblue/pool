@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/subasta/internal/test"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/stretchr/testify/require"
@@ -40,9 +41,10 @@ func TestEnvironmentMessageMultiplex(t *testing.T) {
 
 	env := &environment{
 		exeCtx: &batchtx.ExecutionContext{
-			OrderBatch: orderBatch,
-			BatchID:    [33]byte{12, 34, 56},
-			ExeTx:      batchTx,
+			OrderBatch:   orderBatch,
+			BatchID:      [33]byte{12, 34, 56},
+			ExeTx:        batchTx,
+			FeeScheduler: test.NewMockFeeSchedule(1, 1000),
 		},
 		traders: traders,
 	}
