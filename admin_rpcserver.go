@@ -1001,6 +1001,8 @@ func (s *adminRPCServer) StoreTraderTerms(ctx context.Context,
 		dbTerms.FeeRate = &feeRate
 	}
 
+	s.mainRPCServer.activeTraders.invalidateCache(dbTerms.TraderID)
+
 	return &adminrpc.EmptyResponse{}, s.store.PutTraderTerms(ctx, dbTerms)
 }
 
@@ -1009,6 +1011,8 @@ func (s *adminRPCServer) RemoveTraderTerms(ctx context.Context,
 
 	var traderID lsat.TokenID
 	copy(traderID[:], terms.LsatId)
+
+	s.mainRPCServer.activeTraders.invalidateCache(traderID)
 
 	return &adminrpc.EmptyResponse{}, s.store.DelTraderTerms(ctx, traderID)
 }

@@ -148,6 +148,7 @@ func (e *executorStore) UpdateExecutionState(newState venue.ExecutionState) erro
 type activeTradersMap struct {
 	store              traderterms.Store
 	activeTraders      map[matching.AccountID]*venue.ActiveTrader
+	termsCache         map[lsat.TokenID]*traderterms.Custom
 	defaultFeeSchedule terms.FeeSchedule
 	sync.RWMutex
 }
@@ -220,10 +221,12 @@ func (a *activeTradersMap) GetTrader(id matching.AccountID) *venue.ActiveTrader 
 func (a *activeTradersMap) AccountFeeSchedule(
 	acctKey [33]byte) terms.FeeSchedule {
 
+	// Can't use the defer pattern here because TraderFeeSchedule also tries
+	// to acquire the lock.
 	a.RLock()
-	defer a.RUnlock()
-
 	trader, ok := a.activeTraders[acctKey]
+	a.RUnlock()
+
 	if !ok {
 		return a.defaultFeeSchedule
 	}
@@ -234,12 +237,33 @@ func (a *activeTradersMap) AccountFeeSchedule(
 // TraderFeeSchedule returns the fee schedule for a trader identified by
 // their LSAT ID.
 func (a *activeTradersMap) TraderFeeSchedule(id [32]byte) terms.FeeSchedule {
-	t, err := a.store.GetTraderTerms(context.Background(), id)
-	if err != nil {
-		return a.defaultFeeSchedule
+	a.Lock()
+	defer a.Unlock()
+
+	// Anything in the cache for this trader? Can use that directly, we
+	// know the cache is invalidated on terms mutation.
+	t, ok := a.termsCache[id]
+	if !ok {
+		// Need to fetch the latest terms from the DB so we can populate
+		// the cache.
+		var err error
+		t, err = a.store.GetTraderTerms(context.Background(), id)
+		if err != nil {
+			return a.defaultFeeSchedule
+		}
+
+		a.termsCache[id] = t
 	}
 
 	return t.FeeSchedule(a.defaultFeeSchedule)
+}
+
+// invalidateCache removes the cache entry for a given trader if it exists.
+func (a *activeTradersMap) invalidateCache(id [32]byte) {
+	a.Lock()
+	defer a.Unlock()
+
+	delete(a.termsCache, id)
 }
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
@@ -370,6 +394,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		activeTraders: make(
 			map[matching.AccountID]*venue.ActiveTrader,
 		),
+		termsCache:         make(map[lsat.TokenID]*traderterms.Custom),
 		defaultFeeSchedule: auctionTerms.FeeSchedule(),
 	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
