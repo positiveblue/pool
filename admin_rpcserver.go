@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -952,6 +953,64 @@ func (s *adminRPCServer) RemoveLeaseDuration(ctx context.Context,
 	s.durationBuckets.RemoveMarket(in.Duration)
 
 	return &adminrpc.EmptyResponse{}, nil
+}
+
+func (s *adminRPCServer) ListTraderTerms(ctx context.Context,
+	_ *adminrpc.EmptyRequest) (*adminrpc.ListTraderTermsResponse, error) {
+
+	resp := &adminrpc.ListTraderTermsResponse{}
+	allDbTerms, err := s.store.AllTraderTerms(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	resp.Terms = make([]*adminrpc.TraderTerms, len(allDbTerms))
+	for idx, dbTerms := range allDbTerms {
+		terms := &adminrpc.TraderTerms{
+			LsatId:  dbTerms.TraderID[:],
+			BaseFee: -1,
+			FeeRate: -1,
+		}
+		if dbTerms.BaseFee != nil {
+			baseFee := *dbTerms.BaseFee
+			terms.BaseFee = int64(baseFee)
+		}
+		if dbTerms.FeeRate != nil {
+			feeRate := *dbTerms.FeeRate
+			terms.FeeRate = int64(feeRate)
+		}
+
+		resp.Terms[idx] = terms
+	}
+
+	return resp, nil
+}
+
+func (s *adminRPCServer) StoreTraderTerms(ctx context.Context,
+	terms *adminrpc.TraderTerms) (*adminrpc.EmptyResponse, error) {
+
+	dbTerms := &traderterms.Custom{}
+	copy(dbTerms.TraderID[:], terms.LsatId)
+
+	if terms.BaseFee >= 0 {
+		baseFee := btcutil.Amount(terms.BaseFee)
+		dbTerms.BaseFee = &baseFee
+	}
+	if terms.FeeRate >= 0 {
+		feeRate := btcutil.Amount(terms.FeeRate)
+		dbTerms.FeeRate = &feeRate
+	}
+
+	return &adminrpc.EmptyResponse{}, s.store.PutTraderTerms(ctx, dbTerms)
+}
+
+func (s *adminRPCServer) RemoveTraderTerms(ctx context.Context,
+	terms *adminrpc.TraderTerms) (*adminrpc.EmptyResponse, error) {
+
+	var traderID lsat.TokenID
+	copy(traderID[:], terms.LsatId)
+
+	return &adminrpc.EmptyResponse{}, s.store.DelTraderTerms(ctx, traderID)
 }
 
 func parseRPCDurationBucketState(
