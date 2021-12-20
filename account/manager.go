@@ -41,10 +41,10 @@ const (
 	// satoshis.
 	MinAccountValue btcutil.Amount = 100000
 
-	// minAccountExpiry and maxAccountExpiry represent the thresholds at
+	//MinAccountExpiry and MaxAccountExpiry represent the thresholds at
 	// both extremes for valid account expirations.
-	minAccountExpiry = 144       // One day worth of blocks.
-	maxAccountExpiry = 144 * 365 // A year worth of blocks.
+	MinAccountExpiry = 144       // One day worth of blocks.
+	MaxAccountExpiry = 144 * 365 // A year worth of blocks.
 )
 
 var (
@@ -1387,6 +1387,8 @@ func (m *manager) spendAccount(ctx context.Context, account *Account,
 	modifiers []Modifier, isClose bool, bestHeight uint32) (*Account,
 	*spendPackage, error) {
 
+	fmt.Println("you make it here 1")
+
 	// Create the spending transaction of an account based on the provided
 	// witness type.
 	var (
@@ -1413,6 +1415,8 @@ func (m *manager) spendAccount(ctx context.Context, account *Account,
 	if err != nil {
 		return nil, nil, err
 	}
+
+	fmt.Println("you make it here 2")
 
 	// Update the account's height hint and latest transaction.
 	modifiers = append(modifiers, HeightHintModifier(bestHeight))
@@ -1441,6 +1445,8 @@ func (m *manager) spendAccount(ctx context.Context, account *Account,
 			Index: idx,
 		}))
 	}
+
+	fmt.Println("you make it here 3")
 
 	// If we require the auctioneer's signature, request it now before
 	// updating the account on disk.
@@ -1472,6 +1478,7 @@ func (m *manager) spendAccount(ctx context.Context, account *Account,
 	if err := m.maybeBroadcastTx(ctx, spendPkg.tx, label); err != nil {
 		return nil, nil, err
 	}
+	fmt.Println("you make it here 50")
 
 	return account, spendPkg, nil
 }
@@ -1554,6 +1561,8 @@ func (m *manager) constructMultiSigWitness(ctx context.Context,
 			ctx, account, nil, spendPkg.tx.TxOut, nil,
 		)
 	} else {
+		fmt.Println("you make it here 4")
+
 		// Otherwise, the account output is being re-created due to a
 		// modification, so we need to filter out its spent input and
 		// re-created output from the spending transaction as the
@@ -1575,6 +1584,8 @@ func (m *manager) constructMultiSigWitness(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Println("you make it here 5")
 
 	return poolscript.SpendMultiSig(
 		spendPkg.witnessScript, spendPkg.ourSig, auctioneerSig,
@@ -2010,13 +2021,13 @@ func validateAccountValue(value, maxValue btcutil.Amount) error {
 // validateAccountExpiry ensures that a trader has provided a sane account expiry
 // for the creation/modification of an account.
 func validateAccountExpiry(expiry, bestHeight uint32) error {
-	if expiry < bestHeight+minAccountExpiry {
+	if expiry < bestHeight+MinAccountExpiry {
 		return fmt.Errorf("current minimum account expiry allowed is "+
-			"height %v", bestHeight+minAccountExpiry)
+			"height %v", bestHeight+MinAccountExpiry)
 	}
-	if expiry > bestHeight+maxAccountExpiry {
+	if expiry > bestHeight+MaxAccountExpiry {
 		return fmt.Errorf("current maximum account expiry allowed is "+
-			"height %v", bestHeight+maxAccountExpiry)
+			"height %v", bestHeight+MaxAccountExpiry)
 	}
 
 	return nil

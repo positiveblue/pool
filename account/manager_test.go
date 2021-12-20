@@ -491,7 +491,7 @@ func TestNewAccountHappyFlow(t *testing.T) {
 	defer h.stop()
 
 	account := h.openAccount(
-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	expr := defaultFeeExpr
@@ -505,7 +505,7 @@ func TestResumeAccountAfterRestart(t *testing.T) {
 
 	const (
 		value      = maxAccountValue
-		expiry     = maxAccountExpiry
+		expiry     = MaxAccountExpiry
 		bestHeight = 100
 	)
 
@@ -705,7 +705,7 @@ func TestAccountClose(t *testing.T) {
 			// We'll start by creating a new account of the minimum
 			// value for each test.
 			account := h.openAccount(
-				MinAccountValue, bestHeight+maxAccountExpiry,
+				MinAccountValue, bestHeight+MaxAccountExpiry,
 				bestHeight,
 			)
 
@@ -785,7 +785,7 @@ func TestAccountExpiration(t *testing.T) {
 	defer h.stop()
 
 	account := h.openAccount(
-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	h.expireAccount(account)
@@ -804,7 +804,7 @@ func TestAccountSpendBatchNotFinalized(t *testing.T) {
 	defer h.stop()
 
 	account := h.openAccount(
-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	// Create an account spend which we'll notify later. This spend should
@@ -866,7 +866,7 @@ func TestAccountWithdrawal(t *testing.T) {
 	const feeRate = chainfee.FeePerKwFloor
 
 	account := h.openAccount(
-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	// With our account created, we'll start with an invalid withdrawal to a
@@ -948,7 +948,7 @@ func TestAccountDeposit(t *testing.T) {
 
 	const bestHeight = 100
 	account := h.openAccount(
-		initialAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		initialAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	// We'll provide two outputs to the mock wallet that will be consumed by
@@ -1040,7 +1040,7 @@ func TestAccountConsecutiveBatches(t *testing.T) {
 	defer h.stop()
 
 	account := h.openAccount(
-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	// Then, we'll simulate the maximum number of unconfirmed batches to
@@ -1117,7 +1117,7 @@ func TestAccountUpdateSubscriptionOnRestart(t *testing.T) {
 	defer h.stop()
 
 	account := h.openAccount(
-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
+		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
 	)
 
 	// StateOpen case.

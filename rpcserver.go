@@ -6,12 +6,15 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
@@ -1035,11 +1038,8 @@ func (s *rpcServer) parseRPCOutputs(outputs []*poolrpc.Output) ([]*wire.TxOut,
 	return res, nil
 }
 
-func (s *rpcServer) RecoverAccounts(ctx context.Context,
-	_ *poolrpc.RecoverAccountsRequest) (*poolrpc.RecoverAccountsResponse,
-	error) {
-
-	log.Infof("Attempting to recover accounts...")
+func (s *rpcServer) serverAssistedRecovery(ctx context.Context,
+) ([]*account.Account, error) {
 
 	// The account recovery process uses a bi-directional streaming RPC on
 	// the server side. Unfortunately, because of the way streaming RPCs
@@ -1052,18 +1052,10 @@ func (s *rpcServer) RecoverAccounts(ctx context.Context,
 	// the white list first to kick off LSAT creation.
 	_, _ = s.auctioneer.OrderState(ctx, order.Nonce{})
 
-	s.recoveryMutex.Lock()
-	if s.recoveryPending {
-		defer s.recoveryMutex.Unlock()
-		return nil, fmt.Errorf("recovery already in progress")
-	}
-	s.recoveryPending = true
-	s.recoveryMutex.Unlock()
-
 	// Prepare the keys we are going to try. Possibly not all of them will
 	// be used.
 	acctKeys, err := account.GenerateRecoveryKeys(
-		ctx, s.lndServices.WalletKit,
+		ctx, account.DefaultAccountKeyWindow, s.lndServices.WalletKit,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error generating keys: %v", err)
@@ -1078,20 +1070,169 @@ func (s *rpcServer) RecoverAccounts(ctx context.Context,
 		return nil, fmt.Errorf("error performing recovery: %v", err)
 	}
 
+	return recoveredAccounts, nil
+}
+
+// BitcoinConfig defines exported config options for the connection to the
+// btcd/bitcoind backend.
+type BitcoinConfig struct {
+	Host         string `long:"host" description:"bitcoind/btcd instance address"`
+	User         string `long:"user" description:"bitcoind/btcd user name"`
+	Password     string `long:"password" description:"bitcoind/btcd password"`
+	HTTPPostMode bool   `long:"httppostmode" description:"Use HTTP POST mode? bitcoind only supports this mode"`
+	UseTLS       bool   `long:"usetls" description:"Use TLS to connect? bitcoind only supports non-TLS connections"`
+	TLSPath      string `long:"tlspath" description:"Path to btcd's TLS certificate, if TLS is enabled"`
+}
+
+// BitcoinClient is a wrapper around the RPC connection to the chain backend
+// and allows transactions to be queried.
+type BitcoinClient struct {
+	sync.Mutex
+
+	rpcClient *rpcclient.Client
+}
+
+// NewClient opens a new RPC connection to the chain backend.
+func NewClient(cfg *BitcoinConfig) (*BitcoinClient, error) {
+	var err error
+	client := &BitcoinClient{}
+	client.rpcClient, err = getBitcoinConn(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return client, nil
+}
+
+func getBitcoinConn(cfg *BitcoinConfig) (*rpcclient.Client, error) {
+	// In case we use TLS and a certificate argument is provided, we need to
+	// read that file and provide it to the RPC connection as byte slice.
+	var rpcCert []byte
+	if cfg.UseTLS && cfg.TLSPath != "" {
+		certFile, err := os.Open(cfg.TLSPath)
+		if err != nil {
+			return nil, err
+		}
+		rpcCert, err = ioutil.ReadAll(certFile)
+		if err != nil {
+			return nil, err
+		}
+		if err := certFile.Close(); err != nil {
+			return nil, err
+		}
+	}
+
+	// Connect to the backend with the certs we just loaded.
+	connCfg := &rpcclient.ConnConfig{
+		Host:         cfg.Host,
+		User:         cfg.User,
+		Pass:         cfg.Password,
+		HTTPPostMode: cfg.HTTPPostMode,
+		DisableTLS:   !cfg.UseTLS,
+		Certificates: rpcCert,
+	}
+
+	// Notice the notification parameter is nil since notifications are
+	// not supported in HTTP POST mode.
+	return rpcclient.New(connCfg, nil)
+}
+
+func (s *rpcServer) fullClientRecovery(ctx context.Context,
+) ([]*account.Account, error) {
+
+	cfg2 := &BitcoinConfig{
+		Host:         "localhost:18443",
+		User:         "lightning",
+		Password:     "lightning",
+		HTTPPostMode: true,
+		UseTLS:       false,
+		TLSPath:      "",
+	}
+	_, err := NewClient(cfg2)
+	if err != nil {
+		return nil, err
+	}
+
+	txs, err := s.lndServices.Client.ListTransactions(ctx, 0, -1)
+	if err != nil {
+		return nil, err
+	}
+
+	cfg := account.RecoveryConfig{
+		Network:       s.server.cfg.Network,
+		AccountTarget: 2,
+		FirstBlock:    100,
+		LastBlock:     500,
+
+		ExpirySpans: []uint32{4320, 8640},
+
+		Transactions: txs,
+
+		Signer: s.lndServices.Signer,
+		Wallet: s.lndServices.WalletKit,
+	}
+
+	recovery, err := account.NewAccuntRecovery(cfg)
+	if err != nil {
+		return nil, err
+	}
+
+	recoveredAccounts, err := recovery.Recover(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return recoveredAccounts, nil
+}
+
+func (s *rpcServer) RecoverAccounts(ctx context.Context,
+	_ *poolrpc.RecoverAccountsRequest) (*poolrpc.RecoverAccountsResponse,
+	error) {
+
+	s.recoveryMutex.Lock()
+	if s.recoveryPending {
+		defer s.recoveryMutex.Unlock()
+		return nil, fmt.Errorf("recovery already in progress")
+	}
+	s.recoveryPending = true
+	s.recoveryMutex.Unlock()
+
+	log.Infof("Attempting to recover accounts...")
+
+	var recoveredAccounts []*account.Account
+	var err error
+	if false {
+		recoveredAccounts, err = s.serverAssistedRecovery(ctx)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		recoveredAccounts, err = s.fullClientRecovery(ctx)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	// Store the recovered accounts now and start watching them. If anything
 	// went wrong during recovery before, no account is stored yet. This is
 	// nice since it allows us to try recovery multiple times until it
 	// actually works.
 	numRecovered := len(recoveredAccounts)
+
 	for _, acct := range recoveredAccounts {
-		err = s.accountManager.RecoverAccount(ctx, acct)
-		if err != nil {
-			// If something goes wrong for one account we still want
-			// to continue with the others.
-			numRecovered--
-			rpcLog.Errorf("error storing recovered account: %v", err)
-		}
+		fmt.Println(hex.EncodeToString(acct.AuctioneerKey.SerializeCompressed()))
+		fmt.Println(acct.Expiry)
+		fmt.Println(acct.Value)
+
+		/*
+			err = s.accountManager.RecoverAccount(ctx, acct)
+			if err != nil {
+				// If something goes wrong for one account we still want
+				// to continue with the others.
+				numRecovered--
+				rpcLog.Errorf("error storing recovered account: %v", err)
+			}*/
 	}
+
+	// 03d2afcac9a5b5284f60839402dcdc990be529200ac1baf30578a8be5658c6f608
 
 	s.recoveryMutex.Lock()
 	s.recoveryPending = false

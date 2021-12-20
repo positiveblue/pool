@@ -1,0 +1,597 @@
+diff --git a/account/manager.go b/account/manager.go
+index 671ccd3..ec5bc7b 100644
+--- a/account/manager.go
++++ b/account/manager.go
+@@ -41,10 +41,10 @@ const (
+ 	// satoshis.
+ 	MinAccountValue btcutil.Amount = 100000
+ 
+-	// minAccountExpiry and maxAccountExpiry represent the thresholds at
++	//MinAccountExpiry and MaxAccountExpiry represent the thresholds at
+ 	// both extremes for valid account expirations.
+-	minAccountExpiry = 144       // One day worth of blocks.
+-	maxAccountExpiry = 144 * 365 // A year worth of blocks.
++	MinAccountExpiry = 144       // One day worth of blocks.
++	MaxAccountExpiry = 144 * 365 // A year worth of blocks.
+ )
+ 
+ var (
+@@ -2010,13 +2010,13 @@ func validateAccountValue(value, maxValue btcutil.Amount) error {
+ // validateAccountExpiry ensures that a trader has provided a sane account expiry
+ // for the creation/modification of an account.
+ func validateAccountExpiry(expiry, bestHeight uint32) error {
+-	if expiry < bestHeight+minAccountExpiry {
++	if expiry < bestHeight+MinAccountExpiry {
+ 		return fmt.Errorf("current minimum account expiry allowed is "+
+-			"height %v", bestHeight+minAccountExpiry)
++			"height %v", bestHeight+MinAccountExpiry)
+ 	}
+-	if expiry > bestHeight+maxAccountExpiry {
++	if expiry > bestHeight+MaxAccountExpiry {
+ 		return fmt.Errorf("current maximum account expiry allowed is "+
+-			"height %v", bestHeight+maxAccountExpiry)
++			"height %v", bestHeight+MaxAccountExpiry)
+ 	}
+ 
+ 	return nil
+diff --git a/account/manager_test.go b/account/manager_test.go
+index 9e92bbe..be03ac1 100644
+--- a/account/manager_test.go
++++ b/account/manager_test.go
+@@ -491,7 +491,7 @@ func TestNewAccountHappyFlow(t *testing.T) {
+ 	defer h.stop()
+ 
+ 	account := h.openAccount(
+-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	expr := defaultFeeExpr
+@@ -505,7 +505,7 @@ func TestResumeAccountAfterRestart(t *testing.T) {
+ 
+ 	const (
+ 		value      = maxAccountValue
+-		expiry     = maxAccountExpiry
++		expiry     = MaxAccountExpiry
+ 		bestHeight = 100
+ 	)
+ 
+@@ -705,7 +705,7 @@ func TestAccountClose(t *testing.T) {
+ 			// We'll start by creating a new account of the minimum
+ 			// value for each test.
+ 			account := h.openAccount(
+-				MinAccountValue, bestHeight+maxAccountExpiry,
++				MinAccountValue, bestHeight+MaxAccountExpiry,
+ 				bestHeight,
+ 			)
+ 
+@@ -785,7 +785,7 @@ func TestAccountExpiration(t *testing.T) {
+ 	defer h.stop()
+ 
+ 	account := h.openAccount(
+-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	h.expireAccount(account)
+@@ -804,7 +804,7 @@ func TestAccountSpendBatchNotFinalized(t *testing.T) {
+ 	defer h.stop()
+ 
+ 	account := h.openAccount(
+-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	// Create an account spend which we'll notify later. This spend should
+@@ -866,7 +866,7 @@ func TestAccountWithdrawal(t *testing.T) {
+ 	const feeRate = chainfee.FeePerKwFloor
+ 
+ 	account := h.openAccount(
+-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	// With our account created, we'll start with an invalid withdrawal to a
+@@ -948,7 +948,7 @@ func TestAccountDeposit(t *testing.T) {
+ 
+ 	const bestHeight = 100
+ 	account := h.openAccount(
+-		initialAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		initialAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	// We'll provide two outputs to the mock wallet that will be consumed by
+@@ -1040,7 +1040,7 @@ func TestAccountConsecutiveBatches(t *testing.T) {
+ 	defer h.stop()
+ 
+ 	account := h.openAccount(
+-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	// Then, we'll simulate the maximum number of unconfirmed batches to
+@@ -1117,7 +1117,7 @@ func TestAccountUpdateSubscriptionOnRestart(t *testing.T) {
+ 	defer h.stop()
+ 
+ 	account := h.openAccount(
+-		maxAccountValue, bestHeight+maxAccountExpiry, bestHeight,
++		maxAccountValue, bestHeight+MaxAccountExpiry, bestHeight,
+ 	)
+ 
+ 	// StateOpen case.
+diff --git a/account/recovery.go b/account/recovery.go
+index 2dcecae..9dc8c71 100644
+--- a/account/recovery.go
++++ b/account/recovery.go
+@@ -14,7 +14,7 @@ var (
+ 	// number of accounts that can ever be restored. But the trader doesn't
+ 	// necessarily make as many requests on recovery, if no accounts are
+ 	// found for a certain number of tries.
+-	DefaultAccountKeyWindow uint32 = 500
++	DefaultAccountKeyWindow uint32 = 20
+ )
+ 
+ // GenerateRecoveryKeys generates a list of key descriptors for all possible
+diff --git a/cmd/pool/recovery.go b/cmd/pool/recovery.go
+new file mode 100644
+index 0000000..e74daad
+--- /dev/null
++++ b/cmd/pool/recovery.go
+@@ -0,0 +1,135 @@
++package main
++
++import (
++	"context"
++	"fmt"
++	"io/ioutil"
++	"os"
++	"sync"
++
++	"github.com/btcsuite/btcd/rpcclient"
++	"github.com/lightninglabs/pool/poolrpc"
++	"github.com/urfave/cli"
++)
++
++func serverRecovery(ctx *cli.Context) error {
++	client, cleanup, err := getClient(ctx)
++	if err != nil {
++		return err
++	}
++	defer cleanup()
++
++	resp, err := client.RecoverAccounts(
++		context.Background(), &poolrpc.RecoverAccountsRequest{},
++	)
++	if err != nil {
++		return err
++	}
++
++	printRespJSON(resp)
++	return nil
++}
++
++// BitcoinConfig defines exported config options for the connection to the
++// btcd/bitcoind backend.
++type BitcoinConfig struct {
++	Host         string `long:"host" description:"bitcoind/btcd instance address"`
++	User         string `long:"user" description:"bitcoind/btcd user name"`
++	Password     string `long:"password" description:"bitcoind/btcd password"`
++	HTTPPostMode bool   `long:"httppostmode" description:"Use HTTP POST mode? bitcoind only supports this mode"`
++	UseTLS       bool   `long:"usetls" description:"Use TLS to connect? bitcoind only supports non-TLS connections"`
++	TLSPath      string `long:"tlspath" description:"Path to btcd's TLS certificate, if TLS is enabled"`
++}
++
++// BitcoinClient is a wrapper around the RPC connection to the chain backend
++// and allows transactions to be queried.
++type BitcoinClient struct {
++	sync.Mutex
++
++	rpcClient *rpcclient.Client
++}
++
++// NewClient opens a new RPC connection to the chain backend.
++func NewClient(cfg *BitcoinConfig) (*BitcoinClient, error) {
++	var err error
++	client := &BitcoinClient{}
++	client.rpcClient, err = getBitcoinConn(cfg)
++	if err != nil {
++		return nil, err
++	}
++	return client, nil
++}
++
++func getBitcoinConn(cfg *BitcoinConfig) (*rpcclient.Client, error) {
++	// In case we use TLS and a certificate argument is provided, we need to
++	// read that file and provide it to the RPC connection as byte slice.
++	var rpcCert []byte
++	if cfg.UseTLS && cfg.TLSPath != "" {
++		certFile, err := os.Open(cfg.TLSPath)
++		if err != nil {
++			return nil, err
++		}
++		rpcCert, err = ioutil.ReadAll(certFile)
++		if err != nil {
++			return nil, err
++		}
++		if err := certFile.Close(); err != nil {
++			return nil, err
++		}
++	}
++
++	// Connect to the backend with the certs we just loaded.
++	connCfg := &rpcclient.ConnConfig{
++		Host:         cfg.Host,
++		User:         cfg.User,
++		Pass:         cfg.Password,
++		HTTPPostMode: cfg.HTTPPostMode,
++		DisableTLS:   !cfg.UseTLS,
++		Certificates: rpcCert,
++	}
++
++	// Notice the notification parameter is nil since notifications are
++	// not supported in HTTP POST mode.
++	return rpcclient.New(connCfg, nil)
++}
++
++func clientRecovery(ctx *cli.Context) error {
++	cfg := &BitcoinConfig{
++		Host:         "localhost:18443",
++		User:         "lightning",
++		Password:     "lightning",
++		HTTPPostMode: true,
++		UseTLS:       false,
++		TLSPath:      "",
++	}
++	client, err := NewClient(cfg)
++	if err != nil {
++		return err
++	}
++
++	c, err := client.rpcClient.GetBlockCount()
++	fmt.Println(err)
++	fmt.Println(c)
++
++	//pkScripts(cltv, yourKey, auctioneerKey, batchCounter)
++
++	for i := int64(100); i < 1000; i++ {
++
++		bHash, err := client.rpcClient.GetBlockHash(i)
++		if err != nil {
++			//fmt.Println(err)
++			continue
++		}
++		block, err := client.rpcClient.GetBlock(bHash)
++		if err != nil {
++			fmt.Println(err)
++			continue
++		}
++
++		for _, tx := range block.Transactions {
++			fmt.Printf("TxIn: %v \n", tx.TxIn)
++			fmt.Printf("TxOut: %v \n", tx.TxOut)
++		}
++	}
++	return nil
++}
+diff --git a/rpcserver.go b/rpcserver.go
+index 887f236..6738a23 100644
+--- a/rpcserver.go
++++ b/rpcserver.go
+@@ -6,12 +6,15 @@ import (
+ 	"encoding/hex"
+ 	"errors"
+ 	"fmt"
++	"io/ioutil"
++	"os"
+ 	"sync"
+ 	"sync/atomic"
+ 	"time"
+ 
+ 	"github.com/btcsuite/btcd/btcec"
+ 	"github.com/btcsuite/btcd/chaincfg/chainhash"
++	"github.com/btcsuite/btcd/rpcclient"
+ 	"github.com/btcsuite/btcd/txscript"
+ 	"github.com/btcsuite/btcd/wire"
+ 	"github.com/btcsuite/btcutil"
+@@ -32,6 +35,7 @@ import (
+ 	"github.com/lightningnetwork/lnd/chanbackup"
+ 	lndFunding "github.com/lightningnetwork/lnd/funding"
+ 	"github.com/lightningnetwork/lnd/input"
++	"github.com/lightningnetwork/lnd/keychain"
+ 	"github.com/lightningnetwork/lnd/lnrpc"
+ 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
+ 	"github.com/lightningnetwork/lnd/lnwire"
+@@ -1035,11 +1039,8 @@ func (s *rpcServer) parseRPCOutputs(outputs []*poolrpc.Output) ([]*wire.TxOut,
+ 	return res, nil
+ }
+ 
+-func (s *rpcServer) RecoverAccounts(ctx context.Context,
+-	_ *poolrpc.RecoverAccountsRequest) (*poolrpc.RecoverAccountsResponse,
+-	error) {
+-
+-	log.Infof("Attempting to recover accounts...")
++func (s *rpcServer) serverAssistedRecovery(ctx context.Context,
++	acctKeys []*keychain.KeyDescriptor) ([]*account.Account, error) {
+ 
+ 	// The account recovery process uses a bi-directional streaming RPC on
+ 	// the server side. Unfortunately, because of the way streaming RPCs
+@@ -1052,6 +1053,236 @@ func (s *rpcServer) RecoverAccounts(ctx context.Context,
+ 	// the white list first to kick off LSAT creation.
+ 	_, _ = s.auctioneer.OrderState(ctx, order.Nonce{})
+ 
++	// The auctioneer client will try to recover accounts for these keys as
++	// long as the auctioneer is able to find them in its database. If a
++	// certain number of keys result in an "account not found" error, the
++	// client will stop trying.
++	recoveredAccounts, err := s.auctioneer.RecoverAccounts(ctx, acctKeys)
++	if err != nil {
++		return nil, fmt.Errorf("error performing recovery: %v", err)
++	}
++
++	return recoveredAccounts, nil
++}
++
++// BitcoinConfig defines exported config options for the connection to the
++// btcd/bitcoind backend.
++type BitcoinConfig struct {
++	Host         string `long:"host" description:"bitcoind/btcd instance address"`
++	User         string `long:"user" description:"bitcoind/btcd user name"`
++	Password     string `long:"password" description:"bitcoind/btcd password"`
++	HTTPPostMode bool   `long:"httppostmode" description:"Use HTTP POST mode? bitcoind only supports this mode"`
++	UseTLS       bool   `long:"usetls" description:"Use TLS to connect? bitcoind only supports non-TLS connections"`
++	TLSPath      string `long:"tlspath" description:"Path to btcd's TLS certificate, if TLS is enabled"`
++}
++
++// BitcoinClient is a wrapper around the RPC connection to the chain backend
++// and allows transactions to be queried.
++type BitcoinClient struct {
++	sync.Mutex
++
++	rpcClient *rpcclient.Client
++}
++
++// NewClient opens a new RPC connection to the chain backend.
++func NewClient(cfg *BitcoinConfig) (*BitcoinClient, error) {
++	var err error
++	client := &BitcoinClient{}
++	client.rpcClient, err = getBitcoinConn(cfg)
++	if err != nil {
++		return nil, err
++	}
++	return client, nil
++}
++
++func getBitcoinConn(cfg *BitcoinConfig) (*rpcclient.Client, error) {
++	// In case we use TLS and a certificate argument is provided, we need to
++	// read that file and provide it to the RPC connection as byte slice.
++	var rpcCert []byte
++	if cfg.UseTLS && cfg.TLSPath != "" {
++		certFile, err := os.Open(cfg.TLSPath)
++		if err != nil {
++			return nil, err
++		}
++		rpcCert, err = ioutil.ReadAll(certFile)
++		if err != nil {
++			return nil, err
++		}
++		if err := certFile.Close(); err != nil {
++			return nil, err
++		}
++	}
++
++	// Connect to the backend with the certs we just loaded.
++	connCfg := &rpcclient.ConnConfig{
++		Host:         cfg.Host,
++		User:         cfg.User,
++		Pass:         cfg.Password,
++		HTTPPostMode: cfg.HTTPPostMode,
++		DisableTLS:   !cfg.UseTLS,
++		Certificates: rpcCert,
++	}
++
++	// Notice the notification parameter is nil since notifications are
++	// not supported in HTTP POST mode.
++	return rpcclient.New(connCfg, nil)
++}
++
++func getAuctioneerDescriptor() (*keychain.KeyDescriptor, error) {
++	ak, err := hex.DecodeString("038216248742f8143b947649f51d3a4804acdb49d74bddc30fc59e5b758ed5749f")
++	if err != nil {
++		return nil, err
++	}
++
++	auctioneerKey, err := btcec.ParsePubKey(ak, btcec.S256())
++	if err != nil {
++		return nil, err
++	}
++
++	return &keychain.KeyDescriptor{
++		KeyLocator: keychain.KeyLocator{
++			Family: 221,
++		},
++		PubKey: auctioneerKey,
++	}, nil
++}
++
++func getInitialBatchKey() (*btcec.PublicKey, error) {
++	bk, err := hex.DecodeString("02824d0cbac65e01712124c50ff2cc74ce22851d7b444c1bf2ae66afefb8eaf27f")
++	if err != nil {
++		return nil, err
++	}
++
++	return btcec.ParsePubKey(bk, btcec.S256())
++}
++
++func (s *rpcServer) fullClientRecovery(ctx context.Context,
++	acctKeys []*keychain.KeyDescriptor) ([]*account.Account, error) {
++
++	cfg := &BitcoinConfig{
++		Host:         "localhost:18443",
++		User:         "lightning",
++		Password:     "lightning",
++		HTTPPostMode: true,
++		UseTLS:       false,
++		TLSPath:      "",
++	}
++	client, err := NewClient(cfg)
++	if err != nil {
++		return nil, err
++	}
++
++	auctioneerDescriptor, err := getAuctioneerDescriptor()
++	if err != nil {
++		return nil, err
++	}
++
++	firstBlock := int64(100)
++	lastBlcok, err := client.rpcClient.GetBlockCount()
++	if err != nil {
++		return nil, err
++	}
++
++	secrets := make(map[int][32]byte, len(acctKeys))
++
++	for idx, accKey := range acctKeys {
++		// The full trader key descriptor was restored previously and we can now
++		// derive the shared secret.
++		secret, err := s.lndServices.Signer.DeriveSharedKey(
++			ctx, auctioneerDescriptor.PubKey, &accKey.KeyLocator,
++		)
++		if err != nil {
++			return nil, err
++		}
++		secrets[idx] = secret
++	}
++
++	txs, err := s.lndServices.Client.ListTransactions(ctx, 0, -1)
++	if err != nil {
++		return nil, err
++	}
++
++	fmt.Printf("number of txs: %v\n", len(txs))
++	/*
++		nextBatchKey := poolscript.IncrementKey(a.BatchKey)
++		return poolscript.AccountScript(
++			a.Expiry, traderKey, a.AuctioneerKey.PubKey, nextBatchKey,
++			a.Secret,
++		)
++	*/
++
++	//pkScripts(52000, 50, 1, 52704)
++	//pkScripts(cltv, yourKey, auctioneerKey, batchCounter)
++
++	//for i := firstBlock; i < lstBlock; i++ {
++	//	bHash, err := client.rpcClient.GetBlockHash(i)
++	//	if err != nil {
++	//		fmt.Println(err)
++	//		continue
++	//	}
++	//	block, err := client.rpcClient.GetBlock(bHash)
++	//	if err != nil {
++	//		fmt.Println(err)
++	//		continue
++	//		}
++
++	for _, tx := range txs {
++		expiryValues := []uint32{2016, 4320, 5000}
++
++		for accIdx, accKey := range acctKeys {
++			for blockCtr := firstBlock; blockCtr < lastBlcok; blockCtr++ {
++				for _, expiry := range expiryValues {
++					batchKey, _ := getInitialBatchKey()
++					maxBatchCounter := 100
++					iter := int64(100)
++					times := make([]time.Duration, iter)
++					ctr := 0
++					for batchcounter := 0; batchcounter < maxBatchCounter; batchcounter++ {
++						start := time.Now()
++
++						if ctr == int(iter) {
++							var tt time.Duration
++							for _, t := range times {
++								tt += t
++							}
++							fmt.Printf("%v time \n", tt)
++							ctr = 0
++						}
++
++						if batchcounter > 0 {
++							batchKey = poolscript.IncrementKey(batchKey)
++						}
++
++						expiration := uint32(blockCtr) + expiry
++						script, err := poolscript.AccountScript(
++							expiration, accKey.PubKey, auctioneerDescriptor.PubKey,
++							batchKey, secrets[accIdx])
++
++						if err != nil {
++							fmt.Println(err)
++							continue
++						}
++
++						idx, ok := poolscript.LocateOutputScript(tx.Tx, script)
++						if ok {
++							fmt.Printf("match: %v", tx.Tx.TxOut[idx].Value)
++						}
++
++						times[ctr] = time.Since(start)
++						ctr++
++					}
++				}
++			}
++		}
++
++	}
++	return nil, nil
++}
++
++func (s *rpcServer) RecoverAccounts(ctx context.Context,
++	_ *poolrpc.RecoverAccountsRequest) (*poolrpc.RecoverAccountsResponse,
++	error) {
++
+ 	s.recoveryMutex.Lock()
+ 	if s.recoveryPending {
+ 		defer s.recoveryMutex.Unlock()
+@@ -1060,6 +1291,8 @@ func (s *rpcServer) RecoverAccounts(ctx context.Context,
+ 	s.recoveryPending = true
+ 	s.recoveryMutex.Unlock()
+ 
++	log.Infof("Attempting to recover accounts...")
++
+ 	// Prepare the keys we are going to try. Possibly not all of them will
+ 	// be used.
+ 	acctKeys, err := account.GenerateRecoveryKeys(
+@@ -1069,13 +1302,17 @@ func (s *rpcServer) RecoverAccounts(ctx context.Context,
+ 		return nil, fmt.Errorf("error generating keys: %v", err)
+ 	}
+ 
+-	// The auctioneer client will try to recover accounts for these keys as
+-	// long as the auctioneer is able to find them in its database. If a
+-	// certain number of keys result in an "account not found" error, the
+-	// client will stop trying.
+-	recoveredAccounts, err := s.auctioneer.RecoverAccounts(ctx, acctKeys)
+-	if err != nil {
+-		return nil, fmt.Errorf("error performing recovery: %v", err)
++	var recoveredAccounts []*account.Account
++	if false {
++		recoveredAccounts, err = s.serverAssistedRecovery(ctx, acctKeys)
++		if err != nil {
++			return nil, err
++		}
++	} else {
++		recoveredAccounts, err = s.fullClientRecovery(ctx, acctKeys)
++		if err != nil {
++			return nil, err
++		}
+ 	}
+ 
+ 	// Store the recovered accounts now and start watching them. If anything
+@@ -1093,6 +1330,8 @@ func (s *rpcServer) RecoverAccounts(ctx context.Context,
+ 		}
+ 	}
+ 
++	// 03d2afcac9a5b5284f60839402dcdc990be529200ac1baf30578a8be5658c6f608
++
+ 	s.recoveryMutex.Lock()
+ 	s.recoveryPending = false
+ 	s.recoveryMutex.Unlock()

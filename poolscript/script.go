@@ -211,3 +211,15 @@ func LocateOutputScript(tx *wire.MsgTx, script []byte) (uint32, bool) {
 	}
 	return 0, false
 }
+
+// LocateOutputScript determines whether a transaction includes an output with a
+// specific script. If it does, the output index is returned.
+func LocateInputScript(tx *wire.MsgTx, output wire.OutPoint) bool {
+	for _, txIn := range tx.TxIn {
+		if !bytes.Equal(txIn.PreviousOutPoint.Hash[:], output.Hash[:]) {
+			continue
+		}
+		return true
+	}
+	return false
+}
