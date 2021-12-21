@@ -73,6 +73,10 @@ type ManagerConfig struct {
 
 	// Signer is used to sign orders before submitting them to the server.
 	Signer lndclient.SignerClient
+
+	// BatchVersion is the batch version that we should use to verify new
+	// batches against.
+	BatchVersion BatchVersion
 }
 
 // manager is responsible for the management of orders.
@@ -132,7 +136,7 @@ func (m *manager) Start() error {
 			getAccount:    m.cfg.AcctStore.Account,
 			wallet:        m.cfg.Wallet,
 			ourNodePubkey: m.ourNodeInfo.IdentityPubkey,
-			version:       CurrentBatchVersion,
+			version:       m.cfg.BatchVersion,
 		}
 		m.batchSigner = &batchSigner{
 			getAccount: m.cfg.AcctStore.Account,
