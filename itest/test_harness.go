@@ -71,6 +71,10 @@ const (
 	// easy to identify such channels so we don't open multiple channels if
 	// the same code is called more than once.
 	defaultLsatChannelSize btcutil.Amount = 54321
+
+	// defaultChannelType is the default type of channel that we want to
+	// open during the integration tests.
+	defaultChannelType = auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_PEER_DEPENDENT
 )
 
 // testCase is a struct that holds a single test case.
@@ -1226,6 +1230,7 @@ func submitBidOrder(trader *traderHarness, subKey []byte,
 				Amt:                     uint64(amt),
 				MinUnitsMatch:           1,
 				MaxBatchFeeRateSatPerKw: uint64(12500),
+				ChannelType:             defaultChannelType,
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
 			Version:             uint32(orderT.VersionChannelType),
@@ -1270,6 +1275,7 @@ func submitAskOrder(trader *traderHarness, subKey []byte,
 				Amt:                     uint64(amt),
 				MinUnitsMatch:           1,
 				MaxBatchFeeRateSatPerKw: uint64(12500),
+				ChannelType:             defaultChannelType,
 			},
 			LeaseDurationBlocks: defaultOrderDuration,
 			Version:             uint32(orderT.VersionChannelType),

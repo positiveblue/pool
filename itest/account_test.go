@@ -535,7 +535,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 				},
 				LeaseDurationBlocks: 2016,
 				Version: uint32(
-					order.VersionDefault,
+					order.VersionChannelType,
 				),
 			},
 		},

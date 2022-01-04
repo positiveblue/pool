@@ -34,9 +34,10 @@ func testOrderSubmission(t *harnessTest) {
 			Amt:                     1500000,
 			MinUnitsMatch:           1,
 			MaxBatchFeeRateSatPerKw: uint64(12500),
+			ChannelType:             defaultChannelType,
 		},
 		LeaseDurationBlocks: 365*144 + 1,
-		Version:             uint32(order.VersionDefault),
+		Version:             uint32(order.VersionChannelType),
 	}
 	_, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
@@ -76,9 +77,10 @@ func testOrderSubmission(t *harnessTest) {
 			Amt:                     1500000,
 			MinUnitsMatch:           1,
 			MaxBatchFeeRateSatPerKw: uint64(12500),
+			ChannelType:             defaultChannelType,
 		},
 		LeaseDurationBlocks: 2016,
-		Version:             uint32(order.VersionDefault),
+		Version:             uint32(order.VersionChannelType),
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Bid{
@@ -122,7 +124,7 @@ func testOrderSubmission(t *harnessTest) {
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
 		LeaseDurationBlocks: 2016,
-		Version:             uint32(order.VersionDefault),
+		Version:             uint32(order.VersionChannelType),
 		MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
