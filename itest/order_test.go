@@ -36,7 +36,7 @@ func testOrderSubmission(t *harnessTest) {
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
 		LeaseDurationBlocks: 365*144 + 1,
-		Version:             uint32(order.CurrentBatchVersion),
+		Version:             uint32(order.VersionDefault),
 	}
 	_, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
@@ -78,7 +78,7 @@ func testOrderSubmission(t *harnessTest) {
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
 		LeaseDurationBlocks: 2016,
-		Version:             uint32(order.CurrentBatchVersion),
+		Version:             uint32(order.VersionDefault),
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Bid{
@@ -122,7 +122,7 @@ func testOrderSubmission(t *harnessTest) {
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
 		LeaseDurationBlocks: 2016,
-		Version:             uint32(order.CurrentBatchVersion),
+		Version:             uint32(order.VersionDefault),
 		MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
