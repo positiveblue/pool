@@ -732,8 +732,9 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 
 		// New incoming subscription.
 		case newSub := <-trader.comms.newSub:
-			rpcLog.Debugf("New subscription, client_id=%x, acct=%x",
-				traderID, newSub.AccountKey)
+			rpcLog.Debugf("New subscription, client_id=%x, "+
+				"acct=%x, batch_version=%d", traderID,
+				newSub.AccountKey, newSub.BatchVersion)
 			err := s.addStreamSubscription(traderID, newSub)
 			if err != nil {
 				return fmt.Errorf("unable to register "+
