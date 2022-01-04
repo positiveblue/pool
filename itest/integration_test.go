@@ -137,9 +137,9 @@ func TestAuctioneerServer(t *testing.T) {
 	}
 
 	// With the btcd harness created, we can now complete the
-	// initialization of the network. args - list of lnd arguments,
-	// example: "--debuglevel=debug"
-	if err = lndHarness.SetUp(ht.t, "subasta-itest", nil); err != nil {
+	// initialization of the network.
+	err = lndHarness.SetUp(ht.t, "subasta-itest", lndDefaultArgs)
+	if err != nil {
 		ht.Fatalf("unable to set up test lightning network: %v", err)
 	}
 

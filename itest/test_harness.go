@@ -46,6 +46,13 @@ var (
 	// lastPort is the last port determined to be free for use by a new
 	// node. It should be used atomically.
 	lastPort uint32 = defaultNodePort
+
+	// lndDefaultArgs is the list of default arguments that we pass into the
+	// lnd harness when creating a new node. Currently, this just enables
+	// anchors as they are on by default in 0.14.1.
+	lndDefaultArgs = []string{
+		"--protocol.anchors",
+	}
 )
 
 const (
@@ -1452,10 +1459,17 @@ func assertChannelClosed(ctx context.Context, t *harnessTest,
 		t.Fatalf("channel not marked as waiting close: %v", err)
 	}
 
+	// In case of a force-close, we expect two transactions to be in the
+	// mempool, one with the commitment TX, one with the anchor.
+	numExpectedTX := 1
+	if force {
+		numExpectedTX = 2
+	}
+
 	// We'll now, generate a single block, wait for the final close status
 	// update, then ensure that the closing transaction was included in the
 	// block.
-	block := mineBlocks(t, net, 1, 1)[0]
+	block := mineBlocks(t, net, 1, numExpectedTX)[0]
 
 	closingTxid, err := net.WaitForChannelClose(closeUpdates)
 	if err != nil {

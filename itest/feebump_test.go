@@ -20,7 +20,7 @@ func testManualFeeBump(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)

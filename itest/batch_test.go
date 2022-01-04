@@ -37,7 +37,7 @@ func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -74,7 +74,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// We'll add a third trader that we will shut down after placing an
 	// order, to ensure batch execution still can proceed.
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -423,7 +423,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 	// We need a third lnd node, Charlie that is used for the second
 	// trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -674,7 +674,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -799,10 +799,9 @@ func testServiceLevelEnforcement(t *harnessTest) {
 func testScriptLevelEnforcement(t *harnessTest) {
 	ctx := context.Background()
 
-	extraArgs := []string{
-		"--protocol.anchors",
-		"--protocol.script-enforced-lease",
-	}
+	extraArgs := append(
+		[]string{"--protocol.script-enforced-lease"}, lndDefaultArgs...,
+	)
 
 	charlie := t.lndHarness.NewNode(t.t, "charlie", extraArgs)
 	charlieTrader := setupTraderHarness(
@@ -839,12 +838,12 @@ func testScriptLevelEnforcement(t *harnessTest) {
 
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
+	const scriptEnforcedChannelType = auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
 	askAmt := btcutil.Amount(1_500_000)
 	_, err := submitAskOrder(
 		charlieTrader, charlieAccount.TraderKey, 100, askAmt,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
-			ask.Ask.Details.ChannelType =
-				auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+			ask.Ask.Details.ChannelType = scriptEnforcedChannelType
 		},
 	)
 	require.NoError(t.t, err)
@@ -855,8 +854,7 @@ func testScriptLevelEnforcement(t *harnessTest) {
 	_, err = submitBidOrder(
 		daveTrader, daveAccount.TraderKey, 100, bidAmt,
 		func(bid *poolrpc.SubmitOrderRequest_Bid) {
-			bid.Bid.Details.ChannelType =
-				auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+			bid.Bid.Details.ChannelType = scriptEnforcedChannelType
 		},
 	)
 	require.NoError(t.t, err)
@@ -960,7 +958,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1076,7 +1074,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 // withdrawal or deposit.
 func testConsecutiveBatches(t *harnessTest) {
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1203,7 +1201,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// We need a third and fourth lnd node, Charlie and Dave that are used
 	// for the second and third trader. Charlie is very picky and only wants
 	// channels from new nodes.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 		newNodesOnlyOpt(),
@@ -1211,7 +1209,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	defer shutdownAndAssert(t, charlie, secondTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -1328,7 +1326,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// We need a third lnd node, Charlie, that is used for the second
 	// trader. Charlie can only have one pending incoming channel (default
 	// setting of lnd).
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1339,7 +1337,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// channel during the second round so we can make sure being matched
 	// multiple times in the same batch (because another node rejected and
 	// the matchmaking had to be restarted) can still succeed.
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -1511,7 +1509,7 @@ func testBatchMatchingConditions(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1648,7 +1646,7 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1963,7 +1961,7 @@ func testCustomExecutionFee(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,

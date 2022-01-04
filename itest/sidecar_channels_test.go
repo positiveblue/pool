@@ -26,14 +26,14 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 	// Charlie is the sidecar channel provider (has an account, submits the
 	// bid order) and Dave is the sidecar channel recipient (has no account
 	// and only receives the channel).
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	providerTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, providerTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	recipientTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -246,7 +246,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 	// Charlie is the sidecar channel provider (has an account, submits the
 	// bid order) and Dave is the sidecar channel recipient (has no account
 	// and only receives the channel).
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	providerTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -256,7 +256,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 	// Dave only wants channels from new nodes. We use this to make sure
 	// they reject the sidecar channel if they already have a channel from
 	// the maker.
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	recipientTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 		newNodesOnlyOpt(),
@@ -349,7 +349,7 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 	// Charlie is the sidecar channel provider (has an account, submits the
 	// bid order) and Dave is the sidecar channel recipient (has no account
 	// and only receives the channel).
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	providerTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -359,7 +359,9 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 	// Dave only wants big channels. We use this to provoke a failure during
 	// the signing phase instead of the preparation phase.
 	dave := t.lndHarness.NewNode(
-		t.t, "dave", []string{"--minchansize=300000"},
+		t.t, "dave", append(
+			[]string{"--minchansize=300000"}, lndDefaultArgs...,
+		),
 	)
 	recipientTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
@@ -431,14 +433,14 @@ func testSidecarTicketCancellation(t *harnessTest) {
 	// Charlie is the sidecar channel provider (has an account, submits the
 	// bid order) and Dave is the sidecar channel recipient (has no account
 	// and only receives the channel).
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	providerTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 	defer shutdownAndAssert(t, charlie, providerTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	recipientTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
