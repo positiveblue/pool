@@ -90,7 +90,7 @@ type Manager struct {
 
 	// watcher is responsible for watching accounts on-chain for their
 	// confirmation, spends, and expiration.
-	watcher *watcher.Watcher
+	watcher watcher.Controller
 
 	// auctioneerKey is the base auctioneer key of new accounts in its
 	// 2-of-2 multi-sig construction. Note the that actual auctioneer key
@@ -124,11 +124,9 @@ func NewManager(cfg *ManagerConfig) (*Manager, error) {
 		quit:        make(chan struct{}),
 	}
 
-	m.watcher = watcher.New(&watcher.Config{
-		ChainNotifier:       cfg.ChainNotifier,
-		HandleAccountConf:   m.handleAccountConf,
-		HandleAccountSpend:  m.handleAccountSpend,
-		HandleAccountExpiry: m.handleAccountExpiry,
+	m.watcher = watcher.NewController(&watcher.CtrlConfig{
+		ChainNotifier: cfg.ChainNotifier,
+		Handlers:      m,
 	})
 
 	return m, nil
@@ -431,12 +429,7 @@ func (m *Manager) resumeAccount(account *Account) error {
 		if err != nil {
 			return fmt.Errorf("unable to watch for spend: %v", err)
 		}
-		err = m.watcher.WatchAccountExpiration(
-			traderKey, account.Expiry,
-		)
-		if err != nil {
-			return fmt.Errorf("unable to watch for expiration: %v", err)
-		}
+		m.watcher.WatchAccountExpiration(traderKey, account.Expiry)
 
 	// In StateExpiredPendingUpdate, the account expired while having a
 	// pending update. To make sure the account can be renewed, we'll wait
@@ -481,10 +474,10 @@ func (m *Manager) resumeAccount(account *Account) error {
 	return nil
 }
 
-// handleAccountConf takes the necessary steps after detecting the confirmation
+// HandleAccountConf takes the necessary steps after detecting the confirmation
 // of an account on-chain. This involves validation, updating disk state, among
 // other things.
-func (m *Manager) handleAccountConf(traderKey *btcec.PublicKey,
+func (m *Manager) HandleAccountConf(traderKey *btcec.PublicKey,
 	confDetails *chainntnfs.TxConfirmation) error {
 
 	// Since we support account renewals for accounts in StatePendingBatch,
@@ -581,8 +574,8 @@ func validateAccountOutput(account *Account, chainTx *wire.MsgTx) error {
 	return nil
 }
 
-// handleAccountSpend handles the different spend paths of an account.
-func (m *Manager) handleAccountSpend(traderKey *btcec.PublicKey,
+// HandleAccountSpend handles the different spend paths of an account.
+func (m *Manager) HandleAccountSpend(traderKey *btcec.PublicKey,
 	spendDetails *chainntnfs.SpendDetail) error {
 
 	// Request a version of the account that includes its pending diff, if
@@ -699,8 +692,8 @@ func (m *Manager) WatchMatchedAccounts(ctx context.Context,
 	return nil
 }
 
-// handleAccountExpiry handles the expiration of an account.
-func (m *Manager) handleAccountExpiry(traderKey *btcec.PublicKey,
+// HandleAccountExpiry handles the expiration of an account.
+func (m *Manager) HandleAccountExpiry(traderKey *btcec.PublicKey,
 	height uint32) error {
 
 	// Mark the account as expired.

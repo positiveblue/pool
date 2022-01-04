@@ -953,7 +953,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// and then everybody bailing out because of a version mismatch.
 		batchVersion := orderT.BatchVersion(commit.BatchVersion)
 		if !venue.SupportedBatchVersion(batchVersion) {
-			comms.err <- orderT.ErrUnsupportedVersion
+			comms.err <- fmt.Errorf("version %d is not supported "+
+				"by the server", batchVersion)
 			return
 		}
 
