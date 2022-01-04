@@ -513,52 +513,38 @@ func mineBlocks(t *harnessTest, net *lntest.NetworkHarness,
 	return blocks
 }
 
+type traderAccountCheck func(acct *poolrpc.Account) error
+
 // assertTraderAccount asserts that the account with the corresponding trader
 // key is found in the given state.
 func assertTraderAccount(t *harnessTest, trader *traderHarness,
 	traderKey []byte, value btcutil.Amount, expiry uint32,
 	state poolrpc.AccountState) {
 
-	ctx := context.Background()
-	err := wait.NoError(func() error {
-		list, err := trader.ListAccounts(
-			ctx, &poolrpc.ListAccountsRequest{},
-		)
-		if err != nil {
-			return fmt.Errorf("unable to retrieve accounts: %v", err)
-		}
-
-		for _, a := range list.Accounts {
-			if !bytes.Equal(a.TraderKey, traderKey) {
-				continue
-			}
+	assertTraderAccountState(
+		t.t, trader, traderKey, state,
+		func(a *poolrpc.Account) error {
 			if btcutil.Amount(a.Value) != value {
-				return fmt.Errorf("expected account value %v, "+
-					"got %v", value, btcutil.Amount(a.Value))
+				return fmt.Errorf("expected account value "+
+					"%v, got %v", value,
+					btcutil.Amount(a.Value))
 			}
 			if a.ExpirationHeight != expiry {
-				return fmt.Errorf("expected account expiry %v, "+
-					"got %v", expiry, a.ExpirationHeight)
-			}
-			if a.State != state {
-				return fmt.Errorf("expected account state %v, "+
-					"got %v", state, a.State)
+				return fmt.Errorf("expected account expiry "+
+					"%v, got %v", expiry,
+					a.ExpirationHeight)
 			}
 
 			return nil
-		}
-
-		return errors.New("account not found")
-	}, defaultWaitTimeout)
-	if err != nil {
-		t.Fatalf(err.Error())
-	}
+		},
+	)
 }
 
 // assertTraderAccountState asserts that the account with the corresponding
 // trader key is found in the given state from the PoV of the trader.
 func assertTraderAccountState(t *testing.T, trader *traderHarness,
-	traderKey []byte, state poolrpc.AccountState) {
+	traderKey []byte, state poolrpc.AccountState,
+	additionalChecks ...traderAccountCheck) {
 
 	t.Helper()
 
@@ -578,6 +564,12 @@ func assertTraderAccountState(t *testing.T, trader *traderHarness,
 			if a.State != state {
 				return fmt.Errorf("expected account state %v, "+
 					"got %v", state, a.State)
+			}
+
+			for _, check := range additionalChecks {
+				if err := check(a); err != nil {
+					return err
+				}
 			}
 
 			return nil
