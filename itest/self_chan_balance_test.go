@@ -28,7 +28,7 @@ func testSelfChanBalance(t *harnessTest) {
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -36,7 +36,7 @@ func testSelfChanBalance(t *harnessTest) {
 		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)

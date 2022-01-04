@@ -45,7 +45,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -53,7 +53,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 		t, providerTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -163,7 +163,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 		t, recipientTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -269,7 +269,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -277,7 +277,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 		t, providerTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -380,7 +380,7 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 		t, providerTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -450,7 +450,7 @@ func testSidecarTicketCancellation(t *harnessTest) {
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -458,7 +458,7 @@ func testSidecarTicketCancellation(t *harnessTest) {
 		t, providerTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
