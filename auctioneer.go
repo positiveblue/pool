@@ -1728,7 +1728,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// the effective fee rate meets our target.
 		pendingBatches = append(pendingBatches, exeCtx.FeeInfoEstimate)
 
-		// We'll move the the fee check state to ensure the final
+		// We'll move the fee check state to ensure the final
 		// effective fee rate of the batch transaction is sufficient.
 		return FeeCheckState{
 			exeCtx:         exeCtx,

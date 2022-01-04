@@ -511,6 +511,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			// balance value intact, as that is used to check the
 			// calculation by the traders.
 			totalTraderFees += trader.EndingBalance
+
+			// Don't auto-renew accounts that are fully spent.
+			// Otherwise, the client is going to calculate the wrong
+			// pk script when looking for the spend on chain.
+			trader.NewExpiry = 0
 		}
 
 		orderBatch.FeeReport.AccountDiffs[acctID] = trader
