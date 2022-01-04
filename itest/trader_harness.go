@@ -45,6 +45,12 @@ func newNodesOnlyOpt() traderCfgOpt {
 	}
 }
 
+func batchVersionOpt(version order.BatchVersion) traderCfgOpt {
+	return func(cfg *pool.Config) {
+		cfg.DebugConfig.BatchVersion = uint32(version)
+	}
+}
+
 // newTraderHarness creates a new trader server harness with the given
 // configuration.
 func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
