@@ -19,7 +19,7 @@ import (
 
 const (
 	// dbTimeout is the default database timeout.
-	dbTimeout = 10 * time.Second
+	dbTimeout = 20 * time.Second
 )
 
 // MetricGroupCreator is a factory method that given the primary prometheus

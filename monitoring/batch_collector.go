@@ -325,6 +325,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 		if err != nil {
 			log.Errorf("could not query batch snapshot with ID "+
 				"%x: %v", batchID[:], err)
+			return
 		}
 
 		// Tally up the total volume in the batch as well as the amount
