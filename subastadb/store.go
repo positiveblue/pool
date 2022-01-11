@@ -36,6 +36,10 @@ var (
 
 	etcdTimeout = 10 * time.Second
 
+	// etcdPageLimit is the limit of the items returned when executing a
+	// paginated range query.
+	etcdPageLimit = int64(1000)
+
 	// stmDefaultIsolation is the default isolation level we use for STM
 	// transactions that manipulate accounts and orders. This is also the
 	// default as declared in the concurrency package and offers the most
@@ -437,14 +441,33 @@ func (s *EtcdStore) getAllValuesByPrefix(mainCtx context.Context,
 	ctx, cancel := context.WithTimeout(mainCtx, etcdTimeout)
 	defer cancel()
 
-	resp, err := s.client.Get(ctx, prefix, clientv3.WithPrefix())
-	s.requestShutdownOnCriticalErr(err)
-	if err != nil {
-		return nil, err
+	// Paginate over the range to avoid timeouts..
+	opts := []clientv3.OpOption{
+		clientv3.WithSort(clientv3.SortByKey, clientv3.SortAscend),
+		clientv3.WithRange(clientv3.GetPrefixRangeEnd(prefix)),
+		clientv3.WithLimit(etcdPageLimit),
 	}
-	result := make(map[string][]byte, len(resp.Kvs))
-	for _, kv := range resp.Kvs {
-		result[string(kv.Key)] = kv.Value
+
+	key := prefix
+	result := make(map[string][]byte)
+	for {
+		resp, err := s.client.Get(ctx, key, opts...)
+		s.requestShutdownOnCriticalErr(err)
+		if err != nil {
+			return nil, err
+		}
+
+		for _, kv := range resp.Kvs {
+			result[string(kv.Key)] = kv.Value
+		}
+
+		// We've reached the range end.
+		if !resp.More {
+			break
+		}
+
+		// Continue from the page end + "\x00".
+		key = string(resp.Kvs[len(resp.Kvs)-1].Key) + "\x00"
 	}
 	return result, nil
 }
