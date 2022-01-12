@@ -732,8 +732,9 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 
 		// New incoming subscription.
 		case newSub := <-trader.comms.newSub:
-			rpcLog.Debugf("New subscription, client_id=%x, acct=%x",
-				traderID, newSub.AccountKey)
+			rpcLog.Debugf("New subscription, client_id=%x, "+
+				"acct=%x, batch_version=%d", traderID,
+				newSub.AccountKey, newSub.BatchVersion)
 			err := s.addStreamSubscription(traderID, newSub)
 			if err != nil {
 				return fmt.Errorf("unable to register "+
@@ -953,7 +954,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// and then everybody bailing out because of a version mismatch.
 		batchVersion := orderT.BatchVersion(commit.BatchVersion)
 		if !venue.SupportedBatchVersion(batchVersion) {
-			comms.err <- orderT.ErrUnsupportedVersion
+			comms.err <- fmt.Errorf("version %d is not supported "+
+				"by the server", batchVersion)
 			return
 		}
 

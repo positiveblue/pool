@@ -18,7 +18,7 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	lndArgs := []string{"--maxpendingchannels=2"}
+	lndArgs := append([]string{"--maxpendingchannels=2"}, lndDefaultArgs...)
 	charlie := t.lndHarness.NewNode(t.t, "charlie", lndArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,

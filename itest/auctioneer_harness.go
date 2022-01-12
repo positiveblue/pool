@@ -119,6 +119,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			RPCListen:      subastaListenAddr,
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
 				nextAvailablePort()),
+			AccountExpiryExtension: 3024,
 		},
 		apertureCfg: &aperture.Config{
 			ListenAddr: fmt.Sprintf("127.0.0.1:%d",

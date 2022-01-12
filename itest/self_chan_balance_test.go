@@ -15,7 +15,7 @@ import (
 // through a bid order is possible.
 func testSelfChanBalance(t *harnessTest) {
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -28,7 +28,7 @@ func testSelfChanBalance(t *harnessTest) {
 		t, t.trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)
@@ -36,7 +36,7 @@ func testSelfChanBalance(t *harnessTest) {
 		t, secondTrader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
-				RelativeHeight: 1_000,
+				RelativeHeight: 5_000,
 			},
 		},
 	)

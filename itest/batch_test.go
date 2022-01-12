@@ -37,7 +37,7 @@ func testBatchExecution(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -74,7 +74,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// We'll add a third trader that we will shut down after placing an
 	// order, to ensure batch execution still can proceed.
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -423,7 +423,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 
 	// We need a third lnd node, Charlie that is used for the second
 	// trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -674,7 +674,7 @@ func testServiceLevelEnforcement(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -799,10 +799,9 @@ func testServiceLevelEnforcement(t *harnessTest) {
 func testScriptLevelEnforcement(t *harnessTest) {
 	ctx := context.Background()
 
-	extraArgs := []string{
-		"--protocol.anchors",
-		"--protocol.script-enforced-lease",
-	}
+	extraArgs := append(
+		[]string{"--protocol.script-enforced-lease"}, lndDefaultArgs...,
+	)
 
 	charlie := t.lndHarness.NewNode(t.t, "charlie", extraArgs)
 	charlieTrader := setupTraderHarness(
@@ -839,12 +838,12 @@ func testScriptLevelEnforcement(t *harnessTest) {
 
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
+	const scriptEnforcedChannelType = auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
 	askAmt := btcutil.Amount(1_500_000)
 	_, err := submitAskOrder(
 		charlieTrader, charlieAccount.TraderKey, 100, askAmt,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
-			ask.Ask.Details.ChannelType =
-				auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+			ask.Ask.Details.ChannelType = scriptEnforcedChannelType
 		},
 	)
 	require.NoError(t.t, err)
@@ -855,8 +854,7 @@ func testScriptLevelEnforcement(t *harnessTest) {
 	_, err = submitBidOrder(
 		daveTrader, daveAccount.TraderKey, 100, bidAmt,
 		func(bid *poolrpc.SubmitOrderRequest_Bid) {
-			bid.Bid.Details.ChannelType =
-				auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+			bid.Bid.Details.ChannelType = scriptEnforcedChannelType
 		},
 	)
 	require.NoError(t.t, err)
@@ -960,7 +958,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1076,7 +1074,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 // withdrawal or deposit.
 func testConsecutiveBatches(t *harnessTest) {
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1203,7 +1201,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	// We need a third and fourth lnd node, Charlie and Dave that are used
 	// for the second and third trader. Charlie is very picky and only wants
 	// channels from new nodes.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 		newNodesOnlyOpt(),
@@ -1211,7 +1209,7 @@ func testTraderPartialRejectNewNodesOnly(t *harnessTest) {
 	defer shutdownAndAssert(t, charlie, secondTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -1328,7 +1326,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// We need a third lnd node, Charlie, that is used for the second
 	// trader. Charlie can only have one pending incoming channel (default
 	// setting of lnd).
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1339,7 +1337,7 @@ func testTraderPartialRejectFundingFailure(t *harnessTest) {
 	// channel during the second round so we can make sure being matched
 	// multiple times in the same batch (because another node rejected and
 	// the matchmaking had to be restarted) can still succeed.
-	dave := t.lndHarness.NewNode(t.t, "dave", nil)
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
 	thirdTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
 	)
@@ -1511,7 +1509,7 @@ func testBatchMatchingConditions(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1648,7 +1646,7 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
@@ -1963,7 +1961,7 @@ func testCustomExecutionFee(t *harnessTest) {
 	ctx := context.Background()
 
 	// We need a third lnd node, Charlie that is used for the second trader.
-	charlie := t.lndHarness.NewNode(t.t, "charlie", nil)
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
@@ -2062,4 +2060,247 @@ func testCustomExecutionFee(t *harnessTest) {
 			return nil
 		},
 	)
+}
+
+// testBatchAccountAutoRenewal tests that accounts that participate in a batch
+// are auto-renewed if the trader supports auto-renewal.
+func testBatchAccountAutoRenewal(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader.
+	// We'll use a batch version that doesn't support account renewal.
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+		batchVersionOpt(order.DefaultBatchVersion),
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	_, startHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
+	require.NoError(t.t, err)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders. To test the message multi-plexing between token IDs
+	// and accounts, we add a secondary account to the second trader.
+	account1 := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_AbsoluteHeight{
+				AbsoluteHeight: uint32(startHeight) + 1_000,
+			},
+		},
+	)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_AbsoluteHeight{
+				AbsoluteHeight: uint32(startHeight) + 1_000,
+			},
+		},
+	)
+	account3 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_AbsoluteHeight{
+				AbsoluteHeight: uint32(startHeight) + 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// default trader, selling 15 units (1.5M sats) of liquidity.
+	const orderFixedRate = 100
+	askAmt := btcutil.Amount(1_500_000)
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, orderFixedRate, askAmt,
+	)
+	require.NoError(t.t, err)
+
+	// Our second trader, connected to Charlie, wants to buy 8 units of
+	// liquidity. So let's submit an order for that.
+	bidAmt := btcutil.Amount(800_000)
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
+	)
+	require.NoError(t.t, err)
+
+	// From the secondary account of the second trader, we also create an
+	// order to buy some units. The order should also make it into the same
+	// batch and the second trader should sign a message for both orders at
+	// the same time.
+	bidAmt2 := btcutil.Amount(400_000)
+	_, err = submitBidOrder(
+		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
+	)
+	require.NoError(t.t, err)
+
+	// To ensure the venue is aware of account deposits/withdrawals, we'll
+	// process a deposit for the account behind the ask. We also use this
+	// to renew the account by a day.
+	depositResp, err := t.trader.DepositAccount(
+		ctx, &poolrpc.DepositAccountRequest{
+			TraderKey:       account1.TraderKey,
+			AmountSat:       100_000,
+			FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+			AccountExpiry: &poolrpc.DepositAccountRequest_RelativeExpiry{
+				RelativeExpiry: 144,
+			},
+		},
+	)
+	require.NoError(t.t, err)
+
+	// We should expect to see the transaction causing the deposit.
+	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
+	txids, err := waitForNTxsInMempool(
+		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
+	)
+	require.NoError(t.t, err)
+	require.Equal(t.t, depositTxid, txids[0])
+
+	// Let's go ahead and confirm it. The account should remain in
+	// PendingUpdate as it hasn't met all the required confirmations.
+	block := mineBlocks(t, t.lndHarness, 1, 1)[0]
+	_ = assertTxInBlock(t, block, depositTxid)
+	assertAuctioneerAccountState(
+		t, depositResp.Account.TraderKey, account.StatePendingUpdate,
+	)
+
+	// Since the ask account is pending an update, a batch should not be
+	// cleared, so a batch transaction should not be broadcast. Kick the
+	// auctioneer and wait for it to return back to the order submit state.
+	// No tx should be in the mempool as no market should be possible.
+	_, _ = executeBatch(t, 0)
+
+	// Proceed to fully confirm the account deposit.
+	_ = mineBlocks(t, t.lndHarness, 5, 0)
+	assertAuctioneerAccountState(
+		t, depositResp.Account.TraderKey, account.StateOpen,
+	)
+
+	// Let's kick the auctioneer once again to try and create a batch.
+	_, batchTXIDs := executeBatch(t, 1)
+	firstBatchTXID := batchTXIDs[0]
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, bidAmt, true, charlie.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt, false, t.trader.cfg.LndNode.PubKey,
+	)
+	assertPendingChannel(
+		t, charlie, bidAmt2, false, t.trader.cfg.LndNode.PubKey,
+	)
+
+	// We'll also make sure that the account now is in the special state
+	// where it is allowed to participate in the next batch without on-chain
+	// confirmation.
+	assertAuctioneerAccountState(
+		t, account1.TraderKey, account.StatePendingBatch,
+	)
+
+	// We also make sure that the first trader's account was auto-renewed
+	// while the second trader's account(s) wasn't, since the client doesn't
+	// support auto-renewal. We created three accounts and one batch since
+	// we started, which each mines 6 blocks. So we expect the auto-renewed
+	// account to be extended by the default of 3024 blocks from the current
+	// height.
+	_, currentHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
+	require.NoError(t.t, err)
+	expectedHeight := uint32(currentHeight + 3024)
+	assertTraderAccountState(
+		t.t, t.trader, account1.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH,
+		func(a *poolrpc.Account) error {
+			if a.ExpirationHeight != expectedHeight {
+				return fmt.Errorf("unexpected account "+
+					"expiry, got %d wanted %d",
+					a.ExpirationHeight, expectedHeight)
+			}
+
+			return nil
+		},
+	)
+
+	// The second trader's account is still at the initial expiry.
+	expectedHeight = uint32(startHeight) + 1_000
+	assertTraderAccountState(
+		t.t, secondTrader, account2.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH,
+		func(a *poolrpc.Account) error {
+			if a.ExpirationHeight != expectedHeight {
+				return fmt.Errorf("unexpected account "+
+					"expiry, got %d wanted %d",
+					a.ExpirationHeight, expectedHeight)
+			}
+
+			return nil
+		},
+	)
+	assertTraderAccountState(
+		t.t, secondTrader, account3.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH,
+		func(a *poolrpc.Account) error {
+			if a.ExpirationHeight != expectedHeight {
+				return fmt.Errorf("unexpected account "+
+					"expiry, got %d wanted %d",
+					a.ExpirationHeight, expectedHeight)
+			}
+
+			return nil
+		},
+	)
+
+	// We'll now mine a block to confirm the channel. We should find the
+	// channel in the listchannels output for both nodes, and the
+	// thaw_height should be set accordingly.
+	blocks := mineBlocks(t, t.lndHarness, 1, 1)
+
+	// The block above should contain the batch transaction found in the
+	// mempool above.
+	assertTxInBlock(t, blocks[0], firstBatchTXID)
+
+	// The master account from the server's PoV should have the same txid
+	// hash as this mined block.
+	ctxb := context.Background()
+	masterAcct, err := t.auctioneer.AuctionAdminClient.MasterAccount(
+		ctxb, &adminrpc.EmptyRequest{},
+	)
+	require.NoError(t.t, err)
+	acctOutPoint := masterAcct.Outpoint
+	require.Equal(t.t, firstBatchTXID[:], acctOutPoint.Txid)
+
+	// We'll now mine another 3 blocks to ensure the channel itself is
+	// fully confirmed.
+	_ = mineBlocks(t, t.lndHarness, 3, 0)
+
+	// Now that the channels are confirmed, they should both be active, and
+	// we should be able to make a payment between this new channel
+	// established.
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration,
+	)
+	assertActiveChannel(
+		t, t.trader.cfg.LndNode, int64(bidAmt2), *firstBatchTXID,
+		charlie.PubKey, defaultOrderDuration,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
+	)
+	assertActiveChannel(
+		t, charlie, int64(bidAmt2), *firstBatchTXID,
+		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
+	)
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
 }

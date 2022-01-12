@@ -113,6 +113,10 @@ var testCases = []*testCase{
 		name: "custom execution fee",
 		test: testCustomExecutionFee,
 	},
+	{
+		name: "batch account auto-renewal",
+		test: testBatchAccountAutoRenewal,
+	},
 
 	{
 		name: "hashmail server",

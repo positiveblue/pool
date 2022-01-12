@@ -28,7 +28,7 @@ const Subsystem = "SRVR"
 var (
 	logWriter = build.NewRotatingLogWriter()
 	log       = build.NewSubLogger(Subsystem, nil)
-	rpcLog    = build.NewSubLogger("RPCS", nil)
+	rpcLog    = build.NewSubLogger("SRPCS", nil)
 )
 
 // SetupLoggers initializes all package-global logger variables.
@@ -37,10 +37,10 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 
 	logWriter = root
 	log = build.NewSubLogger(Subsystem, genLogger)
-	rpcLog = build.NewSubLogger("RPCS", genLogger)
+	rpcLog = build.NewSubLogger("SRPCS", genLogger)
 
 	setSubLogger(root, Subsystem, log, nil)
-	setSubLogger(root, "RPCS", rpcLog, nil)
+	setSubLogger(root, "SRPCS", rpcLog, nil)
 	addSubLogger(root, subastadb.Subsystem, intercept, subastadb.UseLogger)
 	addSubLogger(root, "LNDC", intercept, lndclient.UseLogger)
 	addSubLogger(root, "SGNL", intercept, signal.UseLogger)
