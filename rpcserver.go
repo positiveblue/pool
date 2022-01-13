@@ -55,7 +55,7 @@ import (
 const (
 	// initTimeout is the maximum time we allow for the etcd store to be
 	// initialized.
-	initTimeout = 5 * time.Second
+	initTimeout = 1 * time.Minute
 
 	// getInfoTimeout is the maximum time we allow for the GetInfo call to
 	// the backing lnd node.

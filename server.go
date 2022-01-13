@@ -705,9 +705,14 @@ func (s *Server) Start() error {
 		log.Infof("Starting primary server")
 
 		ctx := context.Background()
-		etcdCtx, etcdCancel := context.WithTimeout(ctx, initTimeout)
-		defer etcdCancel()
-		if err := s.store.Init(etcdCtx); err != nil {
+		// Use one timeout context for the store initialization. This
+		// is a context with a long timeout to allow enough time for
+		// filling up caches as well as mirroring things to SQL.
+		storeInitCtx, storeInitCancel := context.WithTimeout(
+			ctx, initTimeout,
+		)
+		defer storeInitCancel()
+		if err := s.store.Init(storeInitCtx); err != nil {
 			startErr = fmt.Errorf("unable to initialize etcd "+
 				"store: %v", err)
 			return
