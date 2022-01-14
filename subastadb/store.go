@@ -318,10 +318,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 		return errAlreadyInitialized
 	}
 
-	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
-	defer cancel()
-
-	resp, err := s.client.Get(ctxt, s.getKeyPrefix(versionPrefix))
+	resp, err := s.client.Get(ctx, s.getKeyPrefix(versionPrefix))
 	if err != nil {
 		return err
 	}
@@ -330,7 +327,7 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 
 	if resp.Count == 0 {
 		log.Infof("Initializing db with version %v", currentDbVersion)
-		return s.firstTimeInit(ctxt, currentDbVersion)
+		return s.firstTimeInit(ctx, currentDbVersion)
 	}
 
 	version, err := strconv.Atoi(string(resp.Kvs[0].Value))
@@ -348,12 +345,12 @@ func (s *EtcdStore) Init(ctx context.Context) error {
 	// Some database keys need default values, let's make sure we add them
 	// now. This allows for soft migrations where we can detect an old DB
 	// state simply by the non-existence of the affected keys.
-	if err := s.insertDefaultValues(ctxt); err != nil {
+	if err := s.insertDefaultValues(ctx); err != nil {
 		return fmt.Errorf("error inserting default values: %v", err)
 	}
 
 	// We end initialization by filling the active orders cache.
-	if err := s.fillActiveOrdersCache(ctxt); err != nil {
+	if err := s.fillActiveOrdersCache(ctx); err != nil {
 		return err
 	}
 
