@@ -7,6 +7,7 @@ import (
 
 	"github.com/btcsuite/btclog"
 	"github.com/lightninglabs/aperture/auth"
+	"github.com/lightninglabs/faraday/accounting"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
@@ -57,6 +58,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	addSubLogger(root, monitoring.Subsystem, intercept, monitoring.UseLogger)
 	addSubLogger(root, ratings.Subsystem, intercept, ratings.UseLogger)
 	addSubLogger(root, rejects.Subsystem, intercept, rejects.UseLogger)
+	addSubLogger(root, accounting.Subsystem, intercept, accounting.UseLogger)
 }
 
 // genSubLogger creates a logger for a subsystem. We provide an instance of
