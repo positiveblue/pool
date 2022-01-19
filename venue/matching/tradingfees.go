@@ -107,6 +107,11 @@ func NewTradingFeeReport(subBatches map[uint32][]MatchedOrder,
 				order.Details.Bid.LeaseDuration(),
 			)
 
+			// Increase the number of channels that the participant
+			// took part of.
+			takerDiff.AccountTally.NumChansCreated++
+			makerDiff.AccountTally.NumChansCreated++
+
 			accountDiffs[taker.AccountKey] = takerDiff
 			accountDiffs[maker.AccountKey] = makerDiff
 		}
