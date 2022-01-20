@@ -144,6 +144,21 @@ func TestTradingReportGeneration(t *testing.T) {
 			subBatches, feeSchedule, clearingPrices,
 		)
 
+		numOfChannels := uint32(0)
+		for _, traderDiff := range report.AccountDiffs {
+			numOfChannels += traderDiff.AccountTally.NumChansCreated
+		}
+
+		// Every channels is double counted (from the maker's
+		// and taker's side). numOfChannels must then be the double of
+		// matched orders.
+		if numOfChannels != uint32(len(matchedOrders)*2) {
+			t.Logf("expected %v new channels, instead num of new "+
+				"channels is %v", len(matchedOrders),
+				numOfChannels/2)
+			return false
+		}
+
 		// The total amount of fees that each trader paid should
 		// properly sum up to the total amount of fees the auctioneer
 		// takes
