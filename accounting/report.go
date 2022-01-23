@@ -48,7 +48,21 @@ func CreateReport(cfg *Config) (*Report, error) {
 		report.BatchEntries = append(report.BatchEntries, batchEntry)
 	}
 
-	// TODO(positiveblue): Populate LSAT
+	invoices, err := getLSATInvoices(ctx, cfg)
+	if err != nil {
+		log.Info(err)
+		return nil, err
+	}
+
+	// Populate LSAT entries.
+	for _, invoice := range invoices {
+		lsatEntry, err := extractLSATEntry(cfg, invoice)
+		if err != nil {
+			log.Info(err)
+			return nil, err
+		}
+		report.LSATEntries = append(report.LSATEntries, lsatEntry)
+	}
 
 	return report, nil
 }

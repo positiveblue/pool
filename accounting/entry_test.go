@@ -8,10 +8,12 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/faraday/fiat"
+	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/shopspring/decimal"
 	"github.com/stretchr/testify/assert"
 )
@@ -107,7 +109,7 @@ func newOrderBatch() *matching.OrderBatch {
 	}
 }
 
-var extractEntryTestCases = []struct {
+var extractBatchEntryTestCases = []struct {
 	name          string
 	cfg           *Config
 	batchID       orderT.BatchID
@@ -115,7 +117,7 @@ var extractEntryTestCases = []struct {
 	expectedEntry *BatchEntry
 	expectedErr   string
 }{{
-	name:    "extractEntry fails if we cannot get the fiat price",
+	name:    "extractBatchEntry fails if we cannot get the fiat price",
 	batchID: batchID,
 	batch: &subastadb.BatchSnapshot{
 		BatchTx:    &wire.MsgTx{},
@@ -128,7 +130,7 @@ var extractEntryTestCases = []struct {
 	},
 	expectedErr: "expectedErr",
 }, {
-	name:    "extractEntry is populated correctly",
+	name:    "extractBatchEntry is populated correctly",
 	batchID: batchID,
 	batch: &subastadb.BatchSnapshot{
 		BatchTx:    &wire.MsgTx{},
@@ -162,8 +164,8 @@ var extractEntryTestCases = []struct {
 	expectedErr: "",
 }}
 
-func TestExtractEntry(t *testing.T) {
-	for _, tc := range extractEntryTestCases {
+func TestBatchExtractEntry(t *testing.T) {
+	for _, tc := range extractBatchEntryTestCases {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -171,6 +173,59 @@ func TestExtractEntry(t *testing.T) {
 			entry, err := extractBatchEntry(
 				tc.cfg, tc.batchID, tc.batch,
 			)
+			if tc.expectedErr != "" {
+				assert.EqualError(t, err, tc.expectedErr)
+				return
+			}
+			assert.NoError(t, err)
+
+			assert.Equal(t, tc.expectedEntry, entry)
+		})
+	}
+}
+
+// TODO(positiveblue): add test for getLSATInvoices after adding mockgen
+
+var extractLSATEntryTestCases = []struct {
+	name          string
+	cfg           *Config
+	invoice       lndclient.Invoice
+	expectedEntry *LSATEntry
+	expectedErr   string
+}{{
+	name: "extractLSATEntry is populated correctly",
+	cfg: &Config{
+		GetPrice: func(_ time.Time) (*fiat.Price, error) {
+			return &fiat.Price{
+				Timestamp: time.Unix(123_456_789, 0),
+				Price:     decimal.New(10_000, 0),
+				Currency:  "BTC",
+			}, nil
+		},
+	},
+	invoice: lndclient.Invoice{
+		CreationDate: time.Unix(123_456_789, 0),
+		AmountPaid:   lnwire.NewMSatFromSatoshis(10),
+	},
+	expectedEntry: &LSATEntry{
+		Timestamp:    time.Unix(123_456_789, 0),
+		ProfitInSats: 10,
+		BTCPrice: &fiat.Price{
+			Timestamp: time.Unix(123_456_789, 0),
+			Price:     decimal.New(10_000, 0),
+			Currency:  "BTC",
+		},
+		ProfitInUSD: decimal.New(10000000000000, -16),
+	},
+}}
+
+func TestExtractLSATEntry(t *testing.T) {
+	for _, tc := range extractLSATEntryTestCases {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			entry, err := extractLSATEntry(tc.cfg, tc.invoice)
 			if tc.expectedErr != "" {
 				assert.EqualError(t, err, tc.expectedErr)
 				return

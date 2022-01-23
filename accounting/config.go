@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/subastadb"
 )
@@ -17,6 +18,9 @@ type Config struct {
 
 	// End is the time until which our report will be created, exclusive.
 	End time.Time
+
+	// LightningClient exposes base lightning functionality.
+	LightningClient lndclient.LightningClient
 
 	// GetBatches returns the batches that need to be included in the report.
 	GetBatches func(context.Context) (BatchSnapshotMap, error)

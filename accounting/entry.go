@@ -1,15 +1,24 @@
 package accounting
 
 import (
+	"context"
 	"time"
 
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/faraday/fiat"
+	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/shopspring/decimal"
+)
+
+const (
+	// MaxInvoices is the maximum number of invoices to be returned
+	// by the LightningClient.
+	maxInvocies = 999999
 )
 
 type BatchEntry struct {
@@ -113,4 +122,64 @@ type LSATEntry struct {
 	// BTCPrice is the timestamped bitcoin price we used to get our fiat
 	// value.
 	BTCPrice *fiat.Price
+}
+
+// isLSATInvoice is a helper function used to determine if an invoice is linked
+// to a settled LSAT toker or not.
+func isLSATInvoice(invoice lndclient.Invoice) bool {
+	// We only care about settled invoices.
+	if invoice.State != channeldb.ContractSettled {
+		return false
+	}
+	// LSAT invoices have this memo by default.
+	if invoice.Memo != "LSAT" {
+		return false
+	}
+
+	return true
+}
+
+// getLSATInvoices returns all the settled invoices linked to LSAT payments.
+func getLSATInvoices(ctx context.Context, cfg *Config) (
+	[]lndclient.Invoice, error) {
+
+	invoices := []lndclient.Invoice{}
+
+	invoiceReq := lndclient.ListInvoicesRequest{
+		MaxInvoices: maxInvocies,
+	}
+	resp, err := cfg.LightningClient.ListInvoices(ctx, invoiceReq)
+	if err != nil {
+		return invoices, err
+	}
+
+	for _, invoice := range resp.Invoices {
+		if isLSATInvoice(invoice) {
+			invoices = append(invoices, invoice)
+		}
+	}
+
+	return invoices, nil
+}
+
+// extractLSATEntry returns a new reporting entry line for the given LSAT
+// invoice.
+func extractLSATEntry(cfg *Config, invoice lndclient.Invoice) (
+	*LSATEntry, error) {
+
+	timestamp := invoice.CreationDate
+	profitInMsat := invoice.AmountPaid
+	profitInSats := profitInMsat.ToSatoshis()
+	btcPrice, err := cfg.GetPrice(timestamp)
+	if err != nil {
+		return nil, err
+	}
+	profitInUSD := fiat.MsatToFiat(btcPrice.Price, profitInMsat)
+
+	return &LSATEntry{
+		Timestamp:    timestamp,
+		ProfitInSats: profitInSats,
+		ProfitInUSD:  profitInUSD,
+		BTCPrice:     btcPrice,
+	}, nil
 }

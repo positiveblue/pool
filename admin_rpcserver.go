@@ -1229,10 +1229,11 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 	}
 
 	cfg := &accounting.Config{
-		Start:      startDate,
-		End:        endDate,
-		GetBatches: getBatches,
-		GetPrice:   getPrice,
+		Start:           startDate,
+		End:             endDate,
+		LightningClient: s.lightningClient,
+		GetBatches:      getBatches,
+		GetPrice:        getPrice,
 	}
 
 	report, err := accounting.CreateReport(cfg)
@@ -1251,10 +1252,23 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 			batchEntries, marshallBatchReportEntry(entry),
 		)
 	}
+
+	LSATEntries := make(
+		[]*adminrpc.FinancialReportLSATEntry,
+		0,
+		len(report.LSATEntries),
+	)
+	for _, entry := range report.LSATEntries {
+		LSATEntries = append(
+			LSATEntries, marshallLSATReportEntry(entry),
+		)
+	}
+
 	return &adminrpc.FinancialReportResponse{
 		StartTimestamp: report.Start.Unix(),
 		EndTimestamp:   report.End.Unix(),
 		BatchEntries:   batchEntries,
+		LsatEntries:    LSATEntries,
 	}, nil
 }
 
@@ -1273,6 +1287,19 @@ func marshallBatchReportEntry(
 		ProfitInSats:    int64(entry.ProfitInSats),
 		ProfitInUsd:     entry.ProfitInUSD.String(),
 		BtcPrice:        marshallBTCPrice(entry.BTCPrice),
+	}
+}
+
+// marshallLSATReportEntry translates an accounting.LSATEntry into its admin
+// RPC counterpart.
+func marshallLSATReportEntry(
+	entry *accounting.LSATEntry) *adminrpc.FinancialReportLSATEntry {
+
+	return &adminrpc.FinancialReportLSATEntry{
+		Timestamp:    entry.Timestamp.Unix(),
+		ProfitInSats: int64(entry.ProfitInSats),
+		ProfitInUsd:  entry.ProfitInUSD.String(),
+		BtcPrice:     marshallBTCPrice(entry.BTCPrice),
 	}
 }
 
