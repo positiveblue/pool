@@ -64,7 +64,9 @@ type adminRPCServer struct {
 
 	durationBuckets *order.DurationBuckets
 
-	wallet lndclient.WalletKitClient
+	lightningClient lndclient.LightningClient
+	wallet          lndclient.WalletKitClient
+
 	lockID wtxmgr.LockID
 }
 
@@ -73,7 +75,8 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 	listener net.Listener, serverOpts []grpc.ServerOption,
 	auctioneer *Auctioneer, store *subastadb.EtcdStore,
 	durationBuckets *order.DurationBuckets,
-	wallet lndclient.WalletKitClient) (*adminRPCServer, error) {
+	wallet lndclient.WalletKitClient,
+	lightningClient lndclient.LightningClient) (*adminRPCServer, error) {
 
 	// Generate a lock ID for the utxo leases that this instance is going to
 	// request.
@@ -91,6 +94,7 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 		auctioneer:      auctioneer,
 		store:           store,
 		durationBuckets: durationBuckets,
+		lightningClient: lightningClient,
 		wallet:          wallet,
 		lockID:          lockID,
 	}, nil
