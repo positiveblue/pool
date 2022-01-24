@@ -28,6 +28,23 @@ var showMasterAccountCommand = cli.Command{
 	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
 		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
-		return client.MasterAccount(ctx, &adminrpc.EmptyRequest{})
+		resp, err := client.MasterAccount(ctx, &adminrpc.EmptyRequest{})
+		if err != nil {
+			return nil, err
+		}
+
+		// We want the TXID to be in the format block explorers use
+		// (byte reversed serialization).
+		if resp.Outpoint != nil {
+			reverseBytes(resp.Outpoint.Txid)
+		}
+
+		return resp, nil
 	}),
+}
+
+func reverseBytes(s []byte) {
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
 }
