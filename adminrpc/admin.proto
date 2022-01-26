@@ -94,12 +94,12 @@ message OutPoint {
     /*
     Raw bytes representing the transaction id.
     */
-    bytes txid = 1 [json_name = "txid"];
+    bytes txid = 1;
 
     /*
     The index of the output on the transaction.
     */
-    uint32 output_index = 2 [json_name = "output_index"];
+    uint32 output_index = 2;
 }
 
 message KeyLocator {
