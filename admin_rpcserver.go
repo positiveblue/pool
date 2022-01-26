@@ -19,11 +19,13 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/faraday/fiat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/accounting"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -62,7 +64,9 @@ type adminRPCServer struct {
 
 	durationBuckets *order.DurationBuckets
 
-	wallet lndclient.WalletKitClient
+	lightningClient lndclient.LightningClient
+	wallet          lndclient.WalletKitClient
+
 	lockID wtxmgr.LockID
 }
 
@@ -71,7 +75,8 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 	listener net.Listener, serverOpts []grpc.ServerOption,
 	auctioneer *Auctioneer, store *subastadb.EtcdStore,
 	durationBuckets *order.DurationBuckets,
-	wallet lndclient.WalletKitClient) (*adminRPCServer, error) {
+	wallet lndclient.WalletKitClient,
+	lightningClient lndclient.LightningClient) (*adminRPCServer, error) {
 
 	// Generate a lock ID for the utxo leases that this instance is going to
 	// request.
@@ -89,6 +94,7 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 		auctioneer:      auctioneer,
 		store:           store,
 		durationBuckets: durationBuckets,
+		lightningClient: lightningClient,
 		wallet:          wallet,
 		lockID:          lockID,
 	}, nil
@@ -1178,6 +1184,132 @@ func (s *adminRPCServer) MirrorDatabase(ctx context.Context,
 	req *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
 	return &adminrpc.EmptyResponse{}, s.store.MirrorToSQL(ctx)
+}
+
+// FinancialReport returns a financial report for the specified dates.
+func (s *adminRPCServer) FinancialReport(ctx context.Context,
+	req *adminrpc.FinancialReportRequest) (*adminrpc.FinancialReportResponse,
+	error) {
+
+	startDate := time.Unix(req.StartTimestamp, 0)
+	endDate := time.Unix(req.EndTimestamp, 0)
+	if endDate.After(time.Now().UTC()) {
+		endDate = time.Now().UTC()
+	}
+
+	getBatches := func(context.Context) (accounting.BatchSnapshotMap,
+		error) {
+
+		allBatches, err := s.store.Batches(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		batches := make(accounting.BatchSnapshotMap)
+		for batchID, snapshot := range allBatches {
+			timestamp := snapshot.OrderBatch.CreationTimestamp
+
+			if timestamp.Before(startDate) {
+				continue
+			}
+
+			if timestamp.After(endDate) {
+				continue
+			}
+
+			batches[batchID] = snapshot
+		}
+
+		return batches, nil
+	}
+
+	getPrice, err := accounting.GetPriceFunc(startDate, endDate)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get price function: %v", err)
+	}
+
+	cfg := &accounting.Config{
+		Start:           startDate,
+		End:             endDate,
+		LightningClient: s.lightningClient,
+		GetBatches:      getBatches,
+		GetPrice:        getPrice,
+	}
+
+	report, err := accounting.CreateReport(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("unable to create report: %v", err)
+	}
+
+	batchEntries := make(
+		[]*adminrpc.FinancialReportBatchEntry,
+		0,
+		len(report.BatchEntries),
+	)
+
+	for _, entry := range report.BatchEntries {
+		batchEntries = append(
+			batchEntries, marshallBatchReportEntry(entry),
+		)
+	}
+
+	LSATEntries := make(
+		[]*adminrpc.FinancialReportLSATEntry,
+		0,
+		len(report.LSATEntries),
+	)
+	for _, entry := range report.LSATEntries {
+		LSATEntries = append(
+			LSATEntries, marshallLSATReportEntry(entry),
+		)
+	}
+
+	return &adminrpc.FinancialReportResponse{
+		StartTimestamp: report.Start.Unix(),
+		EndTimestamp:   report.End.Unix(),
+		BatchEntries:   batchEntries,
+		LsatEntries:    LSATEntries,
+	}, nil
+}
+
+// marshallBatchReportEntry translates an accounting.Entry into its admin RPC
+// counterpart.
+func marshallBatchReportEntry(
+	entry *accounting.BatchEntry) *adminrpc.FinancialReportBatchEntry {
+
+	return &adminrpc.FinancialReportBatchEntry{
+		BatchKey:        entry.BatchID[:],
+		Timestamp:       entry.Timestamp.Unix(),
+		BatchTxId:       entry.TxID,
+		BatchTxFees:     uint64(entry.BatchTxFees),
+		AccruedFees:     uint64(entry.AccruedFees),
+		TraderChainFees: uint64(entry.TraderChainFees),
+		ProfitInSats:    int64(entry.ProfitInSats),
+		ProfitInUsd:     entry.ProfitInUSD.String(),
+		BtcPrice:        marshallBTCPrice(entry.BTCPrice),
+	}
+}
+
+// marshallLSATReportEntry translates an accounting.LSATEntry into its admin
+// RPC counterpart.
+func marshallLSATReportEntry(
+	entry *accounting.LSATEntry) *adminrpc.FinancialReportLSATEntry {
+
+	return &adminrpc.FinancialReportLSATEntry{
+		Timestamp:    entry.Timestamp.Unix(),
+		ProfitInSats: int64(entry.ProfitInSats),
+		ProfitInUsd:  entry.ProfitInUSD.String(),
+		BtcPrice:     marshallBTCPrice(entry.BTCPrice),
+	}
+}
+
+// marshallBTCPrice translates a *fiat.Price into its admin RPC counterpart.
+func marshallBTCPrice(btcPrice *fiat.Price) *adminrpc.BTCPrice {
+	return &adminrpc.BTCPrice{
+		Timestamp: btcPrice.Timestamp.Unix(),
+		Price:     btcPrice.Price.String(),
+		Currency:  btcPrice.Currency,
+	}
 }
 
 // marshallAdminAccount translates an account.Account into its admin RPC

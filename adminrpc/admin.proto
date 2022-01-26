@@ -38,6 +38,8 @@ service AuctionAdmin {
     rpc ListTraderTerms (EmptyRequest) returns (ListTraderTermsResponse);
     rpc StoreTraderTerms (TraderTerms) returns (EmptyResponse);
     rpc RemoveTraderTerms (TraderTerms) returns (EmptyResponse);
+    rpc FinancialReport (FinancialReportRequest)
+        returns (FinancialReportResponse);
 }
 
 message EmptyRequest {
@@ -605,4 +607,85 @@ message TraderTerms {
 
 message ListTraderTermsResponse {
     repeated TraderTerms terms = 1;
+}
+
+message FinancialReportRequest {
+    // The unix timestamp in seconds for the report's starting time.
+    int64 start_timestamp = 1;
+
+    // The unix timestamp in seconds for the report's ending time.
+    int64 end_timestamp = 2;
+}
+
+message BTCPrice {
+    // The unix timestamp in seconds.
+    int64 timestamp = 1;
+
+    // The fiat price for the given currency for 1 BTC at the given timestamp.
+    string price = 2;
+
+    // The code of the currency that the price is quoted in.
+    string currency = 3;
+}
+
+message FinancialReportBatchEntry {
+    // The id of the batch this entry refers to.
+    bytes batch_key = 1;
+
+    // The unix timestamp in seconds at which the event occurred.
+    int64 timestamp = 2;
+
+    // The txid of the batch transaction.
+    string batch_tx_id = 3;
+
+    // The chain fees paid by this batch tx.
+    uint64 batch_tx_fees = 4;
+
+    // The total number of satoshis we earned as auctioneer fees.
+    uint64 accrued_fees = 5;
+
+    // The total number of satoshis that the participants of the batch paid.
+    uint64 trader_chain_fees = 6;
+
+    /*
+    The net value earned during the execution of this batch.
+    It should match Accrued + TraderChain - BatchChain fees.
+    */
+    int64 profit_in_sats = 7;
+
+    // The net value earned during the execution of this batch in USD.
+    string profit_in_usd = 8;
+
+    // The exchange value used for converting the profit values.
+    BTCPrice btc_price = 9;
+}
+
+message FinancialReportLSATEntry {
+    // The unix timestamp in seconds at which the event occurred.
+    int64 timestamp = 1;
+
+    // The net value charged for this LSAT token.
+    int64 profit_in_sats = 2;
+
+    /*
+    The net value earned during the execution of this batch in USD.
+    */
+    string profit_in_usd = 3;
+
+    // The exchange value used for converting the profit values.
+    BTCPrice btc_price = 4;
+}
+
+message FinancialReportResponse {
+    // The unix timestamp in seconds for the report's starting time.
+    int64 start_timestamp = 1;
+
+    // The unix timestamp in seconds for the report's ending time.
+    int64 end_timestamp = 2;
+
+    // The report batch entries.
+    repeated FinancialReportBatchEntry batch_entries = 3;
+
+    // The report LSAT entries.
+    repeated FinancialReportLSATEntry lsat_entries = 4;
 }

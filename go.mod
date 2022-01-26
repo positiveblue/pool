@@ -13,6 +13,7 @@ require (
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.3
 	github.com/lightninglabs/aperture v0.1.10-beta
+	github.com/lightninglabs/faraday v0.2.7-alpha
 	github.com/lightninglabs/lndclient v0.14.0-7
 	github.com/lightninglabs/pool v0.5.4-alpha
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.5
@@ -22,6 +23,7 @@ require (
 	github.com/lightningnetwork/lnd/ticker v1.1.0
 	github.com/ory/dockertest/v3 v3.8.0
 	github.com/prometheus/client_golang v1.11.0
+	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli v1.22.1
 	go.etcd.io/etcd/client/v3 v3.5.0

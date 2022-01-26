@@ -682,6 +682,7 @@ func NewServer(cfg *Config) (*Server, error) {
 	server.adminServer, err = newAdminRPCServer(
 		chainParams, auctioneerServer, adminListener, adminServerOpts,
 		server.auctioneer, store, durationBuckets, lnd.WalletKit,
+		lnd.Client,
 	)
 	if err != nil {
 		return nil, err
