@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"context"
 	"encoding/csv"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -11,7 +12,6 @@ import (
 
 	"github.com/lightninglabs/protobuf-hex-display/proto"
 	"github.com/lightninglabs/subasta/adminrpc"
-
 	"github.com/urfave/cli"
 )
 
@@ -24,28 +24,6 @@ const (
 
 	// Financial Report zip filename
 	zipFileName = "pool_accounting_%d-%02d_to_%d-%02d.zip"
-)
-
-var (
-	// batchEntryHeaders are the batch report csv first row columns.
-	batchEntryHeaders = []string{
-		"creation_timestamp",
-		"batch_id",
-		"batch_tx_fee",
-		"auctioneer_fees_accrued",
-		"on_chain_trader_fees",
-		"profit_sats",
-		"btc_price_at_date",
-		"profit_usd",
-	}
-
-	// lsatEntryHeaders are the LSAT report csv first row columns.
-	lsatEntryHeaders = []string{
-		"creation_timestamp",
-		"profit_sats",
-		"btc_price_at_date",
-		"profit_usd",
-	}
 )
 
 var adminCommands = []cli.Command{
@@ -86,29 +64,44 @@ func generateBatchReport(filename string,
 	defer csvwriter.Flush()
 
 	// Write headers.
+	batchEntryHeaders := []string{
+		"Date-time human readable (UTC)",
+		"Date-time unix time (UTC)",
+
+		"Balance sheet",
+		"Units",
+		"Asset type",
+		"Market price",
+		"Historical accounting value",
+
+		"Batch ID",
+		"Batch TXID",
+		"Batch total TX fee",
+		"Total auction fees accrued",
+		"Total trader TX fee share",
+	}
 	if err := csvwriter.Write(batchEntryHeaders); err != nil {
 		return err
 	}
 
-	line := make([]string, len(batchEntryHeaders))
 	for _, entry := range report.BatchEntries {
-		timestamp := time.Unix(entry.Timestamp, 0)
-		// creation_timestamp
-		line[0] = timestamp.Format("2006-01-02 15:04:05")
-		// batch_id
-		line[1] = entry.BatchTxId
-		// batch_tx_fee
-		line[2] = fmt.Sprintf("%v", entry.AccruedFees)
-		// auctioneer_fees_accrued
-		line[3] = fmt.Sprintf("%v", entry.BatchTxFees)
-		// on_chain_trader_fees
-		line[4] = fmt.Sprintf("%v", entry.TraderChainFees)
-		// profit_sats
-		line[5] = fmt.Sprintf("%v", entry.ProfitInSats)
-		// btc_price_at_date
-		line[6] = fmt.Sprintf("%v", entry.BtcPrice.Price)
-		// profit_usd
-		line[7] = fmt.Sprintf("%v", entry.ProfitInUsd)
+		timestamp := time.Unix(entry.Timestamp, 0).UTC()
+		line := []string{
+			timestamp.Format("2006-01-02 15:04:05"),
+			fmt.Sprintf("%d", entry.Timestamp),
+
+			fmt.Sprintf("%v", entry.ProfitInSats),
+			"sats",
+			"BTC",
+			fmt.Sprintf("%v", entry.BtcPrice.Price),
+			fmt.Sprintf("%v", entry.ProfitInUsd),
+
+			hex.EncodeToString(entry.BatchKey),
+			entry.BatchTxId,
+			fmt.Sprintf("%v", entry.BatchTxFees),
+			fmt.Sprintf("%v", entry.AccruedFees),
+			fmt.Sprintf("%v", entry.TraderChainFees),
+		}
 
 		if err := csvwriter.Write(line); err != nil {
 			return err
@@ -131,21 +124,34 @@ func generateLSATReport(filename string,
 	defer csvwriter.Flush()
 
 	// Write headers.
+	lsatEntryHeaders := []string{
+		"Date-time human readable (UTC)",
+		"Date-time unix time (UTC)",
+
+		"Balance sheet",
+		"Units",
+		"Asset type",
+		"Auction market",
+		"Market price",
+		"Historical accounting value",
+	}
 	if err := csvwriter.Write(lsatEntryHeaders); err != nil {
 		return err
 	}
 
-	line := make([]string, len(lsatEntryHeaders))
 	for _, entry := range report.LsatEntries {
 		timestamp := time.Unix(entry.Timestamp, 0)
-		// creation_timestamp
-		line[0] = timestamp.Format("2006-01-02 15:04:05")
-		// profit_sats
-		line[1] = fmt.Sprintf("%v", entry.ProfitInSats)
-		// btc_price_at_date
-		line[2] = fmt.Sprintf("%v", entry.BtcPrice.Price)
-		// profit_usd
-		line[3] = fmt.Sprintf("%v", entry.ProfitInUsd)
+		line := []string{
+			timestamp.Format("2006-01-02 15:04:05"),
+			fmt.Sprintf("%d", entry.Timestamp),
+
+			fmt.Sprintf("%v", entry.ProfitInSats),
+			"sats",
+			"BTC",
+			"LSAT",
+			fmt.Sprintf("%v", entry.BtcPrice.Price),
+			fmt.Sprintf("%v", entry.ProfitInUsd),
+		}
 
 		if err := csvwriter.Write(line); err != nil {
 			return err
@@ -281,6 +287,8 @@ var financialReportCommand = cli.Command{
 		if err = removeFiles(batchFilename, lsatFilename); err != nil {
 			return err
 		}
+
+		fmt.Printf("Report written to %s\n", zipName)
 
 		return nil
 	},
