@@ -154,9 +154,19 @@ func getLSATInvoices(ctx context.Context, cfg *Config) (
 	}
 
 	for _, invoice := range resp.Invoices {
-		if isLSATInvoice(invoice) {
-			invoices = append(invoices, invoice)
+		timestamp := invoice.CreationDate
+
+		// Filter out invoices that are not in the wanted time span.
+		if timestamp.Before(cfg.Start) || timestamp.After(cfg.End) {
+			continue
 		}
+
+		// Filter out non-LSAT invocies.
+		if !isLSATInvoice(invoice) {
+			continue
+		}
+
+		invoices = append(invoices, invoice)
 	}
 
 	return invoices, nil

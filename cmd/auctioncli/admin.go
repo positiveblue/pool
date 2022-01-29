@@ -162,7 +162,7 @@ func generateLSATReport(filename string,
 	return nil
 }
 
-// formatFilenameDates returns the star and end date formatted to be included
+// formatFilenameDates returns the start and end date formatted to be included
 // in file names.
 func formatFilenameDates(start, end time.Time) string {
 	// YYYY-MM-DD.
