@@ -26,8 +26,8 @@ require (
 	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.7.0
 	github.com/urfave/cli v1.22.1
-	go.etcd.io/etcd/client/v3 v3.5.0
-	go.etcd.io/etcd/server/v3 v3.5.0
+	go.etcd.io/etcd/client/v3 v3.5.1
+	go.etcd.io/etcd/server/v3 v3.5.1
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	google.golang.org/grpc v1.38.0
 	google.golang.org/protobuf v1.26.0
@@ -43,3 +43,5 @@ go 1.13
 // it in the client binary as well. We need to import it with its declared name
 // everywhere too, otherwise the replace won't work properly.
 replace github.com/lightninglabs/pool/auctioneerrpc => ./auctioneerrpc
+
+replace go.etcd.io/etcd/client/v3 => github.com/lightninglabs/etcd/client/v3 v3.5.1-retry-patch
