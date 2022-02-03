@@ -16,14 +16,15 @@ import (
 )
 
 const (
-	// Complete the RFC3339 date format
+	// Complete the RFC3339 date format. (YYYY-MM-DDT00:00:00Z)
 	dateFmt = "%vT00:00:00Z"
 
-	// Financial Report csv filename
-	csvFileName = "%s_pool_accounting_%d-%02d_to_%d-%02d.csv"
+	// Financial Report csv filename. The format is type (batch, lsat, ...)
+	// and date (start and end date)
+	csvFileName = "%s_pool_accounting_%s.csv"
 
 	// Financial Report zip filename
-	zipFileName = "pool_accounting_%d-%02d_to_%d-%02d.zip"
+	zipFileName = "pool_accounting_%s.zip"
 )
 
 var adminCommands = []cli.Command{
@@ -161,6 +162,14 @@ func generateLSATReport(filename string,
 	return nil
 }
 
+// formatFilenameDates returns the start and end date formatted to be included
+// in file names.
+func formatFilenameDates(start, end time.Time) string {
+	// YYYY-MM-DD.
+	format := "2006-01-02"
+	return fmt.Sprintf("%s_to_%s", start.Format(format), end.Format(format))
+}
+
 // generateZip creates a new zip file containing all the provided file.
 func generateZip(zipName string, filesNames ...string) error {
 
@@ -259,25 +268,20 @@ var financialReportCommand = cli.Command{
 			return err
 		}
 
+		timeSpan := formatFilenameDates(start, end)
 		// Generate csv.
-		batchFilename := fmt.Sprintf(csvFileName, "batch", start.Year(),
-			start.Month(), end.Year(), end.Month())
-
+		batchFilename := fmt.Sprintf(csvFileName, "batch", timeSpan)
 		if err := generateBatchReport(batchFilename, report); err != nil {
 
 			return err
 		}
 
-		lsatFilename := fmt.Sprintf(csvFileName, "lsat", start.Year(),
-			start.Month(), end.Year(), end.Month())
-
+		lsatFilename := fmt.Sprintf(csvFileName, "lsat", timeSpan)
 		if err := generateLSATReport(lsatFilename, report); err != nil {
 			return err
 		}
 
-		zipName := fmt.Sprintf(zipFileName, start.Year(), start.Month(),
-			end.Year(), end.Month())
-
+		zipName := fmt.Sprintf(zipFileName, timeSpan)
 		err = generateZip(zipName, batchFilename, lsatFilename)
 		if err != nil {
 			return nil
