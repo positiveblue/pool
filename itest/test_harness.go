@@ -32,6 +32,7 @@ import (
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -353,6 +354,7 @@ func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness,
 		NetParams:   harnessNetParams,
 		LndNode:     lndHarness.Alice,
 		Interceptor: interceptor,
+		ClusterCfg:  lncfg.DefaultCluster(),
 	})
 	if err != nil {
 		t.Fatalf("could not create auction server: %v", err)

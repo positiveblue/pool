@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"net/url"
 	"os"
 	"path"
@@ -19,6 +20,7 @@ import (
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
+	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -62,6 +64,7 @@ type auctioneerConfig struct {
 	LndNode     *lntest.HarnessNode
 	NetParams   *chaincfg.Params
 	ClusterCfg  *lncfg.Cluster
+	Status      *status.Config
 	Interceptor signal.Interceptor
 	BaseDir     string
 }
@@ -83,6 +86,10 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 	rpcMacaroonDir := filepath.Join(
 		cfg.LndNode.Cfg.DataDir, "chain", "bitcoin", cfg.NetParams.Name,
 	)
+
+	if cfg.Status == nil {
+		cfg.Status = status.DefaultConfig()
+	}
 
 	subastaTLSPath := path.Join(cfg.BaseDir, "tls.cert")
 	subastaListenAddr := fmt.Sprintf("127.0.0.1:%d", nextAvailablePort())
@@ -114,9 +121,10 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				User:     "",
 				Password: "",
 			},
-			Cluster:        lncfg.DefaultCluster(),
+			Cluster:        cfg.ClusterCfg,
 			Prometheus:     &monitoring.PrometheusConfig{},
 			Bitcoin:        &chain.BitcoinConfig{},
+			Status:         cfg.Status,
 			MaxLogFiles:    99,
 			MaxLogFileSize: 999,
 			DebugLevel:     "debug,PRXY=info,AUTH=info,LSAT=info",
@@ -401,4 +409,52 @@ func readMacaroon(macaroonPath string) (grpc.DialOption, error) {
 		return nil, fmt.Errorf("error creating mac cred: %v", err)
 	}
 	return grpc.WithPerRPCCredentials(cred), nil
+}
+
+// newAuctioneerHarnessWithReporter returns a new auctioneer with a valid
+// status reporter service.
+//
+// NOTE: during testing, the status server is used to check the leader election
+// logic. Every harness should have a different id and only one of the
+// auctioneers should call `start()``.
+func newAuctioneerHarnessWithReporter(id string, cfg auctioneerConfig) (string,
+	*auctioneerHarness, error) {
+
+	port := nextAvailablePort()
+	addr := fmt.Sprintf(":%d", port)
+	cfg.Status = &status.Config{
+		URLPrefix:     "/v1",
+		Address:       addr,
+		DefaultStatus: status.StartingUp,
+		IsAlive:       status.DefaultIsAlive,
+		IsReady:       status.DefaultIsReady,
+		IsValidStatus: status.DefaultIsValidStatus,
+	}
+	clusterCfg := lncfg.DefaultCluster()
+	clusterCfg.ID = id
+	clusterCfg.EnableLeaderElection = true
+	cfg.ClusterCfg = clusterCfg
+
+	harness, err := newAuctioneerHarness(cfg)
+
+	return addr, harness, err
+}
+
+// checkReady is a helper to assert the server is ready to process requests.
+func checkReady(address string, expected bool) error {
+	readyURL := fmt.Sprintf("http://localhost%s/v1/ready", address)
+	resp, err := http.Get(readyURL) // nolint: gosec
+	if err != nil {
+		return fmt.Errorf("unable to get service status: %v", err)
+	}
+	defer resp.Body.Close()
+
+	isReady := resp.StatusCode == http.StatusOK
+
+	if expected != isReady {
+		return fmt.Errorf("unexpected service status: expected "+
+			" isReady %v got %v", expected, isReady)
+	}
+
+	return nil
 }

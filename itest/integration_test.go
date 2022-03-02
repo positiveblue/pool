@@ -15,6 +15,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/signal"
+	"github.com/stretchr/testify/require"
 )
 
 // TestAuctioneerServer performs a series of integration tests amongst a
@@ -213,7 +214,84 @@ func TestAuctioneerServer(t *testing.T) {
 		// Stop at the first failure. Mimic behavior of original test
 		// framework.
 		if !success {
-			break
+			return
 		}
 	}
+
+	// TODO(positiveblue): leader election needs multiple harnesses running
+	// at once so it does not fit the current TestAuctioneerServer to be
+	// added as a TestCase. Rethink tests to add this one as a testCase?
+	t.Run("leader election", func(t1 *testing.T) {
+		if err := leaderElectionTestCase(t1, lndHarness); err != nil {
+			ht.Fatalf("%v", err)
+		}
+	})
+
+}
+
+// leaderElectionTestCase checks the leader election logic by starting
+// two subasta instances. It checks that the frist one is up and running
+// and the second one is waiting to be selected before starting the server.
+func leaderElectionTestCase(t *testing.T,
+	lndHarness *lntest.NetworkHarness) error {
+
+	t.Log("Running leader election integration tests")
+
+	primaryAddr, primaryHarness, err := newAuctioneerHarnessWithReporter(
+		"primary", auctioneerConfig{
+			BackendCfg:  lndHarness.BackendCfg,
+			NetParams:   harnessNetParams,
+			LndNode:     lndHarness.Alice,
+			Interceptor: signal.Interceptor{},
+		},
+	)
+	require.NoError(t, err)
+
+	if err := primaryHarness.start(); err != nil {
+		t.Fatalf("unable to start primary harness: %v", err)
+	}
+
+	err = wait.NoError(func() error {
+		return checkReady(primaryAddr, true)
+	}, defaultWaitTimeout)
+	require.NoError(t, err)
+
+	secondaryAddr, secondaryHarness, err := newAuctioneerHarnessWithReporter(
+		"secondary", auctioneerConfig{
+			BackendCfg:  lndHarness.BackendCfg,
+			NetParams:   harnessNetParams,
+			LndNode:     lndHarness.Alice,
+			Interceptor: signal.Interceptor{},
+		},
+	)
+	require.NoError(t, err)
+
+	// secondaryHarness.start() tries to recreate the etcd database and it
+	// fails so we need to set the same database as the primary harness
+	// here.
+	secondaryHarness.etcd = primaryHarness.etcd
+
+	// This server will hang, so we run it in a goroutine.
+	go secondaryHarness.runServer()
+
+	// Give some time to the secondary sever to start.
+	err = wait.NoError(func() error {
+		return checkReady(secondaryAddr, false)
+	}, defaultWaitTimeout)
+	require.NoError(t, err)
+
+	// Let's kill the first server and see how the secondaryHarness takes
+	// over.
+	primaryHarness.halt()
+	err = wait.NoError(func() error {
+		return checkReady(secondaryAddr, true)
+	}, defaultWaitTimeout)
+	require.NoError(t, err)
+
+	// TODO (positiveblue): fix primary and secondary harness leaks. It is
+	// not a problem because this is the last test, but the harness needs
+	// a refactor so we can start and stop multiple instances without any
+	// problem.
+
+	return nil
 }
