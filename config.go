@@ -11,6 +11,7 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
+	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
@@ -206,6 +207,7 @@ type Config struct {
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
 	Bitcoin    *chain.BitcoinConfig         `group:"bitcoin" namespace:"bitcoin"`
 	SQL        *subastadb.SQLConfig         `group:"sql" namespace:"sql"`
+	Status     *status.Config               `group:"status" namespace:"status"`
 
 	// RPCListener is a network listener that the default auctionserver
 	// should listen on.
@@ -246,6 +248,7 @@ var DefaultConfig = &Config{
 		Password: "pool",
 		DBName:   "pool",
 	},
+	Status:                       status.DefaultConfig(),
 	TLSCertPath:                  defaultTLSCertPath,
 	TLSKeyPath:                   defaultTLSKeyPath,
 	MaxLogFiles:                  defaultMaxLogFiles,

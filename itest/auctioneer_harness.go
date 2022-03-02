@@ -24,6 +24,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/macaroons"
+	"github.com/lightningnetwork/lnd/signal"
 	"go.etcd.io/etcd/server/v3/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -191,7 +192,7 @@ func (hs *auctioneerHarness) start() error {
 // up again after it was turned off with halt().
 func (hs *auctioneerHarness) runServer() error {
 	var err error
-	hs.server, err = subasta.NewServer(hs.serverCfg)
+	hs.server, err = subasta.NewServer(hs.serverCfg, signal.Interceptor{})
 	if err != nil {
 		return fmt.Errorf("unable to create server: %v", err)
 	}

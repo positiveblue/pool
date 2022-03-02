@@ -24,11 +24,13 @@ import (
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
+	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
+	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -286,6 +288,8 @@ type Server struct {
 
 	cfg *Config
 
+	statusReporter *status.Reporter
+
 	store subastadb.Store
 
 	accountManager *account.Manager
@@ -317,7 +321,7 @@ type Server struct {
 
 // NewServer returns a new auctioneer server that is started in daemon mode,
 // listens for gRPC connections and executes commands.
-func NewServer(cfg *Config) (*Server, error) {
+func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { // nolint:gocyclo
 	ctx := context.Background()
 
 	// First, we'll set up our logging infrastructure so all operations
@@ -329,6 +333,11 @@ func NewServer(cfg *Config) (*Server, error) {
 	// Print the version before we do any more set up to ensure we output
 	// it.
 	log.Infof("Version: %v", Version())
+
+	statusReporter := status.NewReporter(cfg.Status)
+	if err := statusReporter.Start(); err != nil {
+		return nil, fmt.Errorf("unable to start status server: %v", err)
+	}
 
 	// With our logging set up, we'll now establish our initial connection
 	// to the backing lnd instance.
@@ -466,6 +475,7 @@ func NewServer(cfg *Config) (*Server, error) {
 		cfg:            cfg,
 		lnd:            lnd,
 		store:          store,
+		statusReporter: statusReporter,
 		accountManager: accountManager,
 		orderBook:      orderBook,
 		batchExecutor:  batchExecutor,
@@ -819,6 +829,9 @@ func (s *Server) Start() error {
 				"server: %w", err)
 			return
 		}
+
+		// Notify the status reporter that we are ready to receive requests.
+		_ = s.statusReporter.SetStatus(status.UpAndRunning)
 	})
 
 	return startErr
@@ -857,6 +870,13 @@ func (s *Server) Stop() error {
 
 		if s.cfg.Prometheus.Active {
 			s.cfg.Prometheus.BitcoinClient.Shutdown()
+		}
+
+		err := s.statusReporter.Stop(context.Background())
+		if err != nil {
+			stopErr = fmt.Errorf("unable to stop status service: %w",
+				err)
+			return
 		}
 	})
 

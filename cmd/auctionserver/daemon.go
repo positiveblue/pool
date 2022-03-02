@@ -53,7 +53,7 @@ func (x *daemonCommand) Execute(_ []string) error {
 		}()
 	}
 
-	server, err := subasta.NewServer(x.cfg)
+	server, err := subasta.NewServer(x.cfg, shutdownInterceptor)
 	if err != nil {
 		return fmt.Errorf("unable to create server: %v", err)
 	}
