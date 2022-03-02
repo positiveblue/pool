@@ -29,6 +29,9 @@ import (
 	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/cluster"
+	"github.com/lightningnetwork/lnd/kvdb/etcd"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
 	"google.golang.org/grpc"
@@ -276,6 +279,71 @@ func (a *activeTradersMap) invalidateCache(id [32]byte) {
 
 var _ venue.ExecutorStore = (*executorStore)(nil)
 
+// waitUntilLeader will create a leader elector (if needed) and block until
+// this instance is elected as a leader or the interceptor receives a shutdown
+// message.
+//
+// Note: If we join a cluster with a leader instance running, we will block
+// until we are selected. If the leader shuts down properly, that means calling
+// server.Stop() another instance will be selected "instantly". On the other
+// hand, tha instance just panics, etcd will wait until the connection times up
+// before selecting the next leader(currently ~60s).
+func waitUntilLeader(ctx context.Context, cfg *Config,
+	interceptor signal.Interceptor) (cluster.LeaderElector, error) {
+
+	// Play safe.
+	if !cfg.Cluster.EnableLeaderElection {
+		return nil, nil
+	}
+
+	// done is a chan used to ensure that we do not leak any goroutines.
+	done := make(chan struct{})
+	defer func() {
+		done <- struct{}{}
+	}()
+
+	electionCtx, cancelElection := context.WithCancel(ctx)
+	// Cancel the context if the program gets killed before we are done.
+	go func() {
+		select {
+		// done is used whenever the function finishes.
+		case <-done:
+			return
+		// If we are shutting down, and we were not elected as a leader yet
+		// cancel the leader election context.
+		case <-interceptor.ShutdownChannel():
+			cancelElection()
+		}
+	}()
+
+	log.Infof("Using %v leader elector", cfg.Cluster.LeaderElector)
+
+	leaderElector, err := cfg.Cluster.MakeLeaderElector(
+		electionCtx, &lncfg.DB{
+			Backend: cluster.EtcdLeaderElector,
+			Etcd: &etcd.Config{
+				Host:       cfg.Etcd.Host,
+				User:       cfg.Etcd.User,
+				Pass:       cfg.Etcd.Password,
+				DisableTLS: true,
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	log.Infof("Starting leadership campaign (%v)", cfg.Cluster.ID)
+
+	if err := leaderElector.Campaign(electionCtx); err != nil {
+		return nil, fmt.Errorf("leadership campaign failed: %v", err)
+	}
+
+	log.Infof("Elected as leader (%v)", cfg.Cluster.ID)
+
+	return leaderElector, nil
+}
+
 // Server is the main auction auctioneer server.
 type Server struct {
 	rpcServer   *rpcServer
@@ -289,6 +357,8 @@ type Server struct {
 	cfg *Config
 
 	statusReporter *status.Reporter
+
+	leaderElector cluster.LeaderElector
 
 	store subastadb.Store
 
@@ -337,6 +407,22 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 	statusReporter := status.NewReporter(cfg.Status)
 	if err := statusReporter.Start(); err != nil {
 		return nil, fmt.Errorf("unable to start status server: %v", err)
+	}
+	var (
+		leaderElector cluster.LeaderElector
+		err           error
+	)
+	if cfg.Cluster.EnableLeaderElection {
+		// The subasta server does not support multiple instaces running
+		// at the same time. We use etcd to ensure that there are never
+		// more than one instance running. Continuation will be blocked
+		// until this instance is elected as the current leader or it
+		// is shutting down.
+		_ = statusReporter.SetStatus(status.WaitingLeaderElection)
+		leaderElector, err = waitUntilLeader(ctx, cfg, interceptor)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// With our logging set up, we'll now establish our initial connection
@@ -476,6 +562,7 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 		lnd:            lnd,
 		store:          store,
 		statusReporter: statusReporter,
+		leaderElector:  leaderElector,
 		accountManager: accountManager,
 		orderBook:      orderBook,
 		batchExecutor:  batchExecutor,
@@ -870,6 +957,13 @@ func (s *Server) Stop() error {
 
 		if s.cfg.Prometheus.Active {
 			s.cfg.Prometheus.BitcoinClient.Shutdown()
+		}
+
+		if s.cfg.Cluster.EnableLeaderElection && s.leaderElector != nil {
+			err := s.leaderElector.Resign()
+			if err != nil {
+				log.Errorf("Leader elector failed to resign: %v", err)
+			}
 		}
 
 		err := s.statusReporter.Stop(context.Background())

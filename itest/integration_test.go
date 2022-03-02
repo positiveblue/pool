@@ -14,6 +14,7 @@ import (
 	"github.com/btcsuite/btcd/integration/rpctest"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/lightningnetwork/lnd/signal"
 )
 
 // TestAuctioneerServer performs a series of integration tests amongst a
@@ -176,7 +177,7 @@ func TestAuctioneerServer(t *testing.T) {
 			// created and later discarded for each test run to
 			// assure no state is taken over between runs.
 			traderHarness, auctioneerHarness := setupHarnesses(
-				t1, lndHarness,
+				t1, lndHarness, signal.Interceptor{},
 			)
 			lndHarness.EnsureConnected(
 				t1, lndHarness.Alice, lndHarness.Bob,

@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -57,10 +58,12 @@ type auctioneerHarness struct {
 // auctioneerConfig holds all configuration items that are required to start an
 // auctioneer server.
 type auctioneerConfig struct {
-	BackendCfg lntest.BackendConfig
-	LndNode    *lntest.HarnessNode
-	NetParams  *chaincfg.Params
-	BaseDir    string
+	BackendCfg  lntest.BackendConfig
+	LndNode     *lntest.HarnessNode
+	NetParams   *chaincfg.Params
+	ClusterCfg  *lncfg.Cluster
+	Interceptor signal.Interceptor
+	BaseDir     string
 }
 
 // newAuctioneerHarness creates a new auctioneer server harness with the given
@@ -111,6 +114,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				User:     "",
 				Password: "",
 			},
+			Cluster:        lncfg.DefaultCluster(),
 			Prometheus:     &monitoring.PrometheusConfig{},
 			Bitcoin:        &chain.BitcoinConfig{},
 			MaxLogFiles:    99,
@@ -192,7 +196,7 @@ func (hs *auctioneerHarness) start() error {
 // up again after it was turned off with halt().
 func (hs *auctioneerHarness) runServer() error {
 	var err error
-	hs.server, err = subasta.NewServer(hs.serverCfg, signal.Interceptor{})
+	hs.server, err = subasta.NewServer(hs.serverCfg, hs.cfg.Interceptor)
 	if err != nil {
 		return fmt.Errorf("unable to create server: %v", err)
 	}
