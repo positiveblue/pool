@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -204,6 +205,7 @@ type Config struct {
 
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
+	Cluster    *lncfg.Cluster               `group:"cluster" namespace:"cluster"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
 	Bitcoin    *chain.BitcoinConfig         `group:"bitcoin" namespace:"bitcoin"`
 	SQL        *subastadb.SQLConfig         `group:"sql" namespace:"sql"`
@@ -235,6 +237,7 @@ var DefaultConfig = &Config{
 	Etcd: &EtcdConfig{
 		Host: "localhost:2379",
 	},
+	Cluster: lncfg.DefaultCluster(),
 	Prometheus: &monitoring.PrometheusConfig{
 		ListenAddr: "localhost:8989",
 	},
