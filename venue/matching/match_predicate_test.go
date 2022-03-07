@@ -11,13 +11,14 @@ import (
 )
 
 var (
-	node1Key = NodeID{1, 2, 3, 4}
-	node2Key = NodeID{2, 3, 4, 5}
-	node3Key = NodeID{3, 4, 5, 6}
-	node4Key = NodeID{4, 5, 6, 7}
-	acct1Key = [33]byte{1, 2, 3, 4}
-	acct2Key = [33]byte{2, 3, 4, 5}
-	acct1    = &account.Account{
+	node1Key    = NodeID{1, 2, 3, 4}
+	node2Key    = NodeID{2, 3, 4, 5}
+	node3Key    = NodeID{3, 4, 5, 6}
+	node4Key    = NodeID{4, 5, 6, 7}
+	acct1Key    = [33]byte{1, 2, 3, 4}
+	acct2Key    = [33]byte{2, 3, 4, 5}
+	multiSigKey = [33]byte{3, 4, 5, 6}
+	acct1       = &account.Account{
 		TraderKeyRaw: acct1Key,
 		State:        account.StateOpen,
 		Expiry:       2016,
@@ -44,7 +45,8 @@ var (
 			},
 		},
 		Kit: order.Kit{
-			NodeKey: node2Key,
+			NodeKey:     node2Key,
+			MultiSigKey: multiSigKey,
 		},
 		IsSidecar: true,
 	}
@@ -71,6 +73,7 @@ func TestNodeConflictPredicate(t *testing.T) {
 	p.ReportConflict(node3Key, node2Key, "FUNDING_FAILED")
 	p.ReportConflict(node3Key, node1Key, "HAVE_CHANNEL")
 	p.ReportConflict(node2Key, node4Key, "HAVE_CHANNEL")
+	p.ReportConflict(node2Key, multiSigKey, "HAVE_CHANNEL")
 
 	// Make sure the internal conflict map is filled correctly and can be
 	// queried as expected.

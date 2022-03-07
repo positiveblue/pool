@@ -25,6 +25,9 @@ type Match struct {
 
 	// Bid is the bid that matched with the bid.
 	Bid Order
+
+	// Sidecar is the recipient information for sidecar bids.
+	Sidecar Order
 }
 
 // FromBatch extracts the matches needed for reject handling from the given
@@ -46,6 +49,20 @@ func FromBatch(batch *matching.OrderBatch) []Match {
 				NodeKey: bid.ServerDetails().NodeKey,
 				Nonce:   bid.Nonce(),
 			},
+		}
+
+		// Store the recipient related information.
+		if bid.IsSidecar {
+			matches[i].Sidecar = Order{
+				AcctKey: bid.MultiSigKey,
+				// NOTE: this is not a bug/typo. The NodeKey is
+				// used to ensure that conflicting orders do not
+				// match over and over. For sidecar recipients,
+				// we do not have the nodeID, so we use the bid
+				// MultiSig.
+				NodeKey: bid.MultiSigKey,
+				Nonce:   bid.Nonce(),
+			}
 		}
 	}
 
@@ -176,13 +193,20 @@ func (r *RejectHandler) HandleReject(orders []Match,
 			for _, orderPair := range orders {
 				ask := orderPair.Ask
 				bid := orderPair.Bid
+				sidecar := orderPair.Sidecar
 
-				if ask.Nonce == rejectNonce &&
-					bid.AcctKey == reporter {
+				if ask.Nonce == rejectNonce {
+					if bid.AcctKey == reporter {
+						rejectedOrder = &ask
+						matchedOrder = &bid
+						break
+					}
 
-					rejectedOrder = &ask
-					matchedOrder = &bid
-					break
+					if sidecar.AcctKey == reporter {
+						rejectedOrder = &ask
+						matchedOrder = &sidecar
+						break
+					}
 				}
 
 				if bid.Nonce == rejectNonce &&

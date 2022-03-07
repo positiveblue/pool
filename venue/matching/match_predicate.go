@@ -164,7 +164,9 @@ type NodeConflict struct {
 }
 
 // NodeConflictTracker is an interface that keeps track of conflicts between
-// nodes.
+// nodes. It is overloaded to keep conflicts between traders too. That comes
+// handy when we want to stop matching orders with sidecars (we do not have
+// the recipients nodeID).
 type NodeConflictTracker interface {
 	// ReportConflict signals that the reporter node has a problem with the
 	// subject node. The order of the arguments is important as the reporter
@@ -211,6 +213,13 @@ type NodeConflictPredicate struct {
 // NOTE: This is part of the MatchPredicate interface.
 func (p *NodeConflictPredicate) IsMatchable(ask *order.Ask,
 	bid *order.Bid) bool {
+
+	// For sidecars, we need to check if we have recorded any conflict
+	// between the ask node and the order itself (we do not have the
+	// recipient's node key).
+	if bid.IsSidecar {
+		return !p.HasConflict(ask.NodeKey, bid.MultiSigKey)
+	}
 
 	return !p.HasConflict(ask.NodeKey, bid.NodeKey)
 }

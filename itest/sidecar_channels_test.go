@@ -13,6 +13,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/sidecar"
+	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -320,6 +321,17 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 
 	// Close the offending channel and try again.
 	closeAllChannels(ctx, t, dave)
+
+	// We were matched before, so even if we close the channel, the
+	// auctioneer will not match us until the conflict map is cleared.
+	_, _ = executeBatch(t, 0)
+	_, err = t.auctioneer.AuctionAdminClient.ClearConflicts(
+		ctx, &adminrpc.EmptyRequest{},
+	)
+	require.NoError(t.t, err)
+
+	// Now that we do not have any channel with the peer + the acutioneer
+	// does not have the matched marked as a conflict, we should succeed.
 	_, batchTXIDs := executeBatch(t, 1)
 	firstBatchTXID := batchTXIDs[0]
 
