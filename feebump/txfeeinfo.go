@@ -1,7 +1,7 @@
 package feebump
 
 import (
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
 

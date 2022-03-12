@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcwallet/wtxmgr"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/faraday/fiat"
@@ -302,7 +302,7 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 func (s *adminRPCServer) AccountDetails(ctx context.Context,
 	req *adminrpc.AccountDetailsRequest) (*adminrpc.Account, error) {
 
-	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
+	acctKey, err := btcec.ParsePubKey(req.AccountKey)
 	if err != nil {
 		return nil, err
 	}
@@ -318,7 +318,7 @@ func (s *adminRPCServer) EditAccount(ctx context.Context,
 	req *adminrpc.EditAccountRequest) (*adminrpc.Account, error) {
 
 	// Retrieve the account with the associated key.
-	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
+	acctKey, err := btcec.ParsePubKey(req.AccountKey)
 	if err != nil {
 		return nil, err
 	}
@@ -391,7 +391,7 @@ func (s *adminRPCServer) EditAccount(ctx context.Context,
 func (s *adminRPCServer) DeleteAccountDiff(ctx context.Context,
 	req *adminrpc.DeleteAccountDiffRequest) (*adminrpc.EmptyResponse, error) {
 
-	acctKey, err := btcec.ParsePubKey(req.AccountKey, btcec.S256())
+	acctKey, err := btcec.ParsePubKey(req.AccountKey)
 	if err != nil {
 		return nil, err
 	}
@@ -547,7 +547,7 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 	} else {
 		copy(batchID[:], req.BatchId)
 
-		batchKey, err = btcec.ParsePubKey(req.BatchId, btcec.S256())
+		batchKey, err = btcec.ParsePubKey(req.BatchId)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse "+
 				"batch ID (%x): %v", req.BatchId, err)
@@ -700,7 +700,7 @@ func (s *adminRPCServer) RemoveBan(ctx context.Context,
 		return nil, fmt.Errorf("must set either node or account")
 	}
 
-	key, err := btcec.ParsePubKey(keyBytes, btcec.S256())
+	key, err := btcec.ParsePubKey(keyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -738,7 +738,7 @@ func (s *adminRPCServer) AddBan(ctx context.Context,
 		return nil, fmt.Errorf("must specify duration in blocks")
 	}
 
-	key, err := btcec.ParsePubKey(keyBytes, btcec.S256())
+	key, err := btcec.ParsePubKey(keyBytes)
 	if err != nil {
 		return nil, err
 	}
@@ -759,9 +759,7 @@ func (s *adminRPCServer) RemoveReservation(ctx context.Context,
 	var tokenID *lsat.TokenID
 	switch {
 	case req.GetTraderKey() != nil:
-		traderKey, err := btcec.ParsePubKey(
-			req.GetTraderKey(), btcec.S256(),
-		)
+		traderKey, err := btcec.ParsePubKey(req.GetTraderKey())
 		if err != nil {
 			return nil, err
 		}

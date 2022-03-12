@@ -5,7 +5,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
@@ -20,10 +20,10 @@ import (
 )
 
 var (
-	batchPriv, startBatchKey    = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x01})
-	acctBigPriv, acctKeyBig     = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x02})
-	acctSmallPriv, acctKeySmall = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x03})
-	acctMedPriv, acctKeyMed     = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x04})
+	batchPriv, startBatchKey    = btcec.PrivKeyFromBytes([]byte{0x01})
+	acctBigPriv, acctKeyBig     = btcec.PrivKeyFromBytes([]byte{0x02})
+	acctSmallPriv, acctKeySmall = btcec.PrivKeyFromBytes([]byte{0x03})
+	acctMedPriv, acctKeyMed     = btcec.PrivKeyFromBytes([]byte{0x04})
 	oldMasterOutHash            = chainhash.Hash{0x01}
 	newMasterOutHash            = chainhash.Hash{0x02}
 

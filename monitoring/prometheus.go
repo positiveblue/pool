@@ -7,7 +7,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/subastadb"

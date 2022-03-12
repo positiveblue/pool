@@ -6,10 +6,10 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -53,7 +53,7 @@ func (s *SQLKeyDescriptor) KeyDescriptor() (*keychain.KeyDescriptor, error) {
 		return nil, err
 	}
 
-	pubKey, err := btcec.ParsePubKey(pubkeyRaw[:], btcec.S256())
+	pubKey, err := btcec.ParsePubKey(pubkeyRaw[:])
 	if err != nil {
 		return nil, err
 	}
@@ -158,7 +158,7 @@ func (s *SQLAccount) toAccount() (*account.Account, error) {
 		return nil, err
 	}
 
-	batchKey, err := btcec.ParsePubKey(batchKeyRaw[:], btcec.S256())
+	batchKey, err := btcec.ParsePubKey(batchKeyRaw[:])
 	if err != nil {
 		return nil, err
 	}

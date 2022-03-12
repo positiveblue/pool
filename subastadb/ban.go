@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
@@ -207,11 +207,11 @@ func (s *EtcdStore) banNodeKey(stm conc.STM, nodeKey *btcec.PublicKey,
 func (s *EtcdStore) IsTraderBanned(ctx context.Context, accountKey,
 	nodeKey [33]byte, currentHeight uint32) (bool, error) {
 
-	nodePubkey, err := btcec.ParsePubKey(nodeKey[:], btcec.S256())
+	nodePubkey, err := btcec.ParsePubKey(nodeKey[:])
 	if err != nil {
 		return false, err
 	}
-	accountPubkey, err := btcec.ParsePubKey(accountKey[:], btcec.S256())
+	accountPubkey, err := btcec.ParsePubKey(accountKey[:])
 	if err != nil {
 		return false, err
 	}
@@ -464,7 +464,7 @@ func rawKeyFromBanKey(key string) ([33]byte, error) {
 	if err != nil {
 		return rawKey, fmt.Errorf("cannot hex decode key: %v", err)
 	}
-	pubKey, err := btcec.ParsePubKey(keyBytes, btcec.S256())
+	pubKey, err := btcec.ParsePubKey(keyBytes)
 	if err != nil {
 		return rawKey, fmt.Errorf("cannot parse public key: %v", err)
 	}

@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/input"
@@ -48,7 +48,8 @@ type MockSigner struct {
 var _ lndclient.SignerClient = (*MockSigner)(nil)
 
 func (s *MockSigner) SignOutputRaw(_ context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor,
+	prevOutputs []*wire.TxOut) ([][]byte, error) {
 
 	s.SignOutputRawChannel <- SignOutputRawRequest{
 		Tx:              tx,

@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/sidecar"
@@ -387,9 +387,7 @@ func (h *hashMailServer) ValidateStreamAuth(ctx context.Context,
 	case init.GetAcctAuth() != nil:
 		acctAuth := init.GetAcctAuth()
 
-		pubKey, err := btcec.ParsePubKey(
-			acctAuth.AcctKey, btcec.S256(),
-		)
+		pubKey, err := btcec.ParsePubKey(acctAuth.AcctKey)
 		if err != nil {
 			return err
 		}

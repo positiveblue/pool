@@ -7,11 +7,9 @@ package itest
 
 import (
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/integration/rpctest"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/signal"
@@ -39,40 +37,12 @@ func TestAuctioneerServer(t *testing.T) {
 	// guarantees of getting included in to blocks.
 	//
 	// We will also connect it to our chain backend.
-	minerLogDir := fmt.Sprintf("%s/.minerlogs", lntest.GetLogDir())
-	args := []string{
-		"--rejectnonstd",
-		"--txindex",
-		"--debuglevel=debug",
-		"--logdir=" + minerLogDir,
-		"--trickleinterval=100ms",
-	}
-
-	miner, err := rpctest.New(
-		harnessNetParams, nil, args, lntest.GetBtcdBinary(),
-	)
+	miner, err := lntest.NewMiner()
 	if err != nil {
 		ht.Fatalf("unable to create mining node: %v", err)
 	}
 	defer func() {
-		err := miner.TearDown()
-		if err != nil {
-			fmt.Printf("error tearing down miner: %v\n", err)
-		}
-
-		// After shutting down the miner, we'll make a copy of the log
-		// file before deleting the temporary log dir.
-		logFile := fmt.Sprintf(
-			"%s/%s/btcd.log", minerLogDir, harnessNetParams.Name,
-		)
-		err = lntest.CopyFile("./output_btcd_miner.log", logFile)
-		if err != nil {
-			fmt.Printf("unable to copy file: %v\n", err)
-		}
-		if err = os.RemoveAll(minerLogDir); err != nil {
-			fmt.Printf("Cannot remove dir %s: %v\n",
-				minerLogDir, err)
-		}
+		require.NoError(t, miner.Stop())
 	}()
 
 	// Start a chain backend.
@@ -184,8 +154,8 @@ func TestAuctioneerServer(t *testing.T) {
 				t1, lndHarness.Alice, lndHarness.Bob,
 			)
 
-			lndHarness.Alice.AddToLog(logLine)
-			lndHarness.Bob.AddToLog(logLine)
+			lndHarness.Alice.AddToLogf(logLine)
+			lndHarness.Bob.AddToLogf(logLine)
 
 			ht := newHarnessTest(
 				t1, lndHarness, auctioneerHarness,

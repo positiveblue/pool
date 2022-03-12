@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -32,9 +32,7 @@ import (
 var (
 	testRawAuctioneerKey, _ = hex.DecodeString("02187d1a0e30f4e5016fc1137" +
 		"363ee9e7ed5dde1e6c50f367422336df7a108b716")
-	testAuctioneerKey, _ = btcec.ParsePubKey(
-		testRawAuctioneerKey, btcec.S256(),
-	)
+	testAuctioneerKey, _  = btcec.ParsePubKey(testRawAuctioneerKey)
 	testAuctioneerKeyDesc = &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
 			Family: account.AuctioneerKeyFamily,
@@ -45,17 +43,15 @@ var (
 	testTraderKeyStr = "036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0a" +
 		"f58e0c9395446ba09"
 	testRawTraderKey, _ = hex.DecodeString(testTraderKeyStr)
-	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey)
 
 	testRawTraderKey2, _ = hex.DecodeString("037265ea5016fb5d5e05538e360e" +
 		"1d17f557aa9a3aca7431bf78666931d5c8afd7")
-	testTraderKey2, _ = btcec.ParsePubKey(testRawTraderKey2, btcec.S256())
+	testTraderKey2, _ = btcec.ParsePubKey(testRawTraderKey2)
 
 	initialBatchKeyBytes, _ = hex.DecodeString("02824d0cbac65e01712124c50" +
 		"ff2cc74ce22851d7b444c1bf2ae66afefb8eaf27f")
-	initialBatchKey, _ = btcec.ParsePubKey(
-		initialBatchKeyBytes, btcec.S256(),
-	)
+	initialBatchKey, _ = btcec.ParsePubKey(initialBatchKeyBytes)
 
 	testTokenID = lsat.TokenID{1, 2, 3}
 	testAccount = account.Account{

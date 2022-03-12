@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -42,9 +42,7 @@ type Auctioneer struct {
 
 // AccountWitnessScript computes the raw witness script of the target account.
 func (a *Auctioneer) AccountWitnessScript() ([]byte, error) {
-	batchKey, err := btcec.ParsePubKey(
-		a.BatchKey[:], btcec.S256(),
-	)
+	batchKey, err := btcec.ParsePubKey(a.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -93,9 +91,7 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	// key:
 	//    * batchTweak = sha256(batchKey || auctioneerKey)
 	//    * accountKey = auctioneerKey  + batchTweak*G
-	batchKey, err := btcec.ParsePubKey(
-		a.BatchKey[:], btcec.S256(),
-	)
+	batchKey, err := btcec.ParsePubKey(a.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +118,7 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	}
 	ctx := context.Background()
 	sigs, err := signer.SignOutputRaw(
-		ctx, tx, []*lndclient.SignDescriptor{signDesc},
+		ctx, tx, []*lndclient.SignDescriptor{signDesc}, nil,
 	)
 	if err != nil {
 		return nil, err
@@ -139,7 +135,9 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	// is valid.
 	vm, err := txscript.NewEngine(
 		pkScript, txCopy, inputIndex, txscript.StandardVerifyFlags,
-		nil, nil, int64(a.Balance),
+		nil, nil, int64(a.Balance), txscript.NewCannedPrevOutputFetcher(
+			pkScript, int64(a.Balance),
+		),
 	)
 	if err != nil {
 		return nil, err
@@ -200,6 +198,9 @@ func InputWitnesses(signer lndclient.SignerClient,
 		vm, err := txscript.NewEngine(
 			utxo.PkScript, txCopy, i, txscript.StandardVerifyFlags,
 			nil, nil, int64(utxo.Value),
+			txscript.NewCannedPrevOutputFetcher(
+				utxo.PkScript, int64(utxo.Value),
+			),
 		)
 		if err != nil {
 			return nil, err

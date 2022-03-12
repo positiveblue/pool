@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
@@ -26,7 +26,7 @@ var (
 		"02187d1a0e30f4e5016fc1137363ee9e7ed5dde1e6c50f367422336df7a1" +
 			"08b716",
 	)
-	testAuctioneerKey, _  = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
+	testAuctioneerKey, _  = btcec.ParsePubKey(testRawAuctioneerKey)
 	testAuctioneerKeyDesc = &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
 			Family: account.AuctioneerKeyFamily,
@@ -38,7 +38,7 @@ var (
 		"036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c93954" +
 			"46ba09",
 	)
-	testTraderKey, _ = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+	testTraderKey, _ = btcec.ParsePubKey(testRawTraderKey)
 
 	testAccount = account.Account{
 		TraderKeyRaw:  toRawKey(testTraderKey),
@@ -70,7 +70,7 @@ type mockSigner struct {
 }
 
 func (s *mockSigner) SignOutputRaw(context.Context, *wire.MsgTx,
-	[]*lndclient.SignDescriptor) ([][]byte, error) {
+	[]*lndclient.SignDescriptor, []*wire.TxOut) ([][]byte, error) {
 
 	return [][]byte{{1, 2, 3}}, nil
 }

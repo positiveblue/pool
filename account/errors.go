@@ -3,7 +3,7 @@ package account
 import (
 	"fmt"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcutil"
 )
 
 // ErrBannedAccount is an error returned when a modification is attempted to an

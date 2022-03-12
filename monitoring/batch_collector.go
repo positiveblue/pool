@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -329,7 +329,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 		// For the set of metrics which want a cumulative value, we'll
 		// fetch the snapshot as well to be able to export the volume
 		// as well as the revenue.
-		batchKey, _ := btcec.ParsePubKey(batchID[:], btcec.S256())
+		batchKey, _ := btcec.ParsePubKey(batchID[:])
 		batch, err := c.cfg.SnapshotSource(ctx, batchKey)
 		if err != nil {
 			log.Errorf("could not query batch snapshot with ID "+

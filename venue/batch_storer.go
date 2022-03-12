@@ -5,7 +5,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
@@ -111,7 +111,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 		// Get the current state of the account first so we can create
 		// a proper diff.
 		rawKey := diff.StartingState.AccountKey[:]
-		acctKey, err := btcec.ParsePubKey(rawKey, btcec.S256())
+		acctKey, err := btcec.ParsePubKey(rawKey)
 		if err != nil {
 			return fmt.Errorf("error parsing account key: %v", err)
 		}
@@ -198,7 +198,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	// Parse the current per-batch key (=BatchID) and increment it by the
 	// curve's base point to get the next one. We'll store the new/next
 	// batch key in the end if everything else was successful.
-	batchKey, err := btcec.ParsePubKey(result.BatchID[:], btcec.S256())
+	batchKey, err := btcec.ParsePubKey(result.BatchID[:])
 	if err != nil {
 		return fmt.Errorf("error parsing batch ID: %v", err)
 	}

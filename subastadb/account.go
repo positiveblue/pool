@@ -8,7 +8,7 @@ import (
 	"io"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/tlv"

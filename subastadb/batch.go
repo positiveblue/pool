@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -29,7 +29,7 @@ var (
 	initialBatchKeyBytes, _ = hex.DecodeString(
 		"02824d0cbac65e01712124c50ff2cc74ce22851d7b444c1bf2ae66afefb8eaf27f",
 	)
-	InitialBatchKey, _ = btcec.ParsePubKey(initialBatchKeyBytes, btcec.S256())
+	InitialBatchKey, _ = btcec.ParsePubKey(initialBatchKeyBytes)
 
 	// batchDir is the directory name under which we'll store all
 	// transaction batch related information. This needs be prefixed with
@@ -833,7 +833,7 @@ func deserializeTrader(r io.Reader) (*matching.Trader, error) {
 
 	// To save some space, we don't store the _next_ batch key as it can
 	// easily be derived.
-	batchKey, err := btcec.ParsePubKey(t.BatchKey[:], btcec.S256())
+	batchKey, err := btcec.ParsePubKey(t.BatchKey[:])
 	if err != nil {
 		return nil, fmt.Errorf("error parsing batch key: %v", err)
 	}

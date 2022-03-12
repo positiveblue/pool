@@ -3,7 +3,7 @@ package chanenforcement
 import (
 	"context"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/pool/chaninfo"
 	"github.com/lightningnetwork/lnd/chanbackup"

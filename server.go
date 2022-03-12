@@ -10,8 +10,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -592,9 +592,7 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 			AccountFetcher: func(acctID matching.AccountID) (
 				*account.Account, error) {
 
-				acctKey, err := btcec.ParsePubKey(
-					acctID[:], btcec.S256(),
-				)
+				acctKey, err := btcec.ParsePubKey(acctID[:])
 				if err != nil {
 					return nil, err
 				}

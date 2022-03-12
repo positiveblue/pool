@@ -8,11 +8,11 @@ import (
 	"sync"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -657,7 +657,7 @@ func (m *Manager) WatchMatchedAccounts(ctx context.Context,
 	matchedAccounts [][33]byte) error {
 
 	for _, rawAcctKey := range matchedAccounts {
-		acctKey, err := btcec.ParsePubKey(rawAcctKey[:], btcec.S256())
+		acctKey, err := btcec.ParsePubKey(rawAcctKey[:])
 		if err != nil {
 			return fmt.Errorf("error parsing account key: %v", err)
 		}
@@ -1020,7 +1020,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	}
 
 	sigs, err := m.cfg.Signer.SignOutputRaw(
-		ctx, tx, []*lndclient.SignDescriptor{signDesc},
+		ctx, tx, []*lndclient.SignDescriptor{signDesc}, nil,
 	)
 	if err != nil {
 		return nil, nil, nil, err

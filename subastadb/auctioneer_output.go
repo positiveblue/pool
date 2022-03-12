@@ -5,7 +5,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/subasta/account"
 	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
@@ -78,7 +78,7 @@ func (s *EtcdStore) UpdateAuctioneerAccount(ctx context.Context,
 			return err
 		}
 
-		key, err := btcec.ParsePubKey(acct.BatchKey[:], btcec.S256())
+		key, err := btcec.ParsePubKey(acct.BatchKey[:])
 		if err != nil {
 			return err
 		}

@@ -7,7 +7,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"

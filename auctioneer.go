@@ -10,10 +10,10 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
@@ -1108,7 +1108,7 @@ func (a *Auctioneer) updatePendingBatchID(newBatchID matching.BatchID) {
 // the node has been banned before and grows exponentially, otherwise it is 144
 // blocks.
 func (a *Auctioneer) banTrader(trader matching.AccountID) {
-	accountKey, err := btcec.ParsePubKey(trader[:], btcec.S256())
+	accountKey, err := btcec.ParsePubKey(trader[:])
 	if err != nil {
 		log.Errorf("Unable to ban account %x: %v", trader[:], err)
 		return

@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
@@ -33,10 +34,10 @@ import (
 var (
 	testTimeout = time.Second * 5
 
-	_, nodeKey1          = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x1})
-	_, nodeKey2          = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x2})
-	_, paymentBasePoint1 = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x3})
-	_, paymentBasePoint2 = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x4})
+	_, nodeKey1          = btcec.PrivKeyFromBytes([]byte{0x1})
+	_, nodeKey2          = btcec.PrivKeyFromBytes([]byte{0x2})
+	_, paymentBasePoint1 = btcec.PrivKeyFromBytes([]byte{0x3})
+	_, paymentBasePoint2 = btcec.PrivKeyFromBytes([]byte{0x4})
 )
 
 type invalidSignAction uint8
@@ -89,7 +90,7 @@ func (m *mockAccountWatcher) WatchMatchedAccounts(_ context.Context,
 	accts [][33]byte) error {
 
 	for _, rawAcctKey := range accts {
-		acctKey, err := btcec.ParsePubKey(rawAcctKey[:], btcec.S256())
+		acctKey, err := btcec.ParsePubKey(rawAcctKey[:])
 		if err != nil {
 			return err
 		}
@@ -442,11 +443,11 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 		e.t.Fatalf("no priv for: %x", senderID)
 	}
 
-	traderKey, err := btcec.ParsePubKey(sender.AccountKey[:], btcec.S256())
+	traderKey, err := btcec.ParsePubKey(sender.AccountKey[:])
 	if err != nil {
 		e.t.Fatalf("unable to parse pubkey: %v", err)
 	}
-	batchKey, err := btcec.ParsePubKey(sender.BatchKey[:], btcec.S256())
+	batchKey, err := btcec.ParsePubKey(sender.BatchKey[:])
 	if err != nil {
 		e.t.Fatalf("unable to parse batch key; %v", err)
 	}
@@ -495,7 +496,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 	}
 	sigs, err := traderSigner.SignOutputRaw(
 		context.Background(), batchTx,
-		[]*lndclient.SignDescriptor{signDesc},
+		[]*lndclient.SignDescriptor{signDesc}, nil,
 	)
 	if err != nil {
 		e.t.Fatalf("unable to generate sig: %v", err)
@@ -505,7 +506,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 		sigs[0][12] ^= 1
 	}
 
-	traderSig, err := btcec.ParseDERSignature(sigs[0], btcec.S256())
+	traderSig, err := ecdsa.ParseDERSignature(sigs[0])
 	if err != nil {
 		e.t.Fatalf("unable to parse strader sig: %v", err)
 	}
@@ -554,7 +555,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 
 	signMsg := &TraderSignMsg{
 		Trader: sender,
-		Sigs: map[string]*btcec.Signature{
+		Sigs: map[string]*ecdsa.Signature{
 			hex.EncodeToString(sender.AccountKey[:]): traderSig,
 		},
 		ChannelInfos: chanInfos,

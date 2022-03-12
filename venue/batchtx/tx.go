@@ -4,9 +4,9 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/btcsuite/btcutil/txsort"
 	"github.com/lightninglabs/pool/order"
 	orderT "github.com/lightninglabs/pool/order"
@@ -142,9 +142,7 @@ type MasterAccountState struct {
 //
 // TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;)
 func (m *MasterAccountState) AccountScript() ([]byte, error) {
-	batchKey, err := btcec.ParsePubKey(
-		m.BatchKey[:], btcec.S256(),
-	)
+	batchKey, err := btcec.ParsePubKey(m.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -155,9 +153,7 @@ func (m *MasterAccountState) AccountScript() ([]byte, error) {
 // PrevAccountScript derives the auctioneer's account script for the previous
 // batch.
 func (m *MasterAccountState) PrevAccountScript() ([]byte, error) {
-	batchKey, err := btcec.ParsePubKey(
-		m.BatchKey[:], btcec.S256(),
-	)
+	batchKey, err := btcec.ParsePubKey(m.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -168,9 +164,7 @@ func (m *MasterAccountState) PrevAccountScript() ([]byte, error) {
 
 // script derives the auctioneer's account script for the given batch key.
 func (m *MasterAccountState) script(batchKey *btcec.PublicKey) ([]byte, error) {
-	auctioneerKey, err := btcec.ParsePubKey(
-		m.AuctioneerKey[:], btcec.S256(),
-	)
+	auctioneerKey, err := btcec.ParsePubKey(m.AuctioneerKey[:])
 	if err != nil {
 		return nil, err
 	}
@@ -350,9 +344,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 
 	e.ExeTx = wire.NewMsgTx(2)
 
-	auctioneerKey, err := btcec.ParsePubKey(
-		mAccountDiff.AuctioneerKey[:], btcec.S256(),
-	)
+	auctioneerKey, err := btcec.ParsePubKey(mAccountDiff.AuctioneerKey[:])
 	if err != nil {
 		return err
 	}
@@ -376,15 +368,11 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			PreviousOutPoint: prevOutPoint,
 		})
 
-		acctKey, err := btcec.ParsePubKey(
-			acctPreBatch.AccountKey[:], btcec.S256(),
-		)
+		acctKey, err := btcec.ParsePubKey(acctPreBatch.AccountKey[:])
 		if err != nil {
 			return err
 		}
-		batchKey, err := btcec.ParsePubKey(
-			acctPreBatch.BatchKey[:], btcec.S256(),
-		)
+		batchKey, err := btcec.ParsePubKey(acctPreBatch.BatchKey[:])
 		if err != nil {
 			return err
 		}
@@ -467,14 +455,12 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			// information within the account key, we'll create a
 			// new output to place within our transaction.
 			acctParams := trader.StartingState
-			acctKey, err := btcec.ParsePubKey(
-				acctParams.AccountKey[:], btcec.S256(),
-			)
+			acctKey, err := btcec.ParsePubKey(acctParams.AccountKey[:])
 			if err != nil {
 				return err
 			}
 			batchKey, err := btcec.ParsePubKey(
-				acctParams.NextBatchKey[:], btcec.S256(),
+				acctParams.NextBatchKey[:],
 			)
 			if err != nil {
 				return err

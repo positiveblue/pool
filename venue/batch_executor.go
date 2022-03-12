@@ -9,11 +9,12 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/chaninfo"
@@ -216,7 +217,7 @@ type TraderSignMsg struct {
 	// Sigs is the set of account input signatures for each account the
 	// trader has in this batch. This maps the trader's account ID to the
 	// set of valid witnesses.
-	Sigs map[string]*btcec.Signature
+	Sigs map[string]*ecdsa.Signature
 
 	// ChannelInfos tracks each channel's information relevant to the trader
 	// that must be submitted to the auctioneer in order to enforce the
@@ -455,17 +456,17 @@ func (b *BatchExecutor) validateTradersOnline(
 // witness script as well, so the final witness can easily be fully verified.
 func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	trader *ActiveTrader, batchTx *wire.MsgTx,
-	traderAcctInput *batchtx.BatchInput) (*btcec.Signature, []byte, error) {
+	traderAcctInput *batchtx.BatchInput) (*ecdsa.Signature, []byte, error) {
 
 	log.Debugf("Signing account input for trader=%x", trader.AccountKey[:])
 
 	// First, we'll grab real structs for the trader's account key, and the
 	// batch key for the last batch they participated in.
-	traderKey, err := btcec.ParsePubKey(trader.AccountKey[:], btcec.S256())
+	traderKey, err := btcec.ParsePubKey(trader.AccountKey[:])
 	if err != nil {
 		return nil, nil, err
 	}
-	batchKey, err := btcec.ParsePubKey(trader.BatchKey[:], btcec.S256())
+	batchKey, err := btcec.ParsePubKey(trader.BatchKey[:])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -501,13 +502,13 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	}
 	auctioneerSigs, err := b.cfg.Signer.SignOutputRaw(
 		context.Background(), batchTx,
-		[]*lndclient.SignDescriptor{signDesc},
+		[]*lndclient.SignDescriptor{signDesc}, nil,
 	)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	sig, err := btcec.ParseDERSignature(auctioneerSigs[0], btcec.S256())
+	sig, err := ecdsa.ParseDERSignature(auctioneerSigs[0])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -1412,7 +1413,7 @@ func (b *BatchExecutor) syncTraderState(
 			continue
 		}
 
-		acctKey, err := btcec.ParsePubKey(acctID[:], btcec.S256())
+		acctKey, err := btcec.ParsePubKey(acctID[:])
 		if err != nil {
 			return nil, err
 		}

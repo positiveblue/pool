@@ -18,11 +18,12 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -341,7 +342,7 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 
 	// Parse the trader key to make sure it's a valid pubkey. More cannot
 	// be checked at this moment.
-	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(req.TraderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -383,7 +384,7 @@ func parseRPCAccountParams(
 		Index: req.AccountPoint.OutputIndex,
 	}
 
-	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(req.TraderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -431,7 +432,7 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 	req *auctioneerrpc.ServerModifyAccountRequest) (
 	*auctioneerrpc.ServerModifyAccountResponse, error) {
 
-	traderKey, err := btcec.ParsePubKey(req.TraderKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(req.TraderKey)
 	if err != nil {
 		return nil, err
 	}
@@ -1006,9 +1007,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 		// Parse their public key to validate the signature and later
 		// retrieve it from the store.
-		acctPubKey, err := btcec.ParsePubKey(
-			msg.Subscribe.TraderKey, btcec.S256(),
-		)
+		acctPubKey, err := btcec.ParsePubKey(msg.Subscribe.TraderKey)
 		if err != nil {
 			comms.err <- fmt.Errorf("error parsing account key: %v",
 				err)
@@ -1176,9 +1175,9 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 	// The trader signed their account inputs.
 	case *auctioneerrpc.ClientAuctionMessage_Sign:
-		sigs := make(map[string]*btcec.Signature)
+		sigs := make(map[string]*ecdsa.Signature)
 		for acctString, sigBytes := range msg.Sign.AccountSigs {
-			sig, err := btcec.ParseDERSignature(sigBytes, btcec.S256())
+			sig, err := ecdsa.ParseDERSignature(sigBytes)
 			if err != nil {
 				comms.err <- fmt.Errorf("unable to parse "+
 					"account sig: %v", err)
@@ -1254,7 +1253,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 func (s *rpcServer) sendAccountRecovery(traderKey [33]byte,
 	stream auctioneerrpc.ChannelAuctioneer_SubscribeBatchAuctionServer) error {
 
-	acctPubkey, err := btcec.ParsePubKey(traderKey[:], btcec.S256())
+	acctPubkey, err := btcec.ParsePubKey(traderKey[:])
 	if err != nil {
 		return fmt.Errorf("could not parse account key: %v", err)
 	}
@@ -1696,7 +1695,7 @@ func (s *rpcServer) RelevantBatchSnapshot(ctx context.Context,
 	req *auctioneerrpc.RelevantBatchRequest) (*auctioneerrpc.RelevantBatch, error) {
 
 	// We'll start by retrieving the snapshot of the requested batch.
-	batchKey, err := btcec.ParsePubKey(req.Id, btcec.S256())
+	batchKey, err := btcec.ParsePubKey(req.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -1835,7 +1834,7 @@ func (s *rpcServer) parseRPCOrder(ctx context.Context, version uint32,
 	}
 
 	// Make sure the referenced account exists.
-	acctKey, err := btcec.ParsePubKey(clientKit.AcctKey[:], btcec.S256())
+	acctKey, err := btcec.ParsePubKey(clientKit.AcctKey[:])
 	if err != nil {
 		return nil, nil, err
 	}
@@ -2113,7 +2112,7 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 
 	copy(kit.AcctKey[:], details.TraderKey)
 
-	nodePubKey, err := btcec.ParsePubKey(details.NodePub, btcec.S256())
+	nodePubKey, err := btcec.ParsePubKey(details.NodePub)
 	if err != nil {
 		return nil, nodeKey, nodeAddrs, multiSigKey,
 			fmt.Errorf("unable to parse node pub key: %v",
@@ -2159,9 +2158,7 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 		nodeAddrs = append(nodeAddrs, addr)
 	}
 
-	multiSigPubkey, err := btcec.ParsePubKey(
-		details.MultiSigKey, btcec.S256(),
-	)
+	multiSigPubkey, err := btcec.ParsePubKey(details.MultiSigKey)
 	if err != nil {
 		return nil, nodeKey, nodeAddrs, multiSigKey,
 			fmt.Errorf("unable to parse multi sig pub key: %v", err)
@@ -2209,15 +2206,13 @@ func parseRPCChannelInfo(rpcChanInfos map[string]*auctioneerrpc.ChannelInfo) (
 		}
 
 		// Parse all of the included keys.
-		localNodeKey, err := btcec.ParsePubKey(
-			rpcChanInfo.LocalNodeKey, btcec.S256(),
-		)
+		localNodeKey, err := btcec.ParsePubKey(rpcChanInfo.LocalNodeKey)
 		if err != nil {
 			return nil, fmt.Errorf("invalid local node key: %v",
 				err)
 		}
 		remoteNodeKey, err := btcec.ParsePubKey(
-			rpcChanInfo.RemoteNodeKey, btcec.S256(),
+			rpcChanInfo.RemoteNodeKey,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid remote node key: %v",
@@ -2225,14 +2220,14 @@ func parseRPCChannelInfo(rpcChanInfos map[string]*auctioneerrpc.ChannelInfo) (
 		}
 
 		localPaymentBasePoint, err := btcec.ParsePubKey(
-			rpcChanInfo.LocalPaymentBasePoint, btcec.S256(),
+			rpcChanInfo.LocalPaymentBasePoint,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid local payment base "+
 				"point: %v", err)
 		}
 		remotePaymentBasePoint, err := btcec.ParsePubKey(
-			rpcChanInfo.RemotePaymentBasePoint, btcec.S256(),
+			rpcChanInfo.RemotePaymentBasePoint,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("invalid remote payment base "+
@@ -2370,7 +2365,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 
 		batchKey = poolscript.DecrementKey(currentBatchKey)
 	} else {
-		batchKey, err = btcec.ParsePubKey(req.BatchId, btcec.S256())
+		batchKey, err = btcec.ParsePubKey(req.BatchId)
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse "+
 				"batch ID (%x): %v", req.BatchId, err)
@@ -2457,9 +2452,8 @@ func (s *rpcServer) BatchSnapshots(ctx context.Context,
 
 		startBatchKey = poolscript.DecrementKey(currentBatchKey)
 	} else {
-		startBatchKey, err = btcec.ParsePubKey(
-			req.StartBatchId, btcec.S256(),
-		)
+		startBatchKey, err = btcec.ParsePubKey(req.StartBatchId)
+
 		if err != nil {
 			return nil, fmt.Errorf("unable to parse start batch "+
 				"ID (%x): %v", req.StartBatchId, err)

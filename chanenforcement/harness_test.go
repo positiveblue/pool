@@ -9,10 +9,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/input"
@@ -38,7 +38,7 @@ var (
 
 func fromHex(s string) *btcec.PublicKey {
 	rawKey, _ := hex.DecodeString(s)
-	key, _ := btcec.ParsePubKey(rawKey, btcec.S256())
+	key, _ := btcec.ParsePubKey(rawKey)
 	return key
 }
 

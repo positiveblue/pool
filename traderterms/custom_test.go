@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/stretchr/testify/require"
 )
