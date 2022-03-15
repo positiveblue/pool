@@ -72,7 +72,7 @@ func getParser(cfg *subasta.Config) *flags.Parser {
 // preParse parses the command line to make the network option available. This
 // is required to find the correct config file path.
 func preParse() (*subasta.Config, error) {
-	cfg := *subasta.DefaultConfig
+	cfg := *subasta.DefaultConfig()
 	preParser := getParser(&cfg)
 
 	// Don't execute commands during pre-parsing.

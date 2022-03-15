@@ -220,50 +220,53 @@ type Config struct {
 	AdminRPCListener net.Listener
 }
 
-var DefaultConfig = &Config{
-	Network:          "mainnet",
-	BaseDir:          DefaultBaseDir,
-	RPCListen:        defaultAuctioneerAddr,
-	RESTListen:       defaultRestAddr,
-	AdminRPCListen:   defaultAdminAddr,
-	ExecFeeBase:      DefaultExecutionFeeBase,
-	ExecFeeRate:      DefaultExecutionFeeRate,
-	BatchConfTarget:  defaultBatchConfTarget,
-	MaxAcctValue:     defaultMaxAcctValue,
-	SubscribeTimeout: defaultSubscribeTimeout,
-	Lnd: &LndConfig{
-		Host: "localhost:10009",
-	},
-	Etcd: &EtcdConfig{
-		Host: "localhost:2379",
-	},
-	Cluster: lncfg.DefaultCluster(),
-	Prometheus: &monitoring.PrometheusConfig{
-		ListenAddr: "localhost:8989",
-	},
-	Bitcoin: &chain.BitcoinConfig{
-		Host: "localhost:8332",
-	},
-	SQL: &subastadb.SQLConfig{
-		Host:     "localhost",
-		Port:     5432,
-		User:     "pool",
-		Password: "pool",
-		DBName:   "pool",
-	},
-	Status:                       status.DefaultConfig(),
-	TLSCertPath:                  defaultTLSCertPath,
-	TLSKeyPath:                   defaultTLSKeyPath,
-	MaxLogFiles:                  defaultMaxLogFiles,
-	MaxLogFileSize:               defaultMaxLogFileSize,
-	DebugLevel:                   defaultLogLevel,
-	LogDir:                       defaultLogDir,
-	AccountExpiryExtension:       defaultAccountExpiryExtension,
-	AccountExpiryOffset:          defaultAccountExpiryOffset,
-	NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
-	BosScoreWebURL:               defaultBosScoreURL,
-	FundingConflictResetInterval: defaultFundingConflictResetInterval,
-	TraderRejectResetInterval:    defaultTraderRejectResetInterval,
+// DefaultConfig returns the default config for a subasta server.
+func DefaultConfig() *Config {
+	return &Config{
+		Network:          "mainnet",
+		BaseDir:          DefaultBaseDir,
+		RPCListen:        defaultAuctioneerAddr,
+		RESTListen:       defaultRestAddr,
+		AdminRPCListen:   defaultAdminAddr,
+		ExecFeeBase:      DefaultExecutionFeeBase,
+		ExecFeeRate:      DefaultExecutionFeeRate,
+		BatchConfTarget:  defaultBatchConfTarget,
+		MaxAcctValue:     defaultMaxAcctValue,
+		SubscribeTimeout: defaultSubscribeTimeout,
+		Lnd: &LndConfig{
+			Host: "localhost:10009",
+		},
+		Etcd: &EtcdConfig{
+			Host: "localhost:2379",
+		},
+		Cluster: lncfg.DefaultCluster(),
+		Prometheus: &monitoring.PrometheusConfig{
+			ListenAddr: "localhost:8989",
+		},
+		Bitcoin: &chain.BitcoinConfig{
+			Host: "localhost:8332",
+		},
+		SQL: &subastadb.SQLConfig{
+			Host:     "localhost",
+			Port:     5432,
+			User:     "pool",
+			Password: "pool",
+			DBName:   "pool",
+		},
+		Status:                       status.DefaultConfig(),
+		TLSCertPath:                  defaultTLSCertPath,
+		TLSKeyPath:                   defaultTLSKeyPath,
+		MaxLogFiles:                  defaultMaxLogFiles,
+		MaxLogFileSize:               defaultMaxLogFileSize,
+		DebugLevel:                   defaultLogLevel,
+		LogDir:                       defaultLogDir,
+		AccountExpiryExtension:       defaultAccountExpiryExtension,
+		AccountExpiryOffset:          defaultAccountExpiryOffset,
+		NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
+		BosScoreWebURL:               defaultBosScoreURL,
+		FundingConflictResetInterval: defaultFundingConflictResetInterval,
+		TraderRejectResetInterval:    defaultTraderRejectResetInterval,
+	}
 }
 
 // getTLSConfig examines the main configuration to create a *tls.Config and
