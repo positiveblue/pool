@@ -575,8 +575,9 @@ github.com/lightningnetwork/lnd/healthcheck v1.2.0 h1:00bkNn+hGJM9j3Ht+ulf8YNcSx
 github.com/lightningnetwork/lnd/healthcheck v1.2.0/go.mod h1:WSz3lsUjErJQZ3gb+zW32nM3WIHNiZ3A40GVoaQY5wU=
 github.com/lightningnetwork/lnd/kvdb v1.0.1/go.mod h1:XYnpYUhtYCY+5dxU90VXWn/DxlGAgGejEgfqU+F9h98=
 github.com/lightningnetwork/lnd/kvdb v1.2.0/go.mod h1:4DW7zc9AWqqJBvwhSE251VasYikTELItN70hESIt9RU=
-github.com/lightningnetwork/lnd/kvdb v1.2.1 h1:QevYLPh6bh1SLIvlUaPbrpX/YMKzSPBfmGVvn2i8IlU=
 github.com/lightningnetwork/lnd/kvdb v1.2.1/go.mod h1:x+IpsuDynubjokUofavLXroeGfS/WrqUXXTK6vN/gp4=
+github.com/lightningnetwork/lnd/kvdb v1.3.0 h1:0sadTsmfIoorGvd2zf09q/H7sxa/OU48NCpCQUPNN48=
+github.com/lightningnetwork/lnd/kvdb v1.3.0/go.mod h1:x+IpsuDynubjokUofavLXroeGfS/WrqUXXTK6vN/gp4=
 github.com/lightningnetwork/lnd/queue v1.0.1/go.mod h1:vaQwexir73flPW43Mrm7JOgJHmcEFBWWSl9HlyASoms=
 github.com/lightningnetwork/lnd/queue v1.0.4/go.mod h1:YTkTVZCxz8tAYreH27EO3s8572ODumWrNdYW2E/YKxg=
 github.com/lightningnetwork/lnd/queue v1.1.0 h1:YpCJjlIvVxN/R7ww2aNiY8ex7U2fucZDLJ67tI3HFx8=

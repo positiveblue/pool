@@ -80,7 +80,7 @@ $(GOACC_BIN):
 
 build:
 	@$(call print, "Building auction server and cli.")
-	$(GOBUILD) $(PKG)/cmd/auctionserver
+	$(GOBUILD) -tags=kvdb_etcd $(PKG)/cmd/auctionserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
 
 build-itest:

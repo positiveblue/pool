@@ -20,6 +20,7 @@ require (
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.14.1-beta
 	github.com/lightningnetwork/lnd/cert v1.1.0
+	github.com/lightningnetwork/lnd/kvdb v1.3.0
 	github.com/lightningnetwork/lnd/ticker v1.1.0
 	github.com/ory/dockertest/v3 v3.8.0
 	github.com/prometheus/client_golang v1.11.0

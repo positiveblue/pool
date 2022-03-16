@@ -11,9 +11,11 @@ import (
 	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
+	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/cert"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
@@ -203,9 +205,11 @@ type Config struct {
 
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
+	Cluster    *lncfg.Cluster               `group:"cluster" namespace:"cluster"`
 	Prometheus *monitoring.PrometheusConfig `group:"prometheus" namespace:"prometheus"`
 	Bitcoin    *chain.BitcoinConfig         `group:"bitcoin" namespace:"bitcoin"`
 	SQL        *subastadb.SQLConfig         `group:"sql" namespace:"sql"`
+	Status     *status.Config               `group:"status" namespace:"status"`
 
 	// RPCListener is a network listener that the default auctionserver
 	// should listen on.
@@ -216,48 +220,53 @@ type Config struct {
 	AdminRPCListener net.Listener
 }
 
-var DefaultConfig = &Config{
-	Network:          "mainnet",
-	BaseDir:          DefaultBaseDir,
-	RPCListen:        defaultAuctioneerAddr,
-	RESTListen:       defaultRestAddr,
-	AdminRPCListen:   defaultAdminAddr,
-	ExecFeeBase:      DefaultExecutionFeeBase,
-	ExecFeeRate:      DefaultExecutionFeeRate,
-	BatchConfTarget:  defaultBatchConfTarget,
-	MaxAcctValue:     defaultMaxAcctValue,
-	SubscribeTimeout: defaultSubscribeTimeout,
-	Lnd: &LndConfig{
-		Host: "localhost:10009",
-	},
-	Etcd: &EtcdConfig{
-		Host: "localhost:2379",
-	},
-	Prometheus: &monitoring.PrometheusConfig{
-		ListenAddr: "localhost:8989",
-	},
-	Bitcoin: &chain.BitcoinConfig{
-		Host: "localhost:8332",
-	},
-	SQL: &subastadb.SQLConfig{
-		Host:     "localhost",
-		Port:     5432,
-		User:     "pool",
-		Password: "pool",
-		DBName:   "pool",
-	},
-	TLSCertPath:                  defaultTLSCertPath,
-	TLSKeyPath:                   defaultTLSKeyPath,
-	MaxLogFiles:                  defaultMaxLogFiles,
-	MaxLogFileSize:               defaultMaxLogFileSize,
-	DebugLevel:                   defaultLogLevel,
-	LogDir:                       defaultLogDir,
-	AccountExpiryExtension:       defaultAccountExpiryExtension,
-	AccountExpiryOffset:          defaultAccountExpiryOffset,
-	NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
-	BosScoreWebURL:               defaultBosScoreURL,
-	FundingConflictResetInterval: defaultFundingConflictResetInterval,
-	TraderRejectResetInterval:    defaultTraderRejectResetInterval,
+// DefaultConfig returns the default config for a subasta server.
+func DefaultConfig() *Config {
+	return &Config{
+		Network:          "mainnet",
+		BaseDir:          DefaultBaseDir,
+		RPCListen:        defaultAuctioneerAddr,
+		RESTListen:       defaultRestAddr,
+		AdminRPCListen:   defaultAdminAddr,
+		ExecFeeBase:      DefaultExecutionFeeBase,
+		ExecFeeRate:      DefaultExecutionFeeRate,
+		BatchConfTarget:  defaultBatchConfTarget,
+		MaxAcctValue:     defaultMaxAcctValue,
+		SubscribeTimeout: defaultSubscribeTimeout,
+		Lnd: &LndConfig{
+			Host: "localhost:10009",
+		},
+		Etcd: &EtcdConfig{
+			Host: "localhost:2379",
+		},
+		Cluster: lncfg.DefaultCluster(),
+		Prometheus: &monitoring.PrometheusConfig{
+			ListenAddr: "localhost:8989",
+		},
+		Bitcoin: &chain.BitcoinConfig{
+			Host: "localhost:8332",
+		},
+		SQL: &subastadb.SQLConfig{
+			Host:     "localhost",
+			Port:     5432,
+			User:     "pool",
+			Password: "pool",
+			DBName:   "pool",
+		},
+		Status:                       status.DefaultConfig(),
+		TLSCertPath:                  defaultTLSCertPath,
+		TLSKeyPath:                   defaultTLSKeyPath,
+		MaxLogFiles:                  defaultMaxLogFiles,
+		MaxLogFileSize:               defaultMaxLogFileSize,
+		DebugLevel:                   defaultLogLevel,
+		LogDir:                       defaultLogDir,
+		AccountExpiryExtension:       defaultAccountExpiryExtension,
+		AccountExpiryOffset:          defaultAccountExpiryOffset,
+		NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
+		BosScoreWebURL:               defaultBosScoreURL,
+		FundingConflictResetInterval: defaultFundingConflictResetInterval,
+		TraderRejectResetInterval:    defaultTraderRejectResetInterval,
+	}
 }
 
 // getTLSConfig examines the main configuration to create a *tls.Config and

@@ -32,6 +32,7 @@ import (
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/build"
+	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -343,15 +344,17 @@ func nextAvailablePort() int {
 
 // setupHarnesses creates new server and client harnesses that are connected
 // to each other through an in-memory gRPC connection.
-func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness) (
-	*traderHarness, *auctioneerHarness) {
+func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness,
+	interceptor signal.Interceptor) (*traderHarness, *auctioneerHarness) {
 
 	// Create the two harnesses but don't start them yet, they need to be
 	// connected first.
 	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
-		BackendCfg: lndHarness.BackendCfg,
-		NetParams:  harnessNetParams,
-		LndNode:    lndHarness.Alice,
+		BackendCfg:  lndHarness.BackendCfg,
+		NetParams:   harnessNetParams,
+		LndNode:     lndHarness.Alice,
+		Interceptor: interceptor,
+		ClusterCfg:  lncfg.DefaultCluster(),
 	})
 	if err != nil {
 		t.Fatalf("could not create auction server: %v", err)

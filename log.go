@@ -15,6 +15,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/rejects"
+	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -59,6 +60,7 @@ func SetupLoggers(root *build.RotatingLogWriter, intercept signal.Interceptor) {
 	addSubLogger(root, ratings.Subsystem, intercept, ratings.UseLogger)
 	addSubLogger(root, rejects.Subsystem, intercept, rejects.UseLogger)
 	addSubLogger(root, accounting.Subsystem, intercept, accounting.UseLogger)
+	addSubLogger(root, status.Subsystem, intercept, status.UseLogger)
 }
 
 // genSubLogger creates a logger for a subsystem. We provide an instance of
