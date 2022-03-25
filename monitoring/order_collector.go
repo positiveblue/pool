@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"strconv"
+	"sync"
 
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
@@ -52,6 +53,8 @@ const (
 
 // orderCollector is a collector that keeps track of our accounts.
 type orderCollector struct {
+	collectMx sync.Mutex
+
 	cfg *PrometheusConfig
 
 	g gauges
@@ -111,6 +114,9 @@ func (c *orderCollector) Name() string {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (c *orderCollector) Describe(ch chan<- *prometheus.Desc) {
+	c.collectMx.Lock()
+	defer c.collectMx.Unlock()
+
 	c.g.describe(ch)
 }
 
@@ -118,6 +124,9 @@ func (c *orderCollector) Describe(ch chan<- *prometheus.Desc) {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (c *orderCollector) Collect(ch chan<- prometheus.Metric) {
+	c.collectMx.Lock()
+	defer c.collectMx.Unlock()
+
 	// We must reset our metrics that we collect from the DB here, otherwise
 	// they would increment with each run.
 	c.resetGauges()

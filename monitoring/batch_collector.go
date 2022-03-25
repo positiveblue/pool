@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec"
@@ -113,6 +114,8 @@ const (
 
 // batchCollector is a collector that keeps track of our accounts.
 type batchCollector struct {
+	collectMx sync.Mutex
+
 	cfg *PrometheusConfig
 
 	g gauges
@@ -255,6 +258,9 @@ func (c *batchCollector) Name() string {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (c *batchCollector) Describe(ch chan<- *prometheus.Desc) {
+	c.collectMx.Lock()
+	defer c.collectMx.Unlock()
+
 	c.g.describe(ch)
 }
 
@@ -262,6 +268,9 @@ func (c *batchCollector) Describe(ch chan<- *prometheus.Desc) {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
+	c.collectMx.Lock()
+	defer c.collectMx.Unlock()
+
 	// We must reset our metrics that we collect from the DB here, otherwise
 	// they would increment with each run.
 	c.g.reset()
