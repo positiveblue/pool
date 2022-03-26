@@ -780,9 +780,11 @@ func deserializeOrder(baseOrderBytes, orderTierBytes, minUnitsMatchBytes,
 // non-default values of the additional data will be set on the given order.
 func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 	var (
-		userAgent       []byte
-		selfChanBalance uint64
-		isSidecar       uint8
+		userAgent         []byte
+		selfChanBalance   uint64
+		isSidecar         uint8
+		allowedNodeIDs    []byte
+		notAllowedNodeIDs []byte
 	)
 
 	tlvStream, err := tlv.NewStream(
@@ -791,6 +793,10 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 			bidSelfChanBalanceType, &selfChanBalance,
 		),
 		tlv.MakePrimitiveRecord(bidIsSidecarType, &isSidecar),
+		tlv.MakePrimitiveRecord(allowedNodeIDsType, &allowedNodeIDs),
+		tlv.MakePrimitiveRecord(
+			notAllowedNodeIDsType, &notAllowedNodeIDs,
+		),
 	)
 	if err != nil {
 		return err
@@ -813,6 +819,23 @@ func deserializeOrderTlvData(r io.Reader, o order.ServerOrder) error {
 
 	if t, ok := parsedTypes[bidIsSidecarType]; isBid && ok && t == nil {
 		bid.IsSidecar = isSidecar == 1
+	}
+
+	if t, ok := parsedTypes[allowedNodeIDsType]; ok && t == nil {
+		nodeIDs, err := clientdb.AssemblePubKeySlice(allowedNodeIDs)
+		if err != nil {
+			return fmt.Errorf("invalid allowed node ids: %v", err)
+		}
+		o.Details().AllowedNodeIDs = nodeIDs
+	}
+
+	if t, ok := parsedTypes[notAllowedNodeIDsType]; ok && t == nil {
+		nodeIDs, err := clientdb.AssemblePubKeySlice(notAllowedNodeIDs)
+		if err != nil {
+			return fmt.Errorf("invalid not allowed node ids: %v",
+				err)
+		}
+		o.Details().NotAllowedNodeIDs = nodeIDs
 	}
 
 	return nil
@@ -848,6 +871,28 @@ func serializeOrderTlvData(w io.Writer, o order.ServerOrder) error {
 		tlvRecords = append(tlvRecords, tlv.MakePrimitiveRecord(
 			bidIsSidecarType, &isSidecar,
 		))
+	}
+
+	if len(o.Details().AllowedNodeIDs) > 0 {
+		idBytes := clientdb.FlattenPubKeySlice(
+			o.Details().AllowedNodeIDs,
+		)
+		tlvRecords = append(
+			tlvRecords, tlv.MakePrimitiveRecord(
+				allowedNodeIDsType, &idBytes,
+			),
+		)
+	}
+
+	if len(o.Details().NotAllowedNodeIDs) > 0 {
+		idBytes := clientdb.FlattenPubKeySlice(
+			o.Details().NotAllowedNodeIDs,
+		)
+		tlvRecords = append(
+			tlvRecords, tlv.MakePrimitiveRecord(
+				notAllowedNodeIDsType, &idBytes,
+			),
+		)
 	}
 
 	tlvStream, err := tlv.NewStream(tlvRecords...)
