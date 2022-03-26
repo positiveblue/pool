@@ -2104,6 +2104,33 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 			fmt.Errorf("unhandled channel type %v", details.ChannelType)
 	}
 
+	if len(details.AllowedNodeIds) > 0 &&
+		len(details.NotAllowedNodeIds) > 0 {
+
+		return nil, [33]byte{}, nil, [33]byte{},
+			fmt.Errorf("allowed node and not allowed node ids " +
+				"cannot be set together")
+	}
+
+	kit.AllowedNodeIDs = make([][33]byte, len(details.AllowedNodeIds))
+	for idx, nodeID := range details.AllowedNodeIds {
+		if _, err := btcec.ParsePubKey(nodeID); err != nil {
+			return nil, [33]byte{}, nil, [33]byte{},
+				fmt.Errorf("invalid allowed_node_id: %x",
+					nodeID)
+		}
+		copy(kit.AllowedNodeIDs[idx][:], nodeID)
+	}
+	kit.NotAllowedNodeIDs = make([][33]byte, len(details.NotAllowedNodeIds))
+	for idx, nodeID := range details.NotAllowedNodeIds {
+		if _, err := btcec.ParsePubKey(nodeID); err != nil {
+			return nil, [33]byte{}, nil, [33]byte{},
+				fmt.Errorf("invalid not_allowed_node_id: %x",
+					nodeID)
+		}
+		copy(kit.NotAllowedNodeIDs[idx][:], nodeID)
+	}
+
 	// The trader must supply a nonce.
 	if nonce == orderT.ZeroNonce {
 		return nil, nodeKey, nodeAddrs, multiSigKey,
