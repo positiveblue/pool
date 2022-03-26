@@ -2304,3 +2304,93 @@ func testBatchAccountAutoRenewal(t *harnessTest) {
 	// all the created nodes have a clean state after this test execution.
 	closeAllChannels(ctx, t, charlie)
 }
+
+// testOrderNodeIDFilters tests that accounts that participate in a batch
+// are filtered properly using the allowed/not allowed node id lists.
+func testOrderNodeIDFilters(t *harnessTest) {
+	// We need a third lnd node, Charlie that is used for the second trader.
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders.
+	account1 := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// default trader, selling 5 units (0.5M sats) of liquidity. This order
+	// is unable to match with orders created by account2.
+	askAmt := btcutil.Amount(500_000)
+	_, err := submitAskOrder(
+		t.trader, account1.TraderKey, 100, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			notAllowed := [][]byte{charlie.PubKey[:]}
+			ask.Ask.Details.NotAllowedNodeIds = notAllowed
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Our second trader, connected to Charlie, wants to buy 8 units of
+	// liquidity. So let's submit an order for that.
+	bidAmt := btcutil.Amount(800_000)
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Bid) {
+			allowed := [][]byte{t.trader.cfg.LndNode.PubKey[:]}
+			ask.Bid.Details.AllowedNodeIds = allowed
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Let's kick the auctioneer now to try and create a batch. The only
+	// think that makes that there are not valid matches in this batch is
+	// the AllowedNodeIDsPredicate.
+	_, _ = executeBatch(t, 0)
+
+	// Create a second order from account1 that is able to match
+	// with the one from account2. We create it with a different amount
+	// so we can be sure that it is the one matching in the next batch.
+	matchingAskAmt := btcutil.Amount(200_000)
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, 100, matchingAskAmt,
+	)
+	require.NoError(t.t, err)
+
+	// Now we expect to see a match of the only bid with the compatible
+	// ask one.
+	_, _ = executeBatch(t, 1)
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, matchingAskAmt, true, charlie.PubKey,
+	)
+
+	// Let's now mine the withdrawal to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(context.Background(), t, charlie)
+}
