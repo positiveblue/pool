@@ -19,6 +19,7 @@ var (
 		MatchPredicateFunc(AskDurationGreaterOrEqualPredicate),
 		MatchPredicateFunc(SelfChanBalanceEnabledPredicate),
 		MatchPredicateFunc(MatchChannelType),
+		MatchPredicateFunc(AllowedNodeIDsPredicate),
 	}
 )
 
@@ -111,6 +112,27 @@ func MatchChannelType(ask *order.Ask, bid *order.Bid) bool {
 	default:
 		return true
 	}
+}
+
+// AllowedNodeIDsPredicate is a matching predicate that makes sure the nodes
+// can match after checking the respective Allowed/Not Allowed node id
+// constrains for each order.
+func AllowedNodeIDsPredicate(ask *order.Ask, bid *order.Bid) bool {
+	// Check if the asker node matches the bid constraints.
+	if !orderT.IsNodeIDAValidMatch(ask.NodeKey, bid.AllowedNodeIDs,
+		bid.NotAllowedNodeIDs) {
+
+		return false
+	}
+
+	// Check if the bidder node matches the ask constraints.
+	if !orderT.IsNodeIDAValidMatch(bid.NodeKey, ask.AllowedNodeIDs,
+		ask.NotAllowedNodeIDs) {
+
+		return false
+	}
+
+	return true
 }
 
 // MinPartialMatchPredicate is a matching predicate that returns true if the
