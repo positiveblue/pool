@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"strconv"
+	"sync"
 
 	"github.com/lightninglabs/subasta/account"
 	"github.com/prometheus/client_golang/prometheus"
@@ -37,6 +38,8 @@ const (
 
 // accountCollector is a collector that keeps track of our accounts.
 type accountCollector struct {
+	collectMx sync.Mutex
+
 	cfg *PrometheusConfig
 
 	g gauges
@@ -79,6 +82,9 @@ func (c *accountCollector) Name() string {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (c *accountCollector) Describe(ch chan<- *prometheus.Desc) {
+	c.collectMx.Lock()
+	defer c.collectMx.Unlock()
+
 	c.g.describe(ch)
 }
 
@@ -86,6 +92,9 @@ func (c *accountCollector) Describe(ch chan<- *prometheus.Desc) {
 //
 // NOTE: Part of the prometheus.Collector interface.
 func (c *accountCollector) Collect(ch chan<- prometheus.Metric) {
+	c.collectMx.Lock()
+	defer c.collectMx.Unlock()
+
 	// We must reset our metrics that we collect from the DB here, otherwise
 	// they would increment with each run.
 	c.resetGauges()
