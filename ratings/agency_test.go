@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/stretchr/testify/require"
@@ -24,8 +24,8 @@ const (
 )
 
 var (
-	_, nodeKey1 = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x1})
-	_, nodeKey2 = btcec.PrivKeyFromBytes(btcec.S256(), []byte{0x2})
+	_, nodeKey1 = btcec.PrivKeyFromBytes([]byte{0x1})
+	_, nodeKey2 = btcec.PrivKeyFromBytes([]byte{0x2})
 )
 
 // testBosScoreServer...

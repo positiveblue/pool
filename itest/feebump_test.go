@@ -5,8 +5,8 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/blockchain"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/account"

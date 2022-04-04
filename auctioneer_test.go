@@ -8,10 +8,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
@@ -41,7 +41,7 @@ var (
 		0x1e, 0xb, 0x4c, 0xf9, 0x9e, 0xc5, 0x8c, 0xe9,
 	}
 
-	_, pubKey = btcec.PrivKeyFromBytes(btcec.S256(), key[:])
+	_, pubKey = btcec.PrivKeyFromBytes(key[:])
 
 	defaultFeeSchedule = test.NewMockFeeSchedule(1, 1000)
 
@@ -56,7 +56,7 @@ func randomPubKey(t *testing.T) *btcec.PublicKey {
 		t.Fatalf("could not create private key: %v", err)
 	}
 
-	_, pub := btcec.PrivKeyFromBytes(btcec.S256(), testPriv[:])
+	_, pub := btcec.PrivKeyFromBytes(testPriv[:])
 	return pub
 }
 
@@ -864,7 +864,7 @@ func genAskOrder(fixedRate, duration uint32) (*order.Ask, error) { // nolint:dup
 	if _, err := rand.Read(acctPrivKey[:]); err != nil {
 		return nil, fmt.Errorf("could not create private key: %v", err)
 	}
-	_, acctPubKey := btcec.PrivKeyFromBytes(btcec.S256(), acctPrivKey[:])
+	_, acctPubKey := btcec.PrivKeyFromBytes(acctPrivKey[:])
 	kit.AcctKey = toRawKey(acctPubKey)
 
 	return &order.Ask{
@@ -892,7 +892,7 @@ func genBidOrder(fixedRate, duration uint32) (*order.Bid, error) { // nolint:dup
 	if _, err := rand.Read(acctPrivKey[:]); err != nil {
 		return nil, fmt.Errorf("could not create private key: %v", err)
 	}
-	_, acctPubKey := btcec.PrivKeyFromBytes(btcec.S256(), acctPrivKey[:])
+	_, acctPubKey := btcec.PrivKeyFromBytes(acctPrivKey[:])
 	kit.AcctKey = toRawKey(acctPubKey)
 
 	return &order.Bid{

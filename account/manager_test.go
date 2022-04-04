@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/pool/account"
@@ -51,9 +51,7 @@ type testHarness struct {
 }
 
 func newTestHarness(t *testing.T) *testHarness {
-	privKey, _ := btcec.PrivKeyFromBytes(
-		btcec.S256(), []byte{0x1, 0x3, 0x3, 0x7},
-	)
+	privKey, _ := btcec.PrivKeyFromBytes([]byte{0x1, 0x3, 0x3, 0x7})
 
 	store := newMockStore()
 	notifier := NewMockChainNotifier()
@@ -125,19 +123,6 @@ func (h *testHarness) assertAccountExists(expected *Account, includeDiff bool) {
 		}
 
 		if !reflect.DeepEqual(account, expected) {
-			// Nil the public key curves before spew to prevent
-			// extraneous output.
-			if account.traderKey != nil {
-				account.traderKey.Curve = nil
-			}
-			if expected.traderKey != nil {
-				expected.traderKey.Curve = nil
-			}
-			account.AuctioneerKey.PubKey.Curve = nil
-			expected.AuctioneerKey.PubKey.Curve = nil
-			account.BatchKey.Curve = nil
-			expected.BatchKey.Curve = nil
-
 			return fmt.Errorf("expected account: %v\ngot: %v",
 				spew.Sdump(expected), spew.Sdump(account))
 		}
@@ -283,8 +268,9 @@ func (h *testHarness) obtainExpectedSig(account *Account,
 		account.Secret,
 	)
 
+	sigHashes := input.NewTxSigHashesV0Only(spendTx)
 	expectedSig, err := txscript.RawTxInWitnessSignature(
-		spendTx, txscript.NewTxSigHashes(spendTx), 0,
+		spendTx, sigHashes, 0,
 		int64(account.Value), witnessScript, txscript.SigHashAll,
 		input.TweakPrivKey(privKey, tweak),
 	)

@@ -6,11 +6,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/order"
@@ -354,9 +354,7 @@ func testAccountRenewal(t *harnessTest) {
 	absoluteExpiry := uint32(bestHeight) + newRelativeExpiry
 
 	// Wait for the lnd backend to catch up as well.
-	ctxt, cancel := context.WithTimeout(ctx, defaultTimeout)
-	defer cancel()
-	err = t.lndHarness.Bob.WaitForBlockchainSync(ctxt)
+	err = t.lndHarness.Bob.WaitForBlockchainSync()
 	require.NoError(t.t, err)
 
 	updateReq := &poolrpc.RenewAccountRequest{
@@ -706,15 +704,15 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 	if err != nil {
 		t.Fatalf("could not reserve account: %v", err)
 	}
-	traderKey, err := btcec.ParsePubKey(keyDesc.RawKeyBytes, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(keyDesc.RawKeyBytes)
 	if err != nil {
 		t.Fatalf("could not parse trader key: %v", err)
 	}
-	auctioneerKey, err := btcec.ParsePubKey(res.AuctioneerKey, btcec.S256())
+	auctioneerKey, err := btcec.ParsePubKey(res.AuctioneerKey)
 	if err != nil {
 		t.Fatalf("could not parse auctioneer key: %v", err)
 	}
-	batchKey, err := btcec.ParsePubKey(res.InitialBatchKey, btcec.S256())
+	batchKey, err := btcec.ParsePubKey(res.InitialBatchKey)
 	if err != nil {
 		t.Fatalf("could not parse batch key: %v", err)
 	}

@@ -5,10 +5,10 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	mock "github.com/lightninglabs/subasta/internal/test"
@@ -21,7 +21,7 @@ import (
 )
 
 var (
-	auctioneerKey, _ = btcec.NewPrivateKey(btcec.S256())
+	auctioneerKey, _ = btcec.NewPrivateKey()
 )
 
 type testSetup struct {
@@ -47,7 +47,7 @@ func setupTestBatch(feeSchedule matching.FeeScheduler) (*testSetup, error) {
 	// easier.
 	traders := make([]*account.Account, numRandTraders)
 	for i := 0; i < numRandTraders; i++ {
-		traderKey, err := btcec.NewPrivateKey(btcec.S256())
+		traderKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			return nil, fmt.Errorf("unable to generate "+
 				"trader key: %v", err)
@@ -75,7 +75,7 @@ func setupTestBatch(feeSchedule matching.FeeScheduler) (*testSetup, error) {
 			askKey   [33]byte
 			askNonce [32]byte
 		)
-		askerFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+		askerFundingKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			return nil, fmt.Errorf("unable to generate "+
 				"funding key: %v", err)
@@ -99,7 +99,7 @@ func setupTestBatch(feeSchedule matching.FeeScheduler) (*testSetup, error) {
 			bidKey   [33]byte
 			bidNonce [32]byte
 		)
-		bidderFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+		bidderFundingKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			return nil, fmt.Errorf("unable to generate "+
 				"funding key: %v", err)
@@ -378,7 +378,7 @@ func newMatch(orderSize btcutil.Amount) (*matching.OrderPair, error) {
 		bidKey   [33]byte
 		bidNonce [32]byte
 	)
-	askerFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	askerFundingKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("unable to generate funding key: %v", err)
 	}
@@ -393,7 +393,7 @@ func newMatch(orderSize btcutil.Amount) (*matching.OrderPair, error) {
 		},
 	}
 
-	bidderFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	bidderFundingKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		return nil, fmt.Errorf("unable to generate funding key: %v", err)
 	}
@@ -436,7 +436,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	// easier.
 	traders := make([]*account.Account, numRandTraders)
 	for i := 0; i < numRandTraders; i++ {
-		traderKey, err := btcec.NewPrivateKey(btcec.S256())
+		traderKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			t.Fatalf("unable to generate trader key: %v", err)
 		}
@@ -640,7 +640,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	// Genarate the two traders.
 	traders := make([]*account.Account, numRandTraders)
 	for i := 0; i < numRandTraders; i++ {
-		traderKey, err := btcec.NewPrivateKey(btcec.S256())
+		traderKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			t.Fatalf("unable to generate trader key: %v", err)
 		}
@@ -668,7 +668,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 		askKey   [33]byte
 		askNonce [32]byte
 	)
-	askerFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	askerFundingKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("unable to generate funding key: %v", err)
 	}
@@ -687,7 +687,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 		bidKey   [33]byte
 		bidNonce [32]byte
 	)
-	bidderFundingKey, err := btcec.NewPrivateKey(btcec.S256())
+	bidderFundingKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("unable to generate funding key: %v", err)
 	}

@@ -11,8 +11,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture"
 	"github.com/lightninglabs/aperture/proxy"
 	"github.com/lightninglabs/pool/auctioneerrpc"
@@ -174,6 +174,13 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				},
 			}},
 			DebugLevel: "debug",
+			Prometheus: &aperture.PrometheusConfig{
+				Enabled: false,
+			},
+			HashMail: &aperture.HashMailConfig{
+				Enabled: false,
+			},
+			Tor: &aperture.TorConfig{},
 		},
 	}, nil
 }

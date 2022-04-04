@@ -6,12 +6,11 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/poolscript"
@@ -22,10 +21,10 @@ import (
 
 var (
 	testRawTraderKey, _ = hex.DecodeString("03c3416ff848ab7bcc54b8c63a7fa251c7dcb908d41ad2c7e8ebbf549715552ec5")
-	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey)
 
 	testRawAuctioneerKey, _ = hex.DecodeString("036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c9395446ba09")
-	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
+	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey)
 
 	testAuctioneerKeyDesc = &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
@@ -275,9 +274,10 @@ func (w *mockWallet) DeriveSharedKey(context.Context, *btcec.PublicKey,
 }
 
 func (w *mockWallet) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescs []*lndclient.SignDescriptor) ([][]byte, error) {
+	signDescs []*lndclient.SignDescriptor,
+	prevOutputs []*wire.TxOut) ([][]byte, error) {
 
-	return w.signer.SignOutputRaw(ctx, tx, signDescs)
+	return w.signer.SignOutputRaw(ctx, tx, signDescs, nil)
 }
 
 type MockChainNotifier struct {
@@ -327,7 +327,8 @@ type MockSigner struct {
 }
 
 func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor) ([][]byte, error) {
+	signDescriptors []*lndclient.SignDescriptor,
+	prevOutputs []*wire.TxOut) ([][]byte, error) {
 
 	s := input.MockSigner{
 		Privkeys: m.PrivKeys,
@@ -344,7 +345,7 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		WitnessScript: signDescriptors[0].WitnessScript,
 		Output:        signDescriptors[0].Output,
 		HashType:      signDescriptors[0].HashType,
-		SigHashes:     txscript.NewTxSigHashes(tx),
+		SigHashes:     input.NewTxSigHashesV0Only(tx),
 		InputIndex:    signDescriptors[0].InputIndex,
 	}
 
@@ -368,7 +369,7 @@ func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
 		lndSignDescriptor := &input.SignDescriptor{
 			Output:     desc.Output,
 			HashType:   desc.HashType,
-			SigHashes:  txscript.NewTxSigHashes(tx),
+			SigHashes:  input.NewTxSigHashesV0Only(tx),
 			InputIndex: desc.InputIndex,
 		}
 

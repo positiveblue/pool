@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/order"
@@ -350,7 +350,7 @@ func testBatchExecution(t *harnessTest) {
 	// We should also be able to find this batch as well, with only 2
 	// orders being included in the batch. This time, we'll query with the
 	// exact batch ID we expect.
-	firstBatchKey, err := btcec.ParsePubKey(firstBatchID[:], btcec.S256())
+	firstBatchKey, err := btcec.ParsePubKey(firstBatchID[:])
 	if err != nil {
 		t.Fatalf("unable to decode first batch key: %v", err)
 	}

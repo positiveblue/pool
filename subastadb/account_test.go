@@ -7,9 +7,9 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/account"
@@ -19,7 +19,7 @@ import (
 
 var (
 	testRawAuctioneerKey, _ = hex.DecodeString("02187d1a0e30f4e5016fc1137363ee9e7ed5dde1e6c50f367422336df7a108b716")
-	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey, btcec.S256())
+	testAuctioneerKey, _    = btcec.ParsePubKey(testRawAuctioneerKey)
 	testAuctioneerKeyDesc   = &keychain.KeyDescriptor{
 		KeyLocator: keychain.KeyLocator{
 			Family: account.AuctioneerKeyFamily,
@@ -28,7 +28,7 @@ var (
 	}
 
 	testRawTraderKey, _ = hex.DecodeString("036b51e0cc2d9e5988ee4967e0ba67ef3727bb633fea21a0af58e0c9395446ba09")
-	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey, btcec.S256())
+	testTraderKey, _    = btcec.ParsePubKey(testRawTraderKey)
 
 	testReservation = account.Reservation{
 		Value:           1337,

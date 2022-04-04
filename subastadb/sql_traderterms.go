@@ -3,7 +3,7 @@ package subastadb
 import (
 	"context"
 
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/subasta/traderterms"
 	"gorm.io/gorm/clause"

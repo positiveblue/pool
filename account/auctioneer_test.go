@@ -3,11 +3,11 @@ package account
 import (
 	"testing"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/stretchr/testify/require"
@@ -20,11 +20,11 @@ func TestAuctioneerAccountWitness(t *testing.T) {
 
 	// First we'll generate the auctioneer key and a random batch key that
 	// we'll use for this purpose.
-	batchKey, err := btcec.NewPrivateKey(btcec.S256())
+	batchKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("unable to make batch key: %v", err)
 	}
-	auctioneerKey, err := btcec.NewPrivateKey(btcec.S256())
+	auctioneerKey, err := btcec.NewPrivateKey()
 	if err != nil {
 		t.Fatalf("unable to make auctioneer key: %v", err)
 	}
@@ -62,9 +62,11 @@ func TestAuctioneerAccountWitness(t *testing.T) {
 
 	// Ensure that the witness script we generate is valid.
 	vm, err := txscript.NewEngine(
-		acctOutput.PkScript,
-		spendTx, 0, txscript.StandardVerifyFlags, nil,
-		nil, acctOutput.Value,
+		acctOutput.PkScript, spendTx, 0, txscript.StandardVerifyFlags,
+		nil, nil, acctOutput.Value,
+		txscript.NewCannedPrevOutputFetcher(
+			acctOutput.PkScript, acctOutput.Value,
+		),
 	)
 	if err != nil {
 		t.Fatalf("unable to create engine: %v", err)
@@ -93,7 +95,7 @@ func TestAuctioneerInputWitness(t *testing.T) {
 	inputs := make(map[int]*lnwallet.Utxo)
 
 	for i := 0; i < numInputs; i++ {
-		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		privKey, err := btcec.NewPrivateKey()
 		require.NoError(t, err)
 
 		signer.PrivKeys = append(signer.PrivKeys, privKey)
@@ -128,8 +130,11 @@ func TestAuctioneerInputWitness(t *testing.T) {
 	// Ensure that the witness script we generate is valid.
 	for i, in := range inputs {
 		vm, err := txscript.NewEngine(
-			in.PkScript, spendTx, i,
-			txscript.StandardVerifyFlags, nil, nil, value,
+			in.PkScript, spendTx, i, txscript.StandardVerifyFlags,
+			nil, nil, value,
+			txscript.NewCannedPrevOutputFetcher(
+				in.PkScript, value,
+			),
 		)
 		require.NoError(t, err)
 

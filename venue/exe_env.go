@@ -5,7 +5,8 @@ import (
 	"fmt"
 	"sync/atomic"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
@@ -435,7 +436,7 @@ func (e *environment) sendFinalizeMsg(batchTxID chainhash.Hash) error {
 // error.
 func (e *environment) validateAccountWitness(witnessScript []byte,
 	traderAcctInput *batchtx.BatchInput,
-	traderSig, auctioneerSig *btcec.Signature) error {
+	traderSig, auctioneerSig *ecdsa.Signature) error {
 
 	batchTx := e.exeCtx.ExeTx.Copy()
 
@@ -448,10 +449,14 @@ func (e *environment) validateAccountWitness(witnessScript []byte,
 	)
 	batchTx.TxIn[int(traderAcctInput.InputIndex)].Witness = accountWitness
 
+	pkScript := traderAcctInput.PrevOutput.PkScript
+	value := traderAcctInput.PrevOutput.Value
 	vm, err := txscript.NewEngine(
-		traderAcctInput.PrevOutput.PkScript, batchTx,
-		inputIndex, txscript.StandardVerifyFlags,
-		nil, nil, traderAcctInput.PrevOutput.Value,
+		pkScript, batchTx, inputIndex, txscript.StandardVerifyFlags,
+		nil, nil, value,
+		txscript.NewCannedPrevOutputFetcher(
+			pkScript, value,
+		),
 	)
 	if err != nil {
 		return err
@@ -502,11 +507,11 @@ func (e *environment) validateChanInfo(trader matching.AccountID,
 		maturityHeight = chanOutput.Order.(*order.Bid).LeaseDuration()
 	}
 
-	bidAccountKey, err := btcec.ParsePubKey(bidTrader[:], btcec.S256())
+	bidAccountKey, err := btcec.ParsePubKey(bidTrader[:])
 	if err != nil {
 		return err
 	}
-	askAccountKey, err := btcec.ParsePubKey(askTrader[:], btcec.S256())
+	askAccountKey, err := btcec.ParsePubKey(askTrader[:])
 	if err != nil {
 		return err
 	}

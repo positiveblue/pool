@@ -13,13 +13,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/rpcclient"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture"
@@ -269,10 +269,6 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 
 	// Now open a channel from each trader node to Alice, which is the lnd
 	// node used for aperture.
-	ctxc, cancel := context.WithTimeout(
-		context.Background(), defaultWaitTimeout,
-	)
-	defer cancel()
 	h.lndHarness.EnsureConnected(h.t, traderNode, h.lndHarness.Alice)
 
 	// If we already have a channel for LSAT payments, we're done.
@@ -296,7 +292,7 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 	_ = mineBlocks(h, h.lndHarness, 1, 1)
 	cp, err := h.lndHarness.WaitForChannelOpen(stream)
 	require.NoError(h.t, err)
-	err = traderNode.WaitForNetworkChannelOpen(ctxc, cp)
+	err = traderNode.WaitForNetworkChannelOpen(cp)
 	require.NoError(h.t, err)
 
 	// Mine 5 more blocks to make sure the channel and the change is
@@ -590,7 +586,7 @@ func assertTraderAccountState(t *testing.T, trader *traderHarness,
 func assertAuctioneerAccount(t *harnessTest, rawTraderKey []byte,
 	value btcutil.Amount, state auctioneerAccount.State) {
 
-	traderKey, err := btcec.ParsePubKey(rawTraderKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(rawTraderKey)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}
@@ -623,7 +619,7 @@ func assertAuctioneerAccount(t *harnessTest, rawTraderKey []byte,
 func assertAuctioneerAccountState(t *harnessTest, rawTraderKey []byte,
 	states ...auctioneerAccount.State) {
 
-	traderKey, err := btcec.ParsePubKey(rawTraderKey, btcec.S256())
+	traderKey, err := btcec.ParsePubKey(rawTraderKey)
 	if err != nil {
 		t.Fatalf(err.Error())
 	}

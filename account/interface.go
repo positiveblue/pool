@@ -3,12 +3,12 @@ package account
 import (
 	"context"
 	"errors"
-	"math/big"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
-	"github.com/btcsuite/btcutil"
 	"github.com/lightninglabs/aperture/lsat"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightningnetwork/lnd/keychain"
@@ -278,7 +278,7 @@ func (a *Account) TraderKey() (*btcec.PublicKey, error) {
 		return a.traderKey, nil
 	}
 
-	return btcec.ParsePubKey(a.TraderKeyRaw[:], btcec.S256())
+	return btcec.ParsePubKey(a.TraderKeyRaw[:])
 }
 
 // NextOutputScript returns the next on-chain output script that is to be
@@ -306,17 +306,9 @@ func (a *Account) Copy(modifiers ...Modifier) *Account {
 		TraderKeyRaw: a.TraderKeyRaw,
 		AuctioneerKey: &keychain.KeyDescriptor{
 			KeyLocator: a.AuctioneerKey.KeyLocator,
-			PubKey: &btcec.PublicKey{
-				X:     big.NewInt(0).Set(a.AuctioneerKey.PubKey.X),
-				Y:     big.NewInt(0).Set(a.AuctioneerKey.PubKey.Y),
-				Curve: a.AuctioneerKey.PubKey.Curve,
-			},
+			PubKey:     accountT.CopyPubKey(a.AuctioneerKey.PubKey),
 		},
-		BatchKey: &btcec.PublicKey{
-			X:     big.NewInt(0).Set(a.BatchKey.X),
-			Y:     big.NewInt(0).Set(a.BatchKey.Y),
-			Curve: a.BatchKey.Curve,
-		},
+		BatchKey:   accountT.CopyPubKey(a.BatchKey),
 		Secret:     a.Secret,
 		State:      a.State,
 		HeightHint: a.HeightHint,

@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
@@ -61,7 +61,7 @@ func testHashMailServer(t *harnessTest) {
 	t.t.Run("acct stream creation (fail)", func(tt *testing.T) {
 		// First, we'll verify that account creation fails if an
 		// account doesn't really exist.
-		privKey, err := btcec.NewPrivateKey(btcec.S256())
+		privKey, err := btcec.NewPrivateKey()
 		if err != nil {
 			tt.Fatalf("unable to make priv key: %v", err)
 		}

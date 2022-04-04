@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec"
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/chaincfg"
 	"go.etcd.io/etcd/server/v3/embed"
 )
@@ -87,6 +87,6 @@ func newTestEtcdStore(t *testing.T) (*EtcdStore, func()) {
 
 func fromHex(s string) *btcec.PublicKey {
 	rawKey, _ := hex.DecodeString(s)
-	key, _ := btcec.ParsePubKey(rawKey, btcec.S256())
+	key, _ := btcec.ParsePubKey(rawKey)
 	return key
 }

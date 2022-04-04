@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/btcsuite/btcd/btcec"
-	"github.com/btcsuite/btcutil"
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
@@ -112,7 +112,7 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 
 	// Get the account that is making this order.
 	rawKey := o.Details().AcctKey
-	acctKey, err := btcec.ParsePubKey(rawKey[:], btcec.S256())
+	acctKey, err := btcec.ParsePubKey(rawKey[:])
 	if err != nil {
 		return err
 	}
