@@ -20,6 +20,9 @@ const (
 	// Path template for the readiness endpoint.
 	readyPath = "%s/ready"
 
+	// Path template for the updating status endpoint.
+	statusPath = "%s/status"
+
 	// Default port for the status http server.
 	defaultPort = 1100
 )
@@ -99,6 +102,9 @@ func (r *Reporter) Start() error {
 
 	readyURL := fmt.Sprintf(readyPath, r.cfg.URLPrefix)
 	handler.HandleFunc(readyURL, r.ReadinessHandler())
+
+	statusURL := fmt.Sprintf(statusPath, r.cfg.URLPrefix)
+	handler.HandleFunc(statusURL, r.StatusHandler())
 
 	r.server = &http.Server{
 		Addr: r.cfg.Address,
