@@ -392,7 +392,9 @@ type Server struct {
 
 // NewServer returns a new auctioneer server that is started in daemon mode,
 // listens for gRPC connections and executes commands.
-func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { // nolint:gocyclo
+func NewServer(cfg *Config, // nolint:gocyclo
+	interceptor signal.Interceptor) (*Server, error) {
+
 	ctx := context.Background()
 
 	// First, we'll set up our logging infrastructure so all operations
@@ -409,6 +411,7 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 	if err := statusReporter.Start(); err != nil {
 		return nil, fmt.Errorf("unable to start status server: %v", err)
 	}
+
 	var (
 		leaderElector cluster.LeaderElector
 		err           error
@@ -611,8 +614,10 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 			FundingConflictsResetInterval: cfg.FundingConflictResetInterval,
 			TraderRejected:                traderRejected,
 			TraderRejectResetInterval:     cfg.TraderRejectResetInterval,
-			TraderOnline:                  matching.NewTraderOnlineFilter(activeTraders.IsActive),
-			RatingsAgency:                 ratingsAgency,
+			TraderOnline: matching.NewTraderOnlineFilter(
+				activeTraders.IsActive,
+			),
+			RatingsAgency: ratingsAgency,
 		}),
 		channelEnforcer: channelEnforcer,
 		ratingsDB:       ratingsDB,
@@ -833,8 +838,9 @@ func (s *Server) Start() error {
 			// index the set of ratings.
 			err := s.ratingsDB.IndexRatings(ctx)
 			if err != nil {
-				startErr = fmt.Errorf("unable to index ratings: %v",
-					err)
+				startErr = fmt.Errorf("unable to index "+
+					"ratings: %v", err)
+				return
 			}
 		}
 
@@ -924,7 +930,8 @@ func (s *Server) Start() error {
 			return
 		}
 
-		// Notify the status reporter that we are ready to receive requests.
+		// Notify the status reporter that we are ready to receive
+		// requests.
 		_ = s.statusReporter.SetStatus(status.UpAndRunning)
 	})
 

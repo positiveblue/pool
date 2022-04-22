@@ -427,7 +427,7 @@ func (s *adminRPCServer) ListAccounts(ctx context.Context,
 	}, nil
 }
 
-// AuctionState returns information about the current state of the auctioneer
+// AuctionStatus returns information about the current state of the auctioneer
 // and the auction itself.
 func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.AuctionStatusResponse, error) {
@@ -830,7 +830,7 @@ func (s *adminRPCServer) ClearConflicts(context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
-func (s *adminRPCServer) BumpBatchFeeRate(ctx context.Context,
+func (s *adminRPCServer) BumpBatchFeeRate(_ context.Context,
 	req *adminrpc.BumpBatchFeeRateRequest) (*adminrpc.EmptyResponse, error) {
 
 	feePref := sweep.FeePreference{
@@ -845,7 +845,7 @@ func (s *adminRPCServer) BumpBatchFeeRate(ctx context.Context,
 }
 
 // QueryNodeRating returns the current rating for a given node.
-func (s *adminRPCServer) QueryNodeRating(ctx context.Context,
+func (s *adminRPCServer) QueryNodeRating(_ context.Context,
 	req *adminrpc.RatingQueryRequest) (*adminrpc.RatingQueryResponse, error) {
 
 	var pub [33]byte
@@ -859,9 +859,10 @@ func (s *adminRPCServer) QueryNodeRating(ctx context.Context,
 	}, nil
 }
 
-// ModifyRatingResponse attempts to modify the rating of a given node.
+// ModifyNodeRatings attempts to modify the rating of a given node.
 func (s *adminRPCServer) ModifyNodeRatings(ctx context.Context,
-	req *adminrpc.ModifyRatingRequest) (*adminrpc.ModifyRatingResponse, error) {
+	req *adminrpc.ModifyRatingRequest) (*adminrpc.ModifyRatingResponse,
+	error) {
 
 	var pub [33]byte
 	copy(pub[:], req.NodeKey)
@@ -876,7 +877,7 @@ func (s *adminRPCServer) ModifyNodeRatings(ctx context.Context,
 	return &adminrpc.ModifyRatingResponse{}, nil
 }
 
-// ListNodeRatingsResponse lists the current set of valid node ratings.
+// ListNodeRatings lists the current set of valid node ratings.
 func (s *adminRPCServer) ListNodeRatings(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.ListNodeRatingsResponse, error) {
 
@@ -1179,7 +1180,7 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 
 // MirrorDatabase mirrors accounts, orders and batches from etcd to SQL.
 func (s *adminRPCServer) MirrorDatabase(ctx context.Context,
-	req *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
+	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
 
 	return &adminrpc.EmptyResponse{}, s.store.MirrorToSQL(ctx)
 }
