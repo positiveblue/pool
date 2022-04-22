@@ -186,10 +186,35 @@ func (h *harnessTest) shutdown() error {
 // restartServer stops the auctioneer server and then starts it again, forcing
 // all connected traders to reconnect.
 func (h *harnessTest) restartServer() {
-	err := h.auctioneer.halt()
-	if err != nil {
-		h.t.Fatalf("could not halt auctioneer server: %v", err)
-	}
+	// Get the full log we have up to this point so, we can find out what
+	// is logged _after_ we shut down. If we don't do that, we might check
+	// for the final "Auction server stopped" message in a part of the log
+	// that was written before.
+	initialLog, err := h.auctioneer.getLogFileContent()
+	require.NoError(h.t, err)
+
+	err = h.auctioneer.halt()
+	require.NoError(h.t, err)
+
+	// Wait until the server is fully stopped.
+	err = wait.NoError(func() error {
+		currentLog, err := h.auctioneer.getLogFileContent()
+		if err != nil {
+			return err
+		}
+
+		logDiff := strings.ReplaceAll(currentLog, initialLog, "")
+		shutdownDetected := strings.Contains(
+			logDiff, subasta.ShutdownCompleteLogMessage,
+		)
+		if !shutdownDetected {
+			return fmt.Errorf("final shutdown message not found " +
+				"in auction server log")
+		}
+
+		return nil
+	}, time.Second)
+	require.NoError(h.t, err)
 
 	// Wait a few milliseconds to make sure a client reconnect backoff is
 	// triggered.

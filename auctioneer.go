@@ -713,6 +713,7 @@ func (a *Auctioneer) rebroadcastPendingBatches() error {
 // TODO(roasbeef): start it in the Start() method?
 func (a *Auctioneer) blockFeeder(newBlockChan chan int32,
 	blockErrChan chan error) {
+
 	defer a.wg.Done()
 
 	for {
@@ -1317,7 +1318,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// MasterAcctPending if we shut down before broadcast.
 		err = a.cfg.DB.UpdateAuctioneerAccount(ctxb, startingAcct)
 		if err != nil {
-			return nil, fmt.Errorf("unable to update auctioneer account: %v", err)
+			return nil, fmt.Errorf("unable to update auctioneer "+
+				"account: %v", err)
 		}
 
 		// Now that we know we have enough coins, we'll instruct the

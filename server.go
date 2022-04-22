@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -43,6 +44,10 @@ const (
 	// headerRESTProxyAccept is the name of a gRPC metadata field that is
 	// set only if the request was forwarded by the REST proxy.
 	headerRESTProxyAccept = "grpcgateway-accept"
+
+	// ShutdownCompleteLogMessage is the log message that is printed once
+	// the server has fully and completely finished its shutdown process.
+	ShutdownCompleteLogMessage = "full server shutdown complete"
 )
 
 var (
@@ -381,17 +386,15 @@ type Server struct {
 
 	durationBuckets *order.DurationBuckets
 
-	quit chan struct{}
-
-	wg sync.WaitGroup
-
 	startOnce sync.Once
 	stopOnce  sync.Once
 }
 
 // NewServer returns a new auctioneer server that is started in daemon mode,
 // listens for gRPC connections and executes commands.
-func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { // nolint:gocyclo
+func NewServer(cfg *Config, // nolint:gocyclo
+	interceptor signal.Interceptor) (*Server, error) {
+
 	ctx := context.Background()
 
 	// First, we'll set up our logging infrastructure so all operations
@@ -408,6 +411,7 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 	if err := statusReporter.Start(); err != nil {
 		return nil, fmt.Errorf("unable to start status server: %v", err)
 	}
+
 	var (
 		leaderElector cluster.LeaderElector
 		err           error
@@ -610,13 +614,14 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 			FundingConflictsResetInterval: cfg.FundingConflictResetInterval,
 			TraderRejected:                traderRejected,
 			TraderRejectResetInterval:     cfg.TraderRejectResetInterval,
-			TraderOnline:                  matching.NewTraderOnlineFilter(activeTraders.IsActive),
-			RatingsAgency:                 ratingsAgency,
+			TraderOnline: matching.NewTraderOnlineFilter(
+				activeTraders.IsActive,
+			),
+			RatingsAgency: ratingsAgency,
 		}),
 		channelEnforcer: channelEnforcer,
 		ratingsDB:       ratingsDB,
 		durationBuckets: durationBuckets,
-		quit:            make(chan struct{}),
 	}
 
 	// With all our other initialization complete, we'll now create the
@@ -777,7 +782,7 @@ func NewServer(cfg *Config, interceptor signal.Interceptor) (*Server, error) { /
 	server.adminServer, err = newAdminRPCServer(
 		chainParams, auctioneerServer, adminListener, adminServerOpts,
 		server.auctioneer, store, durationBuckets, lnd.WalletKit,
-		lnd.Client,
+		lnd.Client, statusReporter,
 	)
 	if err != nil {
 		return nil, err
@@ -832,8 +837,9 @@ func (s *Server) Start() error {
 			// index the set of ratings.
 			err := s.ratingsDB.IndexRatings(ctx)
 			if err != nil {
-				startErr = fmt.Errorf("unable to index ratings: %v",
-					err)
+				startErr = fmt.Errorf("unable to index "+
+					"ratings: %v", err)
+				return
 			}
 		}
 
@@ -897,6 +903,14 @@ func (s *Server) Start() error {
 					"Prometheus exporter: %v", err)
 				return
 			}
+
+			log.Infof("Starting initial metrics collection to " +
+				"fill cache...")
+			start := time.Now()
+			promClient.CollectAll()
+			log.Infof("Finished initial metrics collection in %v",
+				time.Since(start))
+
 		}
 
 		// Start the gRPC server itself.
@@ -915,7 +929,8 @@ func (s *Server) Start() error {
 			return
 		}
 
-		// Notify the status reporter that we are ready to receive requests.
+		// Notify the status reporter that we are ready to receive
+		// requests.
 		_ = s.statusReporter.SetStatus(status.UpAndRunning)
 	})
 
@@ -925,13 +940,11 @@ func (s *Server) Start() error {
 // Stop shuts down the server, including all client connections and network
 // listeners.
 func (s *Server) Stop() error {
-	log.Info("Received shutdown signal, stopping server")
+	log.Info("Subasta server: Received shutdown signal, stopping server")
 
 	var stopErr error
 
 	s.stopOnce.Do(func() {
-		close(s.quit)
-
 		s.adminServer.Stop()
 		s.rpcServer.Stop()
 		s.hashMailServer.Stop()
@@ -951,7 +964,6 @@ func (s *Server) Stop() error {
 		s.orderBook.Stop()
 		s.accountManager.Stop()
 		s.lnd.Close()
-		s.wg.Wait()
 
 		if s.cfg.Prometheus.Active {
 			s.cfg.Prometheus.BitcoinClient.Shutdown()
@@ -971,6 +983,8 @@ func (s *Server) Stop() error {
 			return
 		}
 	})
+
+	log.Infof("Subasta server: %s", ShutdownCompleteLogMessage)
 
 	return stopErr
 }

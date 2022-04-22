@@ -40,6 +40,8 @@ service AuctionAdmin {
     rpc RemoveTraderTerms (TraderTerms) returns (EmptyResponse);
     rpc FinancialReport (FinancialReportRequest)
         returns (FinancialReportResponse);
+    rpc Shutdown (EmptyRequest) returns (EmptyResponse);
+    rpc SetStatus (SetStatusRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -350,6 +352,11 @@ message AuctionStatusResponse {
     the duration buckets currently are in.
     */
     map<uint32, poolrpc.DurationBucketState> lease_duration_buckets = 8;
+
+    /*
+    The current server state as exposed through the k8s status endpoint.
+    */
+    string server_state = 9;
 }
 
 message ListBatchesResponse {
@@ -688,4 +695,11 @@ message FinancialReportResponse {
 
     // The report LSAT entries.
     repeated FinancialReportLSATEntry lsat_entries = 4;
+}
+
+message SetStatusRequest {
+    /*
+    The current server state to set for the k8s status endpoint.
+    */
+    string server_state = 1;
 }

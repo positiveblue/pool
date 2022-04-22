@@ -261,7 +261,7 @@ func newStream(id streamID,
 			nextMsg, err := rStream.ReadNextMsg()
 			if err != nil {
 				log.Errorf("unable to read msg for HashMail "+
-					"stream_id=%x", id[:])
+					"stream_id=%x: %v", id[:], err)
 				return
 			}
 
@@ -360,12 +360,15 @@ func (h *hashMailServer) Stop() {
 	h.Lock()
 	defer h.Unlock()
 
+	log.Infof("Shutting down hashmail server")
+
 	for _, stream := range h.streams {
 		if err := stream.tearDown(); err != nil {
 			log.Warnf("unable to tear down stream: %v", err)
 		}
 	}
 
+	log.Infof("Finished shutting down hashmail server")
 }
 
 // ValidateStreamAuth attempts to validate the authentication mechanism that is
@@ -453,8 +456,9 @@ func rpcToAuthMethod(auth *auctioneerrpc.CipherBoxAuth) authMethod {
 }
 
 // InitStream attempts to initialize a new stream given a valid descriptor.
-func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxAuth,
-) (*auctioneerrpc.CipherInitResp, error) {
+func (h *hashMailServer) InitStream(
+	init *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.CipherInitResp,
+	error) {
 
 	h.Lock()
 	defer h.Unlock()
@@ -475,46 +479,50 @@ func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxAuth,
 
 	ogAuthType := rpcToAuthMethod(init)
 
-	freshStream := newStream(streamID, func(auth *auctioneerrpc.CipherBoxAuth) error {
-		// First the type of authentication must match exactly.
-		if ogAuthType != rpcToAuthMethod(auth) {
-			return fmt.Errorf("auth type mismatch")
-		}
-
-		// Depending on the auth type, we'll then assert that the core
-		// authentication mechanism is the same.
-		switch ogAuthType {
-		case authAcct:
-			if !bytes.Equal(auth.GetAcctAuth().AcctKey,
-				init.GetAcctAuth().AcctKey) {
-				return fmt.Errorf("wrong pubkey")
+	freshStream := newStream(
+		streamID, func(auth *auctioneerrpc.CipherBoxAuth) error {
+			// First the type of authentication must match exactly.
+			if ogAuthType != rpcToAuthMethod(auth) {
+				return fmt.Errorf("auth type mismatch")
 			}
 
-		case authSidecar:
-			newTicket, err := sidecar.DecodeString(
-				auth.GetSidecarAuth().Ticket,
-			)
-			if err != nil {
-				return err
+			// Depending on the auth type, we'll then assert that
+			// the core authentication mechanism is the same.
+			switch ogAuthType {
+			case authAcct:
+				if !bytes.Equal(
+					auth.GetAcctAuth().AcctKey,
+					init.GetAcctAuth().AcctKey,
+				) {
+					return fmt.Errorf("wrong pubkey")
+				}
+
+			case authSidecar:
+				newTicket, err := sidecar.DecodeString(
+					auth.GetSidecarAuth().Ticket,
+				)
+				if err != nil {
+					return err
+				}
+
+				oldTicket, err := sidecar.DecodeString(
+					init.GetSidecarAuth().Ticket,
+				)
+				if err != nil {
+					return err
+				}
+
+				if !newTicket.Offer.SignPubKey.IsEqual(
+					oldTicket.Offer.SignPubKey,
+				) {
+					return fmt.Errorf("invalid pubkey")
+				}
+
 			}
 
-			oldTicket, err := sidecar.DecodeString(
-				init.GetSidecarAuth().Ticket,
-			)
-			if err != nil {
-				return err
-			}
-
-			if !newTicket.Offer.SignPubKey.IsEqual(
-				oldTicket.Offer.SignPubKey) {
-
-				return fmt.Errorf("invalid pubkey")
-			}
-
-		}
-
-		return nil
-	})
+			return nil
+		},
+	)
 
 	h.streams[streamID] = freshStream
 
@@ -523,9 +531,10 @@ func (h *hashMailServer) InitStream(init *auctioneerrpc.CipherBoxAuth,
 	}, nil
 }
 
-// LookUpReadStream attempts to loop up a new stream. If the stream is found, then
-// the stream is marked as being active. Otherwise, an error is returned.
-func (h *hashMailServer) LookUpReadStream(streamID []byte) (*readStream, error) {
+// LookUpReadStream attempts to loop up a new stream. If the stream is found,
+// then the stream is marked as being active. Otherwise, an error is returned.
+func (h *hashMailServer) LookUpReadStream(streamID []byte) (*readStream,
+	error) {
 
 	h.RLock()
 	defer h.RUnlock()
@@ -540,7 +549,8 @@ func (h *hashMailServer) LookUpReadStream(streamID []byte) (*readStream, error) 
 
 // LookUpWriteStream attempts to loop up a new stream. If the stream is found,
 // then the stream is marked as being active. Otherwise, an error is returned.
-func (h *hashMailServer) LookUpWriteStream(streamID []byte) (*writeStream, error) {
+func (h *hashMailServer) LookUpWriteStream(streamID []byte) (*writeStream,
+	error) {
 
 	h.RLock()
 	defer h.RUnlock()
@@ -611,7 +621,8 @@ func validateAuthReq(req *auctioneerrpc.CipherBoxAuth) error {
 // authentication mechanism. This call may fail if the stream is already
 // active, or the authentication mechanism invalid.
 func (h *hashMailServer) NewCipherBox(ctx context.Context,
-	init *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.CipherInitResp, error) {
+	init *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.CipherInitResp,
+	error) {
 
 	// Before we try to process the request, we'll do some basic user input
 	// validation.
@@ -640,7 +651,8 @@ func (h *hashMailServer) NewCipherBox(ctx context.Context,
 // authentication mechanism used to initially create the stream MUST be
 // specified.
 func (h *hashMailServer) DelCipherBox(ctx context.Context,
-	auth *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.DelCipherBoxResp, error) {
+	auth *auctioneerrpc.CipherBoxAuth) (*auctioneerrpc.DelCipherBoxResp,
+	error) {
 
 	// Before we try to process the request, we'll do some basic user input
 	// validation.
@@ -660,7 +672,9 @@ func (h *hashMailServer) DelCipherBox(ctx context.Context,
 
 // SendStream implements the client streaming call to utilize the write end of
 // a stream to send a message to the read end.
-func (h *hashMailServer) SendStream(readStream auctioneerrpc.HashMail_SendStreamServer) error {
+func (h *hashMailServer) SendStream(
+	readStream auctioneerrpc.HashMail_SendStreamServer) error {
+
 	log.Debugf("New HashMail write stream pending...")
 
 	// We'll need to receive the first message in order to determine if
