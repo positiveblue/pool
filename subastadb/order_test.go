@@ -39,6 +39,7 @@ func TestSubmitOrder(t *testing.T) {
 		Kit:       *dummyOrder(t),
 		IsSidecar: true,
 	}
+	bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
 	_, err := store.GetOrder(ctxb, bid.Nonce())
 	if err != ErrNoOrder {
 		t.Fatalf("unexpected error. got %v expected %v", err,
@@ -92,6 +93,14 @@ func TestSubmitOrder(t *testing.T) {
 	if err := store.fillActiveOrdersCache(ctxb); err != nil {
 		t.Fatalf("unable to re fresh cache: %v", err)
 	}
+
+	// Check that the order that we get from the db (now in the cache)
+	// matches the expected values.
+	storedOrder, err = store.GetOrder(ctxb, bid.Nonce())
+	if err != nil {
+		t.Fatalf("unable to retrieve order: %v", err)
+	}
+	assertJSONDeepEqual(t, bid, storedOrder)
 }
 
 // TestUpdateOrders tests that orders can be updated correctly.

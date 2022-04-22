@@ -1260,6 +1260,22 @@
           "type": "string",
           "format": "uint64",
           "description": "Maximum fee rate the trader is willing to pay for the batch transaction,\nexpressed in satoshis per 1000 weight units (sat/kW)."
+        },
+        "allowed_node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "List of nodes that will be allowed to match with our order. Incompatible\nwith the `not_allowed_node_ids` field."
+        },
+        "not_allowed_node_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "List of nodes that won't be allowed to match with our order. Incompatible\nwith the `allowed_node_ids` field."
         }
       }
     },

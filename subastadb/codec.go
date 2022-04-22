@@ -29,6 +29,14 @@ const (
 	// bidIsSidecarType is the tlv record type for the sidecar flag of a bid
 	// order.
 	bidIsSidecarType tlv.Type = 3
+
+	// allowedNodeIDsType is the tlv type we use to store the list of node
+	// ids an order is allowed to match with.
+	allowedNodeIDsType tlv.Type = 4
+
+	// notAllowedNodeIDsType is the tlv type we use to store the list of
+	// node ids an order is not allowed to match with.
+	notAllowedNodeIDsType tlv.Type = 5
 )
 
 // WriteElements is writes each element in the elements slice to the passed

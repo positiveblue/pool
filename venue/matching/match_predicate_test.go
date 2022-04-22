@@ -15,6 +15,7 @@ var (
 	node2Key    = NodeID{2, 3, 4, 5}
 	node3Key    = NodeID{3, 4, 5, 6}
 	node4Key    = NodeID{4, 5, 6, 7}
+	node5Key    = NodeID{5, 6, 7, 8}
 	acct1Key    = [33]byte{1, 2, 3, 4}
 	acct2Key    = [33]byte{2, 3, 4, 5}
 	multiSigKey = [33]byte{3, 4, 5, 6}
@@ -31,7 +32,8 @@ var (
 	node1Ask = &order.Ask{
 		Ask: orderT.Ask{
 			Kit: orderT.Kit{
-				AcctKey: acct1Key,
+				AcctKey:           acct1Key,
+				NotAllowedNodeIDs: [][33]byte{node5Key},
 			},
 		},
 		Kit: order.Kit{
@@ -168,4 +170,64 @@ func TestChannelTypePredicate(t *testing.T) {
 
 	bid.ChannelType = orderT.ChannelTypeScriptEnforced
 	require.False(t, MatchChannelType(&ask, &bid))
+}
+
+// TestAllowedNodeIDsPredicate test that two orders will only match if their
+// filters by nodeID allows it.
+func TestAllowedNodeIDsPredicate(t *testing.T) {
+	ask := &order.Ask{
+		Kit: order.Kit{
+			NodeKey: node1Key,
+		},
+	}
+
+	bid := &order.Bid{
+		Bid: orderT.Bid{},
+		Kit: order.Kit{
+			NodeKey: node4Key,
+		},
+	}
+
+	// Orders without any node id filters are allowed to match.
+	require.True(
+		t, AllowedNodeIDsPredicate(ask, bid),
+	)
+
+	// Bid is not able to match because it isn't in the ask's allowed ids.
+	ask.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
+	require.False(
+		t, AllowedNodeIDsPredicate(ask, bid),
+	)
+
+	// The orders are able to match because bid's node id is in the ask's
+	// allowed ids and bid has no restriction.
+	ask.AllowedNodeIDs = append(ask.AllowedNodeIDs, bid.NodeKey)
+	require.True(
+		t, AllowedNodeIDsPredicate(ask, bid),
+	)
+
+	// The orders cannot match because ask nod id is not in the bid's list
+	// of allowed node ids.
+	bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
+	require.False(
+		t, AllowedNodeIDsPredicate(ask, bid),
+	)
+
+	// The orders are not allowed to match because ask's node id is in the
+	// bid's NotAllowedNodeIDs list.
+	bid.AllowedNodeIDs = [][33]byte{}
+	bid.NotAllowedNodeIDs = [][33]byte{ask.NodeKey}
+	require.False(
+		t, AllowedNodeIDsPredicate(ask, bid),
+	)
+
+	// The orders are able to match because both have the other's
+	// node id in their AllowedNodeIDs list.
+	ask.AllowedNodeIDs = [][33]byte{bid.NodeKey}
+	ask.NotAllowedNodeIDs = [][33]byte{}
+	bid.AllowedNodeIDs = [][33]byte{ask.NodeKey}
+	bid.NotAllowedNodeIDs = [][33]byte{}
+	require.True(
+		t, AllowedNodeIDsPredicate(ask, bid),
+	)
 }
