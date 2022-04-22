@@ -46,6 +46,10 @@ var (
 // all MetricGroups are registered before the main prometheus exporter starts
 // and any additional tracing is added.
 type MetricGroup interface {
+	// Collector is the embedded interface that forces every MetricGroup to
+	// also be a collector.
+	prometheus.Collector
+
 	// Name is the name of the metric group. When exported to prometheus,
 	// it's expected that all metric under this group have the same prefix.
 	Name() string
@@ -143,6 +147,25 @@ func (p *PrometheusExporter) Start() error {
 	}()
 
 	return nil
+}
+
+// CollectAll will call the Collect method on each of the registered collectors
+// and block until all of them finish executing. This can be used to prime any
+// caches that might be used by the collectors.
+func (p *PrometheusExporter) CollectAll() {
+	collectors := make([]prometheus.Collector, 0, len(activeGroups))
+	metricsMtx.Lock()
+	for _, metricGroup := range activeGroups {
+		collectors = append(collectors, metricGroup)
+	}
+	metricsMtx.Unlock()
+
+	// This will take a while, so we don't want to hold the lock here.
+	for _, collector := range collectors {
+		// No collector should have more than 100 individual metrics.
+		ch := make(chan<- prometheus.Metric, 100)
+		collector.Collect(ch)
+	}
 }
 
 // registerMetrics iterates through all the registered metric groups and
