@@ -36,6 +36,8 @@ var adminCommands = []cli.Command{
 		Subcommands: []cli.Command{
 			mirrorDatabaseCommand,
 			financialReportCommand,
+			shutdownCommand,
+			setStatusCommand,
 		},
 	},
 }
@@ -296,4 +298,29 @@ var financialReportCommand = cli.Command{
 
 		return nil
 	},
+}
+
+var shutdownCommand = cli.Command{
+	Name:        "shutdown",
+	Usage:       "Shutdown the whole subasta server",
+	Description: `Shutdown the whole subasta server.`,
+	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.Shutdown(ctx, &adminrpc.EmptyRequest{})
+	}),
+}
+
+var setStatusCommand = cli.Command{
+	Name:        "setstatus",
+	Usage:       "Set a new health/readiness status",
+	Description: `Set a new health/readiness status on the k8s endpoint.`,
+	ArgsUsage:   "status_name",
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.SetStatus(ctx, &adminrpc.SetStatusRequest{
+			ServerState: cliCtx.Args().First(),
+		})
+	}),
 }

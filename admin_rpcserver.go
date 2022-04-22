@@ -28,6 +28,7 @@ import (
 	"github.com/lightninglabs/subasta/accounting"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue/batchtx"
@@ -55,9 +56,10 @@ type adminRPCServer struct {
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
 
-	mainRPCServer *rpcServer
-	auctioneer    *Auctioneer
-	store         *subastadb.EtcdStore
+	mainRPCServer  *rpcServer
+	auctioneer     *Auctioneer
+	store          *subastadb.EtcdStore
+	statusReporter *status.Reporter
 
 	durationBuckets *order.DurationBuckets
 
@@ -73,7 +75,8 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 	auctioneer *Auctioneer, store *subastadb.EtcdStore,
 	durationBuckets *order.DurationBuckets,
 	wallet lndclient.WalletKitClient,
-	lightningClient lndclient.LightningClient) (*adminRPCServer, error) {
+	lightningClient lndclient.LightningClient,
+	statusReporter *status.Reporter) (*adminRPCServer, error) {
 
 	// Generate a lock ID for the utxo leases that this instance is going to
 	// request.
@@ -89,6 +92,7 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 		mainRPCServer:   mainRPCServer,
 		auctioneer:      auctioneer,
 		store:           store,
+		statusReporter:  statusReporter,
 		durationBuckets: durationBuckets,
 		lightningClient: lightningClient,
 		wallet:          wallet,
@@ -458,6 +462,7 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 		SecondsToNextTick:    uint64(batchTicker.NextTickIn().Seconds()),
 		AuctionState:         state.String(),
 		LeaseDurationBuckets: rpcDurationBuckets,
+		ServerState:          s.statusReporter.GetStatus().Status,
 	}
 
 	// Don't calculate the last key if the current one is the initial one as
@@ -1262,6 +1267,29 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 		BatchEntries:   batchEntries,
 		LsatEntries:    LSATEntries,
 	}, nil
+}
+
+// Shutdown shuts down the whole server.
+func (s *adminRPCServer) Shutdown(context.Context,
+	*adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
+
+	// Logging a critical error should cause the logger to initiate a
+	// shutdown.
+	log.Critical("Shutdown requested through the admin RPC")
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
+// SetStatus sets the current server status as it is reported to the k8s health
+// and readiness endpoints.
+func (s *adminRPCServer) SetStatus(_ context.Context,
+	req *adminrpc.SetStatusRequest) (*adminrpc.EmptyResponse, error) {
+
+	if err := s.statusReporter.SetStatus(req.ServerState); err != nil {
+		return nil, err
+	}
+
+	return &adminrpc.EmptyResponse{}, nil
 }
 
 // marshallBatchReportEntry translates an accounting.Entry into its admin RPC

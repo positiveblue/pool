@@ -778,7 +778,7 @@ func NewServer(cfg *Config, // nolint:gocyclo
 	server.adminServer, err = newAdminRPCServer(
 		chainParams, auctioneerServer, adminListener, adminServerOpts,
 		server.auctioneer, store, durationBuckets, lnd.WalletKit,
-		lnd.Client,
+		lnd.Client, statusReporter,
 	)
 	if err != nil {
 		return nil, err
