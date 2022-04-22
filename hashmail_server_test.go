@@ -191,9 +191,166 @@ func TestHashMailServerLargeMessage(t *testing.T) {
 	assertNoError(t, serverErrChan)
 }
 
+// TestHashMailServerShutdownWhileRead makes sure the server can be shut down
+// even when a client is waiting on a receive stream.
+func TestHashMailServerShutdownWhileRead(t *testing.T) {
+	defer test.Guard(t)()
+
+	ctxb := context.Background()
+	serverErrChan := make(chan error)
+
+	grpcServer, server := setupHashmailServer(t, serverErrChan)
+	defer func() {
+		// We'll stop the hashmail server in this test so, to clean up
+		// we only need to close the gRPC server.
+		grpcServer.Stop()
+	}()
+
+	// Any error while starting?
+	assertNoError(t, serverErrChan)
+
+	// Create a client and connect it to the server.
+	conn, err := grpc.Dial(testHashmailServerAddress, grpc.WithInsecure())
+	require.NoError(t, err)
+	client := auctioneerrpc.NewHashMailClient(conn)
+
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	// We'll create a new cipher box that we're going to subscribe to
+	// multiple times to check disconnecting returns the read stream.
+	resp, err := client.NewCipherBox(ctxb, &auctioneerrpc.CipherBoxAuth{
+		Auth: &auctioneerrpc.CipherBoxAuth_AcctAuth{
+			AcctAuth: &auctioneerrpc.PoolAccountAuth{
+				AcctKey:   testPublicKeyBytes,
+				StreamSig: testSignature,
+			},
+		},
+		Desc: testStreamDesc,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetSuccess())
+
+	// We now create a client that waits for a message on a receive stream.
+	ctxc, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	readStream, err := client.RecvStream(ctxc, testStreamDesc)
+	require.NoError(t, err)
+
+	// Let's wait for the stream to actually be created.
+	time.Sleep(defaultStartupWait)
+
+	// Shutting down the server should not block indefinitely, even if a
+	// client is connected.
+	shutdownComplete := make(chan struct{})
+	go func() {
+		server.Stop()
+		close(shutdownComplete)
+	}()
+
+	// We expect the shutdown to happen reasonably quickly.
+	select {
+	case <-shutdownComplete:
+
+	case <-time.After(2 * defaultStartupWait):
+		t.Fatalf("Server did not shut down after %v",
+			2*defaultStartupWait)
+	}
+
+	_ = readStream.CloseSend()
+
+	// The gRPC server itself should not have been affected and in fact
+	// should still be running.
+	assertNoError(t, serverErrChan)
+}
+
+// TestHashMailServerShutdownWhileWrite makes sure the server can be shut down
+// even when a client is waiting on a send stream.
+func TestHashMailServerShutdownWhileWrite(t *testing.T) {
+	defer test.Guard(t)()
+
+	ctxb := context.Background()
+	serverErrChan := make(chan error)
+
+	grpcServer, server := setupHashmailServer(t, serverErrChan)
+	defer func() {
+		// We'll stop the hashmail server in this test so, to clean up
+		// we only need to close the gRPC server.
+		grpcServer.Stop()
+	}()
+
+	// Any error while starting?
+	assertNoError(t, serverErrChan)
+
+	// Create a client and connect it to the server.
+	conn, err := grpc.Dial(testHashmailServerAddress, grpc.WithInsecure())
+	require.NoError(t, err)
+	client := auctioneerrpc.NewHashMailClient(conn)
+
+	defer func() {
+		_ = conn.Close()
+	}()
+
+	// We'll create a new cipher box that we're going to subscribe to
+	// multiple times to check disconnecting returns the read stream.
+	resp, err := client.NewCipherBox(ctxb, &auctioneerrpc.CipherBoxAuth{
+		Auth: &auctioneerrpc.CipherBoxAuth_AcctAuth{
+			AcctAuth: &auctioneerrpc.PoolAccountAuth{
+				AcctKey:   testPublicKeyBytes,
+				StreamSig: testSignature,
+			},
+		},
+		Desc: testStreamDesc,
+	})
+	require.NoError(t, err)
+	require.NotNil(t, resp.GetSuccess())
+
+	// Let's create a long message and try to send it.
+	var largeMessage [512 * 4096]byte
+	_, err = rand.Read(largeMessage[:])
+	require.NoError(t, err)
+
+	sendCtx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	writeStream, err := client.SendStream(sendCtx)
+	require.NoError(t, err)
+	err = writeStream.Send(&auctioneerrpc.CipherBox{
+		Desc: testStreamDesc,
+		Msg:  largeMessage[:],
+	})
+	require.NoError(t, err)
+
+	// We need to wait a bit to make sure the message is really sent.
+	time.Sleep(defaultStartupWait)
+
+	// Shutting down the server should not block indefinitely, even if a
+	// client is connected.
+	shutdownComplete := make(chan struct{})
+	go func() {
+		server.Stop()
+		close(shutdownComplete)
+	}()
+
+	// We expect the shutdown to happen reasonably quickly.
+	select {
+	case <-shutdownComplete:
+
+	case <-time.After(2 * defaultStartupWait):
+		t.Fatalf("Server did not shut down after %v",
+			2*defaultStartupWait)
+	}
+
+	_ = writeStream.CloseSend()
+
+	// The gRPC server itself should not have been affected and in fact
+	// should still be running.
+	assertNoError(t, serverErrChan)
+}
+
 func setupHashmailServer(t *testing.T, errChan chan error) (*grpc.Server,
 	*hashMailServer) {
-
 	mockSigner := test.NewMockSigner()
 	mockSigner.Signature = testSignature
 	mockSigner.NodePubkey = testTraderKeyStr

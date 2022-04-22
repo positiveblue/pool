@@ -261,7 +261,7 @@ func newStream(id streamID,
 			nextMsg, err := rStream.ReadNextMsg()
 			if err != nil {
 				log.Errorf("unable to read msg for HashMail "+
-					"stream_id=%x", id[:])
+					"stream_id=%x: %v", id[:], err)
 				return
 			}
 
