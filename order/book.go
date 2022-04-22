@@ -64,9 +64,6 @@ type Book struct {
 
 	ntfnServer *subscribe.Server
 	acctMutex  *multimutex.HashMutex
-
-	wg   sync.WaitGroup
-	quit chan struct{}
 }
 
 // NewBook instantiates a new Book backed by the given config.
@@ -75,7 +72,6 @@ func NewBook(cfg *BookConfig) *Book {
 		ntfnServer: subscribe.NewServer(),
 		cfg:        *cfg,
 		acctMutex:  multimutex.NewHashMutex(),
-		quit:       make(chan struct{}),
 	}
 }
 
@@ -95,9 +91,6 @@ func (b *Book) Start() error {
 func (b *Book) Stop() {
 	b.stopped.Do(func() {
 		_ = b.ntfnServer.Stop()
-
-		close(b.quit)
-		b.wg.Wait()
 	})
 }
 

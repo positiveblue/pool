@@ -111,9 +111,6 @@ type Manager struct {
 	// NOTE: We use pointers to sync.Mutex to prevent copies when accessing
 	// the map, which are not safe.
 	modifyLocks map[[33]byte]*sync.Mutex
-
-	wg   sync.WaitGroup
-	quit chan struct{}
 }
 
 // NewManager instantiates a new Manager backed by the given config.
@@ -121,7 +118,6 @@ func NewManager(cfg *ManagerConfig) (*Manager, error) {
 	m := &Manager{
 		cfg:         *cfg,
 		modifyLocks: make(map[[33]byte]*sync.Mutex),
-		quit:        make(chan struct{}),
 	}
 
 	m.watcher = watcher.NewController(&watcher.CtrlConfig{
@@ -184,9 +180,6 @@ func (m *Manager) start() error {
 func (m *Manager) Stop() {
 	m.stopped.Do(func() {
 		m.watcher.Stop()
-
-		close(m.quit)
-		m.wg.Wait()
 	})
 }
 

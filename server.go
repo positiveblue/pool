@@ -382,10 +382,6 @@ type Server struct {
 
 	durationBuckets *order.DurationBuckets
 
-	quit chan struct{}
-
-	wg sync.WaitGroup
-
 	startOnce sync.Once
 	stopOnce  sync.Once
 }
@@ -622,7 +618,6 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		channelEnforcer: channelEnforcer,
 		ratingsDB:       ratingsDB,
 		durationBuckets: durationBuckets,
-		quit:            make(chan struct{}),
 	}
 
 	// With all our other initialization complete, we'll now create the
@@ -946,8 +941,6 @@ func (s *Server) Stop() error {
 	var stopErr error
 
 	s.stopOnce.Do(func() {
-		close(s.quit)
-
 		s.adminServer.Stop()
 		s.rpcServer.Stop()
 		s.hashMailServer.Stop()
@@ -967,7 +960,6 @@ func (s *Server) Stop() error {
 		s.orderBook.Stop()
 		s.accountManager.Stop()
 		s.lnd.Close()
-		s.wg.Wait()
 
 		if s.cfg.Prometheus.Active {
 			s.cfg.Prometheus.BitcoinClient.Shutdown()

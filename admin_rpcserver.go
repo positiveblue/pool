@@ -55,9 +55,6 @@ type adminRPCServer struct {
 	started uint32 // To be used atomically.
 	stopped uint32 // To be used atomically.
 
-	quit chan struct{}
-	wg   sync.WaitGroup
-
 	mainRPCServer *rpcServer
 	auctioneer    *Auctioneer
 	store         *subastadb.EtcdStore
@@ -89,7 +86,6 @@ func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 		network:         network,
 		grpcServer:      grpc.NewServer(serverOpts...),
 		listener:        listener,
-		quit:            make(chan struct{}),
 		mainRPCServer:   mainRPCServer,
 		auctioneer:      auctioneer,
 		store:           store,
@@ -132,9 +128,6 @@ func (s *adminRPCServer) Stop() {
 	}
 
 	log.Info("Stopping admin server")
-
-	close(s.quit)
-	s.wg.Wait()
 
 	log.Info("Stopping admin gRPC server and listener")
 	s.grpcServer.Stop()
