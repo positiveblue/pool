@@ -125,6 +125,8 @@ type commChannels struct {
 	toTrader chan venue.ExecutionMsg
 	toServer chan venue.TraderMsg
 
+	quit chan struct{}
+
 	abortOnce sync.Once
 	quitConn  chan struct{}
 
@@ -137,6 +139,15 @@ func (c *commChannels) abort() {
 	c.abortOnce.Do(func() {
 		close(c.quitConn)
 	})
+}
+
+// sendErr tries to send an error to the error channel but unblocks if the main
+// quit channel is closed.
+func (c *commChannels) sendErr(err error) {
+	select {
+	case c.err <- err:
+	case <-c.quit:
+	}
 }
 
 // rpcServer is a server that implements the auction server RPC interface and
@@ -930,13 +941,8 @@ func (s *rpcServer) readIncomingStream(trader *TraderStream,
 		// Any other error we receive is treated as critical and leads
 		// to a termination of the stream.
 		case err != nil:
-			// In case we are shutting down, the goroutine that
-			// reads the comms' errors might have already exited.
-			select {
-			case trader.comms.err <- fmt.Errorf("error receiving "+
-				"from stream: %v", err):
-			case <-s.quit:
-			}
+			trader.comms.sendErr(fmt.Errorf("error receiving "+
+				"from stream: %v", err))
 			return
 		}
 
@@ -965,8 +971,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// and then everybody bailing out because of a version mismatch.
 		batchVersion := orderT.BatchVersion(commit.BatchVersion)
 		if !venue.SupportedBatchVersion(batchVersion) {
-			comms.err <- fmt.Errorf("version %d is not supported "+
-				"by the server", batchVersion)
+			comms.sendErr(fmt.Errorf("version %d is not supported "+
+				"by the server", batchVersion))
 			return
 		}
 
@@ -975,7 +981,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// We don't know what's in the commit yet so we can only make
 		// sure it's long enough and not zero.
 		if len(commit.CommitHash) != 32 {
-			comms.err <- fmt.Errorf("invalid commit hash")
+			comms.sendErr(fmt.Errorf("invalid commit hash"))
 			return
 		}
 		var commitHash [32]byte
@@ -985,8 +991,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// challenge with the commitment we just received.
 		_, err := rand.Read(trader.authNonce[:])
 		if err != nil {
-			comms.err <- fmt.Errorf("error creating nonce: %v",
-				err)
+			comms.sendErr(fmt.Errorf("error creating nonce: %v",
+				err))
 			return
 		}
 		challenge := accountT.AuthChallenge(
@@ -1005,8 +1011,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			},
 		})
 		if err != nil {
-			comms.err <- fmt.Errorf("error sending challenge: %v",
-				err)
+			comms.sendErr(fmt.Errorf("error sending challenge: %v",
+				err))
 			return
 		}
 
@@ -1019,8 +1025,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// retrieve it from the store.
 		acctPubKey, err := btcec.ParsePubKey(msg.Subscribe.TraderKey)
 		if err != nil {
-			comms.err <- fmt.Errorf("error parsing account key: %v",
-				err)
+			comms.sendErr(fmt.Errorf("error parsing account key: %v",
+				err))
 			return
 		}
 		var acctKey [33]byte
@@ -1028,7 +1034,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 		// Validate their nonce.
 		if len(subscribe.CommitNonce) != 32 {
-			comms.err <- fmt.Errorf("invalid commit nonce")
+			comms.sendErr(fmt.Errorf("invalid commit nonce"))
 			return
 		}
 		var traderNonce [32]byte
@@ -1048,13 +1054,13 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			stream.Context(), authHash[:], sig, acctKey,
 		)
 		if err != nil {
-			comms.err <- fmt.Errorf("unable to verify auth "+
-				"signature: %v", err)
+			comms.sendErr(fmt.Errorf("unable to verify auth "+
+				"signature: %v", err))
 			return
 		}
 		if !sigValid {
-			comms.err <- fmt.Errorf("signature not valid for "+
-				"public key %x", acctKey)
+			comms.sendErr(fmt.Errorf("signature not valid for "+
+				"public key %x", acctKey))
 			return
 		}
 
@@ -1077,8 +1083,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			// key".
 			activeOrders, err := s.store.GetOrders(stream.Context())
 			if err != nil {
-				comms.err <- fmt.Errorf("error looking up "+
-					"active orders: %v", err)
+				comms.sendErr(fmt.Errorf("error looking up "+
+					"active orders: %v", err))
 				return
 			}
 
@@ -1111,8 +1117,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 			// If we got here, then the trader has an invalid or
 			// outdated sidecar ticket.
-			comms.err <- fmt.Errorf("no sidecar order found for "+
-				"multisig key %x", acctKey)
+			comms.sendErr(fmt.Errorf("no sidecar order found for "+
+				"multisig key %x", acctKey))
 			return
 		}
 
@@ -1129,7 +1135,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			// with. Send back our state of the reservation to allow
 			// the trader to recover (if the TX ever made it to the
 			// chain.
-			comms.err <- newAcctResNotCompletedError(res)
+			comms.sendErr(newAcctResNotCompletedError(res))
 			return
 		}
 
@@ -1139,9 +1145,9 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// through their keys to find accounts we know.
 		acct, err := s.store.Account(stream.Context(), acctPubKey, true)
 		if err != nil {
-			comms.err <- &subastadb.AccountNotFoundError{
+			comms.sendErr(&subastadb.AccountNotFoundError{
 				AcctKey: acctKey,
-			}
+			})
 			return
 		}
 
@@ -1176,7 +1182,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 				msg, batchID, subscribedTrader,
 			)
 			if err != nil {
-				comms.err <- err
+				comms.sendErr(err)
 				return
 			}
 
@@ -1189,8 +1195,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		for acctString, sigBytes := range msg.Sign.AccountSigs {
 			sig, err := ecdsa.ParseDERSignature(sigBytes)
 			if err != nil {
-				comms.err <- fmt.Errorf("unable to parse "+
-					"account sig: %v", err)
+				comms.sendErr(fmt.Errorf("unable to parse "+
+					"account sig: %v", err))
 				return
 			}
 
@@ -1199,7 +1205,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 		chanInfos, err := parseRPCChannelInfo(msg.Sign.ChannelInfos)
 		if err != nil {
-			comms.err <- err
+			comms.sendErr(err)
 			return
 		}
 
@@ -1237,8 +1243,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		copy(traderKey[:], msg.Recover.TraderKey)
 		_, ok := trader.Subscriptions[traderKey]
 		if !ok {
-			comms.err <- fmt.Errorf("account %x not subscribed",
-				traderKey)
+			comms.sendErr(fmt.Errorf("account %x not subscribed",
+				traderKey))
 			return
 		}
 
@@ -1246,13 +1252,13 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		// orders of that account in the process.
 		err := s.sendAccountRecovery(traderKey, stream)
 		if err != nil {
-			comms.err <- fmt.Errorf("could not send recovery: %v",
-				err)
+			comms.sendErr(fmt.Errorf("could not send recovery: %v",
+				err))
 			return
 		}
 
 	default:
-		comms.err <- fmt.Errorf("unknown trader message: %v", msg)
+		comms.sendErr(fmt.Errorf("unknown trader message: %v", msg))
 		return
 	}
 }
@@ -1563,6 +1569,7 @@ func (s *rpcServer) connectTrader(traderID lsat.TokenID,
 			toServer: make(
 				chan venue.TraderMsg, maxAccountsPerTrader,
 			),
+			quit:     s.quit,
 			quitConn: make(chan struct{}),
 			err:      make(chan error),
 		},
