@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -897,6 +898,14 @@ func (s *Server) Start() error {
 					"Prometheus exporter: %v", err)
 				return
 			}
+
+			log.Infof("Starting initial metrics collection to " +
+				"fill cache...")
+			start := time.Now()
+			promClient.CollectAll()
+			log.Infof("Finished initial metrics collection in %v",
+				time.Since(start))
+
 		}
 
 		// Start the gRPC server itself.
