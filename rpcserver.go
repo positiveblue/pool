@@ -318,11 +318,21 @@ func (s *rpcServer) Stop() {
 		rpcLog.Errorf("Error closing REST proxy listener: %v", err)
 	}
 
+	rpcLog.Infof("Stopping main gRPC server")
 	close(s.quit)
+
+	// We wait a bit to give the server time to send a "server is shutting
+	// down" message to all traders. Then we close the gRPC server to make
+	// sure all streams are closed. This sleep needs to be below the itest
+	// reconnect retry value, otherwise the clients will attempt to
+	// re-connect too early.
+	time.Sleep(500 * time.Millisecond)
+	s.grpcServer.Stop()
+
+	rpcLog.Infof("Waiting for all trader streams to finish")
 	s.wg.Wait()
 
-	rpcLog.Info("Stopping lnd client, gRPC server and listener")
-	s.grpcServer.Stop()
+	rpcLog.Info("Stopping lnd client and listener")
 
 	s.serveWg.Wait()
 

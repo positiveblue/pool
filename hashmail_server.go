@@ -360,12 +360,15 @@ func (h *hashMailServer) Stop() {
 	h.Lock()
 	defer h.Unlock()
 
+	log.Infof("Shutting down hashmail server")
+
 	for _, stream := range h.streams {
 		if err := stream.tearDown(); err != nil {
 			log.Warnf("unable to tear down stream: %v", err)
 		}
 	}
 
+	log.Infof("Finished shutting down hashmail server")
 }
 
 // ValidateStreamAuth attempts to validate the authentication mechanism that is

@@ -44,6 +44,10 @@ const (
 	// headerRESTProxyAccept is the name of a gRPC metadata field that is
 	// set only if the request was forwarded by the REST proxy.
 	headerRESTProxyAccept = "grpcgateway-accept"
+
+	// ShutdownCompleteLogMessage is the log message that is printed once
+	// the server has fully and completely finished its shutdown process.
+	ShutdownCompleteLogMessage = "full server shutdown complete"
 )
 
 var (
@@ -936,7 +940,7 @@ func (s *Server) Start() error {
 // Stop shuts down the server, including all client connections and network
 // listeners.
 func (s *Server) Stop() error {
-	log.Info("Received shutdown signal, stopping server")
+	log.Info("Subasta server: Received shutdown signal, stopping server")
 
 	var stopErr error
 
@@ -979,6 +983,8 @@ func (s *Server) Stop() error {
 			return
 		}
 	})
+
+	log.Infof("Subasta server: %s", ShutdownCompleteLogMessage)
 
 	return stopErr
 }

@@ -466,6 +466,11 @@ func testAccountSubscription(t *harnessTest) {
 	// a while.
 	t.restartServer()
 	assertTraderSubscribed(t, *tokenID, acct)
+
+	// And let's do it again, just to make sure the shutdown and re-connect
+	// can happen multiple times in a row.
+	t.restartServer()
+	assertTraderSubscribed(t, *tokenID, acct)
 }
 
 // testServerAssistedAccountRecovery tests that a trader can recover all

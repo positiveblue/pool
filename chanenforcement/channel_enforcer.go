@@ -179,6 +179,7 @@ func (e *ChannelEnforcer) start() error {
 
 // Stop safely stops watching for any channel enforcement violations.
 func (e *ChannelEnforcer) Stop() {
+	log.Infof("Shutting down channel enforcer")
 	e.stopped.Do(func() {
 		close(e.quit)
 		e.wg.Wait()
@@ -186,6 +187,8 @@ func (e *ChannelEnforcer) Stop() {
 		if e.blockNtfnCancel != nil {
 			e.blockNtfnCancel()
 		}
+
+		log.Infof("Channel enforcer finished shutting down")
 	})
 }
 
