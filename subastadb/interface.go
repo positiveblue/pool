@@ -4,10 +4,12 @@ import (
 	"context"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/traderterms"
 )
 
@@ -73,4 +75,61 @@ type Store interface {
 	// BatchConfirmed returns true if the target batch has been marked finalized
 	// (confirmed) on disk.
 	BatchConfirmed(context.Context, orderT.BatchID) (bool, error)
+}
+
+// AdminStore is the main interface for the subasta admin. It extends the
+// main Store.
+type AdminStore interface {
+	Store
+
+	// UpdateAccountDiff updates an account's pending diff.
+	UpdateAccountDiff(ctx context.Context, accountKey *btcec.PublicKey,
+		modifiers []account.Modifier) error
+
+	// DeleteAccountDiff deletes an account's pending diff.
+	DeleteAccountDiff(ctx context.Context,
+		accountKey *btcec.PublicKey) error
+
+	// ListBannedAccounts returns a map of all accounts that are currently banned.
+	// The map key is the account's trader key and the value is the ban info.
+	ListBannedAccounts(
+		ctx context.Context) (map[[33]byte]*BanInfo, error)
+
+	// ListBannedNodes returns a map of all nodes that are currently banned.
+	// The map key is the node's identity pubkey and the value is the ban info.
+	ListBannedNodes(
+		ctx context.Context) (map[[33]byte]*BanInfo, error)
+
+	// RemoveAccountBan removes the ban information for a given trader's account
+	// key. Returns an error if no ban exists.
+	RemoveAccountBan(ctx context.Context,
+		acctKey *btcec.PublicKey) error
+
+	// RemoveNodeBan removes the ban information for a given trader's node identity
+	// key. Returns an error if no ban exists.
+	RemoveNodeBan(ctx context.Context,
+		nodeKey *btcec.PublicKey) error
+
+	// SetAccountBanInfo stores or overwrites the ban info for a trader account.
+	SetAccountBanInfo(ctx context.Context, accountKey *btcec.PublicKey,
+		currentHeight, duration uint32) error
+
+	// SetNodeBanInfo stores or overwrites the ban info for a node.
+	SetNodeBanInfo(ctx context.Context,
+		nodeKey *btcec.PublicKey, currentHeight, duration uint32) error
+
+	// RemoveReservation deletes a reservation identified by the LSAT ID.
+	RemoveReservation(ctx context.Context, id lsat.TokenID) error
+
+	// NodeRatings returns a map of all node ratings known to the database.
+	NodeRatings(ctx context.Context) (ratings.NodeRatingsMap, error)
+
+	// Batches retrieves all existing batches.
+	Batches(ctx context.Context) (map[orderT.BatchID]*BatchSnapshot, error)
+
+	// MirrorToSQL attempts to mirror accounts, orders and batches to the configured
+	// SQL database.
+	//
+	// TODO(positiveblue): Delete when sql migration is completed.
+	MirrorToSQL(ctx context.Context) error
 }
