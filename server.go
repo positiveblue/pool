@@ -94,13 +94,13 @@ type auctioneerStore struct {
 	state    AuctionState
 	stateMtx sync.Mutex
 
-	*subastadb.EtcdStore
+	subastadb.Store
 }
 
-func newAuctioneerStore(db *subastadb.EtcdStore) *auctioneerStore {
+func newAuctioneerStore(db subastadb.Store) *auctioneerStore {
 	return &auctioneerStore{
-		state:     DefaultState{},
-		EtcdStore: db,
+		state: DefaultState{},
+		Store: db,
 	}
 }
 
