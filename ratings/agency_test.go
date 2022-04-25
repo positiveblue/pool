@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/stretchr/testify/require"
 )
@@ -78,8 +78,8 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	node1Score, node2Score, node3Score := 4, 2, 1
 
 	bosScoreAPI := newTestBosScoreServer()
-	bosScoreAPI.ratings[node1] = order.NodeTier(node1Score)
-	bosScoreAPI.ratings[node2] = order.NodeTier(node2Score)
+	bosScoreAPI.ratings[node1] = orderT.NodeTier(node1Score)
+	bosScoreAPI.ratings[node2] = orderT.NodeTier(node2Score)
 
 	// To pass the race tests where this test case is run multiple times in
 	// parallel, we need to choose a distinct port for the server each time.
@@ -134,30 +134,30 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	// two nodes that we initialized the service with.
 	freshNode1Score, ok := bosScoreDB.LookupNode(ctx, node1)
 	require.True(t, ok)
-	require.Equal(t, freshNode1Score, order.NodeTier1)
+	require.Equal(t, freshNode1Score, orderT.NodeTier1)
 
 	freshNode2Score, ok := bosScoreDB.LookupNode(ctx, node2)
 	require.True(t, ok)
-	require.Equal(t, freshNode2Score, order.NodeTier1)
+	require.Equal(t, freshNode2Score, orderT.NodeTier1)
 
 	// The write thru DB should now also have the same data as well.
 	freshNode1Score, ok = writeThruDB.LookupNode(ctx, node1)
 	require.True(t, ok)
-	require.Equal(t, freshNode1Score, order.NodeTier1)
+	require.Equal(t, freshNode1Score, orderT.NodeTier1)
 	freshNode2Score, ok = writeThruDB.LookupNode(ctx, node2)
 	require.True(t, ok)
-	require.Equal(t, freshNode2Score, order.NodeTier1)
+	require.Equal(t, freshNode2Score, orderT.NodeTier1)
 
 	// Additionally, if we try to look up the 3rd node that isn't yet part
 	// of the list, then we should come up with a node tier of 0 (the base
 	// tier).
 	freshNode3Score, ok := bosScoreDB.LookupNode(ctx, node3)
 	require.True(t, ok)
-	require.Equal(t, freshNode3Score, order.NodeTier0)
+	require.Equal(t, freshNode3Score, orderT.NodeTier0)
 
 	// Now that we confirmed the initially scraping correctness, we'll
 	// unpause the ticker to have it fetch some new fresh data.
-	bosScoreAPI.ratings[node3] = order.NodeTier(node3Score)
+	bosScoreAPI.ratings[node3] = orderT.NodeTier(node3Score)
 	bosScoreDB.refreshFunc.Reset(refreshInterval)
 
 	// If we query the system again, we should find that the 3rd node now
@@ -167,8 +167,8 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 		freshNode3Score, _ := bosScoreDB.LookupNode(ctx, node3)
 		writeThruNode3Score, _ := writeThruDB.LookupNode(ctx, node3)
 
-		return (freshNode3Score == order.NodeTier1 &&
-			writeThruNode3Score == order.NodeTier1)
+		return (freshNode3Score == orderT.NodeTier1 &&
+			writeThruNode3Score == orderT.NodeTier1)
 
 	}, refreshInterval*2)
 	require.NoError(t, err)

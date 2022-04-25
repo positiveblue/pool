@@ -6,7 +6,7 @@ import (
 	"net"
 
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightningnetwork/lnd/lnwire"
 )
 
@@ -22,7 +22,7 @@ var (
 type ServerOrder interface {
 	// Order is the embedded interface of the client order as we share all
 	// basic behavior on the server.
-	order.Order
+	orderT.Order
 
 	// ServerDetails returns the server Kit of the order.
 	ServerDetails() *Kit
@@ -67,7 +67,7 @@ func (k *Kit) ServerDetails() *Kit {
 // participants.
 type Ask struct {
 	// Ask is the embedded struct of the client side order.
-	order.Ask
+	orderT.Ask
 
 	// Kit contains all the common order parameters.
 	Kit
@@ -84,7 +84,7 @@ func (a *Ask) LeaseDuration() uint32 {
 // participants.
 type Bid struct {
 	// Bid is the embedded struct of the client side order.
-	order.Bid
+	orderT.Bid
 
 	// Kit contains all the common order parameters.
 	Kit
@@ -108,7 +108,7 @@ var _ ServerOrder = (*Bid)(nil)
 type Modifier func(ServerOrder)
 
 // StateModifier is a functional option that modifies the state of an account.
-func StateModifier(state order.State) Modifier {
+func StateModifier(state orderT.State) Modifier {
 	return func(order ServerOrder) {
 		order.Details().State = state
 	}
@@ -116,7 +116,7 @@ func StateModifier(state order.State) Modifier {
 
 // UnitsFulfilledModifier is a functional option that modifies the number of
 // unfulfilled units of an order.
-func UnitsFulfilledModifier(newUnfulfilledUnits order.SupplyUnit) Modifier {
+func UnitsFulfilledModifier(newUnfulfilledUnits orderT.SupplyUnit) Modifier {
 	return func(order ServerOrder) {
 		order.Details().UnitsUnfulfilled = newUnfulfilledUnits
 	}
@@ -130,11 +130,11 @@ type Store interface {
 
 	// UpdateOrder updates an order in the database according to the given
 	// modifiers.
-	UpdateOrder(context.Context, order.Nonce, ...Modifier) error
+	UpdateOrder(context.Context, orderT.Nonce, ...Modifier) error
 
 	// GetOrder returns an order by looking up the nonce. If no order with
 	// that nonce exists in the store, ErrNoOrder is returned.
-	GetOrder(context.Context, order.Nonce) (ServerOrder, error)
+	GetOrder(context.Context, orderT.Nonce) (ServerOrder, error)
 
 	// GetOrders returns all non-archived orders that are currently known to
 	// the store.

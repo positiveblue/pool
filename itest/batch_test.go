@@ -14,7 +14,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/pool/auctioneerrpc"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -305,7 +305,7 @@ func testBatchExecution(t *harnessTest) {
 	firstBatchID := assertBatchSnapshot(
 		t, nil, secondTrader, map[uint32][]uint64{
 			defaultOrderDuration: {uint64(bidAmt), uint64(bidAmt2)},
-		}, map[uint32]order.FixedRatePremium{
+		}, map[uint32]orderT.FixedRatePremium{
 			defaultOrderDuration: orderFixedRate,
 		},
 	)
@@ -359,7 +359,7 @@ func testBatchExecution(t *harnessTest) {
 	assertBatchSnapshot(
 		t, secondBatchID, secondTrader, map[uint32][]uint64{
 			defaultOrderDuration: {uint64(bidAmt3)},
-		}, map[uint32]order.FixedRatePremium{
+		}, map[uint32]orderT.FixedRatePremium{
 			defaultOrderDuration: orderFixedRate,
 		},
 	)
@@ -584,7 +584,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 // RPC stuff is in
 func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	expectedOrderAmts map[uint32][]uint64,
-	clearingPrices map[uint32]order.FixedRatePremium) order.BatchID {
+	clearingPrices map[uint32]orderT.FixedRatePremium) orderT.BatchID {
 
 	ctxb := context.Background()
 	batchSnapshot, err := trader.BatchSnapshot(
@@ -623,7 +623,7 @@ func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 		}
 	}
 
-	var serverbatchID order.BatchID
+	var serverbatchID orderT.BatchID
 	copy(serverbatchID[:], batchSnapshot.BatchId)
 
 	return serverbatchID
@@ -1704,7 +1704,7 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.LeaseDurationBlocks = defaultOrderDuration * 2
-			ask.Ask.Version = uint32(order.VersionNodeTierMinMatch)
+			ask.Ask.Version = uint32(orderT.VersionNodeTierMinMatch)
 		},
 	)
 	require.Error(t.t, err)
@@ -1941,7 +1941,7 @@ func testBatchExecutionDurationBuckets(t *harnessTest) {
 			defaultOrderDuration * 3: {
 				uint64(bidAmt * 3), uint64(bidAmt2 * 3),
 			},
-		}, map[uint32]order.FixedRatePremium{
+		}, map[uint32]orderT.FixedRatePremium{
 			defaultOrderDuration:     orderFixedRate,
 			defaultOrderDuration * 2: orderFixedRate * 2,
 			defaultOrderDuration * 3: orderFixedRate * 3,
@@ -2072,7 +2072,7 @@ func testBatchAccountAutoRenewal(t *harnessTest) {
 	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
-		batchVersionOpt(order.DefaultBatchVersion),
+		batchVersionOpt(orderT.DefaultBatchVersion),
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)

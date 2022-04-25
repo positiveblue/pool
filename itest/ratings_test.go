@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/lightninglabs/pool/auctioneerrpc"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/stretchr/testify/require"
@@ -101,7 +101,7 @@ func testNodeRatingAgencyAndMatching(t *harnessTest) {
 	// next highest node tier.
 	_, err = t.auctioneer.ModifyNodeRatings(ctx, &adminrpc.ModifyRatingRequest{
 		NodeKey:     charlie.PubKey[:],
-		NewNodeTier: uint32(order.NodeTier1),
+		NewNodeTier: uint32(orderT.NodeTier1),
 	})
 	require.NoError(t.t, err)
 

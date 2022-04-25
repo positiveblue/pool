@@ -2,7 +2,7 @@ package venue
 
 import (
 	"github.com/lightninglabs/aperture/lsat"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
@@ -37,7 +37,7 @@ type ActiveTrader struct {
 
 	// BatchVersion indicates the version that this trader will use to verify
 	// the batches.
-	BatchVersion order.BatchVersion
+	BatchVersion orderT.BatchVersion
 }
 
 // DuplexLine is the communication line between a trader and the batch

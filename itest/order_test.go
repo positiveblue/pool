@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/lightninglabs/pool/auctioneerrpc"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/stretchr/testify/require"
 )
@@ -37,7 +37,7 @@ func testOrderSubmission(t *harnessTest) {
 			ChannelType:             defaultChannelType,
 		},
 		LeaseDurationBlocks: 365*144 + 1,
-		Version:             uint32(order.VersionChannelType),
+		Version:             uint32(orderT.VersionChannelType),
 	}
 	_, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
@@ -80,7 +80,7 @@ func testOrderSubmission(t *harnessTest) {
 			ChannelType:             defaultChannelType,
 		},
 		LeaseDurationBlocks: 2016,
-		Version:             uint32(order.VersionChannelType),
+		Version:             uint32(orderT.VersionChannelType),
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Bid{
@@ -124,7 +124,7 @@ func testOrderSubmission(t *harnessTest) {
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 		},
 		LeaseDurationBlocks: 2016,
-		Version:             uint32(order.VersionChannelType),
+		Version:             uint32(orderT.VersionChannelType),
 		MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{

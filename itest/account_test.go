@@ -13,7 +13,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/pool/auctioneerrpc"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
@@ -538,7 +538,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 				},
 				LeaseDurationBlocks: 2016,
 				Version: uint32(
-					order.VersionChannelType,
+					orderT.VersionChannelType,
 				),
 			},
 		},
