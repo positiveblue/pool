@@ -12,6 +12,208 @@ import (
 	gomock "github.com/golang/mock/gomock"
 )
 
+// MockManager is a mock of Manager interface.
+type MockManager struct {
+	ctrl     *gomock.Controller
+	recorder *MockManagerMockRecorder
+}
+
+// MockManagerMockRecorder is the mock recorder for MockManager.
+type MockManagerMockRecorder struct {
+	mock *MockManager
+}
+
+// NewMockManager creates a new mock instance.
+func NewMockManager(ctrl *gomock.Controller) *MockManager {
+	mock := &MockManager{ctrl: ctrl}
+	mock.recorder = &MockManagerMockRecorder{mock}
+	return mock
+}
+
+// EXPECT returns an object that allows the caller to indicate expected use.
+func (m *MockManager) EXPECT() *MockManagerMockRecorder {
+	return m.recorder
+}
+
+// BanAccount mocks base method.
+func (m *MockManager) BanAccount(accKey *v2.PublicKey, currentHeight uint32) (uint32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BanAccount", accKey, currentHeight)
+	ret0, _ := ret[0].(uint32)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BanAccount indicates an expected call of BanAccount.
+func (mr *MockManagerMockRecorder) BanAccount(accKey, currentHeight interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanAccount", reflect.TypeOf((*MockManager)(nil).BanAccount), accKey, currentHeight)
+}
+
+// BanNode mocks base method.
+func (m *MockManager) BanNode(nodeKey *v2.PublicKey, currentHeight uint32) (uint32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BanNode", nodeKey, currentHeight)
+	ret0, _ := ret[0].(uint32)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// BanNode indicates an expected call of BanNode.
+func (mr *MockManagerMockRecorder) BanNode(nodeKey, currentHeight interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanNode", reflect.TypeOf((*MockManager)(nil).BanNode), nodeKey, currentHeight)
+}
+
+// CalculateNewInfo mocks base method.
+func (m *MockManager) CalculateNewInfo(currentHeight uint32, currentInfo *Info) *Info {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "CalculateNewInfo", currentHeight, currentInfo)
+	ret0, _ := ret[0].(*Info)
+	return ret0
+}
+
+// CalculateNewInfo indicates an expected call of CalculateNewInfo.
+func (mr *MockManagerMockRecorder) CalculateNewInfo(currentHeight, currentInfo interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "CalculateNewInfo", reflect.TypeOf((*MockManager)(nil).CalculateNewInfo), currentHeight, currentInfo)
+}
+
+// GetAccountBan mocks base method.
+func (m *MockManager) GetAccountBan(accKey *v2.PublicKey) (*Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountBan", accKey)
+	ret0, _ := ret[0].(*Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAccountBan indicates an expected call of GetAccountBan.
+func (mr *MockManagerMockRecorder) GetAccountBan(accKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockManager)(nil).GetAccountBan), accKey)
+}
+
+// GetNodeBan mocks base method.
+func (m *MockManager) GetNodeBan(nodeKey *v2.PublicKey) (*Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeBan", nodeKey)
+	ret0, _ := ret[0].(*Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNodeBan indicates an expected call of GetNodeBan.
+func (mr *MockManagerMockRecorder) GetNodeBan(nodeKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockManager)(nil).GetNodeBan), nodeKey)
+}
+
+// IsAccountBanned mocks base method.
+func (m *MockManager) IsAccountBanned(accKey *v2.PublicKey, currentHeight uint32) (bool, uint32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsAccountBanned", accKey, currentHeight)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(uint32)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// IsAccountBanned indicates an expected call of IsAccountBanned.
+func (mr *MockManagerMockRecorder) IsAccountBanned(accKey, currentHeight interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAccountBanned", reflect.TypeOf((*MockManager)(nil).IsAccountBanned), accKey, currentHeight)
+}
+
+// IsNodeBanned mocks base method.
+func (m *MockManager) IsNodeBanned(nodeKey *v2.PublicKey, currentHeight uint32) (bool, uint32, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsNodeBanned", nodeKey, currentHeight)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(uint32)
+	ret2, _ := ret[2].(error)
+	return ret0, ret1, ret2
+}
+
+// IsNodeBanned indicates an expected call of IsNodeBanned.
+func (mr *MockManagerMockRecorder) IsNodeBanned(nodeKey, currentHeight interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsNodeBanned", reflect.TypeOf((*MockManager)(nil).IsNodeBanned), nodeKey, currentHeight)
+}
+
+// IsTraderBanned mocks base method.
+func (m *MockManager) IsTraderBanned(acctBytes, nodeBytes [33]byte, currentHeight uint32) (bool, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IsTraderBanned", acctBytes, nodeBytes, currentHeight)
+	ret0, _ := ret[0].(bool)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// IsTraderBanned indicates an expected call of IsTraderBanned.
+func (mr *MockManagerMockRecorder) IsTraderBanned(acctBytes, nodeBytes, currentHeight interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTraderBanned", reflect.TypeOf((*MockManager)(nil).IsTraderBanned), acctBytes, nodeBytes, currentHeight)
+}
+
+// ListBannedAccounts mocks base method.
+func (m *MockManager) ListBannedAccounts() (map[[33]byte]*Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBannedAccounts")
+	ret0, _ := ret[0].(map[[33]byte]*Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBannedAccounts indicates an expected call of ListBannedAccounts.
+func (mr *MockManagerMockRecorder) ListBannedAccounts() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedAccounts", reflect.TypeOf((*MockManager)(nil).ListBannedAccounts))
+}
+
+// ListBannedNodes mocks base method.
+func (m *MockManager) ListBannedNodes() (map[[33]byte]*Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBannedNodes")
+	ret0, _ := ret[0].(map[[33]byte]*Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBannedNodes indicates an expected call of ListBannedNodes.
+func (mr *MockManagerMockRecorder) ListBannedNodes() *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockManager)(nil).ListBannedNodes))
+}
+
+// RemoveAccountBan mocks base method.
+func (m *MockManager) RemoveAccountBan(acctKey *v2.PublicKey) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveAccountBan", acctKey)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveAccountBan indicates an expected call of RemoveAccountBan.
+func (mr *MockManagerMockRecorder) RemoveAccountBan(acctKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAccountBan", reflect.TypeOf((*MockManager)(nil).RemoveAccountBan), acctKey)
+}
+
+// RemoveNodeBan mocks base method.
+func (m *MockManager) RemoveNodeBan(nodeKey *v2.PublicKey) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveNodeBan", nodeKey)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveNodeBan indicates an expected call of RemoveNodeBan.
+func (mr *MockManagerMockRecorder) RemoveNodeBan(nodeKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveNodeBan", reflect.TypeOf((*MockManager)(nil).RemoveNodeBan), nodeKey)
+}
+
 // MockStore is a mock of Store interface.
 type MockStore struct {
 	ctrl     *gomock.Controller
