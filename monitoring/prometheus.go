@@ -161,10 +161,26 @@ func (p *PrometheusExporter) CollectAll() {
 	metricsMtx.Unlock()
 
 	// This will take a while, so we don't want to hold the lock here.
-	for _, collector := range collectors {
-		// No collector should have more than 100 individual metrics.
-		ch := make(chan<- prometheus.Metric, 100)
-		collector.Collect(ch)
+	for idx, collector := range collectors {
+		log.Infof("Filling cache for collector %d of %d", idx+1,
+			len(collectors))
+
+		// We can't know how many items will be sent on channel, we need
+		// to read them right away. To be able to do that, we need to
+		// collect in a goroutine.
+		ch := make(chan prometheus.Metric)
+		go func(c prometheus.Collector) {
+			c.Collect(ch)
+			close(ch)
+		}(collector)
+
+		for range ch {
+			// We aren't interested in the value, we just need to
+			// make sure we drain the channel so nothing is
+			// blocking.
+		}
+
+		log.Infof("Done filling cache for collector %d", idx+1)
 	}
 }
 
