@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
@@ -95,12 +96,12 @@ type AdminStore interface {
 	// ListBannedAccounts returns a map of all accounts that are currently banned.
 	// The map key is the account's trader key and the value is the ban info.
 	ListBannedAccounts(
-		ctx context.Context) (map[[33]byte]*BanInfo, error)
+		ctx context.Context) (map[[33]byte]*ban.Info, error)
 
 	// ListBannedNodes returns a map of all nodes that are currently banned.
 	// The map key is the node's identity pubkey and the value is the ban info.
 	ListBannedNodes(
-		ctx context.Context) (map[[33]byte]*BanInfo, error)
+		ctx context.Context) (map[[33]byte]*ban.Info, error)
 
 	// RemoveAccountBan removes the ban information for a given trader's account
 	// key. Returns an error if no ban exists.

@@ -13,6 +13,7 @@ import (
 	lsat "github.com/lightninglabs/aperture/lsat"
 	order "github.com/lightninglabs/pool/order"
 	account "github.com/lightninglabs/subasta/account"
+	ban "github.com/lightninglabs/subasta/ban"
 	chanenforcement "github.com/lightninglabs/subasta/chanenforcement"
 	order0 "github.com/lightninglabs/subasta/order"
 	ratings "github.com/lightninglabs/subasta/ratings"
@@ -1064,10 +1065,10 @@ func (mr *MockAdminStoreMockRecorder) LifetimePackages(ctx interface{}) *gomock.
 }
 
 // ListBannedAccounts mocks base method.
-func (m *MockAdminStore) ListBannedAccounts(ctx context.Context) (map[[33]byte]*BanInfo, error) {
+func (m *MockAdminStore) ListBannedAccounts(ctx context.Context) (map[[33]byte]*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListBannedAccounts", ctx)
-	ret0, _ := ret[0].(map[[33]byte]*BanInfo)
+	ret0, _ := ret[0].(map[[33]byte]*ban.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1079,10 +1080,10 @@ func (mr *MockAdminStoreMockRecorder) ListBannedAccounts(ctx interface{}) *gomoc
 }
 
 // ListBannedNodes mocks base method.
-func (m *MockAdminStore) ListBannedNodes(ctx context.Context) (map[[33]byte]*BanInfo, error) {
+func (m *MockAdminStore) ListBannedNodes(ctx context.Context) (map[[33]byte]*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListBannedNodes", ctx)
-	ret0, _ := ret[0].(map[[33]byte]*BanInfo)
+	ret0, _ := ret[0].(map[[33]byte]*ban.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }

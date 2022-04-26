@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/subasta/ban"
 	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
@@ -40,27 +41,6 @@ const (
 	// bitcoin/clm/subasta/<network>/ban/{ban_type}/{ban_key}.
 	numBanKeyParts = 7
 )
-
-// BanInfo serves as a helper struct to store all ban-related information for a
-// trader ban.
-type BanInfo struct {
-	// Height is the height at which the ban begins to apply.
-	Height uint32
-
-	// Duration is the number of blocks the ban will last for once applied.
-	Duration uint32
-}
-
-// Expiration returns the height at which the ban expires.
-func (i *BanInfo) Expiration() uint32 {
-	return i.Height + i.Duration
-}
-
-// ExceedsBanExpiration determines whether the given height exceeds the ban
-// expiration height.
-func (i *BanInfo) ExceedsBanExpiration(currentHeight uint32) bool {
-	return currentHeight >= i.Expiration()
-}
 
 // banKeyPath returns the prefix path under which we store a trader's ban info.
 //
@@ -144,7 +124,7 @@ func (s *EtcdStore) banAccount(stm conc.STM, accountKey *btcec.PublicKey,
 
 	// We'll start by determining how long we should ban the trader's
 	// account for.
-	accountBanInfo := &BanInfo{
+	accountBanInfo := &ban.Info{
 		Height:   currentHeight,
 		Duration: initialBanDuration,
 	}
@@ -177,7 +157,7 @@ func (s *EtcdStore) banNodeKey(stm conc.STM, nodeKey *btcec.PublicKey,
 	currentHeight uint32) error {
 
 	// We'll start by determining how long we should ban the node key for.
-	nodeBanInfo := &BanInfo{
+	nodeBanInfo := &ban.Info{
 		Height:   currentHeight,
 		Duration: initialBanDuration,
 	}
@@ -317,7 +297,7 @@ func (s *EtcdStore) isNodeBanned(stm conc.STM, nodeKey *btcec.PublicKey,
 // ListBannedAccounts returns a map of all accounts that are currently banned.
 // The map key is the account's trader key and the value is the ban info.
 func (s *EtcdStore) ListBannedAccounts(
-	ctx context.Context) (map[[33]byte]*BanInfo, error) {
+	ctx context.Context) (map[[33]byte]*ban.Info, error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -328,7 +308,7 @@ func (s *EtcdStore) ListBannedAccounts(
 	if err != nil {
 		return nil, err
 	}
-	bannedAccounts := make(map[[33]byte]*BanInfo, len(resultMap))
+	bannedAccounts := make(map[[33]byte]*ban.Info, len(resultMap))
 	for key, value := range resultMap {
 		acctKey, err := rawKeyFromBanKey(key)
 		if err != nil {
@@ -347,7 +327,7 @@ func (s *EtcdStore) ListBannedAccounts(
 // ListBannedNodes returns a map of all nodes that are currently banned.
 // The map key is the node's identity pubkey and the value is the ban info.
 func (s *EtcdStore) ListBannedNodes(
-	ctx context.Context) (map[[33]byte]*BanInfo, error) {
+	ctx context.Context) (map[[33]byte]*ban.Info, error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -358,7 +338,7 @@ func (s *EtcdStore) ListBannedNodes(
 	if err != nil {
 		return nil, err
 	}
-	bannedNodes := make(map[[33]byte]*BanInfo, len(resultMap))
+	bannedNodes := make(map[[33]byte]*ban.Info, len(resultMap))
 	for key, value := range resultMap {
 		acctKey, err := rawKeyFromBanKey(key)
 		if err != nil {
@@ -407,7 +387,7 @@ func (s *EtcdStore) SetNodeBanInfo(ctx context.Context,
 	nodeKey *btcec.PublicKey, currentHeight, duration uint32) error {
 
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
-		nodeBanInfo := &BanInfo{
+		nodeBanInfo := &ban.Info{
 			Height:   currentHeight,
 			Duration: duration,
 		}
@@ -430,7 +410,7 @@ func (s *EtcdStore) SetAccountBanInfo(ctx context.Context,
 	accountKey *btcec.PublicKey, currentHeight, duration uint32) error {
 
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
-		accountBanInfo := &BanInfo{
+		accountBanInfo := &ban.Info{
 			Height:   currentHeight,
 			Duration: duration,
 		}
@@ -472,12 +452,12 @@ func rawKeyFromBanKey(key string) ([33]byte, error) {
 	return rawKey, nil
 }
 
-func serializeBanInfo(w *bytes.Buffer, info *BanInfo) error {
+func serializeBanInfo(w *bytes.Buffer, info *ban.Info) error {
 	return WriteElements(w, info.Height, info.Duration)
 }
 
-func deserializeBanInfo(r io.Reader) (*BanInfo, error) {
-	var info BanInfo
+func deserializeBanInfo(r io.Reader) (*ban.Info, error) {
+	var info ban.Info
 	if err := ReadElements(r, &info.Height, &info.Duration); err != nil {
 		return nil, err
 	}

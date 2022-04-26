@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/subasta/ban"
 )
 
 // TestBanTrader ensures that we can properly determine a trader's ban status.
@@ -143,7 +144,7 @@ func assertNodeBanStatus(t *testing.T, store *EtcdStore, key *btcec.PublicKey, /
 
 func assertBanInList(t *testing.T, key *btcec.PublicKey, height uint32,
 	expBanned bool, expExpiration uint32,
-	listFn func(context.Context) (map[[33]byte]*BanInfo, error)) {
+	listFn func(context.Context) (map[[33]byte]*ban.Info, error)) {
 
 	t.Helper()
 
