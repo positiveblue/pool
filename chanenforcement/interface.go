@@ -15,12 +15,12 @@ import (
 type PackageSource interface {
 	// LifetimePackages retrieves all channel lifetime enforcement packages
 	// which still need to be acted upon.
-	LifetimePackages(context.Context) ([]*LifetimePackage, error)
+	LifetimePackages() ([]*LifetimePackage, error)
 
 	// PruneLifetimePackage prunes all references to a channel's lifetime
 	// enforcement package once we've determined that a violation was not
 	// present.
-	PruneLifetimePackage(context.Context, *LifetimePackage) error
+	PruneLifetimePackage(*LifetimePackage) error
 
 	// EnforceLifetimeViolation punishes the channel initiator due to a
 	// channel lifetime violation, along with cleaning up the associated
@@ -29,8 +29,7 @@ type PackageSource interface {
 	//
 	// NOTE: Implementations of this interface are free to choose their
 	// desired punishment heuristic.
-	EnforceLifetimeViolation(_ context.Context, _ *LifetimePackage,
-		height uint32) error
+	EnforceLifetimeViolation(_ *LifetimePackage, height uint32) error
 }
 
 // LifetimePackage contains all of the information necessary for the auctioneer

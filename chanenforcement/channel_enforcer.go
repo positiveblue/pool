@@ -132,7 +132,7 @@ func (e *ChannelEnforcer) start() error {
 
 	// Load all existing channel lifetime enforcement packages to begin
 	// enforcing them.
-	lifetimePackages, err := e.cfg.PackageSource.LifetimePackages(ctx)
+	lifetimePackages, err := e.cfg.PackageSource.LifetimePackages()
 	if err != nil {
 		return err
 	}
@@ -385,7 +385,7 @@ func (e *ChannelEnforcer) enforceOnPrematureSpend(pkg *LifetimePackage,
 // chain height has surpassed the channel's maturity height without seeing a
 // spend of the channel.
 func (e *ChannelEnforcer) pruneMatureLifetimePackage(pkg *LifetimePackage) error {
-	return e.cfg.PackageSource.PruneLifetimePackage(context.Background(), pkg)
+	return e.cfg.PackageSource.PruneLifetimePackage(pkg)
 }
 
 // enforceLifetimeViolation punishes the channel initiator for violating a
@@ -400,9 +400,8 @@ func (e *ChannelEnforcer) enforceLifetimeViolation(pkg *LifetimePackage,
 			err)
 	}
 
-	ctx := context.Background()
 	if !channelInitiator {
-		err := e.cfg.PackageSource.PruneLifetimePackage(ctx, pkg)
+		err := e.cfg.PackageSource.PruneLifetimePackage(pkg)
 		if err != nil {
 			return fmt.Errorf("unable to prune lifetime package "+
 				"of channel %v without violation: %v",
@@ -413,7 +412,7 @@ func (e *ChannelEnforcer) enforceLifetimeViolation(pkg *LifetimePackage,
 	}
 
 	err = e.cfg.PackageSource.EnforceLifetimeViolation(
-		ctx, pkg, e.getBestHeight(),
+		pkg, e.getBestHeight(),
 	)
 	if err != nil {
 		return fmt.Errorf("unable to punish lifetime violation "+

@@ -44,6 +44,8 @@ type Store interface {
 
 	LeaseDurationStore
 
+	chanenforcement.Store
+
 	// PersistBatchResult atomically updates all modified orders/accounts,
 	// persists a snapshot of the batch and switches to the next batch ID.
 	// If any single operation fails, the whole set of changes is rolled

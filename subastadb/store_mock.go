@@ -23,7 +23,7 @@ type StoreMock struct {
 	BatchPubkey      *btcec.PublicKey
 	MasterAcct       *account.Auctioneer
 	Snapshots        map[orderT.BatchID]*BatchSnapshot
-	LifetimePackages []*chanenforcement.LifetimePackage
+	lifetimePackages []*chanenforcement.LifetimePackage
 	TraderTerms      map[lsat.TokenID]*traderterms.Custom
 	t                *testing.T
 }
@@ -312,7 +312,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 
 	s.MasterAcct = masterAcct
 	s.Snapshots[batchID] = batchSnapshot
-	s.LifetimePackages = lifetimePkgs
+	s.lifetimePackages = lifetimePkgs
 
 	var batchKey [33]byte
 	copy(batchKey[:], nextBatchKey.SerializeCompressed())
@@ -454,6 +454,41 @@ func (s *StoreMock) DelTraderTerms(_ context.Context,
 	traderID lsat.TokenID) error {
 
 	delete(s.TraderTerms, traderID)
+
+	return nil
+}
+
+// StoreLifetimePackage persists to disk the given channel lifetime
+// package.
+func (s *StoreMock) StoreLifetimePackage(ctx context.Context,
+	pkg *chanenforcement.LifetimePackage) error {
+
+	return nil
+}
+
+// LifetimePackages retrieves all channel lifetime enforcement packages
+// which still need to be acted upon.
+func (s *StoreMock) LifetimePackages(
+	ctx context.Context) ([]*chanenforcement.LifetimePackage, error) {
+
+	return s.lifetimePackages, nil
+}
+
+// DeleteLifetimePackage deletes all references to a channel's lifetime
+// enforcement package once we've determined that a violation was not
+// present.
+func (s *StoreMock) DeleteLifetimePackage(ctx context.Context,
+	pkg *chanenforcement.LifetimePackage) error {
+
+	return nil
+}
+
+// EnforceLifetimeViolation punishes the channel initiator due to a
+// channel lifetime violation, along with cleaning up the associated
+// lifetime enforcement package. The height parameter should represent
+// the chain height at which the punishable offense was detected.
+func (s *StoreMock) EnforceLifetimeViolation(_ context.Context,
+	pkg *chanenforcement.LifetimePackage, height uint32) error {
 
 	return nil
 }

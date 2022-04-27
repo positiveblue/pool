@@ -35,46 +35,46 @@ func (m *MockPackageSource) EXPECT() *MockPackageSourceMockRecorder {
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockPackageSource) EnforceLifetimeViolation(arg0 context.Context, arg1 *LifetimePackage, height uint32) error {
+func (m *MockPackageSource) EnforceLifetimeViolation(arg0 *LifetimePackage, height uint32) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", arg0, arg1, height)
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", arg0, height)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
-func (mr *MockPackageSourceMockRecorder) EnforceLifetimeViolation(arg0, arg1, height interface{}) *gomock.Call {
+func (mr *MockPackageSourceMockRecorder) EnforceLifetimeViolation(arg0, height interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockPackageSource)(nil).EnforceLifetimeViolation), arg0, arg1, height)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockPackageSource)(nil).EnforceLifetimeViolation), arg0, height)
 }
 
 // LifetimePackages mocks base method.
-func (m *MockPackageSource) LifetimePackages(arg0 context.Context) ([]*LifetimePackage, error) {
+func (m *MockPackageSource) LifetimePackages() ([]*LifetimePackage, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "LifetimePackages", arg0)
+	ret := m.ctrl.Call(m, "LifetimePackages")
 	ret0, _ := ret[0].([]*LifetimePackage)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // LifetimePackages indicates an expected call of LifetimePackages.
-func (mr *MockPackageSourceMockRecorder) LifetimePackages(arg0 interface{}) *gomock.Call {
+func (mr *MockPackageSourceMockRecorder) LifetimePackages() *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifetimePackages", reflect.TypeOf((*MockPackageSource)(nil).LifetimePackages), arg0)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifetimePackages", reflect.TypeOf((*MockPackageSource)(nil).LifetimePackages))
 }
 
 // PruneLifetimePackage mocks base method.
-func (m *MockPackageSource) PruneLifetimePackage(arg0 context.Context, arg1 *LifetimePackage) error {
+func (m *MockPackageSource) PruneLifetimePackage(arg0 *LifetimePackage) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "PruneLifetimePackage", arg0, arg1)
+	ret := m.ctrl.Call(m, "PruneLifetimePackage", arg0)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // PruneLifetimePackage indicates an expected call of PruneLifetimePackage.
-func (mr *MockPackageSourceMockRecorder) PruneLifetimePackage(arg0, arg1 interface{}) *gomock.Call {
+func (mr *MockPackageSourceMockRecorder) PruneLifetimePackage(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PruneLifetimePackage", reflect.TypeOf((*MockPackageSource)(nil).PruneLifetimePackage), arg0, arg1)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PruneLifetimePackage", reflect.TypeOf((*MockPackageSource)(nil).PruneLifetimePackage), arg0)
 }
 
 // MockStore is a mock of Store interface.

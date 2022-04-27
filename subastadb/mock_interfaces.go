@@ -253,6 +253,34 @@ func (mr *MockStoreMockRecorder) DelTraderTerms(ctx, traderID interface{}) *gomo
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DelTraderTerms", reflect.TypeOf((*MockStore)(nil).DelTraderTerms), ctx, traderID)
 }
 
+// DeleteLifetimePackage mocks base method.
+func (m *MockStore) DeleteLifetimePackage(ctx context.Context, pkg *chanenforcement.LifetimePackage) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLifetimePackage", ctx, pkg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLifetimePackage indicates an expected call of DeleteLifetimePackage.
+func (mr *MockStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLifetimePackage", reflect.TypeOf((*MockStore)(nil).DeleteLifetimePackage), ctx, pkg)
+}
+
+// EnforceLifetimeViolation mocks base method.
+func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, height uint32) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, height)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
+func (mr *MockStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, height interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockStore)(nil).EnforceLifetimeViolation), ctx, pkg, height)
+}
+
 // FetchAuctioneerAccount mocks base method.
 func (m *MockStore) FetchAuctioneerAccount(arg0 context.Context) (*account.Auctioneer, error) {
 	m.ctrl.T.Helper()
@@ -434,6 +462,21 @@ func (mr *MockStoreMockRecorder) LeaseDurations(ctx interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeaseDurations", reflect.TypeOf((*MockStore)(nil).LeaseDurations), ctx)
 }
 
+// LifetimePackages mocks base method.
+func (m *MockStore) LifetimePackages(ctx context.Context) ([]*chanenforcement.LifetimePackage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LifetimePackages", ctx)
+	ret0, _ := ret[0].([]*chanenforcement.LifetimePackage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LifetimePackages indicates an expected call of LifetimePackages.
+func (mr *MockStoreMockRecorder) LifetimePackages(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifetimePackages", reflect.TypeOf((*MockStore)(nil).LifetimePackages), ctx)
+}
+
 // PersistBatchResult mocks base method.
 func (m *MockStore) PersistBatchResult(arg0 context.Context, arg1 []order.Nonce, arg2 [][]order0.Modifier, arg3 []*v2.PublicKey, arg4 [][]account.Modifier, arg5 *account.Auctioneer, arg6 order.BatchID, arg7 *BatchSnapshot, arg8 *v2.PublicKey, arg9 []*chanenforcement.LifetimePackage) error {
 	m.ctrl.T.Helper()
@@ -516,6 +559,20 @@ func (m *MockStore) StoreLeaseDuration(ctx context.Context, duration uint32, mar
 func (mr *MockStoreMockRecorder) StoreLeaseDuration(ctx, duration, marketState interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreLeaseDuration", reflect.TypeOf((*MockStore)(nil).StoreLeaseDuration), ctx, duration, marketState)
+}
+
+// StoreLifetimePackage mocks base method.
+func (m *MockStore) StoreLifetimePackage(ctx context.Context, pkg *chanenforcement.LifetimePackage) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreLifetimePackage", ctx, pkg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StoreLifetimePackage indicates an expected call of StoreLifetimePackage.
+func (mr *MockStoreMockRecorder) StoreLifetimePackage(ctx, pkg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreLifetimePackage", reflect.TypeOf((*MockStore)(nil).StoreLifetimePackage), ctx, pkg)
 }
 
 // SubmitOrder mocks base method.
@@ -782,6 +839,34 @@ func (mr *MockAdminStoreMockRecorder) DeleteAccountDiff(ctx, accountKey interfac
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteAccountDiff", reflect.TypeOf((*MockAdminStore)(nil).DeleteAccountDiff), ctx, accountKey)
 }
 
+// DeleteLifetimePackage mocks base method.
+func (m *MockAdminStore) DeleteLifetimePackage(ctx context.Context, pkg *chanenforcement.LifetimePackage) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "DeleteLifetimePackage", ctx, pkg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// DeleteLifetimePackage indicates an expected call of DeleteLifetimePackage.
+func (mr *MockAdminStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "DeleteLifetimePackage", reflect.TypeOf((*MockAdminStore)(nil).DeleteLifetimePackage), ctx, pkg)
+}
+
+// EnforceLifetimeViolation mocks base method.
+func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, height uint32) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, height)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
+func (mr *MockAdminStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, height interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockAdminStore)(nil).EnforceLifetimeViolation), ctx, pkg, height)
+}
+
 // FetchAuctioneerAccount mocks base method.
 func (m *MockAdminStore) FetchAuctioneerAccount(arg0 context.Context) (*account.Auctioneer, error) {
 	m.ctrl.T.Helper()
@@ -961,6 +1046,21 @@ func (m *MockAdminStore) LeaseDurations(ctx context.Context) (map[uint32]order0.
 func (mr *MockAdminStoreMockRecorder) LeaseDurations(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LeaseDurations", reflect.TypeOf((*MockAdminStore)(nil).LeaseDurations), ctx)
+}
+
+// LifetimePackages mocks base method.
+func (m *MockAdminStore) LifetimePackages(ctx context.Context) ([]*chanenforcement.LifetimePackage, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LifetimePackages", ctx)
+	ret0, _ := ret[0].([]*chanenforcement.LifetimePackage)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// LifetimePackages indicates an expected call of LifetimePackages.
+func (mr *MockAdminStoreMockRecorder) LifetimePackages(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifetimePackages", reflect.TypeOf((*MockAdminStore)(nil).LifetimePackages), ctx)
 }
 
 // ListBannedAccounts mocks base method.
@@ -1174,6 +1274,20 @@ func (m *MockAdminStore) StoreLeaseDuration(ctx context.Context, duration uint32
 func (mr *MockAdminStoreMockRecorder) StoreLeaseDuration(ctx, duration, marketState interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreLeaseDuration", reflect.TypeOf((*MockAdminStore)(nil).StoreLeaseDuration), ctx, duration, marketState)
+}
+
+// StoreLifetimePackage mocks base method.
+func (m *MockAdminStore) StoreLifetimePackage(ctx context.Context, pkg *chanenforcement.LifetimePackage) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "StoreLifetimePackage", ctx, pkg)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// StoreLifetimePackage indicates an expected call of StoreLifetimePackage.
+func (mr *MockAdminStoreMockRecorder) StoreLifetimePackage(ctx, pkg interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "StoreLifetimePackage", reflect.TypeOf((*MockAdminStore)(nil).StoreLifetimePackage), ctx, pkg)
 }
 
 // SubmitOrder mocks base method.
