@@ -84,6 +84,31 @@ type LifetimePackage struct {
 	BidPaymentBasePoint *btcec.PublicKey
 }
 
+// Store is responsible for storing and retrieving LifetimePackage information
+// reliably.
+type Store interface {
+	// StoreLifetimePackage persists to disk the given channel lifetime
+	// package.
+	StoreLifetimePackage(ctx context.Context, pkg *LifetimePackage) error
+
+	// LifetimePackages retrieves all channel lifetime enforcement packages
+	// which still need to be acted upon.
+	LifetimePackages(ctx context.Context) ([]*LifetimePackage, error)
+
+	// DeleteLifetimePackage deletes all references to a channel's lifetime
+	// enforcement package once we've determined that a violation was not
+	// present.
+	DeleteLifetimePackage(ctx context.Context, pkg *LifetimePackage) error
+
+	// EnforceLifetimeViolation punishes the channel initiator due to a channel
+	// lifetime violation.
+	//
+	// TODO(positiveblue): delete this from the store interface when the
+	// ban package has the business logic for banning accounts.
+	EnforceLifetimeViolation(ctx context.Context,
+		pkg *LifetimePackage, height uint32) error
+}
+
 // NewLifetimePackage constructs and verifies a channel's lifetime enforcement
 // package. Verification involves ensuring that both traders (asker and bidder)
 // submit their channel info honestly.
