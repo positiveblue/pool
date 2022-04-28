@@ -12,6 +12,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightningnetwork/lnd/input"
@@ -105,6 +106,12 @@ func TestBookPrepareOrder(t *testing.T) {
 	ctxb := context.Background()
 	signer := &mockSigner{}
 
+	banManager := ban.NewManager(
+		&ban.ManagerConfig{
+			Store: ban.NewStoreMock(),
+		},
+	)
+
 	store.Accs[testAccount.TraderKeyRaw] = &testAccount
 	store.Accs[testAccount2.TraderKeyRaw] = &testAccount2
 
@@ -119,6 +126,7 @@ func TestBookPrepareOrder(t *testing.T) {
 	durations.PutMarket(4032, order.BucketStateClearingMarket)
 
 	book := order.NewBook(&order.BookConfig{
+		BanManager:      banManager,
 		Store:           store,
 		Signer:          signer,
 		DurationBuckets: durations,
@@ -379,7 +387,7 @@ func TestBookPrepareOrder(t *testing.T) {
 				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 				MinUnitsMatch:    1,
 			})
-			err := store.BanAccount(ctxb, testTraderKey, bestHeight)
+			_, err := banManager.BanAccount(testTraderKey, bestHeight)
 			if err != nil {
 				return fmt.Errorf("unable to ban account: %v",
 					err)
@@ -389,8 +397,12 @@ func TestBookPrepareOrder(t *testing.T) {
 
 			// Before returning the error, unban the account to not
 			// affect any following tests.
-			delete(store.BannedAccs, toRawKey(testTraderKey))
-
+			err2 := banManager.RemoveAccountBan(testTraderKey)
+			if err2 != nil {
+				// Return the unexpected err.
+				return err2
+			}
+			// Return the expected error.
 			return err
 		},
 	}, {
@@ -518,10 +530,17 @@ func TestCancelOrderWithPreimage(t *testing.T) {
 
 	signer := &mockSigner{shouldVerify: true}
 
+	banManager := ban.NewManager(
+		&ban.ManagerConfig{
+			Store: ban.NewStoreMock(),
+		},
+	)
+
 	durations := order.NewDurationBuckets()
 	durations.PutMarket(1024, order.BucketStateAcceptingOrders)
 
 	book := order.NewBook(&order.BookConfig{
+		BanManager:      banManager,
 		Store:           store,
 		Signer:          signer,
 		DurationBuckets: durations,

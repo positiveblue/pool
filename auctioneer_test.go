@@ -16,6 +16,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/internal/test"
@@ -88,8 +89,6 @@ type mockAuctioneerState struct {
 
 	snapshots map[orderT.BatchID]*subastadb.BatchSnapshot
 
-	bannedAccounts map[matching.AccountID]struct{}
-
 	quit chan struct{}
 }
 
@@ -114,7 +113,6 @@ func newMockAuctioneerState(batchKey *btcec.PublicKey,
 		orders:           make(map[orderT.Nonce]order.ServerOrder),
 		batchStates:      make(map[orderT.BatchID]bool),
 		snapshots:        make(map[orderT.BatchID]*subastadb.BatchSnapshot),
-		bannedAccounts:   make(map[matching.AccountID]struct{}),
 		quit:             make(chan struct{}),
 	}
 }
@@ -270,36 +268,6 @@ func (m *mockAuctioneerState) GetOrders(context.Context) ([]order.ServerOrder, e
 	}
 
 	return orders, nil
-}
-
-func (m *mockAuctioneerState) BanAccount(_ context.Context,
-	accountKey *btcec.PublicKey, _ uint32) error {
-
-	m.Lock()
-	defer m.Unlock()
-
-	var k matching.AccountID
-	copy(k[:], accountKey.SerializeCompressed())
-	m.bannedAccounts[k] = struct{}{}
-
-	return nil
-}
-
-func (m *mockAuctioneerState) isBannedTrader(trader matching.AccountID) bool {
-	m.Lock()
-	defer m.Unlock()
-
-	_, ok := m.bannedAccounts[trader]
-	return ok
-}
-
-func (m *mockAuctioneerState) IsTraderBanned(_ context.Context, accountKey,
-	_ [33]byte, _ uint32) (bool, error) {
-
-	m.Lock()
-	defer m.Unlock()
-
-	return m.isBannedTrader(accountKey), nil
 }
 
 var _ AuctioneerDatabase = (*mockAuctioneerState)(nil)
@@ -679,9 +647,13 @@ func newAuctioneerTestHarness(t *testing.T,
 	executor := newMockBatchExecutor()
 	channelEnforcer := newMockChannelEnforcer()
 
+	banManager := ban.NewManager(&ban.ManagerConfig{
+		Store: ban.NewStoreMock(),
+	})
 	// We always use a batch ticker w/ a very long interval so it'll only
 	// tick when we force one.
 	auctioneer := NewAuctioneer(AuctioneerConfig{
+		BanManager:             banManager,
 		DB:                     mockDB,
 		Wallet:                 wallet,
 		ChainNotifier:          notifier,
@@ -1244,9 +1216,11 @@ func (a *auctioneerTestHarness) ReportExecutionSuccess() {
 func (a *auctioneerTestHarness) AssertBannedTrader(trader matching.AccountID) {
 	a.t.Helper()
 
-	if !a.db.isBannedTrader(trader) {
-		a.t.Fatalf("trader %x not banned", trader)
-	}
+	key, _ := btcec.ParsePubKey(trader[:])
+
+	banInfo, err := a.auctioneer.cfg.BanManager.GetAccountBan(key)
+	require.NoError(a.t, err)
+	require.NotNil(a.t, banInfo)
 }
 
 func (a *auctioneerTestHarness) AssertOrdersRemoved(nonces []orderT.Nonce) {

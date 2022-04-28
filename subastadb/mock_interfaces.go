@@ -417,22 +417,6 @@ func (mr *MockStoreMockRecorder) Init(ctx interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockStore)(nil).Init), ctx)
 }
 
-// IsAccountBanned mocks base method.
-func (m *MockStore) IsAccountBanned(arg0 context.Context, arg1 *v2.PublicKey, arg2 uint32) (bool, uint32, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsAccountBanned", arg0, arg1, arg2)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(uint32)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// IsAccountBanned indicates an expected call of IsAccountBanned.
-func (mr *MockStoreMockRecorder) IsAccountBanned(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAccountBanned", reflect.TypeOf((*MockStore)(nil).IsAccountBanned), arg0, arg1, arg2)
-}
-
 // IsTraderBanned mocks base method.
 func (m *MockStore) IsTraderBanned(arg0 context.Context, arg1, arg2 [33]byte, arg3 uint32) (bool, error) {
 	m.ctrl.T.Helper()
@@ -1001,22 +985,6 @@ func (m *MockAdminStore) Init(ctx context.Context) error {
 func (mr *MockAdminStoreMockRecorder) Init(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockAdminStore)(nil).Init), ctx)
-}
-
-// IsAccountBanned mocks base method.
-func (m *MockAdminStore) IsAccountBanned(arg0 context.Context, arg1 *v2.PublicKey, arg2 uint32) (bool, uint32, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsAccountBanned", arg0, arg1, arg2)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(uint32)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// IsAccountBanned indicates an expected call of IsAccountBanned.
-func (mr *MockAdminStoreMockRecorder) IsAccountBanned(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAccountBanned", reflect.TypeOf((*MockAdminStore)(nil).IsAccountBanned), arg0, arg1, arg2)
 }
 
 // IsTraderBanned mocks base method.
