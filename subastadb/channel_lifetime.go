@@ -128,7 +128,20 @@ func (s *EtcdStore) EnforceLifetimeViolation(ctx context.Context,
 	pkg *chanenforcement.LifetimePackage, accKey, nodeKey *btcec.PublicKey,
 	accInfo, nodeInfo *ban.Info) error {
 
-	return nil
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		if err := s.banAccount(stm, accKey, accInfo); err != nil {
+			return err
+		}
+
+		if err := s.banNode(stm, nodeKey, nodeInfo); err != nil {
+			return err
+		}
+
+		stm.Del(s.lifetimeKeyPath(pkg))
+
+		return nil
+	})
+	return err
 }
 
 func serializeLifetimePackage(w *bytes.Buffer,

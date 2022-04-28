@@ -463,11 +463,9 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, err
 	}
 
-	// TODO(positiveblue): use real store when banManager is used
-	// everywhere.
 	banManager := ban.NewManager(
 		&ban.ManagerConfig{
-			Store: ban.NewStoreMock(),
+			Store: store,
 		},
 	)
 

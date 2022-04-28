@@ -3,6 +3,7 @@ package subastadb
 import (
 	"context"
 	"fmt"
+	"sync"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -17,9 +18,11 @@ import (
 
 // StoreMock is a type to hold mocked orders.
 type StoreMock struct {
+	mu               sync.Mutex
 	Res              map[lsat.TokenID]*account.Reservation
 	Accs             map[[33]byte]*account.Account
-	BannedAccs       map[[33]byte][2]uint32 // 0: ban start height, 1: delta
+	BannedAccounts   map[[33]byte]*ban.Info
+	BannedNodes      map[[33]byte]*ban.Info
 	Orders           map[orderT.Nonce]order.ServerOrder
 	BatchPubkey      *btcec.PublicKey
 	MasterAcct       *account.Auctioneer
@@ -32,14 +35,15 @@ type StoreMock struct {
 // NewStoreMock creates a new mocked store.
 func NewStoreMock(t *testing.T) *StoreMock {
 	return &StoreMock{
-		Res:         make(map[lsat.TokenID]*account.Reservation),
-		Accs:        make(map[[33]byte]*account.Account),
-		BannedAccs:  make(map[[33]byte][2]uint32),
-		Orders:      make(map[orderT.Nonce]order.ServerOrder),
-		BatchPubkey: InitialBatchKey,
-		Snapshots:   make(map[orderT.BatchID]*BatchSnapshot),
-		TraderTerms: make(map[lsat.TokenID]*traderterms.Custom),
-		t:           t,
+		Res:            make(map[lsat.TokenID]*account.Reservation),
+		Accs:           make(map[[33]byte]*account.Account),
+		BannedAccounts: make(map[[33]byte]*ban.Info),
+		BannedNodes:    make(map[[33]byte]*ban.Info),
+		Orders:         make(map[orderT.Nonce]order.ServerOrder),
+		BatchPubkey:    InitialBatchKey,
+		Snapshots:      make(map[orderT.BatchID]*BatchSnapshot),
+		TraderTerms:    make(map[lsat.TokenID]*traderterms.Custom),
+		t:              t,
 	}
 }
 
@@ -336,43 +340,6 @@ func (s *StoreMock) GetBatchSnapshot(_ context.Context, id orderT.BatchID) (
 	return snapshot, nil
 }
 
-// BanAccount attempts to ban the account associated with a trader starting from
-// the current height of the chain. The duration of the ban will depend on how
-// many times the node has been banned before and grows exponentially, otherwise
-// it is 144 blocks.
-func (s *StoreMock) BanAccount(ctx context.Context, traderKey *btcec.PublicKey,
-	currentHeight uint32) error {
-
-	var accountKey [33]byte
-	copy(accountKey[:], traderKey.SerializeCompressed())
-
-	banTuple := [2]uint32{currentHeight, initialBanDuration}
-
-	if existingBan, isBanned := s.BannedAccs[accountKey]; isBanned {
-		banTuple[1] = existingBan[1] * 2
-	}
-
-	s.BannedAccs[accountKey] = banTuple
-	return nil
-}
-
-// IsAccountBanned determines whether the given account is banned at the current
-// height. The ban's expiration height is returned.
-func (s *StoreMock) IsAccountBanned(_ context.Context,
-	traderKey *btcec.PublicKey, bestHeight uint32) (bool, uint32, error) {
-
-	var accountKey [33]byte
-	copy(accountKey[:], traderKey.SerializeCompressed())
-
-	banTuple, isBanned := s.BannedAccs[accountKey]
-	if !isBanned {
-		return false, 0, nil
-	}
-
-	expiration := banTuple[0] + banTuple[1]
-	return bestHeight < expiration, expiration, nil
-}
-
 // LeaseDurations retrieves all lease duration buckets.
 func (s *StoreMock) LeaseDurations(ctx context.Context) (
 	map[uint32]order.DurationBucketState, error) {
@@ -393,13 +360,6 @@ func (s *StoreMock) RemoveLeaseDuration(ctx context.Context,
 	duration uint32) error {
 
 	return nil
-}
-
-// IsTraderBanned determines whether the trader's account or node is
-// banned at the current height.
-func (s *StoreMock) IsTraderBanned(context.Context, [33]byte, [33]byte, uint32) (bool,
-	error) {
-	return false, nil
 }
 
 // ConfirmBatch finalizes a batch on disk, marking it as pending (unconfirmed)
@@ -464,6 +424,7 @@ func (s *StoreMock) DelTraderTerms(_ context.Context,
 func (s *StoreMock) StoreLifetimePackage(ctx context.Context,
 	pkg *chanenforcement.LifetimePackage) error {
 
+	s.lifetimePackages = append(s.lifetimePackages, pkg)
 	return nil
 }
 
@@ -481,6 +442,15 @@ func (s *StoreMock) LifetimePackages(
 func (s *StoreMock) DeleteLifetimePackage(ctx context.Context,
 	pkg *chanenforcement.LifetimePackage) error {
 
+	for idx, p := range s.lifetimePackages {
+		if pkg.ChannelPoint.String() == p.ChannelPoint.String() {
+			s.lifetimePackages = append(
+				s.lifetimePackages[:idx],
+				s.lifetimePackages[idx+1:]...,
+			)
+			return nil
+		}
+	}
 	return nil
 }
 
@@ -493,6 +463,118 @@ func (s *StoreMock) EnforceLifetimeViolation(ctx context.Context,
 	pkg *chanenforcement.LifetimePackage, accKey, nodeKey *btcec.PublicKey,
 	accInfo, nodeInfo *ban.Info) error {
 
+	return nil
+}
+
+// BanAccount creates/updates the ban Info for the given accountKey.
+func (s *StoreMock) BanAccount(ctx context.Context, accKey *btcec.PublicKey,
+	banInfo *ban.Info) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], accKey.SerializeCompressed())
+
+	s.BannedAccounts[accountKey] = banInfo
+
+	return nil
+}
+
+// GetAccountBan returns the ban Info for the given accountKey.
+// Info will be nil if the account is not currently banned.
+func (s *StoreMock) GetAccountBan(_ context.Context,
+	accKey *btcec.PublicKey) (*ban.Info, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], accKey.SerializeCompressed())
+
+	return s.BannedAccounts[accountKey], nil
+}
+
+// BanNode creates/updates the ban Info for the given nodeKey.
+func (s *StoreMock) BanNode(_ context.Context, nodKey *btcec.PublicKey,
+	banInfo *ban.Info) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var nodeKey [33]byte
+	copy(nodeKey[:], nodKey.SerializeCompressed())
+
+	s.BannedNodes[nodeKey] = banInfo
+
+	return nil
+}
+
+// GetNodeBan returns the ban Info for the given nodeKey.
+// Info will be nil if the node is not currently banned.
+func (s *StoreMock) GetNodeBan(_ context.Context,
+	nodKey *btcec.PublicKey) (*ban.Info, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var nodeKey [33]byte
+	copy(nodeKey[:], nodKey.SerializeCompressed())
+
+	return s.BannedNodes[nodeKey], nil
+}
+
+// ListBannedAccounts returns a map of all accounts that are currently banned.
+// The map key is the account's trader key and the value is the ban info.
+func (s *StoreMock) ListBannedAccounts(
+	_ context.Context) (map[[33]byte]*ban.Info, error) {
+
+	list := make(map[[33]byte]*ban.Info, len(s.BannedAccounts))
+	for key, banInfo := range s.BannedAccounts {
+		list[key] = banInfo
+	}
+	return list, nil
+}
+
+// ListBannedNodes returns a map of all nodes that are currently banned.
+// The map key is the node's identity pubkey and the value is the ban info.
+func (s *StoreMock) ListBannedNodes(
+	_ context.Context) (map[[33]byte]*ban.Info, error) {
+
+	list := make(map[[33]byte]*ban.Info, len(s.BannedNodes))
+	for key, banInfo := range s.BannedNodes {
+		list[key] = banInfo
+	}
+	return list, nil
+}
+
+// RemoveAccountBan removes the ban information for a given trader's account
+// key. Returns an error if no ban exists.
+func (s *StoreMock) RemoveAccountBan(_ context.Context,
+	accKey *btcec.PublicKey) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var accountKey [33]byte
+	copy(accountKey[:], accKey.SerializeCompressed())
+
+	delete(s.BannedAccounts, accountKey)
+	return nil
+}
+
+// RemoveNodeBan removes the ban information for a given trader's node identity
+// key. Returns an error if no ban exists.
+func (s *StoreMock) RemoveNodeBan(_ context.Context,
+	nodKey *btcec.PublicKey) error {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var nodeKey [33]byte
+	copy(nodeKey[:], nodKey.SerializeCompressed())
+
+	delete(s.BannedNodes, nodeKey)
 	return nil
 }
 

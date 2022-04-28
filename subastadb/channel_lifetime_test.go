@@ -6,8 +6,10 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightningnetwork/lnd/chanbackup"
+	"github.com/stretchr/testify/require"
 )
 
 // TestLifetimePackages ensures that we are able to perform the different
@@ -94,4 +96,39 @@ func TestLifetimePackages(t *testing.T) {
 		t.Fatalf("unable to store channel lifetime package: %v", err)
 	}
 	assertPackageInStore(true)
+
+	// Check that we are able to enforce package punishments.
+	info, err := store.GetAccountBan(ctx, askAccountKey)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	info, err = store.GetNodeBan(ctx, askNodeKey)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	currentHeight := uint32(1000)
+	defaultBanDuration := uint32(144)
+	accInfo := &ban.Info{
+		Duration: defaultBanDuration,
+		Height:   currentHeight,
+	}
+	nodInfo := &ban.Info{
+		Duration: defaultBanDuration,
+		Height:   currentHeight,
+	}
+
+	err = store.EnforceLifetimeViolation(
+		ctx, pkg, askAccountKey, askNodeKey, accInfo, nodInfo,
+	)
+	require.NoError(t, err)
+
+	assertPackageInStore(false)
+
+	info, err = store.GetAccountBan(ctx, askAccountKey)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+
+	info, err = store.GetNodeBan(ctx, askNodeKey)
+	require.NoError(t, err)
+	require.NotNil(t, info)
 }
