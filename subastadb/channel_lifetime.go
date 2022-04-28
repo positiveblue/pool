@@ -7,6 +7,8 @@ import (
 	"io"
 	"strings"
 
+	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
@@ -117,28 +119,16 @@ func (s *EtcdStore) DeleteLifetimePackage(ctx context.Context,
 	return err
 }
 
-// PruneLifetimePackage prunes all references to a channel's lifetime
-// enforcement package once we've determined that a violation was not present.
-func (s *EtcdStore) PruneLifetimePackage(ctx context.Context,
-	pkg *chanenforcement.LifetimePackage) error {
-
-	return s.DeleteLifetimePackage(ctx, pkg)
-}
-
 // EnforceLifetimeViolation punishes the channel initiator due to a channel
-// lifetime violation, along with cleaning up the associated lifetime
-// enforcement package. The height parameter should represent the chain height
-// at which the punishable offense was detected.
+// lifetime violation.
+//
+// TODO(positiveblue): delete this from the store interface after migrating
+// to postgres.
 func (s *EtcdStore) EnforceLifetimeViolation(ctx context.Context,
-	pkg *chanenforcement.LifetimePackage, height uint32) error {
+	pkg *chanenforcement.LifetimePackage, accKey, nodeKey *btcec.PublicKey,
+	accInfo, nodeInfo *ban.Info) error {
 
-	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
-		stm.Del(s.lifetimeKeyPath(pkg))
-		return s.banTrader(
-			stm, pkg.AskAccountKey, pkg.AskNodeKey, height,
-		)
-	})
-	return err
+	return nil
 }
 
 func serializeLifetimePackage(w *bytes.Buffer,

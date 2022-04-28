@@ -9,6 +9,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/traderterms"
@@ -483,12 +484,14 @@ func (s *StoreMock) DeleteLifetimePackage(ctx context.Context,
 	return nil
 }
 
-// EnforceLifetimeViolation punishes the channel initiator due to a
-// channel lifetime violation, along with cleaning up the associated
-// lifetime enforcement package. The height parameter should represent
-// the chain height at which the punishable offense was detected.
-func (s *StoreMock) EnforceLifetimeViolation(_ context.Context,
-	pkg *chanenforcement.LifetimePackage, height uint32) error {
+// EnforceLifetimeViolation punishes the channel initiator due to a channel
+// lifetime violation.
+//
+// TODO(positiveblue): delete this from the store interface after migrating
+// to postgres.
+func (s *StoreMock) EnforceLifetimeViolation(ctx context.Context,
+	pkg *chanenforcement.LifetimePackage, accKey, nodeKey *btcec.PublicKey,
+	accInfo, nodeInfo *ban.Info) error {
 
 	return nil
 }

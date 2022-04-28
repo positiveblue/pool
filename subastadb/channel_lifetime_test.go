@@ -84,8 +84,8 @@ func TestLifetimePackages(t *testing.T) {
 
 	// We should also be able to prune it, assuming that a premature spend
 	// has not occurred.
-	if err := store.PruneLifetimePackage(ctx, pkg); err != nil {
-		t.Fatalf("unable to prune channel lifetime package: %v", err)
+	if err := store.DeleteLifetimePackage(ctx, pkg); err != nil {
+		t.Fatalf("unable to delete channel lifetime package: %v", err)
 	}
 	assertPackageInStore(false)
 
@@ -94,25 +94,4 @@ func TestLifetimePackages(t *testing.T) {
 		t.Fatalf("unable to store channel lifetime package: %v", err)
 	}
 	assertPackageInStore(true)
-
-	// This time, we'll assume a premature spend has occurred, so we'll need
-	// to ban the trader responsible. We'll assume the seller is
-	// responsible.
-	const currentHeight = 100
-	const expiration = currentHeight + initialBanDuration
-	err = store.EnforceLifetimeViolation(ctx, pkg, currentHeight)
-	if err != nil {
-		t.Fatalf("unable to enforce channel lifetime violation: %v", err)
-	}
-
-	// The seller's account and node should be banned for the initial
-	// duration (144 blocks). The lifetime package should also no longer
-	// exist at this point, since we've already acted upon the violation.
-	assertPackageInStore(false)
-	assertAccountBanStatus(
-		t, store, pkg.AskAccountKey, currentHeight, true, expiration,
-	)
-	assertNodeBanStatus(
-		t, store, pkg.AskNodeKey, currentHeight, true, expiration,
-	)
 }

@@ -269,17 +269,17 @@ func (mr *MockStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}) *go
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, height uint32) error {
+func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *v2.PublicKey, accInfo, nodeInfo *ban.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, height)
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
-func (mr *MockStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, height interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, accKey, nodeKey, accInfo, nodeInfo interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockStore)(nil).EnforceLifetimeViolation), ctx, pkg, height)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockStore)(nil).EnforceLifetimeViolation), ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 }
 
 // FetchAuctioneerAccount mocks base method.
@@ -839,17 +839,17 @@ func (mr *MockAdminStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, height uint32) error {
+func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *v2.PublicKey, accInfo, nodeInfo *ban.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, height)
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
-func (mr *MockAdminStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, height interface{}) *gomock.Call {
+func (mr *MockAdminStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, accKey, nodeKey, accInfo, nodeInfo interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockAdminStore)(nil).EnforceLifetimeViolation), ctx, pkg, height)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockAdminStore)(nil).EnforceLifetimeViolation), ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 }
 
 // FetchAuctioneerAccount mocks base method.
