@@ -389,6 +389,11 @@ type Store interface {
 	// to the current auctioneer output state.
 	FetchAuctioneerAccount(context.Context) (*Auctioneer, error)
 
+	// UpdateAuctioneerAccount updates the current auctioneer output
+	// in-place and also updates the per batch key according to the state in
+	// the auctioneer's account.
+	UpdateAuctioneerAccount(context.Context, *Auctioneer) error
+
 	// HasReservation determines whether we have an existing reservation
 	// associated with a token. ErrNoReservation is returned if a
 	// reservation does not exist.

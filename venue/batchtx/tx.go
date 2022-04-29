@@ -8,7 +8,6 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil/txsort"
-	"github.com/lightninglabs/pool/order"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -46,7 +45,7 @@ type OrderOutput struct {
 
 	// Order is one of the orders (either the bid or ask) that produced this
 	// output.
-	Order order.Order
+	Order orderT.Order
 }
 
 // BatchInput stores information about a input to the batch transaction, either
@@ -248,7 +247,7 @@ type ExecutionContext struct {
 // number of auxiliary indexes built up during batch transaction construction.
 // This method also returns the input index of the auctioneer's account.
 func (e *ExecutionContext) indexBatchTx(
-	scriptToOrders map[string][2]order.Order,
+	scriptToOrders map[string][2]orderT.Order,
 	traderAccounts map[matching.AccountID]*wire.TxOut,
 	ordersForTrader map[matching.AccountID]map[orderT.Nonce]struct{}) error {
 
@@ -510,7 +509,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// Now that the account outputs have been created, we'll proceed to
 	// adding the necessary outputs to create all channels purchased in
 	// this batch.
-	scriptToOrders := make(map[string][2]order.Order)
+	scriptToOrders := make(map[string][2]orderT.Order)
 	ordersForTrader := make(map[matching.AccountID]map[orderT.Nonce]struct{})
 	for _, matchedOrder := range orderBatch.Orders {
 		// First using the relevant channel details of the order, we'll
@@ -540,7 +539,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		bidNonce := bid.Nonce()
 		askNonce := ask.Nonce()
 
-		scriptToOrders[string(chanScript)] = [2]order.Order{
+		scriptToOrders[string(chanScript)] = [2]orderT.Order{
 			bid, ask,
 		}
 

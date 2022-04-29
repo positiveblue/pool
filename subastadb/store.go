@@ -9,15 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/subasta/account"
-	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
-	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/multimutex"
@@ -60,38 +56,6 @@ var (
 	// in a key's path.
 	keyDelimiter = "/"
 )
-
-type Store interface {
-	Init(ctx context.Context) error
-
-	account.Store
-
-	order.Store
-
-	traderterms.Store
-
-	// UpdateAuctioneerAccount updates the current auctioneer output
-	// in-place and also updates the per batch key according to the state in
-	// the auctioneer's account.
-	UpdateAuctioneerAccount(context.Context, *account.Auctioneer) error
-
-	// PersistBatchResult atomically updates all modified orders/accounts,
-	// persists a snapshot of the batch and switches to the next batch ID.
-	// If any single operation fails, the whole set of changes is rolled
-	// back.
-	PersistBatchResult(context.Context, []orderT.Nonce, [][]order.Modifier,
-		[]*btcec.PublicKey, [][]account.Modifier, *account.Auctioneer,
-		orderT.BatchID, *BatchSnapshot, *btcec.PublicKey,
-		[]*chanenforcement.LifetimePackage) error
-
-	// GetBatchSnapshot returns the self-contained snapshot of a batch with
-	// the given ID as it was recorded at the time.
-	GetBatchSnapshot(context.Context, orderT.BatchID) (*BatchSnapshot, error)
-
-	// LeaseDurations retrieves all lease duration buckets.
-	LeaseDurations(ctx context.Context) (
-		map[uint32]order.DurationBucketState, error)
-}
 
 // BatchSnapshot holds a self-contained snapshot of a batch.
 type BatchSnapshot struct {

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 )
 
 // Agency represents a node rating agency, its only role is to rate nodes. If
@@ -20,7 +20,7 @@ import (
 type Agency interface {
 	// RateNode returns the rating for a node. If the Agency doesn't know
 	// about a node, then the lowest tier should be returned.
-	RateNode(nodeKey [33]byte) order.NodeTier
+	RateNode(nodeKey [33]byte) orderT.NodeTier
 }
 
 // NodeRatingsDatabase is a logical ratings database. Before usage the
@@ -33,7 +33,7 @@ type NodeRatingsDatabase interface {
 	// LookupNode attempts to look up a rating for a node. If the node
 	// isn't found, the lowest rating should be returned. The second return
 	// value signifies if this node was found in the DB or not.
-	LookupNode(context.Context, [33]byte) (order.NodeTier, bool)
+	LookupNode(context.Context, [33]byte) (orderT.NodeTier, bool)
 
 	// ModifyNodeRating attempts to modify the rating for a node in-place.
 	// This rating will then supersede the existing entry in the database.
@@ -41,7 +41,7 @@ type NodeRatingsDatabase interface {
 	// tracked.
 	//
 	// TODO(roasbeef): have only batched versions of this and the above?
-	ModifyNodeRating(context.Context, [33]byte, order.NodeTier) error
+	ModifyNodeRating(context.Context, [33]byte, orderT.NodeTier) error
 }
 
 // NodeRatingWebSource represents a web end point that serves node rating
@@ -108,7 +108,7 @@ func (b *BosScoreWebRatings) ParseResponse(r io.Reader) (NodeRatingsMap, error) 
 		var nodeKey [33]byte
 		copy(nodeKey[:], nodeKeyBytes)
 
-		scoreMap[nodeKey] = order.NodeTier1
+		scoreMap[nodeKey] = orderT.NodeTier1
 	}
 
 	return scoreMap, nil
@@ -139,7 +139,7 @@ type MemRatingsDatabase struct {
 
 // NodeRatingsMap is a type alias for a map that lets us look up a node to
 // check its rating.
-type NodeRatingsMap map[[33]byte]order.NodeTier
+type NodeRatingsMap map[[33]byte]orderT.NodeTier
 
 // NewMemRatingsDatabase returns a new instance of a NodeRatingsDatabase backed
 // purely by an initially in-memory source. The writeThroughDB is an optional
@@ -188,7 +188,7 @@ func (m *MemRatingsDatabase) IndexRatings(_ context.Context) error {
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
 func (m *MemRatingsDatabase) ModifyNodeRating(ctx context.Context,
-	node [33]byte, tier order.NodeTier) error {
+	node [33]byte, tier orderT.NodeTier) error {
 
 	m.Lock()
 	defer m.Unlock()
@@ -213,7 +213,7 @@ func (m *MemRatingsDatabase) ModifyNodeRating(ctx context.Context,
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
 func (m *MemRatingsDatabase) LookupNode(ctx context.Context,
-	nodeKey [33]byte) (order.NodeTier, bool) {
+	nodeKey [33]byte) (orderT.NodeTier, bool) {
 
 	m.RLock()
 	defer m.RUnlock()
@@ -223,7 +223,7 @@ func (m *MemRatingsDatabase) LookupNode(ctx context.Context,
 	// with.
 	rating, ok := m.nodeTierCache[nodeKey]
 	if !ok {
-		return order.NodeTier0, false
+		return orderT.NodeTier0, false
 	}
 
 	return rating, ok
@@ -401,13 +401,13 @@ func (m *BosScoreRatingsDatabase) IndexRatings(ctx context.Context) error {
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
 func (m *BosScoreRatingsDatabase) LookupNode(ctx context.Context,
-	nodeKey [33]byte) (order.NodeTier, bool) {
+	nodeKey [33]byte) (orderT.NodeTier, bool) {
 
 	if _, ok := m.ratingsDB.LookupNode(ctx, nodeKey); !ok {
-		return order.NodeTier0, true
+		return orderT.NodeTier0, true
 	}
 
-	return order.NodeTier1, true
+	return orderT.NodeTier1, true
 }
 
 // ModifyNodeRating attempts to modify the rating for a node in-place.  This
@@ -416,7 +416,7 @@ func (m *BosScoreRatingsDatabase) LookupNode(ctx context.Context,
 //
 // NOTE: This is part of the NodeRatingsDatabase interface.
 func (m *BosScoreRatingsDatabase) ModifyNodeRating(ctx context.Context,
-	node [33]byte, tier order.NodeTier) error {
+	node [33]byte, tier orderT.NodeTier) error {
 
 	return m.ratingsDB.ModifyNodeRating(ctx, node, tier)
 }
@@ -443,7 +443,7 @@ func NewNodeTierAgency(ratingsDB NodeRatingsDatabase) *NodeTierAgency {
 // about a node, then the lowest tier should be returned.
 //
 // NOTE: This is part of the Agency interface.
-func (n *NodeTierAgency) RateNode(nodeKey [33]byte) order.NodeTier {
+func (n *NodeTierAgency) RateNode(nodeKey [33]byte) orderT.NodeTier {
 	rating, _ := n.ratingsDB.LookupNode(context.Background(), nodeKey)
 	return rating
 }

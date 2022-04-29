@@ -9,7 +9,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lntypes"
@@ -30,7 +30,7 @@ type CancelledOrderUpdate struct {
 	Ask bool
 
 	// Nonce is the nonce of the order that was cancelled.
-	Nonce order.Nonce
+	Nonce orderT.Nonce
 }
 
 // BookStore is the store interface that the order book needs. We need to be
@@ -175,14 +175,14 @@ func (b *Book) CancelOrderWithPreimage(ctx context.Context,
 	noncePreimage lntypes.Preimage) error {
 
 	preimageHash := noncePreimage.Hash()
-	var nonce order.Nonce
+	var nonce orderT.Nonce
 	copy(nonce[:], preimageHash[:])
 	return b.CancelOrder(ctx, nonce)
 }
 
 // CancelOrder sets an order's state to canceled if it has not yet been archived
 // yet and is still pending.
-func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
+func (b *Book) CancelOrder(ctx context.Context, nonce orderT.Nonce) error {
 	log.Debugf("Canceling order %v", nonce)
 
 	o, err := b.cfg.Store.GetOrder(ctx, nonce)
@@ -195,7 +195,7 @@ func (b *Book) CancelOrder(ctx context.Context, nonce order.Nonce) error {
 	}
 
 	err = b.cfg.Store.UpdateOrder(
-		ctx, o.Nonce(), StateModifier(order.StateCanceled),
+		ctx, o.Nonce(), StateModifier(orderT.StateCanceled),
 	)
 	if err != nil {
 		return err
@@ -282,14 +282,14 @@ func (b *Book) validateAccountState(ctx context.Context,
 // order.
 func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	kit := srvOrder.ServerDetails()
-	srvOrder.Details().State = order.StateSubmitted
+	srvOrder.Details().State = orderT.StateSubmitted
 
 	// Anything below the supply unit size cannot be filled anyway so we
 	// don't allow any order size that's not dividable by the supply size.
 	amt := srvOrder.Details().Amt
-	if amt <= 0 || amt%order.BaseSupplyUnit != 0 {
+	if amt <= 0 || amt%orderT.BaseSupplyUnit != 0 {
 		return fmt.Errorf("order amount must be multiple of %d sats",
-			order.BaseSupplyUnit)
+			orderT.BaseSupplyUnit)
 	}
 
 	// Make sure the amount is consistent with Unit and UnitsUnfulfilled.
@@ -301,7 +301,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	}
 
 	// Verify the minimum units match amount has been properly set.
-	minUnitsMatch := order.SupplyUnit(1)
+	minUnitsMatch := orderT.SupplyUnit(1)
 	switch {
 	case srvOrder.Details().MinUnitsMatch < minUnitsMatch:
 		return fmt.Errorf("minimum units match %v must be above %v",
@@ -365,12 +365,13 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	// Only clients that understand multiple lease buckets are allowed to
 	// create orders outside of the default/legacy bucket. Otherwise they
 	// wouldn't know how to validate those batches.
-	if srvOrder.Details().Version < order.VersionLeaseDurationBuckets &&
-		leaseDuration != order.LegacyLeaseDurationBucket {
+	if srvOrder.Details().Version < orderT.VersionLeaseDurationBuckets &&
+		leaseDuration != orderT.LegacyLeaseDurationBucket {
 
 		return fmt.Errorf("cannot submit order outside of default %d "+
 			"duration bucket with old trader client, please "+
-			"update your software", order.LegacyLeaseDurationBucket)
+			"update your software",
+			orderT.LegacyLeaseDurationBucket)
 	}
 
 	// Next, we'll ensure that the duration is actual part of the current
@@ -387,8 +388,8 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 
 	// Only traders that understand channel types can provide one other than
 	// the legacy default.
-	if srvOrder.Details().Version < order.VersionChannelType &&
-		srvOrder.Details().ChannelType != order.ChannelTypePeerDependent {
+	if srvOrder.Details().Version < orderT.VersionChannelType &&
+		srvOrder.Details().ChannelType != orderT.ChannelTypePeerDependent {
 		return errors.New("cannot submit channel type preference with " +
 			"old trader client, please update your software")
 	}
@@ -400,7 +401,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 // a sidecar order.
 func (b *Book) validateSidecarOrder(ctx context.Context, bid *Bid) error {
 	// A sidecar order must have its version set accordingly.
-	if bid.Version < order.VersionSidecarChannel {
+	if bid.Version < orderT.VersionSidecarChannel {
 		return fmt.Errorf("invalid order version %d for order with "+
 			"sidecar ticket attached", bid.Version)
 	}

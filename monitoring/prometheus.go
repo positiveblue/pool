@@ -74,7 +74,7 @@ type PrometheusConfig struct {
 	ListenAddr string `long:"listenaddr" description:"the interface we should listen on for prometheus"`
 
 	// Store is the active database where all data is stored.
-	Store *subastadb.EtcdStore
+	Store subastadb.Store
 
 	// BitcoinClient holds the connection to the bitcoin chain backend.
 	BitcoinClient *chain.BitcoinClient

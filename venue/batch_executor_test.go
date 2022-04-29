@@ -17,7 +17,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/chaninfo"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/internal/test"
@@ -425,7 +425,7 @@ func (e *executorTestHarness) SendRejectMsg(sender *ActiveTrader,
 
 		rejectMsg = &TraderPartialRejectMsg{
 			Trader: sender,
-			Orders: map[order.Nonce]*Reject{},
+			Orders: map[orderT.Nonce]*Reject{},
 		}
 	}
 
@@ -525,7 +525,7 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 
 		// To provide matching info, it must be flipped for the opposite
 		// order.
-		if chanOutputs.Order.Type() == order.TypeAsk {
+		if chanOutputs.Order.Type() == orderT.TypeAsk {
 			localNodeKey, remoteNodeKey = remoteNodeKey, localNodeKey
 			localPaymentBasePoint, remotePaymentBasePoint =
 				remotePaymentBasePoint, localPaymentBasePoint

@@ -3,7 +3,7 @@ package venue
 import (
 	"context"
 
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 )
 
 const (
@@ -11,7 +11,7 @@ const (
 	// this server implements.
 	//
 	// NOTE: a sever may support more than one version.
-	CurrentServerBatchVersion = order.ExtendAccountBatchVersion
+	CurrentServerBatchVersion = orderT.ExtendAccountBatchVersion
 )
 
 // BatchStorer is an interface that can store a batch to the local database by
@@ -24,6 +24,6 @@ type BatchStorer interface {
 
 // SupportedBatchVersion returns if the server implements a given
 // batch version or not.
-func SupportedBatchVersion(version order.BatchVersion) bool {
+func SupportedBatchVersion(version orderT.BatchVersion) bool {
 	return version <= CurrentServerBatchVersion
 }

@@ -379,6 +379,40 @@ func (s *StoreMock) LeaseDurations(ctx context.Context) (
 	return nil, nil
 }
 
+// StoreLeaseDuration persists to disk the given lease duration bucket.
+func (s *StoreMock) StoreLeaseDuration(ctx context.Context, duration uint32,
+	marketState order.DurationBucketState) error {
+
+	return nil
+}
+
+// RemoveLeaseDuration removes a single lease duration bucket from the
+// database.
+func (s *StoreMock) RemoveLeaseDuration(ctx context.Context,
+	duration uint32) error {
+
+	return nil
+}
+
+// IsTraderBanned determines whether the trader's account or node is
+// banned at the current height.
+func (s *StoreMock) IsTraderBanned(context.Context, [33]byte, [33]byte, uint32) (bool,
+	error) {
+	return false, nil
+}
+
+// ConfirmBatch finalizes a batch on disk, marking it as pending (unconfirmed)
+// no longer.
+func (s *StoreMock) ConfirmBatch(ctx context.Context, batchID orderT.BatchID) error {
+	return nil
+}
+
+// BatchConfirmed returns true if the target batch has been marked finalized
+// (confirmed) on disk.
+func (s *StoreMock) BatchConfirmed(context.Context, orderT.BatchID) (bool, error) {
+	return false, nil
+}
+
 // AllTraderTerms returns all trader terms currently in the store.
 func (s *StoreMock) AllTraderTerms(_ context.Context) ([]*traderterms.Custom,
 	error) {

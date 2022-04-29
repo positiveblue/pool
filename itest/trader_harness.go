@@ -9,7 +9,7 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/lightninglabs/pool"
-	"github.com/lightninglabs/pool/order"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/lntest"
 )
@@ -45,7 +45,7 @@ func newNodesOnlyOpt() traderCfgOpt {
 	}
 }
 
-func batchVersionOpt(version order.BatchVersion) traderCfgOpt {
+func batchVersionOpt(version orderT.BatchVersion) traderCfgOpt {
 	return func(cfg *pool.Config) {
 		cfg.DebugConfig.BatchVersion = uint32(version)
 	}
@@ -98,7 +98,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 			TLSPath:      cfg.LndNode.Cfg.TLSCertPath,
 		},
 		DebugConfig: &pool.DebugConfig{
-			BatchVersion: uint32(order.LatestBatchVersion),
+			BatchVersion: uint32(orderT.LatestBatchVersion),
 		},
 	}
 	for _, opt := range opts {

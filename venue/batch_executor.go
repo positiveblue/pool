@@ -18,7 +18,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/chaninfo"
-	"github.com/lightninglabs/pool/order"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/pool/terms"
@@ -37,7 +36,7 @@ import (
 // executor to a trader.
 type ExecutionMsg interface {
 	// Batch returns the target batch ID this message refers to.
-	Batch() order.BatchID
+	Batch() orderT.BatchID
 }
 
 // PrepareMsg is the first message the executor sends to all active traders.
@@ -73,7 +72,7 @@ type PrepareMsg struct {
 
 	// BatchID is the serialized compressed pubkey that comprises the batch
 	// ID.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 
 	// BatchVersion is the batch version of this batch.
 	BatchVersion uint32
@@ -87,7 +86,7 @@ type PrepareMsg struct {
 // Batch returns the target batch ID this message refers to.
 //
 // NOTE: This method is a part of the ExecutionMsg interface.
-func (m *PrepareMsg) Batch() order.BatchID {
+func (m *PrepareMsg) Batch() orderT.BatchID {
 	return m.BatchID
 }
 
@@ -101,13 +100,13 @@ var _ ExecutionMsg = (*PrepareMsg)(nil)
 type SignBeginMsg struct {
 	// BatchID is the serialized compressed pubkey that comprises the batch
 	// ID.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 }
 
 // Batch returns the target batch ID this message refers to.
 //
 // NOTE: This method is a part of the ExecutionMsg interface.
-func (m *SignBeginMsg) Batch() order.BatchID {
+func (m *SignBeginMsg) Batch() orderT.BatchID {
 	return m.BatchID
 }
 
@@ -119,7 +118,7 @@ var _ ExecutionMsg = (*SignBeginMsg)(nil)
 // the batch has valid signatures, and have been committed to disk.
 type FinalizeMsg struct {
 	// BatchID is the batch ID to be finalized.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 
 	// BatchTxID is the serialized batch txid.
 	BatchTxID chainhash.Hash
@@ -128,7 +127,7 @@ type FinalizeMsg struct {
 // Batch returns the target batch ID this message refers to.
 //
 // NOTE: This method is a part of the ExecutionMsg interface.
-func (m *FinalizeMsg) Batch() order.BatchID {
+func (m *FinalizeMsg) Batch() orderT.BatchID {
 	return m.BatchID
 }
 
@@ -147,7 +146,7 @@ type TraderMsg interface {
 // batch.
 type TraderAcceptMsg struct {
 	// BatchID is the batch ID of the pending batch.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 
 	// Trader is the trader that's accepting this batch.
 	Trader *ActiveTrader
@@ -164,7 +163,7 @@ func (m *TraderAcceptMsg) Src() matching.AccountID {
 // batch.
 type TraderRejectMsg struct {
 	// BatchID is the batch ID of the pending batch.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 
 	// Trader is the trader that's rejecting this batch.
 	Trader *ActiveTrader
@@ -188,7 +187,7 @@ func (m *TraderRejectMsg) Src() matching.AccountID {
 // of certain orders of a batch.
 type TraderPartialRejectMsg struct {
 	// BatchID is the batch ID of the pending batch.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 
 	// Trader is the trader that's rejecting this batch.
 	Trader *ActiveTrader
@@ -240,7 +239,7 @@ type ExecutionResult struct {
 	Err error
 
 	// BatchID is the batch ID of the finalized batch.
-	BatchID order.BatchID
+	BatchID orderT.BatchID
 
 	// Batch is the raw batch itself.
 	Batch *matching.OrderBatch

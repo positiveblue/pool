@@ -58,8 +58,8 @@ type adminRPCServer struct {
 
 	mainRPCServer  *rpcServer
 	auctioneer     *Auctioneer
-	store          *subastadb.EtcdStore
 	statusReporter *status.Reporter
+	store          subastadb.AdminStore
 
 	durationBuckets *order.DurationBuckets
 
@@ -72,7 +72,7 @@ type adminRPCServer struct {
 // newAdminRPCServer creates a new adminRPCServer.
 func newAdminRPCServer(network *chaincfg.Params, mainRPCServer *rpcServer,
 	listener net.Listener, serverOpts []grpc.ServerOption,
-	auctioneer *Auctioneer, store *subastadb.EtcdStore,
+	auctioneer *Auctioneer, store subastadb.AdminStore,
 	durationBuckets *order.DurationBuckets,
 	wallet lndclient.WalletKitClient,
 	lightningClient lndclient.LightningClient,
