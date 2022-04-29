@@ -518,9 +518,10 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		DurationBuckets: durationBuckets,
 	})
 
+	packageSource := chanenforcement.NewDefaultSource(store)
 	channelEnforcer := chanenforcement.New(&chanenforcement.Config{
 		ChainNotifier: lnd.ChainNotifier,
-		PackageSource: store,
+		PackageSource: packageSource,
 	})
 
 	if cfg.BatchConfTarget < 1 {

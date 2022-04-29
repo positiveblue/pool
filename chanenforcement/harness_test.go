@@ -1,7 +1,6 @@
 package chanenforcement
 
 import (
-	"context"
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
@@ -232,9 +231,8 @@ func (h *testHarness) notifyMatureSpend(pkg *LifetimePackage, confHeight uint32)
 func (h *testHarness) assertNoViolation(pkg *LifetimePackage) {
 	h.t.Helper()
 
-	ctx := context.Background()
 	err := wait.NoError(func() error {
-		pkgs, err := h.packageSource.LifetimePackages(ctx)
+		pkgs, err := h.packageSource.LifetimePackages()
 		if err != nil {
 			return err
 		}
@@ -260,9 +258,8 @@ func (h *testHarness) assertNoViolation(pkg *LifetimePackage) {
 func (h *testHarness) assertViolation(pkg *LifetimePackage) {
 	h.t.Helper()
 
-	ctx := context.Background()
 	err := wait.NoError(func() error {
-		pkgs, err := h.packageSource.LifetimePackages(ctx)
+		pkgs, err := h.packageSource.LifetimePackages()
 		if err != nil {
 			return err
 		}

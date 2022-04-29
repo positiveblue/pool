@@ -36,7 +36,7 @@ func (s *mockPackageSource) addLifetimePackages(pkgs ...*LifetimePackage) {
 	}
 }
 
-func (s *mockPackageSource) LifetimePackages(context.Context) (
+func (s *mockPackageSource) LifetimePackages() (
 	[]*LifetimePackage, error) {
 
 	s.mu.Lock()
@@ -55,9 +55,7 @@ func (s *mockPackageSource) LifetimePackages(context.Context) (
 	return res, nil
 }
 
-func (s *mockPackageSource) PruneLifetimePackage(_ context.Context,
-	pkg *LifetimePackage) error {
-
+func (s *mockPackageSource) PruneLifetimePackage(pkg *LifetimePackage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -65,8 +63,8 @@ func (s *mockPackageSource) PruneLifetimePackage(_ context.Context,
 	return nil
 }
 
-func (s *mockPackageSource) EnforceLifetimeViolation(ctx context.Context,
-	pkg *LifetimePackage, _ uint32) error {
+func (s *mockPackageSource) EnforceLifetimeViolation(pkg *LifetimePackage,
+	_ uint32) error {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

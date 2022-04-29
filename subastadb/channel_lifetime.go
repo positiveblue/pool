@@ -104,9 +104,10 @@ func (s *EtcdStore) LifetimePackages(ctx context.Context) (
 	return pkgs, nil
 }
 
-// PruneLifetimePackage prunes all references to a channel's lifetime
-// enforcement package once we've determined that a violation was not present.
-func (s *EtcdStore) PruneLifetimePackage(ctx context.Context,
+// DeleteLifetimePackage deletes all references to a channel's lifetime
+// enforcement package once we've determined that a violation was not
+// present.
+func (s *EtcdStore) DeleteLifetimePackage(ctx context.Context,
 	pkg *chanenforcement.LifetimePackage) error {
 
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
@@ -114,6 +115,14 @@ func (s *EtcdStore) PruneLifetimePackage(ctx context.Context,
 		return nil
 	})
 	return err
+}
+
+// PruneLifetimePackage prunes all references to a channel's lifetime
+// enforcement package once we've determined that a violation was not present.
+func (s *EtcdStore) PruneLifetimePackage(ctx context.Context,
+	pkg *chanenforcement.LifetimePackage) error {
+
+	return s.DeleteLifetimePackage(ctx, pkg)
 }
 
 // EnforceLifetimeViolation punishes the channel initiator due to a channel

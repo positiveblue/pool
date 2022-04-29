@@ -1128,7 +1128,11 @@ func TestBatchExecutorNewBatchExecution(t *testing.T) {
 		t.Fatalf("expected %v lifetime pacakges, found %v",
 			len(batch.Orders), len(exeRes.LifetimePackages))
 	}
-	require.Equal(t, exeRes.LifetimePackages, testCtx.store.LifetimePackages)
+	lifetimePackages, err := testCtx.store.LifetimePackages(
+		context.Background(),
+	)
+	require.NoError(t, err)
+	require.Equal(t, exeRes.LifetimePackages, lifetimePackages)
 
 	// We'll also make sure the account manager has been instructed to start
 	// watching the recreated accounts again.
