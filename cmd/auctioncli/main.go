@@ -70,9 +70,7 @@ func main() {
 			Usage: "auctionserver daemon admin address host:port",
 		},
 	}
-	app.Commands = append(app.Commands, masterAccountCommands...)
-	app.Commands = append(app.Commands, auctionCommands...)
-	app.Commands = append(app.Commands, adminCommands...)
+	addCommands(app)
 
 	err := app.Run(os.Args)
 	if err != nil {
