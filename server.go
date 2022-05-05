@@ -547,7 +547,9 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, fmt.Errorf("unable to retrieve stored node "+
 			"ratings: %v", err)
 	}
-	ratingsDB = ratings.NewMemRatingsDatabase(store, nodeRatings, nil)
+	ratingsDB = ratings.NewMemRatingsDatabase(
+		store, nodeRatings, cfg.DefaultNodeTier, nil,
+	)
 
 	// We'll only activate the BOS score backed ratings agency if it has
 	// been flipped on in the config. In contexts like testnet or regtest,
@@ -561,7 +563,7 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		}
 		ratingsDB = ratings.NewBosScoreRatingsDatabase(
 			bosScoreWebScore, cfg.NodeRatingsRefreshInterval,
-			ratingsDB,
+			cfg.DefaultNodeTier, ratingsDB,
 		)
 	}
 	ratingsAgency := ratings.NewNodeTierAgency(ratingsDB)

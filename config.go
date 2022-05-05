@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/status"
@@ -194,9 +195,10 @@ type Config struct {
 	AccountExpiryExtension uint32 `long:"accountexpiryextension" description:"block height threshold to determine if an account needs to be extended and for how long"`
 	AccountExpiryOffset    uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
 
-	ExternalNodeRatingsActive  bool          `long:"noderatingsactive" description:"if true external node ratings will be used in order matching, if false, the ratings aren't updated from external sources"`
-	NodeRatingsRefreshInterval time.Duration `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
-	BosScoreWebURL             string        `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
+	ExternalNodeRatingsActive  bool            `long:"noderatingsactive" description:"if true external node ratings will be used in order matching, if false, the ratings aren't updated from external sources"`
+	DefaultNodeTier            orderT.NodeTier `long:"defaultnodetier" description:"the default node tier to return if node isn't found in node ratings database; 1=tier_0, 2=tier_1"`
+	NodeRatingsRefreshInterval time.Duration   `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
+	BosScoreWebURL             string          `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
 
 	FundingConflictResetInterval time.Duration `long:"fundingconflictresetinterval" description:"the reset interval for funding conflicts (errors during channel opens), set to 0 for no automatic reset"`
 	TraderRejectResetInterval    time.Duration `long:"traderrejectresetinterval" description:"the reset interval for trader rejects (partial rejects because of --newnodesonly flag)"`
@@ -262,6 +264,7 @@ func DefaultConfig() *Config {
 		LogDir:                       defaultLogDir,
 		AccountExpiryExtension:       defaultAccountExpiryExtension,
 		AccountExpiryOffset:          defaultAccountExpiryOffset,
+		DefaultNodeTier:              orderT.NodeTier0,
 		NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
 		BosScoreWebURL:               defaultBosScoreURL,
 		FundingConflictResetInterval: defaultFundingConflictResetInterval,

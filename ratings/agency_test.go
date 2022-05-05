@@ -91,13 +91,17 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	// write thru DB as well to test the caching logic.
 	scrapeUpdates := make(chan struct{})
 	refreshInterval := time.Second * 2
-	writeThruDB := NewMemRatingsDatabase(nil, nil, scrapeUpdates)
-	ratingsDB := NewMemRatingsDatabase(writeThruDB, nil, nil)
+	writeThruDB := NewMemRatingsDatabase(
+		nil, nil, orderT.NodeTier0, scrapeUpdates,
+	)
+	ratingsDB := NewMemRatingsDatabase(
+		writeThruDB, nil, orderT.NodeTier0, nil,
+	)
 	scoreWebSource := BosScoreWebRatings{
 		URL: fmt.Sprintf("http://%s/", listener.Addr()),
 	}
 	bosScoreDB := NewBosScoreRatingsDatabase(
-		&scoreWebSource, refreshInterval, ratingsDB,
+		&scoreWebSource, refreshInterval, orderT.NodeTier0, ratingsDB,
 	)
 
 	// First, we'll kick off the indexing of the ratings for the first

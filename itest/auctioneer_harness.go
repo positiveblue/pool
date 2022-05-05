@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/aperture"
 	"github.com/lightninglabs/aperture/proxy"
 	"github.com/lightninglabs/pool/auctioneerrpc"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
@@ -102,6 +103,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			// being in the lowest tier unless we manually set
 			// their scores.
 			ExternalNodeRatingsActive: true,
+			DefaultNodeTier:           orderT.NodeTier0,
 			AllowFakeTokens:           true,
 			BaseDir:                   cfg.BaseDir,
 			TLSCertPath:               subastaTLSPath,
