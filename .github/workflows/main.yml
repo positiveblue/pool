@@ -19,8 +19,8 @@ env:
   GO111MODULE: on
 
   # If you change this value, please change it in the following files as well:
-  # /.travis.yml
   # /Dockerfile
+  # /regtest.Dockerfile
   GO_VERSION: 1.17.2
 
 jobs:
