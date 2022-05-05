@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lntest/wait"
@@ -56,7 +57,11 @@ func newTestHarness(t *testing.T) *testHarness {
 	store := newMockStore()
 	notifier := NewMockChainNotifier()
 	wallet := newMockWallet(privKey)
+	banStore := ban.NewStoreMock()
+	banManager := ban.NewManager(&ban.ManagerConfig{Store: banStore})
+
 	m, err := NewManager(&ManagerConfig{
+		BanManager:    banManager,
 		Store:         store,
 		Wallet:        wallet,
 		Signer:        wallet,
@@ -784,8 +789,10 @@ func TestModifyAccountBanned(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve trader key: %v", err)
 	}
-	const expiration = bestHeight * 2
-	h.store.banAccount(traderKey, expiration)
+	expiration, err := h.manager.cfg.BanManager.BanAccount(
+		traderKey, bestHeight,
+	)
+	require.NoError(t, err)
 
 	// Attempt to obtain a signature while the account is still banned. We
 	// should see the expected error.

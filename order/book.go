@@ -12,6 +12,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/multimutex"
@@ -43,6 +44,9 @@ type BookStore interface {
 // BookConfig contains all of the required dependencies for the Book to
 // carry out its duties.
 type BookConfig struct {
+	// BanManager is responsible for banning accounts.
+	BanManager ban.Manager
+
 	// Store is responsible for storing and retrieving order information.
 	Store BookStore
 
@@ -117,7 +121,7 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	}
 
 	// First we make sure the account is ready to submit orders.
-	err = b.validateAccountState(ctx, acctKey, acct, bestHeight)
+	err = b.validateAccountState(acctKey, acct, bestHeight)
 	if err != nil {
 		return err
 	}
@@ -247,9 +251,8 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 
 // validateAccountState makes sure the account is in a state where we can
 // accept a new order.
-func (b *Book) validateAccountState(ctx context.Context,
-	acctKey *btcec.PublicKey, acct *account.Account,
-	bestHeight uint32) error {
+func (b *Book) validateAccountState(acctKey *btcec.PublicKey,
+	acct *account.Account, bestHeight uint32) error {
 
 	// Only allow orders to be submitted if the account is open, or open
 	// and pending an update (so they can submit orders while the update is
@@ -264,8 +267,8 @@ func (b *Book) validateAccountState(ctx context.Context,
 	}
 
 	// Is the account banned? Don't accept the order.
-	isBanned, expiration, err := b.cfg.Store.IsAccountBanned(
-		ctx, acctKey, bestHeight,
+	isBanned, expiration, err := b.cfg.BanManager.IsAccountBanned(
+		acctKey, bestHeight,
 	)
 	if err != nil {
 		return err

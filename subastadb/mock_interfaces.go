@@ -13,6 +13,7 @@ import (
 	lsat "github.com/lightninglabs/aperture/lsat"
 	order "github.com/lightninglabs/pool/order"
 	account "github.com/lightninglabs/subasta/account"
+	ban "github.com/lightninglabs/subasta/ban"
 	chanenforcement "github.com/lightninglabs/subasta/chanenforcement"
 	order0 "github.com/lightninglabs/subasta/order"
 	ratings "github.com/lightninglabs/subasta/ratings"
@@ -154,17 +155,31 @@ func (mr *MockStoreMockRecorder) AllTraderTerms(ctx interface{}) *gomock.Call {
 }
 
 // BanAccount mocks base method.
-func (m *MockStore) BanAccount(arg0 context.Context, arg1 *v2.PublicKey, arg2 uint32) error {
+func (m *MockStore) BanAccount(ctx context.Context, accountKey *v2.PublicKey, info *ban.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BanAccount", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "BanAccount", ctx, accountKey, info)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // BanAccount indicates an expected call of BanAccount.
-func (mr *MockStoreMockRecorder) BanAccount(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) BanAccount(ctx, accountKey, info interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanAccount", reflect.TypeOf((*MockStore)(nil).BanAccount), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanAccount", reflect.TypeOf((*MockStore)(nil).BanAccount), ctx, accountKey, info)
+}
+
+// BanNode mocks base method.
+func (m *MockStore) BanNode(ctx context.Context, nodeKey *v2.PublicKey, info *ban.Info) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BanNode", ctx, nodeKey, info)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BanNode indicates an expected call of BanNode.
+func (mr *MockStoreMockRecorder) BanNode(ctx, nodeKey, info interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanNode", reflect.TypeOf((*MockStore)(nil).BanNode), ctx, nodeKey, info)
 }
 
 // BatchConfirmed mocks base method.
@@ -268,17 +283,17 @@ func (mr *MockStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}) *go
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, height uint32) error {
+func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *v2.PublicKey, accInfo, nodeInfo *ban.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, height)
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
-func (mr *MockStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, height interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, accKey, nodeKey, accInfo, nodeInfo interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockStore)(nil).EnforceLifetimeViolation), ctx, pkg, height)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockStore)(nil).EnforceLifetimeViolation), ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 }
 
 // FetchAuctioneerAccount mocks base method.
@@ -294,6 +309,21 @@ func (m *MockStore) FetchAuctioneerAccount(arg0 context.Context) (*account.Aucti
 func (mr *MockStoreMockRecorder) FetchAuctioneerAccount(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAuctioneerAccount", reflect.TypeOf((*MockStore)(nil).FetchAuctioneerAccount), arg0)
+}
+
+// GetAccountBan mocks base method.
+func (m *MockStore) GetAccountBan(ctx context.Context, accKey *v2.PublicKey) (*ban.Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountBan", ctx, accKey)
+	ret0, _ := ret[0].(*ban.Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAccountBan indicates an expected call of GetAccountBan.
+func (mr *MockStoreMockRecorder) GetAccountBan(ctx, accKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockStore)(nil).GetAccountBan), ctx, accKey)
 }
 
 // GetArchivedOrders mocks base method.
@@ -324,6 +354,21 @@ func (m *MockStore) GetBatchSnapshot(arg0 context.Context, arg1 order.BatchID) (
 func (mr *MockStoreMockRecorder) GetBatchSnapshot(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBatchSnapshot", reflect.TypeOf((*MockStore)(nil).GetBatchSnapshot), arg0, arg1)
+}
+
+// GetNodeBan mocks base method.
+func (m *MockStore) GetNodeBan(ctx context.Context, nodeKey *v2.PublicKey) (*ban.Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeBan", ctx, nodeKey)
+	ret0, _ := ret[0].(*ban.Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNodeBan indicates an expected call of GetNodeBan.
+func (mr *MockStoreMockRecorder) GetNodeBan(ctx, nodeKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockStore)(nil).GetNodeBan), ctx, nodeKey)
 }
 
 // GetOrder mocks base method.
@@ -416,37 +461,6 @@ func (mr *MockStoreMockRecorder) Init(ctx interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockStore)(nil).Init), ctx)
 }
 
-// IsAccountBanned mocks base method.
-func (m *MockStore) IsAccountBanned(arg0 context.Context, arg1 *v2.PublicKey, arg2 uint32) (bool, uint32, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsAccountBanned", arg0, arg1, arg2)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(uint32)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// IsAccountBanned indicates an expected call of IsAccountBanned.
-func (mr *MockStoreMockRecorder) IsAccountBanned(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAccountBanned", reflect.TypeOf((*MockStore)(nil).IsAccountBanned), arg0, arg1, arg2)
-}
-
-// IsTraderBanned mocks base method.
-func (m *MockStore) IsTraderBanned(arg0 context.Context, arg1, arg2 [33]byte, arg3 uint32) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsTraderBanned", arg0, arg1, arg2, arg3)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// IsTraderBanned indicates an expected call of IsTraderBanned.
-func (mr *MockStoreMockRecorder) IsTraderBanned(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTraderBanned", reflect.TypeOf((*MockStore)(nil).IsTraderBanned), arg0, arg1, arg2, arg3)
-}
-
 // LeaseDurations mocks base method.
 func (m *MockStore) LeaseDurations(ctx context.Context) (map[uint32]order0.DurationBucketState, error) {
 	m.ctrl.T.Helper()
@@ -477,6 +491,36 @@ func (mr *MockStoreMockRecorder) LifetimePackages(ctx interface{}) *gomock.Call 
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LifetimePackages", reflect.TypeOf((*MockStore)(nil).LifetimePackages), ctx)
 }
 
+// ListBannedAccounts mocks base method.
+func (m *MockStore) ListBannedAccounts(ctx context.Context) (map[[33]byte]*ban.Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBannedAccounts", ctx)
+	ret0, _ := ret[0].(map[[33]byte]*ban.Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBannedAccounts indicates an expected call of ListBannedAccounts.
+func (mr *MockStoreMockRecorder) ListBannedAccounts(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedAccounts", reflect.TypeOf((*MockStore)(nil).ListBannedAccounts), ctx)
+}
+
+// ListBannedNodes mocks base method.
+func (m *MockStore) ListBannedNodes(ctx context.Context) (map[[33]byte]*ban.Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ListBannedNodes", ctx)
+	ret0, _ := ret[0].(map[[33]byte]*ban.Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// ListBannedNodes indicates an expected call of ListBannedNodes.
+func (mr *MockStoreMockRecorder) ListBannedNodes(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockStore)(nil).ListBannedNodes), ctx)
+}
+
 // PersistBatchResult mocks base method.
 func (m *MockStore) PersistBatchResult(arg0 context.Context, arg1 []order.Nonce, arg2 [][]order0.Modifier, arg3 []*v2.PublicKey, arg4 [][]account.Modifier, arg5 *account.Auctioneer, arg6 order.BatchID, arg7 *BatchSnapshot, arg8 *v2.PublicKey, arg9 []*chanenforcement.LifetimePackage) error {
 	m.ctrl.T.Helper()
@@ -505,6 +549,20 @@ func (mr *MockStoreMockRecorder) PutTraderTerms(ctx, terms interface{}) *gomock.
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "PutTraderTerms", reflect.TypeOf((*MockStore)(nil).PutTraderTerms), ctx, terms)
 }
 
+// RemoveAccountBan mocks base method.
+func (m *MockStore) RemoveAccountBan(ctx context.Context, acctKey *v2.PublicKey) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveAccountBan", ctx, acctKey)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveAccountBan indicates an expected call of RemoveAccountBan.
+func (mr *MockStoreMockRecorder) RemoveAccountBan(ctx, acctKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAccountBan", reflect.TypeOf((*MockStore)(nil).RemoveAccountBan), ctx, acctKey)
+}
+
 // RemoveLeaseDuration mocks base method.
 func (m *MockStore) RemoveLeaseDuration(ctx context.Context, duration uint32) error {
 	m.ctrl.T.Helper()
@@ -517,6 +575,20 @@ func (m *MockStore) RemoveLeaseDuration(ctx context.Context, duration uint32) er
 func (mr *MockStoreMockRecorder) RemoveLeaseDuration(ctx, duration interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveLeaseDuration", reflect.TypeOf((*MockStore)(nil).RemoveLeaseDuration), ctx, duration)
+}
+
+// RemoveNodeBan mocks base method.
+func (m *MockStore) RemoveNodeBan(ctx context.Context, nodeKey *v2.PublicKey) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "RemoveNodeBan", ctx, nodeKey)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// RemoveNodeBan indicates an expected call of RemoveNodeBan.
+func (mr *MockStoreMockRecorder) RemoveNodeBan(ctx, nodeKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveNodeBan", reflect.TypeOf((*MockStore)(nil).RemoveNodeBan), ctx, nodeKey)
 }
 
 // ReserveAccount mocks base method.
@@ -711,17 +783,31 @@ func (mr *MockAdminStoreMockRecorder) AllTraderTerms(ctx interface{}) *gomock.Ca
 }
 
 // BanAccount mocks base method.
-func (m *MockAdminStore) BanAccount(arg0 context.Context, arg1 *v2.PublicKey, arg2 uint32) error {
+func (m *MockAdminStore) BanAccount(ctx context.Context, accountKey *v2.PublicKey, info *ban.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "BanAccount", arg0, arg1, arg2)
+	ret := m.ctrl.Call(m, "BanAccount", ctx, accountKey, info)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // BanAccount indicates an expected call of BanAccount.
-func (mr *MockAdminStoreMockRecorder) BanAccount(arg0, arg1, arg2 interface{}) *gomock.Call {
+func (mr *MockAdminStoreMockRecorder) BanAccount(ctx, accountKey, info interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanAccount", reflect.TypeOf((*MockAdminStore)(nil).BanAccount), arg0, arg1, arg2)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanAccount", reflect.TypeOf((*MockAdminStore)(nil).BanAccount), ctx, accountKey, info)
+}
+
+// BanNode mocks base method.
+func (m *MockAdminStore) BanNode(ctx context.Context, nodeKey *v2.PublicKey, info *ban.Info) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "BanNode", ctx, nodeKey, info)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// BanNode indicates an expected call of BanNode.
+func (mr *MockAdminStoreMockRecorder) BanNode(ctx, nodeKey, info interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BanNode", reflect.TypeOf((*MockAdminStore)(nil).BanNode), ctx, nodeKey, info)
 }
 
 // BatchConfirmed mocks base method.
@@ -854,17 +940,17 @@ func (mr *MockAdminStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, height uint32) error {
+func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *v2.PublicKey, accInfo, nodeInfo *ban.Info) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, height)
+	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // EnforceLifetimeViolation indicates an expected call of EnforceLifetimeViolation.
-func (mr *MockAdminStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, height interface{}) *gomock.Call {
+func (mr *MockAdminStoreMockRecorder) EnforceLifetimeViolation(ctx, pkg, accKey, nodeKey, accInfo, nodeInfo interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockAdminStore)(nil).EnforceLifetimeViolation), ctx, pkg, height)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "EnforceLifetimeViolation", reflect.TypeOf((*MockAdminStore)(nil).EnforceLifetimeViolation), ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 }
 
 // FetchAuctioneerAccount mocks base method.
@@ -880,6 +966,21 @@ func (m *MockAdminStore) FetchAuctioneerAccount(arg0 context.Context) (*account.
 func (mr *MockAdminStoreMockRecorder) FetchAuctioneerAccount(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "FetchAuctioneerAccount", reflect.TypeOf((*MockAdminStore)(nil).FetchAuctioneerAccount), arg0)
+}
+
+// GetAccountBan mocks base method.
+func (m *MockAdminStore) GetAccountBan(ctx context.Context, accKey *v2.PublicKey) (*ban.Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAccountBan", ctx, accKey)
+	ret0, _ := ret[0].(*ban.Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAccountBan indicates an expected call of GetAccountBan.
+func (mr *MockAdminStoreMockRecorder) GetAccountBan(ctx, accKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockAdminStore)(nil).GetAccountBan), ctx, accKey)
 }
 
 // GetArchivedOrders mocks base method.
@@ -910,6 +1011,21 @@ func (m *MockAdminStore) GetBatchSnapshot(arg0 context.Context, arg1 order.Batch
 func (mr *MockAdminStoreMockRecorder) GetBatchSnapshot(arg0, arg1 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetBatchSnapshot", reflect.TypeOf((*MockAdminStore)(nil).GetBatchSnapshot), arg0, arg1)
+}
+
+// GetNodeBan mocks base method.
+func (m *MockAdminStore) GetNodeBan(ctx context.Context, nodeKey *v2.PublicKey) (*ban.Info, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetNodeBan", ctx, nodeKey)
+	ret0, _ := ret[0].(*ban.Info)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetNodeBan indicates an expected call of GetNodeBan.
+func (mr *MockAdminStoreMockRecorder) GetNodeBan(ctx, nodeKey interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockAdminStore)(nil).GetNodeBan), ctx, nodeKey)
 }
 
 // GetOrder mocks base method.
@@ -1002,37 +1118,6 @@ func (mr *MockAdminStoreMockRecorder) Init(ctx interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Init", reflect.TypeOf((*MockAdminStore)(nil).Init), ctx)
 }
 
-// IsAccountBanned mocks base method.
-func (m *MockAdminStore) IsAccountBanned(arg0 context.Context, arg1 *v2.PublicKey, arg2 uint32) (bool, uint32, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsAccountBanned", arg0, arg1, arg2)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(uint32)
-	ret2, _ := ret[2].(error)
-	return ret0, ret1, ret2
-}
-
-// IsAccountBanned indicates an expected call of IsAccountBanned.
-func (mr *MockAdminStoreMockRecorder) IsAccountBanned(arg0, arg1, arg2 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsAccountBanned", reflect.TypeOf((*MockAdminStore)(nil).IsAccountBanned), arg0, arg1, arg2)
-}
-
-// IsTraderBanned mocks base method.
-func (m *MockAdminStore) IsTraderBanned(arg0 context.Context, arg1, arg2 [33]byte, arg3 uint32) (bool, error) {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "IsTraderBanned", arg0, arg1, arg2, arg3)
-	ret0, _ := ret[0].(bool)
-	ret1, _ := ret[1].(error)
-	return ret0, ret1
-}
-
-// IsTraderBanned indicates an expected call of IsTraderBanned.
-func (mr *MockAdminStoreMockRecorder) IsTraderBanned(arg0, arg1, arg2, arg3 interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IsTraderBanned", reflect.TypeOf((*MockAdminStore)(nil).IsTraderBanned), arg0, arg1, arg2, arg3)
-}
-
 // LeaseDurations mocks base method.
 func (m *MockAdminStore) LeaseDurations(ctx context.Context) (map[uint32]order0.DurationBucketState, error) {
 	m.ctrl.T.Helper()
@@ -1064,10 +1149,10 @@ func (mr *MockAdminStoreMockRecorder) LifetimePackages(ctx interface{}) *gomock.
 }
 
 // ListBannedAccounts mocks base method.
-func (m *MockAdminStore) ListBannedAccounts(ctx context.Context) (map[[33]byte]*BanInfo, error) {
+func (m *MockAdminStore) ListBannedAccounts(ctx context.Context) (map[[33]byte]*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListBannedAccounts", ctx)
-	ret0, _ := ret[0].(map[[33]byte]*BanInfo)
+	ret0, _ := ret[0].(map[[33]byte]*ban.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1079,10 +1164,10 @@ func (mr *MockAdminStoreMockRecorder) ListBannedAccounts(ctx interface{}) *gomoc
 }
 
 // ListBannedNodes mocks base method.
-func (m *MockAdminStore) ListBannedNodes(ctx context.Context) (map[[33]byte]*BanInfo, error) {
+func (m *MockAdminStore) ListBannedNodes(ctx context.Context) (map[[33]byte]*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "ListBannedNodes", ctx)
-	ret0, _ := ret[0].(map[[33]byte]*BanInfo)
+	ret0, _ := ret[0].(map[[33]byte]*ban.Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1218,34 +1303,6 @@ func (m *MockAdminStore) ReserveAccount(arg0 context.Context, arg1 lsat.TokenID,
 func (mr *MockAdminStoreMockRecorder) ReserveAccount(arg0, arg1, arg2 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ReserveAccount", reflect.TypeOf((*MockAdminStore)(nil).ReserveAccount), arg0, arg1, arg2)
-}
-
-// SetAccountBanInfo mocks base method.
-func (m *MockAdminStore) SetAccountBanInfo(ctx context.Context, accountKey *v2.PublicKey, currentHeight, duration uint32) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetAccountBanInfo", ctx, accountKey, currentHeight, duration)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SetAccountBanInfo indicates an expected call of SetAccountBanInfo.
-func (mr *MockAdminStoreMockRecorder) SetAccountBanInfo(ctx, accountKey, currentHeight, duration interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetAccountBanInfo", reflect.TypeOf((*MockAdminStore)(nil).SetAccountBanInfo), ctx, accountKey, currentHeight, duration)
-}
-
-// SetNodeBanInfo mocks base method.
-func (m *MockAdminStore) SetNodeBanInfo(ctx context.Context, nodeKey *v2.PublicKey, currentHeight, duration uint32) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "SetNodeBanInfo", ctx, nodeKey, currentHeight, duration)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// SetNodeBanInfo indicates an expected call of SetNodeBanInfo.
-func (mr *MockAdminStoreMockRecorder) SetNodeBanInfo(ctx, nodeKey, currentHeight, duration interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetNodeBanInfo", reflect.TypeOf((*MockAdminStore)(nil).SetNodeBanInfo), ctx, nodeKey, currentHeight, duration)
 }
 
 // StoreAccountDiff mocks base method.

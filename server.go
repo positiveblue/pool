@@ -20,6 +20,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/monitoring"
@@ -462,9 +463,16 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, err
 	}
 
+	banManager := ban.NewManager(
+		&ban.ManagerConfig{
+			Store: store,
+		},
+	)
+
 	// With our database open, we can set up the manager which watches over
 	// all the trader accounts.
 	accountManager, err := account.NewManager(&account.ManagerConfig{
+		BanManager:    banManager,
 		Store:         store,
 		Wallet:        lnd.WalletKit,
 		Signer:        lnd.Signer,
@@ -513,12 +521,13 @@ func NewServer(cfg *Config, // nolint:gocyclo
 
 	durationBuckets := order.NewDurationBuckets()
 	orderBook := order.NewBook(&order.BookConfig{
+		BanManager:      banManager,
 		Store:           store,
 		Signer:          lnd.Signer,
 		DurationBuckets: durationBuckets,
 	})
 
-	packageSource := chanenforcement.NewDefaultSource(store)
+	packageSource := chanenforcement.NewDefaultSource(banManager, store)
 	channelEnforcer := chanenforcement.New(&chanenforcement.Config{
 		ChainNotifier: lnd.ChainNotifier,
 		PackageSource: packageSource,
@@ -573,6 +582,7 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		batchExecutor:  batchExecutor,
 		activeTraders:  activeTraders,
 		auctioneer: NewAuctioneer(AuctioneerConfig{
+			BanManager:    banManager,
 			DB:            newAuctioneerStore(store),
 			ChainNotifier: lnd.ChainNotifier,
 			Wallet: &auctioneerWallet{

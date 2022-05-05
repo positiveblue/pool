@@ -6,8 +6,10 @@ import (
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightningnetwork/lnd/chanbackup"
+	"github.com/stretchr/testify/require"
 )
 
 // TestLifetimePackages ensures that we are able to perform the different
@@ -84,8 +86,8 @@ func TestLifetimePackages(t *testing.T) {
 
 	// We should also be able to prune it, assuming that a premature spend
 	// has not occurred.
-	if err := store.PruneLifetimePackage(ctx, pkg); err != nil {
-		t.Fatalf("unable to prune channel lifetime package: %v", err)
+	if err := store.DeleteLifetimePackage(ctx, pkg); err != nil {
+		t.Fatalf("unable to delete channel lifetime package: %v", err)
 	}
 	assertPackageInStore(false)
 
@@ -95,24 +97,38 @@ func TestLifetimePackages(t *testing.T) {
 	}
 	assertPackageInStore(true)
 
-	// This time, we'll assume a premature spend has occurred, so we'll need
-	// to ban the trader responsible. We'll assume the seller is
-	// responsible.
-	const currentHeight = 100
-	const expiration = currentHeight + initialBanDuration
-	err = store.EnforceLifetimeViolation(ctx, pkg, currentHeight)
-	if err != nil {
-		t.Fatalf("unable to enforce channel lifetime violation: %v", err)
+	// Check that we are able to enforce package punishments.
+	info, err := store.GetAccountBan(ctx, askAccountKey)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	info, err = store.GetNodeBan(ctx, askNodeKey)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	currentHeight := uint32(1000)
+	defaultBanDuration := uint32(144)
+	accInfo := &ban.Info{
+		Duration: defaultBanDuration,
+		Height:   currentHeight,
+	}
+	nodInfo := &ban.Info{
+		Duration: defaultBanDuration,
+		Height:   currentHeight,
 	}
 
-	// The seller's account and node should be banned for the initial
-	// duration (144 blocks). The lifetime package should also no longer
-	// exist at this point, since we've already acted upon the violation.
+	err = store.EnforceLifetimeViolation(
+		ctx, pkg, askAccountKey, askNodeKey, accInfo, nodInfo,
+	)
+	require.NoError(t, err)
+
 	assertPackageInStore(false)
-	assertAccountBanStatus(
-		t, store, pkg.AskAccountKey, currentHeight, true, expiration,
-	)
-	assertNodeBanStatus(
-		t, store, pkg.AskNodeKey, currentHeight, true, expiration,
-	)
+
+	info, err = store.GetAccountBan(ctx, askAccountKey)
+	require.NoError(t, err)
+	require.NotNil(t, info)
+
+	info, err = store.GetNodeBan(ctx, askNodeKey)
+	require.NoError(t, err)
+	require.NotNil(t, info)
 }

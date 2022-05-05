@@ -27,6 +27,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/accounting"
 	"github.com/lightninglabs/subasta/adminrpc"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/status"
 	"github.com/lightninglabs/subasta/subastadb"
@@ -715,18 +716,18 @@ func (s *adminRPCServer) AddBan(ctx context.Context,
 	req *adminrpc.BanRequest) (*adminrpc.EmptyResponse, error) {
 
 	var (
-		banFn func(context.Context, *btcec.PublicKey, uint32,
-			uint32) error
+		banFn func(context.Context, *btcec.PublicKey,
+			*ban.Info) error
 		keyBytes []byte
 	)
 	switch {
 	case req.GetAccount() != nil:
 		keyBytes = req.GetAccount()
-		banFn = s.store.SetAccountBanInfo
+		banFn = s.store.BanAccount
 
 	case req.GetNode() != nil:
 		keyBytes = req.GetNode()
-		banFn = s.store.SetNodeBanInfo
+		banFn = s.store.BanNode
 
 	default:
 		return nil, fmt.Errorf("must set either node or account")
@@ -740,7 +741,11 @@ func (s *adminRPCServer) AddBan(ctx context.Context,
 	if err != nil {
 		return nil, err
 	}
-	err = banFn(ctx, key, s.mainRPCServer.bestHeight(), req.Duration)
+	banInfo := &ban.Info{
+		Height:   s.mainRPCServer.bestHeight(),
+		Duration: req.Duration,
+	}
+	err = banFn(ctx, key, banInfo)
 	if err != nil {
 		return nil, err
 	}

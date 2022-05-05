@@ -19,6 +19,7 @@ import (
 	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/account/watcher"
 	"github.com/lightninglabs/pool/poolscript"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
 )
@@ -60,6 +61,9 @@ var (
 // ManagerConfig contains all of the required dependencies for the Manager to
 // carry out its duties.
 type ManagerConfig struct {
+	// BanManager is responsible for banning accounts.
+	BanManager ban.Manager
+
 	// Store is responsible for storing and retrieving account information
 	// reliably.
 	Store Store
@@ -770,8 +774,8 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	}
 
 	// Is the account banned? Don't allow modifications.
-	isBanned, expiration, err := m.cfg.Store.IsAccountBanned(
-		ctx, traderKey, bestHeight,
+	isBanned, expiration, err := m.cfg.BanManager.IsAccountBanned(
+		traderKey, bestHeight,
 	)
 	if err != nil {
 		return nil, err

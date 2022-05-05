@@ -1,22 +1,34 @@
 package chanenforcement
 
-import "context"
+import (
+	"context"
+
+	"github.com/lightninglabs/subasta/ban"
+)
 
 // DefaultSource implements the PackageSource interface.
 // EnforceLifetimeViolation is accomplished by banning the offender.
 type DefaultSource struct {
-	Store Store
+	Store      Store
+	BanManager ban.Manager
 }
 
 // NewDefaultSource returns a new DefaultSource.
-func NewDefaultSource(store Store) *DefaultSource {
-	return &DefaultSource{Store: store}
+func NewDefaultSource(banManager ban.Manager, store Store) *DefaultSource {
+	return &DefaultSource{
+		Store:      store,
+		BanManager: banManager,
+	}
 }
 
 // LifetimePackages retrieves all channel lifetime enforcement packages
 // which still need to be acted upon.
 func (p *DefaultSource) LifetimePackages() ([]*LifetimePackage, error) {
-	return p.Store.LifetimePackages(context.Background())
+	ctxb := context.Background()
+	ctxt, cancel := context.WithTimeout(ctxb, defaultWaitTimeout)
+	defer cancel()
+
+	return p.Store.LifetimePackages(ctxt)
 }
 
 // PruneLifetimePackage prunes all references to a channel's lifetime
@@ -25,7 +37,11 @@ func (p *DefaultSource) LifetimePackages() ([]*LifetimePackage, error) {
 func (p *DefaultSource) PruneLifetimePackage(
 	pkg *LifetimePackage) error {
 
-	return p.Store.DeleteLifetimePackage(context.Background(), pkg)
+	ctxb := context.Background()
+	ctxt, cancel := context.WithTimeout(ctxb, defaultWaitTimeout)
+	defer cancel()
+
+	return p.Store.DeleteLifetimePackage(ctxt, pkg)
 }
 
 // EnforceLifetimeViolation punishes the channel initiator due to a
@@ -38,7 +54,28 @@ func (p *DefaultSource) PruneLifetimePackage(
 func (p *DefaultSource) EnforceLifetimeViolation(pkg *LifetimePackage,
 	height uint32) error {
 
+	// TODO (positiveblue): execute bans + delete in a unique tx.
+
+	// Ban the account and node key.
+	currAccInfo, err := p.BanManager.GetAccountBan(pkg.AskAccountKey)
+	if err != nil {
+		return err
+	}
+
+	accInfo := p.BanManager.CalculateNewInfo(height, currAccInfo)
+
+	currNodeInfo, err := p.BanManager.GetNodeBan(pkg.AskNodeKey)
+	if err != nil {
+		return err
+	}
+
+	nodeInfo := p.BanManager.CalculateNewInfo(height, currNodeInfo)
+
+	ctxb := context.Background()
+	ctxt, cancel := context.WithTimeout(ctxb, defaultWaitTimeout)
+	defer cancel()
+
+	// Stop monitoring the lifetime package.
 	return p.Store.EnforceLifetimeViolation(
-		context.Background(), pkg, height,
-	)
+		ctxt, pkg, pkg.AskAccountKey, pkg.AskNodeKey, accInfo, nodeInfo)
 }

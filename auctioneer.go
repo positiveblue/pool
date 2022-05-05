@@ -19,6 +19,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/feebump"
 	"github.com/lightninglabs/subasta/monitoring"
@@ -92,17 +93,6 @@ type AuctioneerDatabase interface {
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context, orderT.BatchID) (
 		*subastadb.BatchSnapshot, error)
-
-	// BanAccount attempts to ban the account associated with a trader
-	// starting from the current height of the chain. The duration of the
-	// ban will depend on how many times the node has been banned before and
-	// grows exponentially, otherwise it is 144 blocks.
-	BanAccount(context.Context, *btcec.PublicKey, uint32) error
-
-	// IsTraderBanned determines whether the trader's account or node is
-	// banned at the current height.
-	IsTraderBanned(context.Context, [33]byte, [33]byte, uint32) (bool,
-		error)
 }
 
 // Wallet is an interface that contains all the methods necessary for the
@@ -263,6 +253,9 @@ type AuctioneerConfig struct {
 	// RatingsAgency if non-nil, will be used as an extract matching
 	// predicate when doing match making.
 	RatingsAgency ratings.Agency
+
+	// BanManager is responsible for banning accounts.
+	BanManager ban.Manager
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1114,9 +1107,7 @@ func (a *Auctioneer) banTrader(trader matching.AccountID) {
 		log.Errorf("Unable to ban account %x: %v", trader[:], err)
 		return
 	}
-	err = a.cfg.DB.BanAccount(
-		context.Background(), accountKey, a.BestHeight(),
-	)
+	_, err = a.cfg.BanManager.BanAccount(accountKey, a.BestHeight())
 	if err != nil {
 		log.Errorf("Unable to ban account %x: %v", trader[:], err)
 	}
@@ -1558,10 +1549,11 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		accountFilter := matching.NewAccountFilter(
 			a.cfg.AccountFetcher, expiryCutoff,
 			func(nodeKey, accountKey [33]byte) bool {
-				traderBanned, err := a.cfg.DB.IsTraderBanned(
-					ctxb, accountKey, nodeKey,
-					a.BestHeight(),
-				)
+				traderBanned, err := a.cfg.BanManager.
+					IsTraderBanned(
+						accountKey, nodeKey,
+						a.BestHeight(),
+					)
 				return err == nil && !traderBanned
 			},
 		)

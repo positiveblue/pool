@@ -2,11 +2,18 @@ package chanenforcement
 
 import (
 	"context"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/pool/chaninfo"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightningnetwork/lnd/chanbackup"
+)
+
+const (
+	// defaultWaitTimeout used in store timeout contexts.
+	defaultWaitTimeout = 5 * time.Second
 )
 
 // PackageSource is responsible for retrieving any existing channel lifetime
@@ -102,10 +109,11 @@ type Store interface {
 	// EnforceLifetimeViolation punishes the channel initiator due to a channel
 	// lifetime violation.
 	//
-	// TODO(positiveblue): delete this from the store interface when the
-	// ban package has the business logic for banning accounts.
-	EnforceLifetimeViolation(ctx context.Context,
-		pkg *LifetimePackage, height uint32) error
+	// TODO(positiveblue): delete this from the store interface after migrating
+	// to postgres.
+	EnforceLifetimeViolation(ctx context.Context, pkg *LifetimePackage,
+		accKey, nodeKey *btcec.PublicKey,
+		accInfo, nodeInfo *ban.Info) error
 }
 
 // NewLifetimePackage constructs and verifies a channel's lifetime enforcement

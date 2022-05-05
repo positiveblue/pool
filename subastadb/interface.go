@@ -7,6 +7,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
+	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
@@ -46,6 +47,8 @@ type Store interface {
 
 	chanenforcement.Store
 
+	ban.Store
+
 	// PersistBatchResult atomically updates all modified orders/accounts,
 	// persists a snapshot of the batch and switches to the next batch ID.
 	// If any single operation fails, the whole set of changes is rolled
@@ -58,17 +61,6 @@ type Store interface {
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context, orderT.BatchID) (*BatchSnapshot, error)
-
-	// BanAccount attempts to ban the account associated with a trader
-	// starting from the current height of the chain. The duration of the
-	// ban will depend on how many times the node has been banned before and
-	// grows exponentially, otherwise it is 144 blocks.
-	BanAccount(context.Context, *btcec.PublicKey, uint32) error
-
-	// IsTraderBanned determines whether the trader's account or node is
-	// banned at the current height.
-	IsTraderBanned(context.Context, [33]byte, [33]byte, uint32) (bool,
-		error)
 
 	// ConfirmBatch finalizes a batch on disk, marking it as pending (unconfirmed)
 	// no longer.
@@ -91,34 +83,6 @@ type AdminStore interface {
 	// DeleteAccountDiff deletes an account's pending diff.
 	DeleteAccountDiff(ctx context.Context,
 		accountKey *btcec.PublicKey) error
-
-	// ListBannedAccounts returns a map of all accounts that are currently banned.
-	// The map key is the account's trader key and the value is the ban info.
-	ListBannedAccounts(
-		ctx context.Context) (map[[33]byte]*BanInfo, error)
-
-	// ListBannedNodes returns a map of all nodes that are currently banned.
-	// The map key is the node's identity pubkey and the value is the ban info.
-	ListBannedNodes(
-		ctx context.Context) (map[[33]byte]*BanInfo, error)
-
-	// RemoveAccountBan removes the ban information for a given trader's account
-	// key. Returns an error if no ban exists.
-	RemoveAccountBan(ctx context.Context,
-		acctKey *btcec.PublicKey) error
-
-	// RemoveNodeBan removes the ban information for a given trader's node identity
-	// key. Returns an error if no ban exists.
-	RemoveNodeBan(ctx context.Context,
-		nodeKey *btcec.PublicKey) error
-
-	// SetAccountBanInfo stores or overwrites the ban info for a trader account.
-	SetAccountBanInfo(ctx context.Context, accountKey *btcec.PublicKey,
-		currentHeight, duration uint32) error
-
-	// SetNodeBanInfo stores or overwrites the ban info for a node.
-	SetNodeBanInfo(ctx context.Context,
-		nodeKey *btcec.PublicKey, currentHeight, duration uint32) error
 
 	// RemoveReservation deletes a reservation identified by the LSAT ID.
 	RemoveReservation(ctx context.Context, id lsat.TokenID) error
