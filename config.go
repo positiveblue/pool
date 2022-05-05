@@ -194,7 +194,7 @@ type Config struct {
 	AccountExpiryExtension uint32 `long:"accountexpiryextension" description:"block height threshold to determine if an account needs to be extended and for how long"`
 	AccountExpiryOffset    uint32 `long:"accountexpiryoffset" description:"padding applied to the current block height to determine if an account expires soon"`
 
-	NodeRatingsActive          bool          `long:"noderatingsactive" description:"if true node ratings will be used in order matching"`
+	ExternalNodeRatingsActive  bool          `long:"noderatingsactive" description:"if true external node ratings will be used in order matching, if false, the ratings aren't updated from external sources"`
 	NodeRatingsRefreshInterval time.Duration `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
 	BosScoreWebURL             string        `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
 

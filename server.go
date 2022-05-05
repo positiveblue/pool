@@ -537,10 +537,7 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, fmt.Errorf("conf target must be greater than 0")
 	}
 
-	var (
-		ratingsAgency ratings.Agency
-		ratingsDB     ratings.NodeRatingsDatabase
-	)
+	var ratingsDB ratings.NodeRatingsDatabase
 
 	// We'll always use an in-memory ratings DB that writes through to the
 	// etcd store.
@@ -551,13 +548,12 @@ func NewServer(cfg *Config, // nolint:gocyclo
 			"ratings: %v", err)
 	}
 	ratingsDB = ratings.NewMemRatingsDatabase(store, nodeRatings, nil)
-	ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
 
 	// We'll only activate the BOS score backed ratings agency if it has
 	// been flipped on in the config. In contexts like testnet or regtest,
 	// we don't have an instance of bos scores to point to but we can still
 	// manually edit the ratings through the admin RPC.
-	if cfg.NodeRatingsActive && cfg.BosScoreWebURL != "" {
+	if cfg.ExternalNodeRatingsActive && cfg.BosScoreWebURL != "" {
 		log.Infof("Initializing BosScore backed RatingsAgency")
 
 		bosScoreWebScore := &ratings.BosScoreWebRatings{
@@ -567,9 +563,8 @@ func NewServer(cfg *Config, // nolint:gocyclo
 			bosScoreWebScore, cfg.NodeRatingsRefreshInterval,
 			ratingsDB,
 		)
-
-		ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
 	}
+	ratingsAgency := ratings.NewNodeTierAgency(ratingsDB)
 
 	server := &Server{
 		cfg:            cfg,

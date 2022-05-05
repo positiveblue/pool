@@ -101,16 +101,16 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			// score URL. As a result, all nodes will be seen as
 			// being in the lowest tier unless we manually set
 			// their scores.
-			NodeRatingsActive: true,
-			AllowFakeTokens:   true,
-			BaseDir:           cfg.BaseDir,
-			TLSCertPath:       subastaTLSPath,
-			TLSKeyPath:        path.Join(cfg.BaseDir, "tls.key"),
-			ExecFeeBase:       subasta.DefaultExecutionFeeBase,
-			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
-			BatchConfTarget:   6,
-			MaxAcctValue:      10 * btcutil.SatoshiPerBitcoin,
-			SubscribeTimeout:  500 * time.Millisecond,
+			ExternalNodeRatingsActive: true,
+			AllowFakeTokens:           true,
+			BaseDir:                   cfg.BaseDir,
+			TLSCertPath:               subastaTLSPath,
+			TLSKeyPath:                path.Join(cfg.BaseDir, "tls.key"),
+			ExecFeeBase:               subasta.DefaultExecutionFeeBase,
+			ExecFeeRate:               subasta.DefaultExecutionFeeRate,
+			BatchConfTarget:           6,
+			MaxAcctValue:              10 * btcutil.SatoshiPerBitcoin,
+			SubscribeTimeout:          500 * time.Millisecond,
 			Lnd: &subasta.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,
