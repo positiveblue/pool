@@ -1,0 +1,8 @@
+version: "1"
+packages:
+  - name: "postgres"
+    path: "subastadb/postgres"
+    queries: "subastadb/postgres/queries"
+    schema: "subastadb/postgres/migrations"
+    engine: "postgresql"
+    sql_package: "pgx/v4"

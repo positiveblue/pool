@@ -69,7 +69,7 @@ func NewTestPgFixture(t *testing.T, expiry time.Duration) *TestPgFixture {
 		port: int(port),
 	}
 	databaseURL := fixture.GetDSN()
-	fmt.Printf("Connecting to Postgres: %v\n", databaseURL)
+	log.Infof("Connecting to Postgres fixture: %v\n", databaseURL)
 
 	// Tell docker to hard kill the container in "expiry" seconds.
 	require.NoError(t, resource.Expire(uint(expiry.Seconds())))
@@ -98,8 +98,19 @@ func NewTestPgFixture(t *testing.T, expiry time.Duration) *TestPgFixture {
 
 // GetDSN returns the DSN (Data Source Name) for the started Postgres node.
 func (f *TestPgFixture) GetDSN() string {
-	return fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=disable",
-		testPgUser, testPgPass, f.host, f.port, testPgDBName)
+	return f.GetConfig().DSN(false)
+}
+
+// GetConfig returns the full config of the Postgres node.
+func (f *TestPgFixture) GetConfig() *SQLConfig {
+	return &SQLConfig{
+		Host:       f.host,
+		Port:       f.port,
+		User:       testPgUser,
+		Password:   testPgPass,
+		DBName:     testPgDBName,
+		RequireSSL: false,
+	}
 }
 
 // TearDown stops the underlying docker container.
@@ -125,6 +136,26 @@ func (f *TestPgFixture) ClearDB(t *testing.T) {
 // started Postgres instance.
 func (f *TestPgFixture) NewSQLGORMStore(t *testing.T) *SQLGORMStore {
 	store, err := NewSQLGORMStore(
+		&SQLConfig{
+			Host:     f.host,
+			Port:     f.port,
+			User:     testPgUser,
+			Password: testPgPass,
+			DBName:   testPgDBName,
+		},
+	)
+	require.NoError(t, err)
+	return store
+}
+
+// NewSQLStore constructs a new SQLStore object that connects to the started
+// Postgres instance.
+func (f *TestPgFixture) NewSQLStore(t *testing.T) *SQLStore {
+	ctxt, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	store, err := NewSQLStore(
+		ctxt,
 		&SQLConfig{
 			Host:     f.host,
 			Port:     f.port,

@@ -15,6 +15,7 @@ LINT_BIN := $(GO_BIN)/golangci-lint
 GOACC_BIN := $(GO_BIN)/go-acc
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
 GARBLE_BIN := $(GO_BIN)/garble
+MIGRATE_BIN := $(GO_BIN)/migrate
 
 GOBUILD := go build -v
 GOINSTALL := go install -v
@@ -108,6 +109,22 @@ docker-tools:
 
 scratch: build
 
+# ===================
+# DATABASE MIGRATIONS
+# ===================
+
+migrate-up: $(MIGRATE_BIN)
+	migrate -path subastadb/postgres/migrations -database $(SUBASTA_DB_CONNECTIONSTRING) -verbose up
+
+migrate-down: $(MIGRATE_BIN)
+	migrate -path subastadb/postgres/migrations -database $(SUBASTA_DB_CONNECTIONSTRING) -verbose down 1
+
+migrate-drop: $(MIGRATE_BIN)
+	migrate -path subastadb/postgres/migrations -database $(SUBASTA_DB_CONNECTIONSTRING) -verbose drop
+
+migrate-create: $(MIGRATE_BIN)
+	migrate create -dir subastadb/postgres/migrations -seq -ext sql $(patchname)
+
 # =======
 # TESTING
 # =======
@@ -186,7 +203,15 @@ list:
 		grep -v Makefile | \
 		sort
 
-gen: rpc mock
+gen: rpc mock sqlc
+
+sqlc:
+	@$(call print, "Generating sql models and queries in Go")
+	cd ./gen; ./gen_sqlc_docker.sh
+
+sqlc-check: sqlc
+	@$(call print, "Verifying sql code generation.")
+	if test -n "$$(git status --porcelain '*.go')"; then echo "SQL models not properly generated!"; git status --porcelain '*.go'; exit 1; fi
 
 mock:
 	@$(call print, "Generating mock packages.")
