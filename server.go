@@ -951,7 +951,7 @@ func (s *Server) Start() error {
 // Stop shuts down the server, including all client connections and network
 // listeners.
 func (s *Server) Stop() error {
-	log.Info("Subasta server: Received shutdown signal, stopping server")
+	log.Info("Main server: Received shutdown signal, stopping server")
 
 	var stopErr error
 
@@ -995,7 +995,7 @@ func (s *Server) Stop() error {
 		}
 	})
 
-	log.Infof("Subasta server: %s", ShutdownCompleteLogMessage)
+	log.Infof("Main server: %s", ShutdownCompleteLogMessage)
 
 	return stopErr
 }
