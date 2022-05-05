@@ -122,6 +122,9 @@ const (
 	// certificate. The value corresponds to 14 months
 	// (14 months * 30 days * 24 hours).
 	DefaultAutogenValidity = 14 * 30 * 24 * time.Hour
+
+	networkRegtest   = "regtest"
+	etcdUserEmbedded = "embedded"
 )
 
 var (
