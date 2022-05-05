@@ -39,6 +39,10 @@ jobs:
 
       - name: run check
         run: make rpc-check
+      
+      - name: compile regtest binary
+        run: make regtest-build
+
 
   ############################
   # Mock generation and check 

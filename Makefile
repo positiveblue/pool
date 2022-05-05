@@ -46,6 +46,10 @@ endif
 make_ldflags = -ldflags "-X $(LND_PKG)/build.RawTags=$(shell echo $(1) | sed -e 's/ /,/g')"
 LND_ITEST_LDFLAGS := $(call make_ldflags, $(ITEST_TAGS))
 
+# Remove as much debug information as possible with the -s (remove symbol table)
+# and the -w (omit DWARF symbol table) flags.
+REGTEST_LDFLAGS = -s -w -buildid= -X $(PKG).Commit=regtest
+
 LINT = $(LINT_BIN) run -v $(LINT_WORKERS)
 
 GREEN := "\\033[0;32m"
@@ -94,6 +98,11 @@ install:
 	@$(call print, "Installing auction server and cli.")
 	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
+
+regtest-build:
+	@$(call print, "Building stripped down regtest only binary of auction server.")
+	$(GOBUILD) -trimpath -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctionserver-regtest $(PKG)/cmd/auctionserver
+	$(GOBUILD) -trimpath -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctioncli-regtest $(PKG)/cmd/auctioncli
 
 scratch: build
 
