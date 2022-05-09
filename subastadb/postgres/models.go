@@ -75,6 +75,22 @@ type AuctioneerAccount struct {
 	OutPointIndex       int64
 }
 
+type LifetimePackage struct {
+	ChannelPointString  string
+	ChannelPointHash    []byte
+	ChannelPointIndex   int64
+	ChannelScript       []byte
+	HeightHint          int64
+	MaturityHeight      int64
+	Version             int16
+	AskAccountKey       []byte
+	BidAccountKey       []byte
+	AskNodeKey          []byte
+	BidNodeKey          []byte
+	AskPaymentBasePoint []byte
+	BidPaymentBasePoint []byte
+}
+
 type NodeBan struct {
 	ID           int64
 	Disabled     bool
