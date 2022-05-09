@@ -45,7 +45,7 @@ func TestBatchesSQL(t *testing.T) {
 	defer f.TearDown(t)
 
 	f.ClearDB(t)
-	store := f.NewSQLStore(t)
+	store := f.NewSQLGORMStore(t)
 
 	batches := makeTestOrderBatches(context.TODO(), t, nil)
 	// Postgres doesn't have nanosec timestamps, so we truncate our test

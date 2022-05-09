@@ -16,7 +16,7 @@ func TestAccountsSQL(t *testing.T) {
 	defer f.TearDown(t)
 
 	f.ClearDB(t)
-	store := f.NewSQLStore(t)
+	store := f.NewSQLGORMStore(t)
 
 	err := store.Transaction(context.TODO(), func(tx *SQLTransaction) error {
 		require.NoError(t, tx.UpdateAccount(&testAccount))

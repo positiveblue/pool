@@ -101,7 +101,7 @@ func (s *SQLTransaction) GetTraderTerms(
 // our SQL database. It does not return any errors to not block normal
 // processing as we only intend to mirror into SQL and our main source of truth
 // is etcd.
-func UpdateTraderTermsSQL(ctx context.Context, store *SQLStore,
+func UpdateTraderTermsSQL(ctx context.Context, store *SQLGORMStore,
 	terms ...*traderterms.Custom) {
 
 	if store == nil || len(terms) == 0 {

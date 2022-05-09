@@ -19,19 +19,19 @@ type SQLConfig struct {
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
 }
 
-// SQLStore is the main object to communicate with the SQL db.
-type SQLStore struct {
+// SQLGORMStore is the main object to communicate with the SQL db.
+type SQLGORMStore struct {
 	db *gorm.DB
 }
 
-// NewSQLStore constructs a new SQLStore.
-func NewSQLStore(cfg *SQLConfig) (*SQLStore, error) {
+// NewSQLGORMStore constructs a new SQLGORMStore.
+func NewSQLGORMStore(cfg *SQLConfig) (*SQLGORMStore, error) {
 	db, err := openPostgresDB(cfg)
 	if err != nil {
 		return nil, err
 	}
 
-	return &SQLStore{db: db}, nil
+	return &SQLGORMStore{db: db}, nil
 }
 
 // openPostgresDB opens a PostreSQL database and initializes the tables
@@ -95,7 +95,7 @@ type SQLTransaction struct {
 }
 
 // Transaction starts and attempts to commit an SQL transaction.
-func (s *SQLStore) Transaction(ctx context.Context,
+func (s *SQLGORMStore) Transaction(ctx context.Context,
 	apply func(tx *SQLTransaction) error) error {
 
 	return s.db.WithContext(ctx).Transaction(func(dbTx *gorm.DB) error {

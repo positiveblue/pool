@@ -23,7 +23,7 @@ func TestOrdersSQL(t *testing.T) {
 	defer f.TearDown(t)
 
 	f.ClearDB(t)
-	store := f.NewSQLStore(t)
+	store := f.NewSQLGORMStore(t)
 
 	testBid := &order.Bid{
 		Bid: orderT.Bid{

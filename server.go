@@ -448,9 +448,9 @@ func NewServer(cfg *Config, // nolint:gocyclo
 	}
 
 	// Attempt to create a new SQL connection for data optional mirroring.
-	var sqlStore *subastadb.SQLStore
+	var sqlStore *subastadb.SQLGORMStore
 	if cfg.SQLMirror {
-		sqlStore, err = subastadb.NewSQLStore(cfg.SQL)
+		sqlStore, err = subastadb.NewSQLGORMStore(cfg.SQL)
 		if err != nil {
 			return nil, err
 		}

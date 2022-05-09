@@ -271,7 +271,7 @@ func (s *SQLTransaction) GetAccount(traderKey *btcec.PublicKey) (
 // UpdateAccountsSQL is a helper to insert or update accounts into our SQL
 // database. It does not return any errors to not block normal processing as
 // we only intend to mirror into SQL and our main source of truth is etcd.
-func UpdateAccountsSQL(ctx context.Context, store *SQLStore,
+func UpdateAccountsSQL(ctx context.Context, store *SQLGORMStore,
 	accounts ...*account.Account) {
 
 	if store == nil || len(accounts) == 0 {

@@ -406,7 +406,7 @@ func (s *SQLTransaction) GetBid(nonce orderT.Nonce) ( // nolint: interfacer
 // UpdateOrdersSQL is a helper to insert or update orders into our SQL database.
 // It does not return any errors to not block normal processing as we only
 // intend to mirror into SQL and our main source of truth is etcd.
-func UpdateOrdersSQL(ctx context.Context, store *SQLStore,
+func UpdateOrdersSQL(ctx context.Context, store *SQLGORMStore,
 	orders ...order.ServerOrder) {
 
 	if store == nil || len(orders) == 0 {
