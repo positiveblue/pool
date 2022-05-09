@@ -111,6 +111,47 @@ type NodeRating struct {
 	NodeTier int64
 }
 
+type Order struct {
+	Nonce            []byte
+	Type             int16
+	TraderKey        []byte
+	Version          int64
+	State            int16
+	FixedRate        int64
+	Amount           int64
+	Units            int64
+	UnitsUnfulfilled int64
+	MinUnitsMatch    int64
+	MaxBatchFeeRate  int64
+	LeaseDuration    int64
+	ChannelType      int16
+	Signature        []byte
+	MultisigKey      []byte
+	NodeKey          []byte
+	TokenID          []byte
+	UserAgent        string
+	Archived         bool
+}
+
+type OrderAllowedNodeID struct {
+	Nonce   []byte
+	NodeKey []byte
+	Allowed bool
+}
+
+type OrderBid struct {
+	Nonce           []byte
+	MinNodeTier     int64
+	SelfChanBalance int64
+	IsSidecar       bool
+}
+
+type OrderNodeNetworkAddress struct {
+	Nonce   []byte
+	Network string
+	Address string
+}
+
 type TarderTerm struct {
 	TokenID []byte
 	BaseFee sql.NullInt64
