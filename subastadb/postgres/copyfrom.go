@@ -9,6 +9,131 @@ import (
 	"context"
 )
 
+// iteratorForCreateBatchAccountDiff implements pgx.CopyFromSource.
+type iteratorForCreateBatchAccountDiff struct {
+	rows                 []CreateBatchAccountDiffParams
+	skippedFirstNextCall bool
+}
+
+func (r *iteratorForCreateBatchAccountDiff) Next() bool {
+	if len(r.rows) == 0 {
+		return false
+	}
+	if !r.skippedFirstNextCall {
+		r.skippedFirstNextCall = true
+		return true
+	}
+	r.rows = r.rows[1:]
+	return len(r.rows) > 0
+}
+
+func (r iteratorForCreateBatchAccountDiff) Values() ([]interface{}, error) {
+	return []interface{}{
+		r.rows[0].BatchKey,
+		r.rows[0].TraderKey,
+		r.rows[0].TraderBatchKey,
+		r.rows[0].TraderNextBatchKey,
+		r.rows[0].Secret,
+		r.rows[0].TotalExecutionFeesPaid,
+		r.rows[0].TotalTakerFeesPaid,
+		r.rows[0].TotalMakerFeesAccrued,
+		r.rows[0].NumChansCreated,
+		r.rows[0].StartingBalance,
+		r.rows[0].StartingAccountExpiry,
+		r.rows[0].StartingOutPointHash,
+		r.rows[0].StartingOutPointIndex,
+		r.rows[0].EndingBalance,
+		r.rows[0].NewAccountExpiry,
+		r.rows[0].TxOutValue,
+		r.rows[0].TxOutPkscript,
+	}, nil
+}
+
+func (r iteratorForCreateBatchAccountDiff) Err() error {
+	return nil
+}
+
+//- Batch Account Diff Queries ---
+func (q *Queries) CreateBatchAccountDiff(ctx context.Context, arg []CreateBatchAccountDiffParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"batch_account_diffs"}, []string{"batch_key", "trader_key", "trader_batch_key", "trader_next_batch_key", "secret", "total_execution_fees_paid", "total_taker_fees_paid", "total_maker_fees_accrued", "num_chans_created", "starting_balance", "starting_account_expiry", "starting_out_point_hash", "starting_out_point_index", "ending_balance", "new_account_expiry", "tx_out_value", "tx_out_pkscript"}, &iteratorForCreateBatchAccountDiff{rows: arg})
+}
+
+// iteratorForCreateClearingPrice implements pgx.CopyFromSource.
+type iteratorForCreateClearingPrice struct {
+	rows                 []CreateClearingPriceParams
+	skippedFirstNextCall bool
+}
+
+func (r *iteratorForCreateClearingPrice) Next() bool {
+	if len(r.rows) == 0 {
+		return false
+	}
+	if !r.skippedFirstNextCall {
+		r.skippedFirstNextCall = true
+		return true
+	}
+	r.rows = r.rows[1:]
+	return len(r.rows) > 0
+}
+
+func (r iteratorForCreateClearingPrice) Values() ([]interface{}, error) {
+	return []interface{}{
+		r.rows[0].BatchKey,
+		r.rows[0].LeaseDuration,
+		r.rows[0].FixedRatePremium,
+	}, nil
+}
+
+func (r iteratorForCreateClearingPrice) Err() error {
+	return nil
+}
+
+//- Clearing Price Queries ---
+func (q *Queries) CreateClearingPrice(ctx context.Context, arg []CreateClearingPriceParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"batch_clearing_prices"}, []string{"batch_key", "lease_duration", "fixed_rate_premium"}, &iteratorForCreateClearingPrice{rows: arg})
+}
+
+// iteratorForCreateMatchedOrder implements pgx.CopyFromSource.
+type iteratorForCreateMatchedOrder struct {
+	rows                 []CreateMatchedOrderParams
+	skippedFirstNextCall bool
+}
+
+func (r *iteratorForCreateMatchedOrder) Next() bool {
+	if len(r.rows) == 0 {
+		return false
+	}
+	if !r.skippedFirstNextCall {
+		r.skippedFirstNextCall = true
+		return true
+	}
+	r.rows = r.rows[1:]
+	return len(r.rows) > 0
+}
+
+func (r iteratorForCreateMatchedOrder) Values() ([]interface{}, error) {
+	return []interface{}{
+		r.rows[0].BatchKey,
+		r.rows[0].AskOrderNonce,
+		r.rows[0].BidOrderNonce,
+		r.rows[0].LeaseDuration,
+		r.rows[0].MatchingRate,
+		r.rows[0].TotalSatsCleared,
+		r.rows[0].UnitsMatched,
+		r.rows[0].UnitsUnmatched,
+		r.rows[0].FulfillType,
+	}, nil
+}
+
+func (r iteratorForCreateMatchedOrder) Err() error {
+	return nil
+}
+
+//- Matched Order Queries ---
+func (q *Queries) CreateMatchedOrder(ctx context.Context, arg []CreateMatchedOrderParams) (int64, error) {
+	return q.db.CopyFrom(ctx, []string{"batch_matched_orders"}, []string{"batch_key", "ask_order_nonce", "bid_order_nonce", "lease_duration", "matching_rate", "total_sats_cleared", "units_matched", "units_unmatched", "fulfill_type"}, &iteratorForCreateMatchedOrder{rows: arg})
+}
+
 // iteratorForCreateOrderAllowedNodeIds implements pgx.CopyFromSource.
 type iteratorForCreateOrderAllowedNodeIds struct {
 	rows                 []CreateOrderAllowedNodeIdsParams

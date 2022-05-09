@@ -77,6 +77,60 @@ type AuctioneerAccount struct {
 	OutPointIndex       int64
 }
 
+type Batch struct {
+	BatchKey              []byte
+	BatchTx               []byte
+	BatchTxFee            int64
+	Version               int64
+	AuctioneerFeesAccrued int64
+	Confirmed             bool
+	CreatedAt             sql.NullTime
+}
+
+type BatchAccountDiff struct {
+	BatchKey               []byte
+	TraderKey              []byte
+	TraderBatchKey         []byte
+	TraderNextBatchKey     []byte
+	Secret                 []byte
+	TotalExecutionFeesPaid int64
+	TotalTakerFeesPaid     int64
+	TotalMakerFeesAccrued  int64
+	NumChansCreated        int64
+	StartingBalance        int64
+	StartingAccountExpiry  int64
+	StartingOutPointHash   []byte
+	StartingOutPointIndex  int64
+	EndingBalance          int64
+	NewAccountExpiry       int64
+	TxOutValue             sql.NullInt64
+	TxOutPkscript          []byte
+}
+
+type BatchClearingPrice struct {
+	BatchKey         []byte
+	LeaseDuration    int64
+	FixedRatePremium int64
+}
+
+type BatchMatchedOrder struct {
+	BatchKey         []byte
+	AskOrderNonce    []byte
+	BidOrderNonce    []byte
+	LeaseDuration    int64
+	MatchingRate     int64
+	TotalSatsCleared int64
+	UnitsMatched     int64
+	UnitsUnmatched   int64
+	FulfillType      int16
+}
+
+type CurrentBatchKey struct {
+	ID        int64
+	BatchKey  []byte
+	UpdatedAt sql.NullTime
+}
+
 type LeaseDuration struct {
 	Duration int64
 	State    int16
