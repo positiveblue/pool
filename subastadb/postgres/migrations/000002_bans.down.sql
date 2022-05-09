@@ -1,0 +1,2 @@
+DROP TABLE IF EXISTS node_bans;
+DROP TABLE IF EXISTS account_bans;

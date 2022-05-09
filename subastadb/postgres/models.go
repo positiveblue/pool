@@ -24,6 +24,14 @@ type Account struct {
 	UserAgent           string
 }
 
+type AccountBan struct {
+	ID           int64
+	Disabled     bool
+	TraderKey    []byte
+	ExpiryHeight int64
+	Duration     int64
+}
+
 type AccountDiff struct {
 	ID                  int64
 	TraderKey           []byte
@@ -65,4 +73,12 @@ type AuctioneerAccount struct {
 	AuctioneerPublicKey []byte
 	OutPointHash        []byte
 	OutPointIndex       int64
+}
+
+type NodeBan struct {
+	ID           int64
+	Disabled     bool
+	NodeKey      []byte
+	ExpiryHeight int64
+	Duration     int64
 }
