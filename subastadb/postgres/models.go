@@ -103,3 +103,8 @@ type NodeBan struct {
 	ExpiryHeight int64
 	Duration     int64
 }
+
+type NodeRating struct {
+	NodeKey  []byte
+	NodeTier int64
+}
