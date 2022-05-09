@@ -4,7 +4,9 @@
 
 package postgres
 
-import ()
+import (
+	"database/sql"
+)
 
 type Account struct {
 	TraderKey           []byte
@@ -107,4 +109,10 @@ type NodeBan struct {
 type NodeRating struct {
 	NodeKey  []byte
 	NodeTier int64
+}
+
+type TarderTerm struct {
+	TokenID []byte
+	BaseFee sql.NullInt64
+	FeeRate sql.NullInt64
 }
