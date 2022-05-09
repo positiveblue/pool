@@ -75,6 +75,11 @@ type AuctioneerAccount struct {
 	OutPointIndex       int64
 }
 
+type LeaseDuration struct {
+	Duration int64
+	State    int16
+}
+
 type LifetimePackage struct {
 	ChannelPointString  string
 	ChannelPointHash    []byte
