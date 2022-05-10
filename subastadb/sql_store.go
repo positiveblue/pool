@@ -67,6 +67,9 @@ type SQLStore struct {
 	queries *postgres.Queries
 }
 
+// Make sure that SQLStore implements the Store interface.
+var _ Store = (*SQLStore)(nil)
+
 // NewSQLStore constructs a new SQLStore.
 func NewSQLStore(ctx context.Context, cfg *SQLConfig) (*SQLStore, error) {
 	log.Infof("Using SQL database '%s'", cfg.DSN(true))
