@@ -4,6 +4,7 @@ import (
 	"context"
 
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/ratings"
 )
 
 // IndexRatings indexes the set of ratings to get the most up to date
@@ -31,4 +32,11 @@ func (s *SQLStore) ModifyNodeRating(context.Context, [33]byte,
 	orderT.NodeTier) error {
 
 	return ErrNotImplemented
+}
+
+// NodeRatings returns a map of all node ratings known to the database.
+func (s *SQLStore) NodeRatings(ctx context.Context) (ratings.NodeRatingsMap,
+	error) {
+
+	return nil, ErrNotImplemented
 }

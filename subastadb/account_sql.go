@@ -85,3 +85,24 @@ func (s *SQLStore) CommitAccountDiff(context.Context,
 
 	return ErrNotImplemented
 }
+
+// UpdateAccountDiff updates an account's pending diff.
+func (s *SQLStore) UpdateAccountDiff(ctx context.Context,
+	accountKey *btcec.PublicKey, modifiers []account.Modifier) error {
+
+	return ErrNotImplemented
+}
+
+// DeleteAccountDiff deletes an account's pending diff.
+func (s *SQLStore) DeleteAccountDiff(ctx context.Context,
+	accountKey *btcec.PublicKey) error {
+
+	return ErrNotImplemented
+}
+
+// RemoveReservation deletes a reservation identified by the LSAT ID.
+func (s *SQLStore) RemoveReservation(ctx context.Context,
+	id lsat.TokenID) error {
+
+	return ErrNotImplemented
+}

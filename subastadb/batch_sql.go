@@ -48,3 +48,10 @@ func (s *SQLStore) BatchConfirmed(context.Context, orderT.BatchID) (bool, error)
 
 	return false, ErrNotImplemented
 }
+
+// Batches retrieves all existing batches.
+func (s *SQLStore) Batches(
+	ctx context.Context) (map[orderT.BatchID]*BatchSnapshot, error) {
+
+	return nil, ErrNotImplemented
+}
