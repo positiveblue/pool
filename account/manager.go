@@ -194,10 +194,10 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 
 	// Check whether we have an existing reservation already.
 	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
-	switch err {
+	switch {
 	// If we do, make sure the existing reservation is for the same account
 	// being reserved.
-	case nil:
+	case err == nil:
 		var resTraderKey [33]byte
 		copy(resTraderKey[:], params.TraderKey.SerializeCompressed())
 		if reservation.TraderKeyRaw != resTraderKey {
@@ -210,7 +210,7 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 		return reservation, nil
 
 	// If we don't, proceed to make a new reservation below.
-	case ErrNoReservation:
+	case errors.Is(err, ErrNoReservation):
 		break
 
 	default:
@@ -306,7 +306,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 	//      received it.
 	//      TODO(wilmer): Verify that we have the account on-disk?
 	reservation, err := m.cfg.Store.HasReservation(ctx, *tokenID)
-	if err == ErrNoReservation {
+	if errors.Is(err, ErrNoReservation) {
 		// In case the trader lost its state, including the LSAT, it
 		// might be possible that there still is a reservation with
 		// another token but the same key. We want to allow this so the
@@ -316,7 +316,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 		)
 
 		// Still no reservation? Then we don't care.
-		if err == ErrNoReservation {
+		if errors.Is(err, ErrNoReservation) {
 			return nil
 		}
 	}

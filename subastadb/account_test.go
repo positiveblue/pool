@@ -118,7 +118,7 @@ func TestAccountReservation(t *testing.T) {
 
 	// A reservation hasn't been created yet, so we shouldn't find one.
 	_, err := store.HasReservation(ctx, testTokenID)
-	if err != account.ErrNoReservation {
+	if !errors.Is(err, account.ErrNoReservation) {
 		t.Fatalf("expected ErrNoReservation, got \"%v\"", err)
 	}
 
@@ -153,7 +153,7 @@ func TestAccountReservation(t *testing.T) {
 		t.Fatalf("unable to complete reservation: %v", err)
 	}
 	_, err = store.HasReservation(ctx, testTokenID)
-	if err != account.ErrNoReservation {
+	if !errors.Is(err, account.ErrNoReservation) {
 		t.Fatalf("expected ErrNoReservation, got \"%v\"", err)
 	}
 
@@ -209,7 +209,7 @@ func TestAccountAlreadyExists(t *testing.T) {
 
 	// Assert that CompleteReservation now fails with ErrAccountExists.
 	err = store.CompleteReservation(ctx, &a)
-	if err != account.ErrAccountExists {
+	if !errors.Is(err, account.ErrAccountExists) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
@@ -340,7 +340,7 @@ func TestAccountDiffs(t *testing.T) {
 	// ErrNoDiff should be returned if we call CommitAccountDiff without a
 	// diff being present.
 	err = store.CommitAccountDiff(ctx, traderKey)
-	if err != account.ErrNoDiff {
+	if !errors.Is(err, account.ErrNoDiff) {
 		t.Fatalf("expected error %q, got %q", account.ErrNoDiff, err)
 	}
 
@@ -369,7 +369,9 @@ func TestAccountDiffs(t *testing.T) {
 	}
 	aDiff := a.Copy(mods...)
 	if !reflect.DeepEqual(accountWithDiff, aDiff) {
-		t.Fatal("stored account diff does not match expected")
+		t.Fatalf("expected account diff: %v\ngot: %v",
+			spew.Sdump(aDiff),
+			spew.Sdump(accountWithDiff))
 	}
 
 	// Querying all accounts while one of them has a diff should also not
@@ -382,7 +384,7 @@ func TestAccountDiffs(t *testing.T) {
 	// Storing a diff while we already have one should result in
 	// ErrAccountDiffAlreadyExists.
 	err = store.StoreAccountDiff(ctx, traderKey, mods)
-	if err != ErrAccountDiffAlreadyExists {
+	if !errors.Is(err, ErrAccountDiffAlreadyExists) {
 		t.Fatalf("expected error %q, got %q",
 			ErrAccountDiffAlreadyExists, err)
 	}
@@ -397,7 +399,9 @@ func TestAccountDiffs(t *testing.T) {
 		t.Fatalf("unable to retrieve account: %v", err)
 	}
 	if !reflect.DeepEqual(committedAccount, aDiff) {
-		t.Fatal("committed account does not match expected")
+		t.Fatalf("expected committed account: %v\ngot: %v",
+			spew.Sdump(aDiff),
+			spew.Sdump(committedAccount))
 	}
 
 	// Attempt to store another diff, to ensure the previous one was
@@ -437,7 +441,7 @@ func TestAccountDiffs(t *testing.T) {
 	// We shouldn't be able to update an account diff after it no longer
 	// exists.
 	err = store.UpdateAccountDiff(ctx, traderKey, diffMods)
-	if err != account.ErrNoDiff {
+	if !errors.Is(err, account.ErrNoDiff) {
 		t.Fatalf("expteced ErrNoDiff, got %v", err)
 	}
 }
