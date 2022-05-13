@@ -15,44 +15,6 @@ import (
 	"github.com/urfave/cli"
 )
 
-var auctionCommands = []cli.Command{
-	{
-		Name:      "auction",
-		ShortName: "a",
-		Usage:     "Interact with the auction.",
-		Category:  "Auction",
-		Subcommands: []cli.Command{
-			listConnectedTradersCommand,
-			listBatchesCommand,
-			listOrdersCommand,
-			listArchivedOrdersCommand,
-			accountDetailsCommand,
-			listAccountsCommand,
-			editAccountCommand,
-			deleteAccountDiffCommand,
-			listBansCommand,
-			batchTickCommand,
-			pauseBatchTickerCommand,
-			resumeBatchTickerCommand,
-			bumpBatchFeeRateCommand,
-			statusCommand,
-			batchSnapshotCommand,
-			removeBanCommand,
-			addBanCommand,
-			removeReservationCommand,
-			listConflictsCommand,
-			clearConflictsCommand,
-			modifyNodeRatingsCommand,
-			listNodeRatingsCommand,
-			storeLeaseDuration,
-			removeLeaseDuration,
-			listTraderTermsCommand,
-			storeTraderTermsCommand,
-			removeTraderTermsCommand,
-		},
-	},
-}
-
 var listConnectedTradersCommand = cli.Command{
 	Name:      "listtraders",
 	ShortName: "lt",

@@ -8,18 +8,6 @@ import (
 	"github.com/urfave/cli"
 )
 
-var masterAccountCommands = []cli.Command{
-	{
-		Name:      "masteraccount",
-		ShortName: "m",
-		Usage:     "Interact with the master account.",
-		Category:  "Master Account",
-		Subcommands: []cli.Command{
-			showMasterAccountCommand,
-		},
-	},
-}
-
 var showMasterAccountCommand = cli.Command{
 	Name:        "show",
 	ShortName:   "s",

@@ -27,21 +27,6 @@ const (
 	zipFileName = "pool_accounting_%s.zip"
 )
 
-var adminCommands = []cli.Command{
-	{
-		Name:      "admin",
-		ShortName: "adm",
-		Usage:     "Server maintenance and administration.",
-		Category:  "Maintenance",
-		Subcommands: []cli.Command{
-			mirrorDatabaseCommand,
-			financialReportCommand,
-			shutdownCommand,
-			setStatusCommand,
-		},
-	},
-}
-
 var mirrorDatabaseCommand = cli.Command{
 	Name:        "mirror",
 	ShortName:   "m",

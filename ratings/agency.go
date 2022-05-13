@@ -132,6 +132,10 @@ type MemRatingsDatabase struct {
 	// database applied to it as well.
 	writeThroughDB NodeRatingsDatabase
 
+	// fallbackTier is the default tier we return if a node isn't found in
+	// the node ratings map.
+	fallbackTier orderT.NodeTier
+
 	// scrapeUpdates is an option channel that will be sent across each
 	// time an update is made to the database.
 	scrapeUpdates chan<- struct{}
@@ -145,7 +149,7 @@ type NodeRatingsMap map[[33]byte]orderT.NodeTier
 // purely by an initially in-memory source. The writeThroughDB is an optional
 // existing database to have all modifications replicated to.
 func NewMemRatingsDatabase(writeThroughDB NodeRatingsDatabase,
-	seedRatings NodeRatingsMap,
+	seedRatings NodeRatingsMap, fallbackTier orderT.NodeTier,
 	scrapeUpdates chan<- struct{}) *MemRatingsDatabase {
 
 	nodeTierCache := make(NodeRatingsMap)
@@ -156,6 +160,7 @@ func NewMemRatingsDatabase(writeThroughDB NodeRatingsDatabase,
 	return &MemRatingsDatabase{
 		nodeTierCache:  nodeTierCache,
 		writeThroughDB: writeThroughDB,
+		fallbackTier:   fallbackTier,
 		scrapeUpdates:  scrapeUpdates,
 	}
 }
@@ -223,7 +228,7 @@ func (m *MemRatingsDatabase) LookupNode(ctx context.Context,
 	// with.
 	rating, ok := m.nodeTierCache[nodeKey]
 	if !ok {
-		return orderT.NodeTier0, false
+		return m.fallbackTier, false
 	}
 
 	return rating, ok
@@ -253,18 +258,23 @@ type BosScoreRatingsDatabase struct {
 	// ratingsDB is the backing DB that we'll read/write our bos scores
 	// to/from.
 	ratingsDB NodeRatingsDatabase
+
+	// fallbackTier is the default tier we return if a node isn't found in
+	// the node ratings map.
+	fallbackTier orderT.NodeTier
 }
 
 // NewBosScoreRatingsDatabase returns a new instance of the
 // BosScoreRatingsDatabase.
 func NewBosScoreRatingsDatabase(webSource NodeRatingWebSource,
-	refreshInterval time.Duration,
+	refreshInterval time.Duration, fallbackTier orderT.NodeTier,
 	ratingsDB NodeRatingsDatabase) *BosScoreRatingsDatabase {
 
 	return &BosScoreRatingsDatabase{
 		webSource:       webSource,
 		refreshInterval: refreshInterval,
 		ratingsDB:       ratingsDB,
+		fallbackTier:    fallbackTier,
 	}
 }
 
@@ -404,7 +414,7 @@ func (m *BosScoreRatingsDatabase) LookupNode(ctx context.Context,
 	nodeKey [33]byte) (orderT.NodeTier, bool) {
 
 	if _, ok := m.ratingsDB.LookupNode(ctx, nodeKey); !ok {
-		return orderT.NodeTier0, true
+		return m.fallbackTier, true
 	}
 
 	return orderT.NodeTier1, true

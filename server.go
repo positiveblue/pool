@@ -6,6 +6,8 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
+	"net/url"
+	"path"
 	"regexp"
 	"sync"
 	"sync/atomic"
@@ -36,6 +38,7 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
+	"go.etcd.io/etcd/server/v3/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -453,6 +456,34 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		}
 	}
 
+	// If we're in regtest only mode, spin up an embedded etcd server.
+	if cfg.Network == networkRegtest && cfg.Etcd.User == etcdUserEmbedded {
+		etcdCfg := embed.NewConfig()
+		etcdCfg.Logger = "zap"
+		etcdCfg.LogLevel = "error"
+		etcdCfg.Dir = path.Join(cfg.BaseDir, "etcd")
+		etcdCfg.LCUrls = []url.URL{{Host: cfg.Etcd.Host}}
+		etcdCfg.LPUrls = []url.URL{{Host: "127.0.0.1:9126"}}
+
+		// Set empty username and password to avoid an error being
+		// being logged about authentication not being enabled.
+		cfg.Etcd.User = ""
+		cfg.Etcd.Password = ""
+
+		etcdServer, err := embed.StartEtcd(etcdCfg)
+		if err != nil {
+			return nil, err
+		}
+
+		select {
+		case <-etcdServer.Server.ReadyNotify():
+		case <-time.After(5 * time.Second):
+			etcdServer.Close()
+			return nil, fmt.Errorf("etcd server took too long to" +
+				"start")
+		}
+	}
+
 	// Next, we'll open our primary connection to the main backing
 	// database.
 	store, err := subastadb.NewEtcdStore(
@@ -537,10 +568,7 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, fmt.Errorf("conf target must be greater than 0")
 	}
 
-	var (
-		ratingsAgency ratings.Agency
-		ratingsDB     ratings.NodeRatingsDatabase
-	)
+	var ratingsDB ratings.NodeRatingsDatabase
 
 	// We'll always use an in-memory ratings DB that writes through to the
 	// etcd store.
@@ -550,14 +578,15 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, fmt.Errorf("unable to retrieve stored node "+
 			"ratings: %v", err)
 	}
-	ratingsDB = ratings.NewMemRatingsDatabase(store, nodeRatings, nil)
-	ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
+	ratingsDB = ratings.NewMemRatingsDatabase(
+		store, nodeRatings, cfg.DefaultNodeTier, nil,
+	)
 
 	// We'll only activate the BOS score backed ratings agency if it has
 	// been flipped on in the config. In contexts like testnet or regtest,
 	// we don't have an instance of bos scores to point to but we can still
 	// manually edit the ratings through the admin RPC.
-	if cfg.NodeRatingsActive && cfg.BosScoreWebURL != "" {
+	if cfg.ExternalNodeRatingsActive && cfg.BosScoreWebURL != "" {
 		log.Infof("Initializing BosScore backed RatingsAgency")
 
 		bosScoreWebScore := &ratings.BosScoreWebRatings{
@@ -565,11 +594,10 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		}
 		ratingsDB = ratings.NewBosScoreRatingsDatabase(
 			bosScoreWebScore, cfg.NodeRatingsRefreshInterval,
-			ratingsDB,
+			cfg.DefaultNodeTier, ratingsDB,
 		)
-
-		ratingsAgency = ratings.NewNodeTierAgency(ratingsDB)
 	}
+	ratingsAgency := ratings.NewNodeTierAgency(ratingsDB)
 
 	server := &Server{
 		cfg:            cfg,
@@ -951,7 +979,7 @@ func (s *Server) Start() error {
 // Stop shuts down the server, including all client connections and network
 // listeners.
 func (s *Server) Stop() error {
-	log.Info("Subasta server: Received shutdown signal, stopping server")
+	log.Info("Main server: Received shutdown signal, stopping server")
 
 	var stopErr error
 
@@ -995,7 +1023,7 @@ func (s *Server) Stop() error {
 		}
 	})
 
-	log.Infof("Subasta server: %s", ShutdownCompleteLogMessage)
+	log.Infof("Main server: %s", ShutdownCompleteLogMessage)
 
 	return stopErr
 }

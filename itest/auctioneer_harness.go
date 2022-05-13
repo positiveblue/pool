@@ -16,6 +16,7 @@ import (
 	"github.com/lightninglabs/aperture"
 	"github.com/lightninglabs/aperture/proxy"
 	"github.com/lightninglabs/pool/auctioneerrpc"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
@@ -101,16 +102,17 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			// score URL. As a result, all nodes will be seen as
 			// being in the lowest tier unless we manually set
 			// their scores.
-			NodeRatingsActive: true,
-			AllowFakeTokens:   true,
-			BaseDir:           cfg.BaseDir,
-			TLSCertPath:       subastaTLSPath,
-			TLSKeyPath:        path.Join(cfg.BaseDir, "tls.key"),
-			ExecFeeBase:       subasta.DefaultExecutionFeeBase,
-			ExecFeeRate:       subasta.DefaultExecutionFeeRate,
-			BatchConfTarget:   6,
-			MaxAcctValue:      10 * btcutil.SatoshiPerBitcoin,
-			SubscribeTimeout:  500 * time.Millisecond,
+			ExternalNodeRatingsActive: true,
+			DefaultNodeTier:           orderT.NodeTier0,
+			AllowFakeTokens:           true,
+			BaseDir:                   cfg.BaseDir,
+			TLSCertPath:               subastaTLSPath,
+			TLSKeyPath:                path.Join(cfg.BaseDir, "tls.key"),
+			ExecFeeBase:               subasta.DefaultExecutionFeeBase,
+			ExecFeeRate:               subasta.DefaultExecutionFeeRate,
+			BatchConfTarget:           6,
+			MaxAcctValue:              10 * btcutil.SatoshiPerBitcoin,
+			SubscribeTimeout:          500 * time.Millisecond,
 			Lnd: &subasta.LndConfig{
 				Host:        cfg.LndNode.Cfg.RPCAddr(),
 				MacaroonDir: rpcMacaroonDir,

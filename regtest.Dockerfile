@@ -1,5 +1,5 @@
 # If you change this value, please change it in the following files as well:
-# /regtest.Dockerfile
+# /Dockerfile
 # /.github/workflows/main.yml
 FROM golang:1.17.2-alpine as builder
 
@@ -19,7 +19,7 @@ RUN apk add --no-cache --update alpine-sdk \
     git \
     make \
 &&  cd /go/src/github.com/lightninglabs/subasta \
-&&  make install
+&&  make regtest-build
 
 # Start a new, final image to reduce size.
 FROM alpine as final
@@ -30,8 +30,8 @@ EXPOSE 12009
 EXPOSE 13370
 
 # Copy over both the daemon and CLI binaries from the builder image.
-COPY --from=builder /go/bin/auctionserver /bin/
-COPY --from=builder /go/bin/auctioncli /bin/
+COPY --from=builder /go/src/github.com/lightninglabs/subasta/auctionserver-regtest /bin/auctionserver
+COPY --from=builder /go/src/github.com/lightninglabs/subasta/auctioncli-regtest /bin/auctioncli
 
 # Add bash.
 RUN apk add --no-cache \

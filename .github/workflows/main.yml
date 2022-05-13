@@ -19,8 +19,8 @@ env:
   GO111MODULE: on
 
   # If you change this value, please change it in the following files as well:
-  # /.travis.yml
   # /Dockerfile
+  # /regtest.Dockerfile
   GO_VERSION: 1.17.2
 
 jobs:
@@ -39,6 +39,10 @@ jobs:
 
       - name: run check
         run: make rpc-check
+      
+      - name: compile regtest binary
+        run: make regtest-build
+
 
   ############################
   # Mock generation and check 
@@ -165,4 +169,45 @@ jobs:
         with:
           name: logs-itest
           path: logs-itest.zip
+          retention-days: 5
+
+  ########################
+  # run garble integration tests
+  ########################
+  garble-integration-test:
+    name: run garble itests (regtest build)
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: go cache
+        uses: actions/cache@v1
+        with:
+          path: /home/runner/work/go
+          key: subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
+            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            subasta-${{ runner.os }}-go-
+
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: '~${{ env.GO_VERSION }}'
+
+      - name: run itest garble
+        run: make itest-garble
+
+      - name: Zip log files on failure
+        if: ${{ failure() }}
+        run: 7z a logs-itest-garble.zip itest/**/*.log
+
+      - name: Upload log files on failure
+        uses: actions/upload-artifact@v2.2.4
+        if: ${{ failure() }}
+        with:
+          name: logs-itest-garble
+          path: logs-itest-garble.zip
           retention-days: 5
