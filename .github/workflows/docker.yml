@@ -49,12 +49,12 @@ jobs:
         run: echo ${{ steps.docker_build.outputs.digest }}
 
       - name: Build and push
-        id: docker_build
+        id: docker_build_regtest
         uses: docker/build-push-action@v2
         with:
           file: regtest.Dockerfile
           push: true
           tags: "${{ env.DOCKER_REPO }}/auctionserver:${{ env.RELEASE_VERSION }}-regtest-only"
 
-      - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+      - name: Image digest regtest
+        run: echo ${{ steps.docker_build_regtest.outputs.digest }}
