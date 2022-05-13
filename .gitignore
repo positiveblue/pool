@@ -55,3 +55,4 @@ profile.tmp
 /itest/regtest/*
 /itest/.backendlogs/*
 /itest/.minerlogs/*
+/itest/subasta-itest

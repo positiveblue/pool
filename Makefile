@@ -6,6 +6,7 @@ LND_PKG := github.com/lightningnetwork/lnd
 LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
 GOVERALLS_PKG := github.com/mattn/goveralls
 GOACC_PKG := github.com/ory/go-acc
+GARBLE_PKG := mvdan.cc/garble
 
 GO_BIN := ${GOPATH}/bin
 BTCD_BIN := $(GO_BIN)/btcd
@@ -13,17 +14,21 @@ LND_BIN := $(GO_BIN)/lnd
 GOVERALLS_BIN := $(GO_BIN)/goveralls
 LINT_BIN := $(GO_BIN)/golangci-lint
 GOACC_BIN := $(GO_BIN)/go-acc
+GARBLE_BIN := $(GO_BIN)/garble
 
 BTCD_DIR :=${GOPATH}/src/$(BTCD_PKG)
 LND_DIR := ${GOPATH}/src/$(LND_PKG)
 
 LINT_COMMIT := v1.18.0
 GOACC_COMMIT := ddc355013f90fea78d83d3a6c71f1d37ac07ecd5
+GARBLE_COMMIT := v0.6.0
 
-DEPGET := cd /tmp && go get -v
+DEPGET := go install -v
 GOBUILD := go build -v
 GOINSTALL := go install -v
 GOTEST := go test -v
+GARBLEBUILD := $(GARBLE_BIN) build -v
+GARBLETEST := $(GARBLE_BIN) test -v
 
 GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
 GOLIST := go list -deps $(PKG)/... | grep '$(PKG)'| grep -v '/vendor/'
@@ -78,6 +83,10 @@ $(GOACC_BIN):
 	@$(call print, "Fetching go-acc")
 	$(DEPGET) $(GOACC_PKG)@$(GOACC_COMMIT)
 
+$(GARBLE_BIN):
+	@$(call print, "Fetching garble")
+	$(DEPGET) $(GARBLE_PKG)@$(GARBLE_COMMIT)
+
 # ============
 # INSTALLATION
 # ============
@@ -99,10 +108,10 @@ install:
 	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
 
-regtest-build:
+regtest-build: $(GARBLE_BIN)
 	@$(call print, "Building stripped down regtest only binary of auction server.")
-	$(GOBUILD) -trimpath -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctionserver-regtest $(PKG)/cmd/auctionserver
-	$(GOBUILD) -trimpath -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctioncli-regtest $(PKG)/cmd/auctioncli
+	$(GARBLEBUILD) -trimpath -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctionserver-regtest $(PKG)/cmd/auctionserver
+	$(GARBLEBUILD) -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctioncli-regtest $(PKG)/cmd/auctioncli
 
 scratch: build
 
@@ -140,6 +149,18 @@ ifeq ($(UNAME_S),Darwin)
 endif
 	rm -rf itest/regtest; date
 	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
+
+itest-garble: $(GARBLE_BIN) build-itest
+	@$(call print, "Running integration tests with ${backend} backend.")
+ifeq ($(UNAME_S),Linux)
+	mkdir -p $$HOME/.aperture
+endif
+ifeq ($(UNAME_S),Darwin)
+	mkdir -p "$$HOME/Library/Application Support/Aperture"
+endif
+	rm -rf itest/regtest; date
+	$(GARBLETEST) -c -o itest/subasta-itest -tags="$(ITEST_TAGS)" ./itest
+	cd itest; ./subasta-itest -test.v $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
 
 # =============
 # FLAKE HUNTING
