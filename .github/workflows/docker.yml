@@ -54,7 +54,7 @@ jobs:
         with:
           file: regtest.Dockerfile
           push: true
-          tags: "${{ env.DOCKER_REPO }}/auctionserver:${{ env.RELEASE_VERSION }}-regtest-only"
+          tags: "${{ env.DOCKER_REPO }}/${{ env.DOCKER_IMAGE }}:${{ env.RELEASE_VERSION }}-regtest-only"
 
       - name: Image digest regtest
         run: echo ${{ steps.docker_build_regtest.outputs.digest }}
