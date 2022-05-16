@@ -14,25 +14,13 @@ import (
 func (s *SQLStore) BanAccount(ctx context.Context, accountKey *btcec.PublicKey,
 	info *ban.Info) error {
 
-	traderKey := accountKey.SerializeCompressed()
 	txBody := func(txQueries *postgres.Queries) error {
-		// Make sure that all the other bans are disabled.
-		_, err := txQueries.DisableAccountBan(ctx, traderKey)
-		if err != nil {
-			return err
-		}
-		expiryHeight := int64(info.Height) + int64(info.Duration)
-		params := postgres.CreateAccountBanParams{
-			Disabled:     false,
-			TraderKey:    traderKey,
-			ExpiryHeight: expiryHeight,
-			Duration:     int64(info.Duration),
-		}
-		return txQueries.CreateAccountBan(ctx, params)
+		return banAccountWithTx(ctx, txQueries, accountKey, info)
 	}
 
 	err := s.ExecTx(ctx, txBody)
 	if err != nil {
+		traderKey := accountKey.SerializeCompressed()
 		return fmt.Errorf("unable to ban account(%x): %v", traderKey,
 			err)
 	}
@@ -69,25 +57,13 @@ func (s *SQLStore) GetAccountBan(ctx context.Context,
 func (s *SQLStore) BanNode(ctx context.Context, nKey *btcec.PublicKey,
 	info *ban.Info) error {
 
-	nodeKey := nKey.SerializeCompressed()
 	txBody := func(txQueries *postgres.Queries) error {
-		// Make sure that all the other bans are disabled.
-		_, err := txQueries.DisableNodeBan(ctx, nodeKey)
-		if err != nil {
-			return err
-		}
-		expiryHeight := int64(info.Height) + int64(info.Duration)
-		params := postgres.CreateNodeBanParams{
-			Disabled:     false,
-			NodeKey:      nodeKey,
-			ExpiryHeight: expiryHeight,
-			Duration:     int64(info.Duration),
-		}
-		return txQueries.CreateNodeBan(ctx, params)
+		return banNodeWithTx(ctx, txQueries, nKey, info)
 	}
 
 	err := s.ExecTx(ctx, txBody)
 	if err != nil {
+		nodeKey := nKey.SerializeCompressed()
 		return fmt.Errorf("unable to ban node(%x): %v", nodeKey, err)
 	}
 	return nil
@@ -200,4 +176,50 @@ func (s *SQLStore) RemoveNodeBan(ctx context.Context,
 			nodeKey, err)
 	}
 	return nil
+}
+
+// banAccountWithTx inserts a new account ban using the provided queries
+// struct.
+func banAccountWithTx(ctx context.Context, txQueries *postgres.Queries,
+	accountKey *btcec.PublicKey, info *ban.Info) error {
+
+	traderKey := accountKey.SerializeCompressed()
+
+	// Make sure that all the other bans are disabled.
+	_, err := txQueries.DisableAccountBan(ctx, traderKey)
+	if err != nil {
+		return err
+	}
+
+	expiryHeight := int64(info.Height) + int64(info.Duration)
+	params := postgres.CreateAccountBanParams{
+		Disabled:     false,
+		TraderKey:    traderKey,
+		ExpiryHeight: expiryHeight,
+		Duration:     int64(info.Duration),
+	}
+	return txQueries.CreateAccountBan(ctx, params)
+}
+
+// banAccountWithTx inserts a new node ban using the provided queries
+// struct.
+func banNodeWithTx(ctx context.Context, txQueries *postgres.Queries,
+	nKey *btcec.PublicKey, info *ban.Info) error {
+
+	nodeKey := nKey.SerializeCompressed()
+
+	// Make sure that all the other bans are disabled.
+	_, err := txQueries.DisableNodeBan(ctx, nodeKey)
+	if err != nil {
+		return err
+	}
+
+	expiryHeight := int64(info.Height) + int64(info.Duration)
+	params := postgres.CreateNodeBanParams{
+		Disabled:     false,
+		NodeKey:      nodeKey,
+		ExpiryHeight: expiryHeight,
+		Duration:     int64(info.Duration),
+	}
+	return txQueries.CreateNodeBan(ctx, params)
 }

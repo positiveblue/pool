@@ -2,6 +2,7 @@ package subastadb
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
@@ -76,7 +77,7 @@ func TestLifetimePackages(t *testing.T) {
 	// Storing the same package again should result in
 	// ErrLifetimePackageAlreadyExists.
 	err := store.StoreLifetimePackage(ctx, pkg)
-	if err != ErrLifetimePackageAlreadyExists {
+	if !errors.Is(err, ErrLifetimePackageAlreadyExists) {
 		t.Fatalf("expected ErrLifetimePackageAlreadyExists, got \"%v\"",
 			err)
 	}
