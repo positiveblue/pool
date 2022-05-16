@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net"
 	"testing"
 
@@ -42,7 +43,7 @@ func TestSubmitOrder(t *testing.T) {
 	}
 	bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
 	_, err := store.GetOrder(ctxb, bid.Nonce())
-	if err != ErrNoOrder {
+	if !errors.Is(err, ErrNoOrder) {
 		t.Fatalf("unexpected error. got %v expected %v", err,
 			ErrNoOrder)
 	}
@@ -56,7 +57,8 @@ func TestSubmitOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	assertJSONDeepEqual(t, bid, storedOrder)
+
+	assertEqualStoredOrder(t, bid, storedOrder)
 
 	// Check that we got the correct type back.
 	if storedOrder.Type() != orderT.TypeBid {
@@ -74,7 +76,7 @@ func TestSubmitOrder(t *testing.T) {
 		t.Fatalf("unexpected number of orders. got %d expected %d",
 			len(allOrders), 1)
 	}
-	assertJSONDeepEqual(t, bid, allOrders[0])
+	assertEqualStoredOrder(t, bid, allOrders[0])
 
 	if allOrders[0].Type() != orderT.TypeBid {
 		t.Fatalf("unexpected order type. got %d expected %d",
@@ -83,7 +85,7 @@ func TestSubmitOrder(t *testing.T) {
 
 	// Finally, make sure we cannot submit the same order again.
 	err = store.SubmitOrder(ctxb, bid)
-	if err != ErrOrderExists {
+	if !errors.Is(err, ErrOrderExists) {
 		t.Fatalf("unexpected error. got %v expected %v", err,
 			ErrOrderExists)
 	}
@@ -105,7 +107,7 @@ func TestSubmitOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	assertJSONDeepEqual(t, bid, storedOrder)
+	assertEqualStoredOrder(t, bid, storedOrder)
 }
 
 // TestUpdateOrders tests that orders can be updated correctly.
@@ -196,16 +198,11 @@ func TestUpdateOrders(t *testing.T) {
 		etcdStore.updateOrderCache(cacheUpdates)
 	} else {
 		sqlStore := store.(*SQLStore)
-
-		n1, n2 := o1.Nonce(), o2.Nonce()
-		_, err := sqlStore.db.Exec(
-			ctxb, "UPDATE order SET state = $3 WHERE nonce in "+
-				"($1, $2)",
-			n1[:], n2[:], int16(orderT.StateExecuted),
-		)
-		if err != nil {
-			t.Fatalf("unable to update orders: %v", err)
-			require.NoError(t, err)
+		for _, nonce := range []orderT.Nonce{o1.Nonce(), o2.Nonce()} {
+			err := sqlStore.UpdateOrder(ctxb, nonce, stateModifier)
+			if err != nil {
+				require.NoError(t, err)
+			}
 		}
 	}
 
@@ -268,9 +265,24 @@ func TestUpdateOrders(t *testing.T) {
 	err = store.UpdateOrder(
 		ctxb, o3.Nonce(), order.StateModifier(orderT.StateExecuted),
 	)
-	if err != ErrNoOrder {
+	if !errors.Is(err, ErrNoOrder) {
 		t.Fatalf("unexpected error. got %v wanted %v", err, ErrNoOrder)
 	}
+}
+
+// assertEqualStoredOrder asserts that two server orders are equal removing
+// the orderT information that is not present in the server.
+func assertEqualStoredOrder(t *testing.T, expected, got order.ServerOrder) {
+	t.Helper()
+
+	preimage := expected.Details().Preimage
+	keyLocator := expected.Details().MultiSigKeyLocator
+
+	expected.Details().Preimage = got.Details().Preimage
+	expected.Details().MultiSigKeyLocator = got.Details().MultiSigKeyLocator
+	assertJSONDeepEqual(t, expected, got)
+	expected.Details().Preimage = preimage
+	expected.Details().MultiSigKeyLocator = keyLocator
 }
 
 // assertJSONDeepEqual deep compares two items for equality by both serializing
