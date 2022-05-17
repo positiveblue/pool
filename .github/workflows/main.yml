@@ -34,9 +34,6 @@ jobs:
       - name: git checkout
         uses: actions/checkout@v2
 
-      - name: docker image cache
-        uses: satackey/action-docker-layer-caching@v0.0.11
-
       - name: run check
         run: make rpc-check
       
@@ -54,9 +51,6 @@ jobs:
       - name: git checkout
         uses: actions/checkout@v2
 
-      - name: docker image cache
-        uses: satackey/action-docker-layer-caching@v0.0.11
-
       - name: Generate mocks
         run: make mock
 
@@ -72,9 +66,8 @@ jobs:
     steps:
       - name: git checkout
         uses: actions/checkout@v2
-
-      - name: Fetch all history for linter
-        run: git fetch --prune --unshallow
+        with:
+          fetch-depth: 0
 
       - name: go cache
         uses: actions/cache@v1
@@ -90,7 +83,7 @@ jobs:
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
         with:
-          go-version: '~${{ env.GO_VERSION }}'
+          go-version: '${{ env.GO_VERSION }}'
 
       - name: lint
         run: make lint
@@ -125,7 +118,7 @@ jobs:
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
         with:
-          go-version: '~${{ env.GO_VERSION }}'
+          go-version: '${{ env.GO_VERSION }}'
 
       - name: run ${{ matrix.unit_type }}
         run: make ${{ matrix.unit_type }}
@@ -154,7 +147,7 @@ jobs:
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
         with:
-          go-version: '~${{ env.GO_VERSION }}'
+          go-version: '${{ env.GO_VERSION }}'
 
       - name: run itest
         run: make itest
@@ -189,13 +182,11 @@ jobs:
           restore-keys: |
             subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
             subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
-            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-
-            subasta-${{ runner.os }}-go-
 
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
         with:
-          go-version: '~${{ env.GO_VERSION }}'
+          go-version: '${{ env.GO_VERSION }}'
 
       - name: run itest garble
         run: make itest-garble
