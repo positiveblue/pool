@@ -1638,7 +1638,7 @@ func (s *rpcServer) OrderState(ctx context.Context,
 func (s *rpcServer) Terms(ctx context.Context, _ *auctioneerrpc.TermsRequest) (
 	*auctioneerrpc.TermsResponse, error) {
 
-	nextBatchFeeRate, err := s.auctioneer.cfg.Wallet.EstimateFee(
+	nextBatchFeeRate, err := s.auctioneer.cfg.Wallet.EstimateFeeRate(
 		ctx, s.auctioneer.cfg.ConfTarget,
 	)
 	if err != nil {

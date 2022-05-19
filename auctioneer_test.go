@@ -10,6 +10,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/btcutil/psbt"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/lndclient"
@@ -27,6 +28,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chainntnfs"
 	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/subscribe"
@@ -337,10 +339,69 @@ func (m *mockWallet) DeriveNextKey(context.Context, int32) (
 	}, nil
 }
 
-func (m *mockWallet) EstimateFee(context.Context, int32) (
+func (m *mockWallet) EstimateFeeRate(context.Context, int32) (
 	chainfee.SatPerKWeight, error) {
 
 	return chainfee.FeePerKwFloor, nil
+}
+
+// FundPsbt creates a fully populated PSBT that contains enough inputs
+// to fund the outputs specified in the template. There are two ways of
+// specifying a template: Either by passing in a PSBT with at least one
+// output declared or by passing in a raw TxTemplate message. If there
+// are no inputs specified in the template, coin selection is performed
+// automatically. If the template does contain any inputs, it is assumed
+// that full coin selection happened externally and no additional inputs
+// are added. If the specified inputs aren't enough to fund the outputs
+// with the given fee rate, an error is returned.
+// After either selecting or verifying the inputs, all input UTXOs are
+// locked with an internal app ID.
+//
+// NOTE: If this method returns without an error, it is the caller's
+// responsibility to either spend the locked UTXOs (by finalizing and
+// then publishing the transaction) or to unlock/release the locked
+// UTXOs in case of an error on the caller's side.
+func (m *mockWallet) FundPsbt(_ context.Context,
+	_ *walletrpc.FundPsbtRequest) (*psbt.Packet, int32,
+	[]*walletrpc.UtxoLease, error) {
+
+	return nil, 0, nil, nil
+}
+
+// SignPsbt expects a partial transaction with all inputs and outputs
+// fully declared and tries to sign all unsigned inputs that have all
+// required fields (UTXO information, BIP32 derivation information,
+// witness or sig scripts) set.
+// If no error is returned, the PSBT is ready to be given to the next
+// signer or to be finalized if lnd was the last signer.
+//
+// NOTE: This RPC only signs inputs (and only those it can sign), it
+// does not perform any other tasks (such as coin selection, UTXO
+// locking or input/output/fee value validation, PSBT finalization). Any
+// input that is incomplete will be skipped.
+func (m *mockWallet) SignPsbt(_ context.Context,
+	_ *psbt.Packet) (*psbt.Packet, error) {
+
+	return nil, nil
+}
+
+// FinalizePsbt expects a partial transaction with all inputs and
+// outputs fully declared and tries to sign all inputs that belong to
+// the wallet. Lnd must be the last signer of the transaction. That
+// means, if there are any unsigned non-witness inputs or inputs without
+// UTXO information attached or inputs without witness data that do not
+// belong to lnd's wallet, this method will fail. If no error is
+// returned, the PSBT is ready to be extracted and the final TX within
+// to be broadcast.
+//
+// NOTE: This method does NOT publish the transaction once finalized. It
+// is the caller's responsibility to either publish the transaction on
+// success or unlock/release any locked UTXOs in case of an error in
+// this method.
+func (m *mockWallet) FinalizePsbt(_ context.Context, _ *psbt.Packet,
+	_ string) (*psbt.Packet, *wire.MsgTx, error) {
+
+	return nil, nil, nil
 }
 
 var _ Wallet = (*mockWallet)(nil)
