@@ -139,7 +139,7 @@ type MasterAccountState struct {
 
 // AccountScript derives the auctioneer's account script.
 //
-// TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;)
+// TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;).
 func (m *MasterAccountState) AccountScript() ([]byte, error) {
 	batchKey, err := btcec.ParsePubKey(m.BatchKey[:])
 	if err != nil {
@@ -285,7 +285,6 @@ func (e *ExecutionContext) indexBatchTx(
 			TxOut: e.ExeTx.TxOut[outputIndex],
 			Order: orders[1],
 		})
-
 	}
 
 	// Finally, we'll populate the trader index (trader to funding

@@ -1338,7 +1338,6 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 
 		for _, ask := range resp.Asks {
 			if ask.Details.State != auctioneerrpc.OrderState_ORDER_EXECUTED {
-
 				return fmt.Errorf("order in state: %v",
 					ask.Details.State)
 			}
@@ -1346,7 +1345,6 @@ func assertNoOrders(t *harnessTest, trader *traderHarness) {
 
 		for _, bid := range resp.Bids {
 			if bid.Details.State != auctioneerrpc.OrderState_ORDER_EXECUTED {
-
 				return fmt.Errorf("order in state: %v",
 					bid.Details.State)
 			}
@@ -1375,6 +1373,7 @@ func assertAskOrderState(t *harnessTest, trader *traderHarness,
 			if !bytes.Equal(
 				order.Details.OrderNonce, orderNonce[:],
 			) {
+
 				continue
 			}
 
@@ -1413,6 +1412,7 @@ func assertBidOrderState(t *harnessTest, trader *traderHarness,
 			if !bytes.Equal(
 				order.Details.OrderNonce, orderNonce[:],
 			) {
+
 				continue
 			}
 
@@ -1586,7 +1586,6 @@ func executeBatch(t *harnessTest, expectedMempoolTxns int) ([]*wire.MsgTx,
 		tx, err := t.lndHarness.Miner.Client.GetRawTransaction(txid)
 		require.NoError(t.t, err)
 		msgTxs[idx] = tx.MsgTx()
-
 	}
 	return msgTxs, txids
 }

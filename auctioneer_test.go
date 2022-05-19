@@ -1171,7 +1171,6 @@ func (a *auctioneerTestHarness) AssertSubmittedBatchFeeRate(
 	if err != nil {
 		a.t.Fatal(err)
 	}
-
 }
 
 func (a *auctioneerTestHarness) AssertFinalizedBatch(numOrders int) {

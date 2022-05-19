@@ -64,11 +64,9 @@ func (m *msgTimers) launchMsgTimers(venueEvents chan EventTrigger,
 		m.timers[trader] = timer
 
 		go func(t matching.AccountID) {
-
 			defer m.wg.Done()
 
 			select {
-
 			// The timer has fired, so we'll send the timeout event
 			// to the main state machine loop.
 			case <-timer.C:
@@ -76,7 +74,6 @@ func (m *msgTimers) launchMsgTimers(venueEvents chan EventTrigger,
 				log.Debugf("Firing msg timer for trader=%x", t[:])
 
 				select {
-
 				case venueEvents <- &msgTimeoutEvent{
 					trader: t,
 				}:

@@ -331,6 +331,7 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 
 func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
 	signDescriptors []*lndclient.SignDescriptor) ([]*input.Script, error) {
+
 	s := input.MockSigner{
 		Privkeys:  m.PrivKeys,
 		NetParams: &chaincfg.RegressionNetParams,
@@ -357,13 +358,16 @@ func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
 
 func (m *MockSigner) SignMessage(ctx context.Context, msg []byte,
 	locator keychain.KeyLocator) ([]byte, error) {
+
 	return nil, nil
 }
 func (m *MockSigner) VerifyMessage(ctx context.Context, msg, sig []byte, pubkey [33]byte) (
 	bool, error) {
+
 	return false, nil
 }
 func (m *MockSigner) DeriveSharedKey(ctx context.Context, ephemeralPubKey *btcec.PublicKey,
 	keyLocator *keychain.KeyLocator) ([32]byte, error) {
+
 	return [32]byte{}, nil
 }

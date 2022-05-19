@@ -84,7 +84,6 @@ func genRandTrader(r *rand.Rand, bidder bool, genOptions ...matchedOrderGenOptio
 }
 
 func genRandMatchedOrder(r *rand.Rand, genOptions ...matchedOrderGenOption) matching.MatchedOrder {
-
 	return matching.MatchedOrder{
 		Asker:  genRandTrader(r, true, genOptions...),
 		Bidder: genRandTrader(r, false, genOptions...),
@@ -178,7 +177,6 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 					return false
 				}
 			}
-
 		}
 
 		// Finally, it should be the case that a trader that isn't in
@@ -193,7 +191,6 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			randOrders := genRandMatchedOrders(r, 100, 50)
 
 			v[0] = reflect.ValueOf(randOrders)
@@ -257,7 +254,6 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 	}
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			setA := genRandMatchedOrders(
 				r,
 				rand.Int31n(100),
@@ -341,7 +337,6 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 	}
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			totalSize := int32(uint8(r.Int31()))
 			setA := genRandMatchedOrders(r, totalSize, totalSize)
 			setB := genRandMatchedOrders(r, totalSize, totalSize)
@@ -497,7 +492,6 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 	}
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			totalSize := int32(uint8(r.Int31()))
 			set := genRandMatchedOrders(r, totalSize, totalSize)
 

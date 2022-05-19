@@ -393,6 +393,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	// the legacy default.
 	if srvOrder.Details().Version < orderT.VersionChannelType &&
 		srvOrder.Details().ChannelType != orderT.ChannelTypePeerDependent {
+
 		return errors.New("cannot submit channel type preference with " +
 			"old trader client, please update your software")
 	}

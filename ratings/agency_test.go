@@ -167,13 +167,11 @@ func TestBosScoreRatingsDatabase(t *testing.T) {
 	// If we query the system again, we should find that the 3rd node now
 	// shows up at node tier 1.
 	err = wait.Predicate(func() bool {
-
 		freshNode3Score, _ := bosScoreDB.LookupNode(ctx, node3)
 		writeThruNode3Score, _ := writeThruDB.LookupNode(ctx, node3)
 
 		return (freshNode3Score == orderT.NodeTier1 &&
 			writeThruNode3Score == orderT.NodeTier1)
-
 	}, refreshInterval*2)
 	require.NoError(t, err)
 }

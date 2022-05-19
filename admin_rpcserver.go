@@ -1093,7 +1093,6 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 			PkScript:          pkScript,
 			AddWeightEstimate: weightEstimate,
 		})
-
 	}
 
 	for _, out := range req.Outputs {
@@ -1143,7 +1142,6 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 			Value:             btcutil.Amount(out.Value),
 			AddWeightEstimate: weightEstimate,
 		})
-
 	}
 
 	// Now that we have created the request we want to include in the next

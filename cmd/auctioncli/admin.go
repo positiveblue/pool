@@ -16,14 +16,14 @@ import (
 )
 
 const (
-	// Complete the RFC3339 date format. (YYYY-MM-DDT00:00:00Z)
+	// Complete the RFC3339 date format. (YYYY-MM-DDT00:00:00Z).
 	dateFmt = "%vT00:00:00Z"
 
 	// Financial Report csv filename. The format is type (batch, lsat, ...)
-	// and date (start and end date)
+	// and date (start and end date).
 	csvFileName = "%s_pool_accounting_%s.csv"
 
-	// Financial Report zip filename
+	// Financial Report zip filename.
 	zipFileName = "pool_accounting_%s.zip"
 )
 
@@ -159,7 +159,6 @@ func formatFilenameDates(start, end time.Time) string {
 
 // generateZip creates a new zip file containing all the provided file.
 func generateZip(zipName string, filesNames ...string) error {
-
 	archive, err := os.Create(zipName)
 	if err != nil {
 		return err

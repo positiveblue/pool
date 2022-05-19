@@ -623,5 +623,4 @@ func UpdateBatchesSQL(ctx context.Context, store *SQLStore,
 	if err != nil {
 		log.Errorf("Unable to store batches to SQL: %v", err)
 	}
-
 }

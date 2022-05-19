@@ -139,7 +139,6 @@ func testTicker(t *testing.T, ticker *subasta.IntervalAwareForceTicker) {
 }
 
 func assertTickTimeUpdated(t *testing.T, ticker *subasta.IntervalAwareForceTicker) {
-
 	t.Helper()
 
 	lastTick := ticker.LastTimedTick()

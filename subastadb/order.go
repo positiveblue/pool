@@ -52,13 +52,13 @@ var (
 	// units match for an order, which is nested within the main order
 	// prefix. From the top-level directory, this path is:
 	//
-	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/min_units_match
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/min_units_match.
 	orderMinUnitsMatchPrefix = "min_units_match"
 
 	// orderTlvKey is the key that we'll use to store the order's additional
 	// tlv encoded data. From the top level directory, this path is:
 	//
-	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/tlv
+	// bitcoin/clm/subasta/<network>/order/<archive>/<nonce>/tlv.
 	orderTlvKey = "tlv"
 )
 

@@ -340,7 +340,6 @@ func checkContext(t *testing.T, test *testSetup, batchTxCtx *ExecutionContext) {
 			"%v got %v", realMasterOutput.Value,
 			int64(batchTxCtx.MasterAccountDiff.AccountBalance))
 	}
-
 }
 
 // TestBatchTransactionAssembly tests that given a valid set of parameters,
@@ -415,7 +414,6 @@ func newMatch(orderSize btcutil.Amount) (*matching.OrderPair, error) {
 			TotalSatsCleared: orderSize,
 		},
 	}, nil
-
 }
 
 // TestBatchTransactionDustAccounts assures that account outputs that are below

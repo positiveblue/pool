@@ -87,7 +87,6 @@ type scoreResp struct {
 //
 // NOTE: This is part of the NodeRatingWebSource interface.
 func (b *BosScoreWebRatings) ParseResponse(r io.Reader) (NodeRatingsMap, error) {
-
 	// With our up to date schema for the response above defined, we'll now
 	// attempt to decode the actual JSON response into the above structs.
 	resp := scoreResp{}

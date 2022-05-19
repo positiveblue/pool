@@ -203,7 +203,6 @@ func TestHandleReject(t *testing.T) {
 						conflicts,
 						conflict{reporter, subject},
 					)
-
 				},
 				RemoveIneligibleOrders: func(
 					orders []orderT.Nonce) {

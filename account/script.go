@@ -42,7 +42,7 @@ const (
 // The auctioneerBatchKey is derived as:
 //  * auctioneerBatchKey = auctioneerKey + sha256(batchKey || auctioneerKey)
 //
-// The witness for the script is simply: <sig> <witnessScript>
+// The witness for the script is simply: <sig> <witnessScript>.
 func AuctioneerWitnessScript(batchKey, auctioneerKey *btcec.PublicKey) ([]byte, error) {
 	auctioneerBatchKey := input.TweakPubKey(auctioneerKey, batchKey)
 

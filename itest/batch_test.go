@@ -581,7 +581,7 @@ func testUnconfirmedBatchChain(t *harnessTest) {
 // rate. This method also returns ID of the queried batch.
 //
 // TODO(roasbeef): update to assert order nonce and other info once the admin
-// RPC stuff is in
+// RPC stuff is in.
 func assertBatchSnapshot(t *harnessTest, batchID []byte, trader *traderHarness,
 	expectedOrderAmts map[uint32][]uint64,
 	clearingPrices map[uint32]orderT.FixedRatePremium) orderT.BatchID {

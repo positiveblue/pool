@@ -6,7 +6,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 )
 
-// Order holds the minimal information needed about an order in a match
+// Order holds the minimal information needed about an order in a match.
 type Order struct {
 	// Nonce is the order nonce.
 	Nonce orderT.Nonce

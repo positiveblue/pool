@@ -259,7 +259,6 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	if expWalletBalance != finalWalletBalance.TotalBalance {
 		t.Fatalf("expected wallet balance %v, got %v",
 			expWalletBalance, finalWalletBalance.TotalBalance)
-
 	}
 
 	finalMasterAcct, err := t.auctioneer.AuctionAdminClient.MasterAccount(
@@ -283,7 +282,6 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	if expAccountBalance != finalAccountBalance {
 		t.Fatalf("expected account balance %v, got %v",
 			expAccountBalance, finalAccountBalance)
-
 	}
 
 	// We'll test the case where the admin tries to spend more out of the

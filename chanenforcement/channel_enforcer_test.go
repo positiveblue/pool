@@ -121,7 +121,6 @@ func TestEnforceLifetimeViolation(t *testing.T) {
 			return
 		}
 	}
-
 }
 
 // TestResumeEnforcementAtStartup ensures that we can properly detect a lifetime
@@ -220,6 +219,5 @@ func TestChannelEnforcementEchoBasePoint(t *testing.T) {
 		if !success {
 			return
 		}
-
 	}
 }

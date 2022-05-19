@@ -72,7 +72,6 @@ func (s *EtcdStore) LookupNode(ctx context.Context,
 
 	if !s.initialized {
 		return orderT.NodeTier0, false
-
 	}
 
 	// Attempt to retrieve the serialized rating from the store.

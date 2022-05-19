@@ -233,7 +233,7 @@ func (s *StoreMock) GetOrder(_ context.Context, nonce orderT.Nonce) (
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) GetOrders(_ context.Context) ([]order.ServerOrder, error) {
-	orders := make([]order.ServerOrder, len(s.Orders))
+	orders := make([]order.ServerOrder, 0, len(s.Orders))
 	for _, o := range s.Orders {
 		if o.Details().State.Archived() {
 			continue

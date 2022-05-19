@@ -91,6 +91,7 @@ func genSubLogger(root *build.RotatingLogWriter,
 // logger of a sub system.
 func addSubLogger(root *build.RotatingLogWriter, subsystem string,
 	interceptor signal.Interceptor, useLogger func(btclog.Logger)) {
+
 	logger := build.NewSubLogger(subsystem, genSubLogger(root, interceptor))
 	setSubLogger(root, subsystem, logger, useLogger)
 }
