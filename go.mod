@@ -23,11 +23,11 @@ require (
 	github.com/lib/pq v1.10.3
 	github.com/lightninglabs/aperture v0.1.18-beta
 	github.com/lightninglabs/faraday v0.2.7-alpha.0.20220328064033-d602082a718a
-	github.com/lightninglabs/lndclient v0.15.0-9
-	github.com/lightninglabs/pool v0.5.6-alpha.0.20220620074824-76bac184b501
+	github.com/lightninglabs/lndclient v0.15.0-10
+	github.com/lightninglabs/pool v0.5.7-alpha.0.20220704095031-b6da8dd40125
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.7
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.15.0-beta.rc6
+	github.com/lightningnetwork/lnd v0.15.0-beta
 	github.com/lightningnetwork/lnd/cert v1.1.1
 	github.com/lightningnetwork/lnd/kvdb v1.3.1
 	github.com/lightningnetwork/lnd/ticker v1.1.0
@@ -37,7 +37,7 @@ require (
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.7.1
-	github.com/urfave/cli v1.22.4
+	github.com/urfave/cli v1.22.9
 	go.etcd.io/etcd/client/v3 v3.5.1
 	go.etcd.io/etcd/server/v3 v3.5.1
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
