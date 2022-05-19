@@ -80,33 +80,33 @@ func (mr *MockManagerMockRecorder) CalculateNewInfo(currentHeight, currentInfo i
 }
 
 // GetAccountBan mocks base method.
-func (m *MockManager) GetAccountBan(accKey *v2.PublicKey) (*Info, error) {
+func (m *MockManager) GetAccountBan(accKey *v2.PublicKey, currentHeight uint32) (*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAccountBan", accKey)
+	ret := m.ctrl.Call(m, "GetAccountBan", accKey, currentHeight)
 	ret0, _ := ret[0].(*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetAccountBan indicates an expected call of GetAccountBan.
-func (mr *MockManagerMockRecorder) GetAccountBan(accKey interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) GetAccountBan(accKey, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockManager)(nil).GetAccountBan), accKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockManager)(nil).GetAccountBan), accKey, currentHeight)
 }
 
 // GetNodeBan mocks base method.
-func (m *MockManager) GetNodeBan(nodeKey *v2.PublicKey) (*Info, error) {
+func (m *MockManager) GetNodeBan(nodeKey *v2.PublicKey, currentHeight uint32) (*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetNodeBan", nodeKey)
+	ret := m.ctrl.Call(m, "GetNodeBan", nodeKey, currentHeight)
 	ret0, _ := ret[0].(*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetNodeBan indicates an expected call of GetNodeBan.
-func (mr *MockManagerMockRecorder) GetNodeBan(nodeKey interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) GetNodeBan(nodeKey, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockManager)(nil).GetNodeBan), nodeKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockManager)(nil).GetNodeBan), nodeKey, currentHeight)
 }
 
 // IsAccountBanned mocks base method.
@@ -157,61 +157,61 @@ func (mr *MockManagerMockRecorder) IsTraderBanned(acctBytes, nodeBytes, currentH
 }
 
 // ListBannedAccounts mocks base method.
-func (m *MockManager) ListBannedAccounts() (map[[33]byte]*Info, error) {
+func (m *MockManager) ListBannedAccounts(currentHeight uint32) (map[[33]byte]*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListBannedAccounts")
+	ret := m.ctrl.Call(m, "ListBannedAccounts", currentHeight)
 	ret0, _ := ret[0].(map[[33]byte]*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListBannedAccounts indicates an expected call of ListBannedAccounts.
-func (mr *MockManagerMockRecorder) ListBannedAccounts() *gomock.Call {
+func (mr *MockManagerMockRecorder) ListBannedAccounts(currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedAccounts", reflect.TypeOf((*MockManager)(nil).ListBannedAccounts))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedAccounts", reflect.TypeOf((*MockManager)(nil).ListBannedAccounts), currentHeight)
 }
 
 // ListBannedNodes mocks base method.
-func (m *MockManager) ListBannedNodes() (map[[33]byte]*Info, error) {
+func (m *MockManager) ListBannedNodes(currentHeight uint32) (map[[33]byte]*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListBannedNodes")
+	ret := m.ctrl.Call(m, "ListBannedNodes", currentHeight)
 	ret0, _ := ret[0].(map[[33]byte]*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListBannedNodes indicates an expected call of ListBannedNodes.
-func (mr *MockManagerMockRecorder) ListBannedNodes() *gomock.Call {
+func (mr *MockManagerMockRecorder) ListBannedNodes(currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockManager)(nil).ListBannedNodes))
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockManager)(nil).ListBannedNodes), currentHeight)
 }
 
 // RemoveAccountBan mocks base method.
-func (m *MockManager) RemoveAccountBan(acctKey *v2.PublicKey) error {
+func (m *MockManager) RemoveAccountBan(acctKey *v2.PublicKey, currentHeight uint32) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveAccountBan", acctKey)
+	ret := m.ctrl.Call(m, "RemoveAccountBan", acctKey, currentHeight)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RemoveAccountBan indicates an expected call of RemoveAccountBan.
-func (mr *MockManagerMockRecorder) RemoveAccountBan(acctKey interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) RemoveAccountBan(acctKey, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAccountBan", reflect.TypeOf((*MockManager)(nil).RemoveAccountBan), acctKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveAccountBan", reflect.TypeOf((*MockManager)(nil).RemoveAccountBan), acctKey, currentHeight)
 }
 
 // RemoveNodeBan mocks base method.
-func (m *MockManager) RemoveNodeBan(nodeKey *v2.PublicKey) error {
+func (m *MockManager) RemoveNodeBan(nodeKey *v2.PublicKey, currentHeight uint32) error {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "RemoveNodeBan", nodeKey)
+	ret := m.ctrl.Call(m, "RemoveNodeBan", nodeKey, currentHeight)
 	ret0, _ := ret[0].(error)
 	return ret0
 }
 
 // RemoveNodeBan indicates an expected call of RemoveNodeBan.
-func (mr *MockManagerMockRecorder) RemoveNodeBan(nodeKey interface{}) *gomock.Call {
+func (mr *MockManagerMockRecorder) RemoveNodeBan(nodeKey, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveNodeBan", reflect.TypeOf((*MockManager)(nil).RemoveNodeBan), nodeKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "RemoveNodeBan", reflect.TypeOf((*MockManager)(nil).RemoveNodeBan), nodeKey, currentHeight)
 }
 
 // MockStore is a mock of Store interface.
@@ -266,63 +266,63 @@ func (mr *MockStoreMockRecorder) BanNode(ctx, nodeKey, info interface{}) *gomock
 }
 
 // GetAccountBan mocks base method.
-func (m *MockStore) GetAccountBan(ctx context.Context, accKey *v2.PublicKey) (*Info, error) {
+func (m *MockStore) GetAccountBan(ctx context.Context, accKey *v2.PublicKey, currentHeight uint32) (*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetAccountBan", ctx, accKey)
+	ret := m.ctrl.Call(m, "GetAccountBan", ctx, accKey, currentHeight)
 	ret0, _ := ret[0].(*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetAccountBan indicates an expected call of GetAccountBan.
-func (mr *MockStoreMockRecorder) GetAccountBan(ctx, accKey interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetAccountBan(ctx, accKey, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockStore)(nil).GetAccountBan), ctx, accKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAccountBan", reflect.TypeOf((*MockStore)(nil).GetAccountBan), ctx, accKey, currentHeight)
 }
 
 // GetNodeBan mocks base method.
-func (m *MockStore) GetNodeBan(ctx context.Context, nodeKey *v2.PublicKey) (*Info, error) {
+func (m *MockStore) GetNodeBan(ctx context.Context, nodeKey *v2.PublicKey, currentHeight uint32) (*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "GetNodeBan", ctx, nodeKey)
+	ret := m.ctrl.Call(m, "GetNodeBan", ctx, nodeKey, currentHeight)
 	ret0, _ := ret[0].(*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // GetNodeBan indicates an expected call of GetNodeBan.
-func (mr *MockStoreMockRecorder) GetNodeBan(ctx, nodeKey interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) GetNodeBan(ctx, nodeKey, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockStore)(nil).GetNodeBan), ctx, nodeKey)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetNodeBan", reflect.TypeOf((*MockStore)(nil).GetNodeBan), ctx, nodeKey, currentHeight)
 }
 
 // ListBannedAccounts mocks base method.
-func (m *MockStore) ListBannedAccounts(ctx context.Context) (map[[33]byte]*Info, error) {
+func (m *MockStore) ListBannedAccounts(ctx context.Context, currentHeight uint32) (map[[33]byte]*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListBannedAccounts", ctx)
+	ret := m.ctrl.Call(m, "ListBannedAccounts", ctx, currentHeight)
 	ret0, _ := ret[0].(map[[33]byte]*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListBannedAccounts indicates an expected call of ListBannedAccounts.
-func (mr *MockStoreMockRecorder) ListBannedAccounts(ctx interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) ListBannedAccounts(ctx, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedAccounts", reflect.TypeOf((*MockStore)(nil).ListBannedAccounts), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedAccounts", reflect.TypeOf((*MockStore)(nil).ListBannedAccounts), ctx, currentHeight)
 }
 
 // ListBannedNodes mocks base method.
-func (m *MockStore) ListBannedNodes(ctx context.Context) (map[[33]byte]*Info, error) {
+func (m *MockStore) ListBannedNodes(ctx context.Context, currentHeight uint32) (map[[33]byte]*Info, error) {
 	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "ListBannedNodes", ctx)
+	ret := m.ctrl.Call(m, "ListBannedNodes", ctx, currentHeight)
 	ret0, _ := ret[0].(map[[33]byte]*Info)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
 
 // ListBannedNodes indicates an expected call of ListBannedNodes.
-func (mr *MockStoreMockRecorder) ListBannedNodes(ctx interface{}) *gomock.Call {
+func (mr *MockStoreMockRecorder) ListBannedNodes(ctx, currentHeight interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockStore)(nil).ListBannedNodes), ctx)
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockStore)(nil).ListBannedNodes), ctx, currentHeight)
 }
 
 // RemoveAccountBan mocks base method.

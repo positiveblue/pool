@@ -20,12 +20,12 @@ var (
 	nodeKey, _ = btcec.ParsePubKey(traderKeyRaw)
 
 	errExpected = errors.New("random error")
+
+	currentHeight = uint32(500)
 )
 
 func TestCalculateNewInfo(t *testing.T) {
 	banManager := NewManager(nil)
-
-	currentHeight := uint32(500)
 
 	// If there is no active ban we use the default value.
 	info := banManager.CalculateNewInfo(500, nil)
@@ -86,8 +86,9 @@ func TestBanManagerBanAccount(t *testing.T) { // nolint:dupl
 			)
 
 			store.EXPECT().
-				GetAccountBan(gomock.Any(), traderKey).
-				Return(tc.currentInfo, nil)
+				GetAccountBan(
+					gomock.Any(), traderKey, currentHeight,
+				).Return(tc.currentInfo, nil)
 
 			// We will assert that the ban Info has the correct
 			// expiration later.
@@ -145,8 +146,6 @@ func TestBanManagerBanNode(t *testing.T) { // nolint:dupl
 			mockCtrl := gomock.NewController(t)
 			defer mockCtrl.Finish()
 
-			currentHeight := uint32(400)
-
 			store := NewMockStore(mockCtrl)
 			cfg := &ManagerConfig{
 				Store: store,
@@ -158,8 +157,9 @@ func TestBanManagerBanNode(t *testing.T) { // nolint:dupl
 			)
 
 			store.EXPECT().
-				GetNodeBan(gomock.Any(), nodeKey).
-				Return(tc.currentInfo, nil)
+				GetNodeBan(
+					gomock.Any(), nodeKey, currentHeight,
+				).Return(tc.currentInfo, nil)
 
 			// We will assert that the ban Info has the correct
 			// expiration later.
@@ -186,42 +186,36 @@ func TestBanManagerBanNode(t *testing.T) { // nolint:dupl
 
 var isTraderBannedTestCases = []struct {
 	name                   string
-	currentHeight          uint32
 	curentAccountBan       *Info
 	curretNodeBan          *Info
 	expectedIsTraderBanned bool
 }{{
 	name: "traders without account/node bans are not banned",
 
-	currentHeight:          500,
 	curentAccountBan:       nil,
 	curretNodeBan:          nil,
 	expectedIsTraderBanned: false,
 }, {
 	name: "traders with an active account ban are banned",
 
-	currentHeight:          500,
 	curentAccountBan:       &Info{Height: 400, Duration: 200},
 	curretNodeBan:          nil,
 	expectedIsTraderBanned: true,
 }, {
 	name: "traders with an expired account ban are not banned",
 
-	currentHeight:          500,
 	curentAccountBan:       &Info{Height: 300, Duration: 100},
 	curretNodeBan:          nil,
 	expectedIsTraderBanned: false,
 }, {
 	name: "traders with an active node ban are banned",
 
-	currentHeight:          500,
 	curentAccountBan:       nil,
 	curretNodeBan:          &Info{Height: 400, Duration: 200},
 	expectedIsTraderBanned: true,
 }, {
 	name: "traders with an expired node ban are not banned",
 
-	currentHeight:          500,
 	curentAccountBan:       nil,
 	curretNodeBan:          &Info{Height: 300, Duration: 100},
 	expectedIsTraderBanned: false,
@@ -239,17 +233,20 @@ func TestBanManagerIsTraderBanned(t *testing.T) {
 
 			store := NewMockStore(mockCtrl)
 			store.EXPECT().
-				GetAccountBan(gomock.Any(), traderKey).
-				Return(tc.curentAccountBan, nil)
+				GetAccountBan(
+					gomock.Any(), traderKey, currentHeight,
+				).Return(tc.curentAccountBan, nil)
 
 			if tc.curentAccountBan == nil ||
 				tc.curentAccountBan.ExceedsBanExpiration(
-					tc.currentHeight,
+					currentHeight,
 				) {
 
 				store.EXPECT().
-					GetNodeBan(gomock.Any(), nodeKey).
-					Return(tc.curretNodeBan, nil)
+					GetNodeBan(
+						gomock.Any(), nodeKey,
+						currentHeight,
+					).Return(tc.curretNodeBan, nil)
 			}
 
 			cfg := &ManagerConfig{
@@ -261,7 +258,7 @@ func TestBanManagerIsTraderBanned(t *testing.T) {
 			copy(accKey[:], traderKey.SerializeCompressed())
 			copy(nodKey[:], nodeKey.SerializeCompressed())
 			isBanned, err := banManager.IsTraderBanned(
-				accKey, nodKey, tc.currentHeight,
+				accKey, nodKey, currentHeight,
 			)
 			require.NoError(t, err)
 

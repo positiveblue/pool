@@ -484,7 +484,7 @@ func (s *StoreMock) BanAccount(ctx context.Context, accKey *btcec.PublicKey,
 // GetAccountBan returns the ban Info for the given accountKey.
 // Info will be nil if the account is not currently banned.
 func (s *StoreMock) GetAccountBan(_ context.Context,
-	accKey *btcec.PublicKey) (*ban.Info, error) {
+	accKey *btcec.PublicKey, _ uint32) (*ban.Info, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -513,7 +513,7 @@ func (s *StoreMock) BanNode(_ context.Context, nodKey *btcec.PublicKey,
 // GetNodeBan returns the ban Info for the given nodeKey.
 // Info will be nil if the node is not currently banned.
 func (s *StoreMock) GetNodeBan(_ context.Context,
-	nodKey *btcec.PublicKey) (*ban.Info, error) {
+	nodKey *btcec.PublicKey, _ uint32) (*ban.Info, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -527,7 +527,7 @@ func (s *StoreMock) GetNodeBan(_ context.Context,
 // ListBannedAccounts returns a map of all accounts that are currently banned.
 // The map key is the account's trader key and the value is the ban info.
 func (s *StoreMock) ListBannedAccounts(
-	_ context.Context) (map[[33]byte]*ban.Info, error) {
+	_ context.Context, _ uint32) (map[[33]byte]*ban.Info, error) {
 
 	list := make(map[[33]byte]*ban.Info, len(s.BannedAccounts))
 	for key, banInfo := range s.BannedAccounts {
@@ -539,7 +539,7 @@ func (s *StoreMock) ListBannedAccounts(
 // ListBannedNodes returns a map of all nodes that are currently banned.
 // The map key is the node's identity pubkey and the value is the ban info.
 func (s *StoreMock) ListBannedNodes(
-	_ context.Context) (map[[33]byte]*ban.Info, error) {
+	_ context.Context, _ uint32) (map[[33]byte]*ban.Info, error) {
 
 	list := make(map[[33]byte]*ban.Info, len(s.BannedNodes))
 	for key, banInfo := range s.BannedNodes {

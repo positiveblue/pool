@@ -24,9 +24,9 @@ func TestDefaultEnforceLifetimeViolation(t *testing.T) {
 		AskNodeKey:    testAskNodeKey,
 	}
 
-	banManager.EXPECT().GetAccountBan(pkg.AskAccountKey)
+	banManager.EXPECT().GetAccountBan(pkg.AskAccountKey, currentHeight)
 	banManager.EXPECT().CalculateNewInfo(currentHeight, gomock.Any())
-	banManager.EXPECT().GetNodeBan(pkg.AskNodeKey)
+	banManager.EXPECT().GetNodeBan(pkg.AskNodeKey, currentHeight)
 	banManager.EXPECT().CalculateNewInfo(currentHeight, gomock.Any())
 
 	store.EXPECT().EnforceLifetimeViolation(

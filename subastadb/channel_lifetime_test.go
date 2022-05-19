@@ -97,16 +97,17 @@ func TestLifetimePackages(t *testing.T) {
 	}
 	assertPackageInStore(true)
 
-	// Check that we are able to enforce package punishments.
-	info, err := store.GetAccountBan(ctx, askAccountKey)
-	require.NoError(t, err)
-	require.Nil(t, info)
-
-	info, err = store.GetNodeBan(ctx, askNodeKey)
-	require.NoError(t, err)
-	require.Nil(t, info)
-
 	currentHeight := uint32(1000)
+
+	// Check that we are able to enforce package punishments.
+	info, err := store.GetAccountBan(ctx, askAccountKey, currentHeight)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
+	info, err = store.GetNodeBan(ctx, askNodeKey, currentHeight)
+	require.NoError(t, err)
+	require.Nil(t, info)
+
 	defaultBanDuration := uint32(144)
 	accInfo := &ban.Info{
 		Duration: defaultBanDuration,
@@ -124,11 +125,11 @@ func TestLifetimePackages(t *testing.T) {
 
 	assertPackageInStore(false)
 
-	info, err = store.GetAccountBan(ctx, askAccountKey)
+	info, err = store.GetAccountBan(ctx, askAccountKey, currentHeight)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 
-	info, err = store.GetNodeBan(ctx, askNodeKey)
+	info, err = store.GetNodeBan(ctx, askNodeKey, currentHeight)
 	require.NoError(t, err)
 	require.NotNil(t, info)
 }

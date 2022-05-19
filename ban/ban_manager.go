@@ -65,7 +65,9 @@ func (m *manager) BanAccount(accKey *btcec.PublicKey,
 	ctxt, cancel := context.WithTimeout(ctxb, defaultStoreTimeout)
 	defer cancel()
 
-	currentInfo, err := m.cfg.Store.GetAccountBan(ctxt, accKey)
+	currentInfo, err := m.cfg.Store.GetAccountBan(
+		ctxt, accKey, currentHeight,
+	)
 	if err != nil {
 		return 0, err
 	}
@@ -81,12 +83,14 @@ func (m *manager) BanAccount(accKey *btcec.PublicKey,
 
 // GetAccountBan returns the ban Info for the given accountKey.
 // Info will be nil if the account is not currently banned.
-func (m *manager) GetAccountBan(accKey *btcec.PublicKey) (*Info, error) {
+func (m *manager) GetAccountBan(accKey *btcec.PublicKey,
+	currentHeight uint32) (*Info, error) {
+
 	ctxb := context.Background()
 	ctxt, cancel := context.WithTimeout(ctxb, defaultStoreTimeout)
 	defer cancel()
 
-	return m.cfg.Store.GetAccountBan(ctxt, accKey)
+	return m.cfg.Store.GetAccountBan(ctxt, accKey, currentHeight)
 }
 
 // BanNode attempts to ban the node associated with a trader starting from
@@ -100,7 +104,7 @@ func (m *manager) BanNode(nodeKey *btcec.PublicKey,
 	ctxt, cancel := context.WithTimeout(ctxb, defaultStoreTimeout)
 	defer cancel()
 
-	currentInfo, err := m.cfg.Store.GetNodeBan(ctxt, nodeKey)
+	currentInfo, err := m.cfg.Store.GetNodeBan(ctxt, nodeKey, currentHeight)
 	if err != nil {
 		return 0, err
 	}
@@ -116,12 +120,14 @@ func (m *manager) BanNode(nodeKey *btcec.PublicKey,
 
 // GetNodeBan returns the ban Info for the given nodeKey.
 // Info will be nil if the node is not currently banned.
-func (m *manager) GetNodeBan(nodeKey *btcec.PublicKey) (*Info, error) {
+func (m *manager) GetNodeBan(nodeKey *btcec.PublicKey,
+	currentHeight uint32) (*Info, error) {
+
 	ctxb := context.Background()
 	ctxt, cancel := context.WithTimeout(ctxb, defaultStoreTimeout)
 	defer cancel()
 
-	return m.cfg.Store.GetNodeBan(ctxt, nodeKey)
+	return m.cfg.Store.GetNodeBan(ctxt, nodeKey, currentHeight)
 }
 
 // IsAccountBanned determines whether the trader's account is banned at the
@@ -129,11 +135,13 @@ func (m *manager) GetNodeBan(nodeKey *btcec.PublicKey) (*Info, error) {
 func (m *manager) IsAccountBanned(accKey *btcec.PublicKey,
 	currentHeight uint32) (bool, uint32, error) {
 
-	info, err := m.GetAccountBan(accKey)
+	info, err := m.GetAccountBan(accKey, currentHeight)
 	if err != nil {
 		return false, 0, err
 	}
 
+	// TODO(positiveblue): simplify this logic afeter GetAccountBan only
+	// returns non expired bans.
 	if info != nil && !info.ExceedsBanExpiration(currentHeight) {
 		return true, info.Expiration(), nil
 	}
@@ -146,11 +154,13 @@ func (m *manager) IsAccountBanned(accKey *btcec.PublicKey,
 func (m *manager) IsNodeBanned(nodeKey *btcec.PublicKey,
 	currentHeight uint32) (bool, uint32, error) {
 
-	info, err := m.GetNodeBan(nodeKey)
+	info, err := m.GetNodeBan(nodeKey, currentHeight)
 	if err != nil {
 		return false, 0, err
 	}
 
+	// TODO(positiveblue): simplify this logic afeter GetNodeBan only
+	// returns non expired bans.
 	if info != nil && !info.ExceedsBanExpiration(currentHeight) {
 		return true, info.Expiration(), nil
 	}
@@ -182,28 +192,34 @@ func (m *manager) IsTraderBanned(acctBytes, nodeBytes [33]byte,
 
 // ListBannedAccounts returns a map of all accounts that are currently banned.
 // The map key is the account's trader key and the value is the ban info.
-func (m *manager) ListBannedAccounts() (map[[33]byte]*Info, error) {
+func (m *manager) ListBannedAccounts(currentHeight uint32) (map[[33]byte]*Info,
+	error) {
+
 	ctxb := context.Background()
 	ctxt, cancel := context.WithTimeout(ctxb, defaultStoreTimeout)
 	defer cancel()
 
-	return m.cfg.Store.ListBannedAccounts(ctxt)
+	return m.cfg.Store.ListBannedAccounts(ctxt, currentHeight)
 }
 
 // ListBannedNodes returns a map of all nodes that are currently banned.
 // The map key is the node's identity pubkey and the value is the ban info.
-func (m *manager) ListBannedNodes() (map[[33]byte]*Info, error) {
+func (m *manager) ListBannedNodes(currentHeight uint32) (map[[33]byte]*Info,
+	error) {
+
 	ctxb := context.Background()
 	ctxt, cancel := context.WithTimeout(ctxb, defaultStoreTimeout)
 	defer cancel()
 
-	return m.cfg.Store.ListBannedNodes(ctxt)
+	return m.cfg.Store.ListBannedNodes(ctxt, currentHeight)
 }
 
 // RemoveAccountBan removes the ban information for a given trader's account
 // key. Returns an error if no ban exists.
-func (m *manager) RemoveAccountBan(acctKey *btcec.PublicKey) error {
-	info, err := m.GetAccountBan(acctKey)
+func (m *manager) RemoveAccountBan(acctKey *btcec.PublicKey,
+	currentHeight uint32) error {
+
+	info, err := m.GetAccountBan(acctKey, currentHeight)
 	if err != nil {
 		return nil
 	}
@@ -221,8 +237,10 @@ func (m *manager) RemoveAccountBan(acctKey *btcec.PublicKey) error {
 
 // RemoveNodeBan removes the ban information for a given trader's node identity
 // key. Returns an error if no ban exists.
-func (m *manager) RemoveNodeBan(nodeKey *btcec.PublicKey) error {
-	info, err := m.GetNodeBan(nodeKey)
+func (m *manager) RemoveNodeBan(nodeKey *btcec.PublicKey,
+	currentHeight uint32) error {
+
+	info, err := m.GetNodeBan(nodeKey, currentHeight)
 	if err != nil {
 		return nil
 	}

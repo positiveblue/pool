@@ -646,8 +646,9 @@ func (s *adminRPCServer) BatchSnapshot(ctx context.Context,
 func (s *adminRPCServer) ListBans(ctx context.Context,
 	_ *adminrpc.EmptyRequest) (*adminrpc.ListBansResponse, error) {
 
+	currentHeight := s.mainRPCServer.bestHeight()
 	// Collect banned accounts.
-	accts, err := s.store.ListBannedAccounts(ctx)
+	accts, err := s.store.ListBannedAccounts(ctx, currentHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -660,7 +661,7 @@ func (s *adminRPCServer) ListBans(ctx context.Context,
 	}
 
 	// Collect banned nodes.
-	nodes, err := s.store.ListBannedNodes(ctx)
+	nodes, err := s.store.ListBannedNodes(ctx, currentHeight)
 	if err != nil {
 		return nil, err
 	}

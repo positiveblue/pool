@@ -57,14 +57,16 @@ func (p *DefaultSource) EnforceLifetimeViolation(pkg *LifetimePackage,
 	// TODO (positiveblue): execute bans + delete in a unique tx.
 
 	// Ban the account and node key.
-	currAccInfo, err := p.BanManager.GetAccountBan(pkg.AskAccountKey)
+	currAccInfo, err := p.BanManager.GetAccountBan(
+		pkg.AskAccountKey, height,
+	)
 	if err != nil {
 		return err
 	}
 
 	accInfo := p.BanManager.CalculateNewInfo(height, currAccInfo)
 
-	currNodeInfo, err := p.BanManager.GetNodeBan(pkg.AskNodeKey)
+	currNodeInfo, err := p.BanManager.GetNodeBan(pkg.AskNodeKey, height)
 	if err != nil {
 		return err
 	}

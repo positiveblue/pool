@@ -397,7 +397,10 @@ func TestBookPrepareOrder(t *testing.T) {
 
 			// Before returning the error, unban the account to not
 			// affect any following tests.
-			err2 := banManager.RemoveAccountBan(testTraderKey)
+			currentHeight := uint32(100)
+			err2 := banManager.RemoveAccountBan(
+				testTraderKey, currentHeight,
+			)
 			if err2 != nil {
 				// Return the unexpected err.
 				return err2

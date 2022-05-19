@@ -1217,7 +1217,10 @@ func (a *auctioneerTestHarness) AssertBannedTrader(trader matching.AccountID) {
 
 	key, _ := btcec.ParsePubKey(trader[:])
 
-	banInfo, err := a.auctioneer.cfg.BanManager.GetAccountBan(key)
+	currentHeight := uint32(100)
+	banInfo, err := a.auctioneer.cfg.BanManager.GetAccountBan(
+		key, currentHeight,
+	)
 	require.NoError(a.t, err)
 	require.NotNil(a.t, banInfo)
 }

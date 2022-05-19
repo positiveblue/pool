@@ -27,7 +27,8 @@ type Manager interface {
 
 	// GetAccountBan returns the ban Info for the given accountKey.
 	// Info will be nil if the account is not currently banned.
-	GetAccountBan(accKey *btcec.PublicKey) (*Info, error)
+	GetAccountBan(accKey *btcec.PublicKey, currentHeight uint32) (*Info,
+		error)
 
 	// BanNode attempts to ban the node associated with a trader starting
 	// from the current height of the chain.
@@ -35,7 +36,8 @@ type Manager interface {
 
 	// GetNodeBan returns the ban Info for the given nodeKey.
 	// Info will be nil if the node is not currently banned.
-	GetNodeBan(nodeKey *btcec.PublicKey) (*Info, error)
+	GetNodeBan(nodeKey *btcec.PublicKey, currentHeight uint32) (*Info,
+		error)
 
 	// IsAccountBanned determines whether the trader's account is banned at
 	// the current height or not.
@@ -55,20 +57,20 @@ type Manager interface {
 	// ListBannedAccounts returns a map of all accounts that are currently
 	// banned. The map key is the account's trader key and the value is the
 	// ban info.
-	ListBannedAccounts() (map[[33]byte]*Info, error)
+	ListBannedAccounts(currentHeight uint32) (map[[33]byte]*Info, error)
 
 	// ListBannedNodes returns a map of all nodes that are currently banned.
 	// The map key is the node's identity pubkey and the value is the ban
 	// info.
-	ListBannedNodes() (map[[33]byte]*Info, error)
+	ListBannedNodes(currentHeight uint32) (map[[33]byte]*Info, error)
 
 	// RemoveAccountBan removes the ban information for a given trader's
 	// account key. Returns an error if no ban exists.
-	RemoveAccountBan(acctKey *btcec.PublicKey) error
+	RemoveAccountBan(acctKey *btcec.PublicKey, currentHeight uint32) error
 
 	// RemoveNodeBan removes the ban information for a given trader's node
 	// identity key. Returns an error if no ban exists.
-	RemoveNodeBan(nodeKey *btcec.PublicKey) error
+	RemoveNodeBan(nodeKey *btcec.PublicKey, currentHeight uint32) error
 }
 
 // Store is responsible for storing and retrieving ban information reliably.
@@ -79,8 +81,8 @@ type Store interface {
 
 	// GetAccountBan returns the ban Info for the given accountKey.
 	// Info will be nil if the account is not currently banned.
-	GetAccountBan(ctx context.Context, accKey *btcec.PublicKey) (*Info,
-		error)
+	GetAccountBan(ctx context.Context, accKey *btcec.PublicKey,
+		currentHeight uint32) (*Info, error)
 
 	// BanNode creates/updates the ban Info for the given nodeKey.
 	BanNode(ctx context.Context, nodeKey *btcec.PublicKey,
@@ -88,16 +90,18 @@ type Store interface {
 
 	// GetNodeBan returns the ban Info for the given nodeKey.
 	// Info will be nil if the node is not currently banned.
-	GetNodeBan(ctx context.Context, nodeKey *btcec.PublicKey) (*Info,
-		error)
+	GetNodeBan(ctx context.Context, nodeKey *btcec.PublicKey,
+		currentHeight uint32) (*Info, error)
 
 	// ListBannedAccounts returns a map of all accounts that are currently banned.
 	// The map key is the account's trader key and the value is the ban info.
-	ListBannedAccounts(ctx context.Context) (map[[33]byte]*Info, error)
+	ListBannedAccounts(ctx context.Context,
+		currentHeight uint32) (map[[33]byte]*Info, error)
 
 	// ListBannedNodes returns a map of all nodes that are currently banned.
 	// The map key is the node's identity pubkey and the value is the ban info.
-	ListBannedNodes(ctx context.Context) (map[[33]byte]*Info, error)
+	ListBannedNodes(ctx context.Context,
+		currentHeight uint32) (map[[33]byte]*Info, error)
 
 	// RemoveAccountBan removes the ban information for a given trader's account
 	// key. Returns an error if no ban exists.
