@@ -149,31 +149,10 @@ func (s *SQLStore) UpdateAccount(ctx context.Context, acc *account.Account,
 
 	var dbAccount *account.Account
 	txBody := func(txQueries *postgres.Queries) error {
-		row, err := txQueries.GetAccount(ctx, acc.TraderKeyRaw[:])
-		switch {
-		case err == pgx.ErrNoRows:
-			return NewAccountNotFoundError(traderKey)
-
-		case err != nil:
-			return err
-		}
-
-		dbAccount, err = unmarshalAccount(row)
-		if err != nil {
-			return err
-		}
-
-		// Apply the given modifications to it and serialize it back.
-		for _, modifier := range modifiers {
-			modifier(dbAccount)
-		}
-
-		err = upsertAccountWithTx(ctx, txQueries, dbAccount)
-		if err != nil {
-			return err
-		}
-
-		return nil
+		dbAccount, err = modifyAccountWithTx(
+			ctx, txQueries, traderKey, modifiers...,
+		)
+		return err
 	}
 
 	err = s.ExecTx(ctx, txBody)
@@ -611,6 +590,40 @@ func updateAccountDiffWithTx(ctx context.Context, txQueries *postgres.Queries,
 		UserAgent:           acc.UserAgent,
 	}
 	return txQueries.UpdateAccountDiff(ctx, params)
+}
+
+// modifyAccountWithTx modifies and updates an account using the provided
+// queries struct.
+func modifyAccountWithTx(ctx context.Context, txQueries *postgres.Queries,
+	accKey *btcec.PublicKey,
+	modifiers ...account.Modifier) (*account.Account, error) {
+
+	traderKey := accKey.SerializeCompressed()
+	row, err := txQueries.GetAccount(ctx, traderKey)
+	switch {
+	case err == pgx.ErrNoRows:
+		return nil, NewAccountNotFoundError(accKey)
+
+	case err != nil:
+		return nil, fmt.Errorf("unable to update account: %v", err)
+	}
+
+	dbAccount, err := unmarshalAccount(row)
+	if err != nil {
+		return nil, fmt.Errorf("unable to update account: %v", err)
+	}
+
+	// Apply the given modifications to it and serialize it back.
+	for _, modifier := range modifiers {
+		modifier(dbAccount)
+	}
+
+	err = upsertAccountWithTx(ctx, txQueries, dbAccount)
+	if err != nil {
+		return nil, fmt.Errorf("unable to update account: %v", err)
+	}
+
+	return dbAccount, nil
 }
 
 // marshalOutPoint maps a wire.OutPoint to its serialized version used in

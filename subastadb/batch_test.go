@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -16,6 +17,8 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
 
@@ -419,6 +422,19 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 		},
 		AccountBalance: 18,
 	}
+	askLegacyClientKit.AcctKey = trader1.AccountKey
+	bidLegacyClientKit.AcctKey = trader2.AccountKey
+	askNewClientKit.AcctKey = trader1.AccountKey
+	bidNewClientKit.AcctKey = trader2.AccountKey
+
+	allClientOrders := []*orderT.Kit{
+		askLegacyClientKit, bidLegacyClientKit,
+		askNewClientKit, bidNewClientKit,
+	}
+	for _, o := range allClientOrders {
+		o.Preimage = lntypes.Preimage{}
+		o.MultiSigKeyLocator = keychain.KeyLocator{}
+	}
 	legacyOrders := []matching.MatchedOrder{{
 		Asker:  trader1,
 		Bidder: trader2,
@@ -503,6 +519,22 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 	}
 
 	if store != nil {
+		// Only needed in the sql tests.
+		sqlStore, ok := store.(*SQLStore)
+		if ok {
+			createAccount := func(accKey [33]byte) {
+				acc := testAccount.Copy()
+				acc.TraderKeyRaw = accKey
+				err := upsertAccountWithTx(
+					ctx, sqlStore.queries, acc,
+				)
+				require.NoError(t, err)
+			}
+
+			createAccount(trader1.AccountKey)
+			createAccount(trader2.AccountKey)
+		}
+
 		// All the orders above also need to be inserted as normal
 		// orders to ensure we're able to retrieve all the supplemental
 		// data we need.
@@ -555,12 +587,23 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	defer cleanup()
 
 	batches := makeTestOrderBatches(ctx, t, store)
-	assertBatchSerialization(t, store, batches[0])
-	assertBatchSerialization(t, store, batches[1])
+
+	_, ok := store.(*SQLStore)
+	if ok {
+		for _, batch := range batches {
+			timestamp := batch.CreationTimestamp.Truncate(
+				time.Microsecond,
+			)
+			batch.CreationTimestamp = timestamp
+		}
+	}
+
+	assertBatchSerialization(t, store, 0, batches[0])
+	assertBatchSerialization(t, store, 1, batches[1])
 }
 
 func assertBatchSerialization(t *testing.T, store AdminStore,
-	batch *matching.OrderBatch) {
+	batchNumber int, batch *matching.OrderBatch) {
 
 	t.Helper()
 
@@ -572,10 +615,14 @@ func assertBatchSerialization(t *testing.T, store AdminStore,
 		OrderBatch: batch,
 	}
 
+	currentBatch := InitialBatchKey
+	for i := 0; i < batchNumber; i++ {
+		currentBatch = poolscript.IncrementKey(currentBatch)
+	}
 	var batchID orderT.BatchID
-	copy(batchID[:], initialBatchKeyBytes)
+	copy(batchID[:], currentBatch.SerializeCompressed())
+	nextBatchKey := poolscript.IncrementKey(currentBatch)
 
-	nextBatchKey := poolscript.IncrementKey(InitialBatchKey)
 	ma1 := &account.Auctioneer{
 		OutPoint: wire.OutPoint{
 			Index: 5,
