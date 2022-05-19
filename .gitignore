@@ -46,6 +46,8 @@ profile.tmp
 
 .vscode
 
+coverage.txt
+
 /auctionserver
 /auctioncli
 /auctionserver-regtest

@@ -1,36 +1,28 @@
 PKG := github.com/lightninglabs/subasta
 ESCPKG := github.com\/lightninglabs\/subasta
 
+TOOLS_DIR := tools
+
 BTCD_PKG := github.com/btcsuite/btcd
 LND_PKG := github.com/lightningnetwork/lnd
-LINT_PKG := github.com/golangci/golangci-lint/cmd/golangci-lint
-GOVERALLS_PKG := github.com/mattn/goveralls
 GOACC_PKG := github.com/ory/go-acc
+GOIMPORTS_PKG := github.com/rinchsan/gosimports/cmd/gosimports
 GARBLE_PKG := mvdan.cc/garble
 
 GO_BIN := ${GOPATH}/bin
-BTCD_BIN := $(GO_BIN)/btcd
 LND_BIN := $(GO_BIN)/lnd
-GOVERALLS_BIN := $(GO_BIN)/goveralls
 LINT_BIN := $(GO_BIN)/golangci-lint
 GOACC_BIN := $(GO_BIN)/go-acc
+GOIMPORTS_BIN := $(GO_BIN)/gosimports
 GARBLE_BIN := $(GO_BIN)/garble
 
-BTCD_DIR :=${GOPATH}/src/$(BTCD_PKG)
-LND_DIR := ${GOPATH}/src/$(LND_PKG)
-
-LINT_COMMIT := v1.18.0
-GOACC_COMMIT := ddc355013f90fea78d83d3a6c71f1d37ac07ecd5
-GARBLE_COMMIT := v0.6.0
-
-DEPGET := go install -v
 GOBUILD := go build -v
 GOINSTALL := go install -v
 GOTEST := go test -v
 GARBLEBUILD := $(GARBLE_BIN) build -v
 GARBLETEST := $(GARBLE_BIN) test -v
 
-GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*")
+GOFILES_NOVENDOR = $(shell find . -type f -name '*.go' -not -path "./vendor/*" -not -name "*pb.go" -not -name "*pb.gw.go" -not -name "*.pb.json.go")
 GOLIST := go list -deps $(PKG)/... | grep '$(PKG)'| grep -v '/vendor/'
 GOLISTCOVER := $(shell go list -deps -f '{{.ImportPath}}' ./... | grep '$(PKG)' | sed -e 's/^$(ESCPKG)/./')
 
@@ -47,6 +39,8 @@ include make/testing_flags.mk
 ifneq ($(workers),)
 LINT_WORKERS = --concurrency=$(workers)
 endif
+
+DOCKER_TOOLS = docker run -v $$(pwd):/build subasta-tools
 
 make_ldflags = -ldflags "-X $(LND_PKG)/build.RawTags=$(shell echo $(1) | sed -e 's/ /,/g')"
 LND_ITEST_LDFLAGS := $(call make_ldflags, $(ITEST_TAGS))
@@ -70,22 +64,17 @@ all: scratch check install
 # ============
 # DEPENDENCIES
 # ============
-
-$(GOVERALLS_BIN):
-	@$(call print, "Fetching goveralls.")
-	go get -u $(GOVERALLS_PKG)
-
-$(LINT_BIN):
-	@$(call print, "Fetching linter")
-	$(DEPGET) $(LINT_PKG)@$(LINT_COMMIT)
-
 $(GOACC_BIN):
-	@$(call print, "Fetching go-acc")
-	$(DEPGET) $(GOACC_PKG)@$(GOACC_COMMIT)
+	@$(call print, "Installing go-acc.")
+	cd $(TOOLS_DIR); go install -trimpath $(GOACC_PKG)
+
+$(GOIMPORTS_BIN):
+	@$(call print, "Installing goimports.")
+	cd $(TOOLS_DIR); go install -trimpath $(GOIMPORTS_PKG)
 
 $(GARBLE_BIN):
-	@$(call print, "Fetching garble")
-	$(DEPGET) $(GARBLE_PKG)@$(GARBLE_COMMIT)
+	@$(call print, "Installing garble.")
+	cd $(TOOLS_DIR); go install -trimpath $(GARBLE_PKG)
 
 # ============
 # INSTALLATION
@@ -113,6 +102,10 @@ regtest-build: $(GARBLE_BIN)
 	$(GARBLEBUILD) -trimpath -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctionserver-regtest $(PKG)/cmd/auctionserver
 	$(GARBLEBUILD) -ldflags="$(REGTEST_LDFLAGS)" -tags="regtest" -o auctioncli-regtest $(PKG)/cmd/auctioncli
 
+docker-tools:
+	@$(call print, "Building tools docker image.")
+	docker build -q -t subasta-tools $(TOOLS_DIR)
+
 scratch: build
 
 # =======
@@ -132,10 +125,6 @@ unit-cover: $(GOACC_BIN)
 unit-race:
 	@$(call print, "Running unit race tests.")
 	env CGO_ENABLED=1 GORACE="history_size=7 halt_on_errors=1" $(UNIT_RACE)
-
-goveralls: $(GOVERALLS_BIN)
-	@$(call print, "Sending coverage report.")
-	$(GOVERALLS_BIN) -coverprofile=coverage.txt -service=travis-ci
 
 itest: build-itest itest-only
 
@@ -180,13 +169,15 @@ flakehunt:
 # =========
 # UTILITIES
 # =========
-fmt:
+fmt: $(GOIMPORTS_BIN)
+	@$(call print, "Fixing imports.")
+	gosimports -w $(GOFILES_NOVENDOR)
 	@$(call print, "Formatting source.")
 	gofmt -l -w -s $(GOFILES_NOVENDOR)
 
-lint: $(LINT_BIN)
+lint: docker-tools
 	@$(call print, "Linting source.")
-	$(LINT)
+	$(DOCKER_TOOLS) golangci-lint run -v $(LINT_WORKERS)
 
 list:
 	@$(call print, "Listing commands.")
