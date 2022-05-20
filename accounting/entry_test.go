@@ -46,7 +46,6 @@ var (
 		IsSidecar: true,
 	}
 	batchID = [33]byte{1, 2, 3, 4}
-	//batchSnapshot = &subastadb.BatchSnapshot{}
 )
 
 // newOrders return a copy of the matcher oders used for testing.
@@ -252,7 +251,7 @@ var getTraderFeesTestCases = []struct {
 }}
 
 // TestGetTraderFees checks that we are able to extract the total fees paid
-// by the traders
+// by the traders.
 func TestGetTraderFees(t *testing.T) {
 	for _, tc := range getTraderFeesTestCases {
 		tc := tc

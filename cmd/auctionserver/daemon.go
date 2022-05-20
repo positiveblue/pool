@@ -4,15 +4,13 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // nolint
 	"os"
 	"strconv"
 
 	"github.com/lightninglabs/subasta"
 	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/signal"
-
-	// Blank import to set up profiling HTTP handlers.
-	_ "net/http/pprof"
 )
 
 type daemonCommand struct {

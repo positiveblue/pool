@@ -289,7 +289,6 @@ func (a *acctFetcher) fetchAcct(k AccountID) (*account.Account, error) {
 }
 
 func (a *acctFetcher) isTraderAllowed(_, _ [33]byte) bool {
-
 	return true
 }
 
@@ -336,7 +335,6 @@ func TestMatchPossibleSpreadNeverMatches(t *testing.T) {
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			randOrderPair := orderPair{
 				Bid: genRandBid(r, acctDB),
 				Ask: genRandAsk(r, acctDB),
@@ -394,7 +392,6 @@ func TestMatchPossibleDurationIncompatability(t *testing.T) {
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			randOrderPair := orderPair{
 				Bid: genRandBid(r, acctDB),
 				Ask: genRandAsk(r, acctDB),
@@ -483,7 +480,6 @@ func TestMatchPossibleMatchPartialBid(t *testing.T) { // nolint:dupl
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			randOrderPair := orderPair{
 				Bid: genRandBid(r, acctDB),
 				Ask: genRandAsk(r, acctDB),
@@ -572,7 +568,6 @@ func TestMatchPossibleMatchPartialAsk(t *testing.T) { // nolint:dupl
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			randOrderPair := orderPair{
 				Bid: genRandBid(r, acctDB),
 				Ask: genRandAsk(r, acctDB),
@@ -631,7 +626,6 @@ func TestMatchPossibleMatchFullFill(t *testing.T) {
 		// As the number of supply units for the bid was greater than
 		// the ask, we should receive a partial ask fulfill.
 		if quote.Type != TotalFulfill {
-
 			t.Fatalf("expected partial ask fulfill, instead "+
 				"got %v", quote.Type)
 			return false
@@ -640,7 +634,6 @@ func TestMatchPossibleMatchFullFill(t *testing.T) {
 		// As the supply is equal, amount of unmatched units should be
 		// zero.
 		if quote.UnitsUnmatched != 0 {
-
 			t.Fatalf("expected %v unit unmatched, instead got %v",
 				0, quote.UnitsUnmatched)
 			return false
@@ -664,7 +657,6 @@ func TestMatchPossibleMatchFullFill(t *testing.T) {
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			// For this scenario, we'll force _all_ the generated
 			// orders to have the same number of units to ensure
 			// each iteration of the test hits our "positive"
@@ -802,7 +794,6 @@ func TestMatchBatchBidFillsManyAsk(t *testing.T) { // nolint:dupl
 	}
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			var randOrderSet orderSet
 
 			// totalSupply is the total supply that we aim to fill
@@ -969,7 +960,6 @@ func TestMatchBatchAskFillsManyBid(t *testing.T) { // nolint:dupl
 
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			var randOrderSet orderSet
 
 			// totalSupply is the total supply that we aim to fill
@@ -1099,7 +1089,6 @@ func TestMatchBatchNoMatch(t *testing.T) {
 	}
 	quickCfg := quick.Config{
 		Values: func(v []reflect.Value, r *rand.Rand) {
-
 			// To ensure that we'll create a set with no matches,
 			// we'll give each bid and ask values that will create
 			// a spread.

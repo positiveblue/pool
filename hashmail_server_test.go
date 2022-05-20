@@ -100,7 +100,7 @@ func TestHashMailServerReturnStream(t *testing.T) {
 
 	// Send then receive yet another message to make sure the stream is
 	// still operational.
-	testMessage2 := append(testMessage, []byte("test")...)
+	testMessage2 := append(testMessage, []byte("test")...) // nolint
 	err = writeStream.Send(&auctioneerrpc.CipherBox{
 		Desc: testStreamDesc,
 		Msg:  testMessage2,
@@ -351,6 +351,7 @@ func TestHashMailServerShutdownWhileWrite(t *testing.T) {
 
 func setupHashmailServer(t *testing.T, errChan chan error) (*grpc.Server,
 	*hashMailServer) {
+
 	mockSigner := test.NewMockSigner()
 	mockSigner.Signature = testSignature
 	mockSigner.NodePubkey = testTraderKeyStr

@@ -293,6 +293,7 @@ func (s *EtcdStore) ConfirmBatch(ctx context.Context,
 // Batches retrieves all existing batches.
 func (s *EtcdStore) Batches(ctx context.Context) (
 	map[orderT.BatchID]*BatchSnapshot, error) {
+
 	if !s.initialized {
 		return nil, errNotInitialized
 	}
@@ -306,6 +307,7 @@ func (s *EtcdStore) Batches(ctx context.Context) (
 	for k, v := range resp {
 		if strings.HasSuffix(k, perBatchKey) ||
 			strings.HasSuffix(k, batchStatusKey) {
+
 			continue
 		}
 
@@ -799,7 +801,6 @@ func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 // deserializeMatchedOrder reconstructs a matched order from binary data in the
 // LN wire format.
 func deserializeMatchedOrder(r io.Reader) (*matching.MatchedOrder, error) {
-
 	o := &matching.MatchedOrder{}
 	asker, err := deserializeTrader(r)
 	if err != nil {

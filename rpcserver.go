@@ -1529,7 +1529,7 @@ func (s *rpcServer) addStreamSubscription(traderID lsat.TokenID,
 }
 
 // connectTrader adds a trading client stream connection. Only one trading
-// stream is allowed per client
+// stream is allowed per client.
 func (s *rpcServer) connectTrader(traderID lsat.TokenID,
 	isSidecar bool) (*TraderStream, error) {
 
@@ -2816,7 +2816,6 @@ func unmarshallNodeTier(nodeTier auctioneerrpc.NodeTier) (orderT.NodeTier, error
 // interface.
 func marshallNodeTier(nodeTier orderT.NodeTier) (auctioneerrpc.NodeTier, error) {
 	switch nodeTier {
-
 	case orderT.NodeTierDefault:
 		return auctioneerrpc.NodeTier_TIER_DEFAULT, nil
 

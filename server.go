@@ -949,7 +949,6 @@ func (s *Server) Start() error {
 			promClient.CollectAll()
 			log.Infof("Finished initial metrics collection in %v",
 				time.Since(start))
-
 		}
 
 		// Start the gRPC server itself.
@@ -1064,7 +1063,7 @@ type regtestInterceptor struct{}
 // ID.
 func (i *regtestInterceptor) UnaryInterceptor(ctx context.Context,
 	req interface{}, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (
-	resp interface{}, err error) {
+	interface{}, error) {
 
 	id, err := idFromContext(ctx)
 	if err != nil {

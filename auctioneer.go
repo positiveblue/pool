@@ -271,7 +271,7 @@ const (
 	// orderFeederPause is the state that stops the order feeder from
 	// sending out new order update notifications. When we go back to the
 	// orderFeederDeliver state, any updates we cached should be
-	// re-delivered
+	// re-delivered.
 	orderFeederPause
 )
 
@@ -420,7 +420,6 @@ func (a *Auctioneer) loadDiskOrders() error {
 
 	for _, activeOrder := range activeOrders {
 		switch o := activeOrder.(type) {
-
 		case *order.Bid:
 			if err := a.cfg.CallMarket.ConsiderBids(o); err != nil {
 				return err
@@ -771,7 +770,6 @@ func (a *Auctioneer) resumeOrderFeeder() {
 	log.Debugf("Resuming OrderFeeder")
 
 	select {
-
 	case a.orderFeederSignals <- orderFeederDeliver:
 		return
 
@@ -787,7 +785,6 @@ func (a *Auctioneer) pauseOrderFeeder() {
 	log.Debugf("Pausing OrderFeeder")
 
 	select {
-
 	case a.orderFeederSignals <- orderFeederPause:
 		return
 
@@ -854,7 +851,6 @@ func (a *Auctioneer) orderFeeder(orderSubscription *subscribe.Client) {
 	)
 	for {
 		select {
-
 		// A new signal from the main goroutine has arrived, we'll
 		// either stop delivering updates, or send out the back log
 		// from when we were paused.
@@ -921,7 +917,6 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 	a.resumeBatchTicker()
 	for {
 		select {
-
 		// The batch ticker has just expired, so we'll launch a
 		// goroutine to deliver this new signal as a new auction event.
 		case <-a.cfg.BatchTicker.Ticks():
@@ -1046,7 +1041,6 @@ func (a *Auctioneer) accountConfNotifier(expectedOutput *wire.TxOut,
 	}
 
 	select {
-
 	// The master account has been confirmed, we'll now transition to the
 	// MasterAcctConfirmed state so we can commit this to disk, and open up
 	// the auction venue!
@@ -1114,7 +1108,7 @@ func (a *Auctioneer) banTrader(trader matching.AccountID) {
 }
 
 // removeIneligibleOrders attempts to remove a set of orders that are no longer
-// eligible for this batch from the
+// eligible for this batch from the order book.
 func (a *Auctioneer) removeIneligibleOrders(orders []orderT.Nonce) {
 	a.removedOrdersMtx.Lock()
 	defer a.removedOrdersMtx.Unlock()
@@ -1227,7 +1221,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 	ctxb := context.Background()
 
 	switch s := currentState.(type) {
-
 	// In the default state, we'll either go to create our new account, or
 	// jump straight to order submission if nothing needs our attention.
 	case DefaultState:
@@ -1564,11 +1557,10 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		// We pass in our two conflict handlers that also act as match
 		// predicates together with the default predicate chain.
-		predicateChain := make(
-			[]matching.MatchPredicate,
-			len(matching.DefaultPredicateChain),
+		predicateChain := append(
+			[]matching.MatchPredicate{},
+			matching.DefaultPredicateChain...,
 		)
-		copy(predicateChain, matching.DefaultPredicateChain)
 		predicateChain = append(
 			predicateChain, a.cfg.FundingConflicts,
 			a.cfg.TraderRejected,
@@ -1607,7 +1599,6 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		monitoring.ObserveMatchingLatency(batchID[:], matchLatency)
 
 		switch {
-
 		// If we can't make a market at this instance, then we'll
 		// go back to the OrderSubmitState to wait for more orders, or
 		// attempt an empty batch if we have pending batches that need
@@ -2057,7 +2048,6 @@ func (a *Auctioneer) AllowAccountUpdate(acct matching.AccountID) bool {
 	}
 
 	switch s := auctionState.(type) {
-
 	// We don't want to allow any account updates throughout the fee
 	// estimation-> matchmaking-> fee check states, as the account may be
 	// selected for a batch.

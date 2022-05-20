@@ -172,7 +172,7 @@ func (c *orderCollector) Collect(ch chan<- prometheus.Metric) {
 	// Finally appned the sorted bids to the set of sorted asks to create
 	// our ideal "depth chart": the bids will be sorted in increasing
 	// order, while the asks will be sorted in decreasing order.
-	sortedOrders := append(bids, asks...)
+	sortedOrders := append(bids, asks...) // nolint
 
 	// Record all metrics for each order.
 	for _, o := range sortedOrders {

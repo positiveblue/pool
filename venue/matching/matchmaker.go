@@ -76,7 +76,6 @@ func NewUniformPriceCallMarket(priceClearer PriceClearer,
 	u.resetOrderState()
 
 	return u
-
 }
 
 // resetOrderState resets the order state to blank.
@@ -176,8 +175,7 @@ func (u *UniformPriceCallMarket) clearSubBatch(matchMaker *MultiUnitMatchMaker,
 	// Create a copy of the original filter chain to make sure the
 	// append doesn't alter the original slice in some situations.
 	durationFilter := NewLeaseDurationFilter(duration)
-	chain := make([]OrderFilter, len(filterChain))
-	copy(chain, filterChain)
+	chain := append([]OrderFilter{}, filterChain...)
 	chain = append(chain, durationFilter)
 
 	// We try to clear a batch with the given filter chain. If no match is

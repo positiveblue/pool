@@ -384,6 +384,7 @@ func TestReserveAccount(t *testing.T) {
 	_, err = h.manager.ReserveAccount(ctx, params, testTokenID, 1234)
 	if err == nil || !strings.Contains(err.Error(),
 		"found existing pending reservation") {
+
 		t.Fatalf("expected new reservation attempt to fail, got err: "+
 			"%v", err)
 	}

@@ -410,7 +410,6 @@ func (b *BatchExecutor) validateTradersOnline(
 	// trader isn't online, then we'll mark both the order nonce and the
 	// trader.
 	for _, o := range batch.Orders {
-
 		if _, ok := activeTraders[o.Asker.AccountKey]; !ok {
 			offlineTraders[o.Asker.AccountKey] = struct{}{}
 			offlineNonces[o.Details.Ask.Nonce()] = struct{}{}
@@ -523,7 +522,6 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 	ctxb := context.Background()
 
 	switch currentState {
-
 	// This is our default state, if we get an event in this state, then we
 	// need a valid OrderBatch. We'll ensure that all the traders are
 	// online, otherwise we'll emit an error.
@@ -1210,7 +1208,6 @@ func (b *BatchExecutor) executor() {
 
 	for {
 		select {
-
 		// A new event has arrived, we'll now attempt to advance the
 		// state machine until either we finish the batch, or end up at
 		// the same start as before.
@@ -1434,7 +1431,6 @@ func (b *BatchExecutor) syncTraderState(
 			CommLine:     trader.CommLine,
 			BatchVersion: trader.BatchVersion,
 		}
-
 	}
 
 	return refreshed, nil

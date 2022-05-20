@@ -35,12 +35,12 @@ const (
 	// additional tlv encoded data. From the top level directory, this path
 	// is:
 	//
-	// bitcoin/clm/subasta/<network>/account/<trader-pubkey>/tlv
+	// bitcoin/clm/subasta/<network>/account/<trader-pubkey>/tlv.
 	accountTlvKey = "tlv"
 
 	// accountKeyLen is the expected number of parts in an account's main
 	// key without any additional sub path.
-	// Example: bitcoin/clm/subasta/<network>/account/123456
+	// Example: bitcoin/clm/subasta/<network>/account/123456.
 	accountKeyLen = 6
 )
 

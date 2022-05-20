@@ -449,7 +449,7 @@ func (s *EtcdStore) put(ctx context.Context, k, v string) error {
 // and orders during the order submit phase. Upon a critical failure, a daemon
 // shutdown will be requested.
 func (s *EtcdStore) defaultSTM(ctx context.Context, apply func(conc.STM) error) (
-	*clientv3.TxnResponse, error) {
+	*clientv3.TxnResponse, error) { // nolint
 
 	ctxt, cancel := context.WithTimeout(ctx, etcdTimeout)
 	defer cancel()

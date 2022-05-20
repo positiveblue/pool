@@ -1,7 +1,7 @@
 # If you change this value, please change it in the following files as well:
 # /Dockerfile
 # /.github/workflows/main.yml
-FROM golang:1.17.2-alpine as builder
+FROM golang:1.17.10-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightninglabs/subasta

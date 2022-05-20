@@ -494,6 +494,7 @@ func (h *hashMailServer) InitStream(
 					auth.GetAcctAuth().AcctKey,
 					init.GetAcctAuth().AcctKey,
 				) {
+
 					return fmt.Errorf("wrong pubkey")
 				}
 
@@ -515,9 +516,9 @@ func (h *hashMailServer) InitStream(
 				if !newTicket.Offer.SignPubKey.IsEqual(
 					oldTicket.Offer.SignPubKey,
 				) {
+
 					return fmt.Errorf("invalid pubkey")
 				}
-
 			}
 
 			return nil
@@ -765,7 +766,6 @@ func (h *hashMailServer) RecvStream(desc *auctioneerrpc.CipherBoxDesc,
 	defer readStream.ReturnStream()
 
 	for {
-
 		select {
 		case nextMsg := <-readStream.Msgs:
 			log.Tracef("Read %v bytes for HashMail stream_id=%x",
@@ -783,7 +783,6 @@ func (h *hashMailServer) RecvStream(desc *auctioneerrpc.CipherBoxDesc,
 			return nil
 		case <-h.quit:
 			return fmt.Errorf("server shutting down")
-
 		}
 	}
 }

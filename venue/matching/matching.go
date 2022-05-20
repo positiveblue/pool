@@ -28,7 +28,7 @@ type MultiUnitMatchMaker struct {
 // NewMultiUnitMatchMaker creates a new instance of the MultiUnitMatchMaker.
 //
 // TODO(roasbeef): comparator function for tie-breaking? can be sued to give
-// preferred fulfils if needed
+// preferred fulfils if needed.
 func NewMultiUnitMatchMaker(acctCacher AccountCacher,
 	predicateChain []MatchPredicate) *MultiUnitMatchMaker {
 
@@ -94,7 +94,6 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 	// At this point we know we have a match, the only remaining work
 	// is to ascertain exactly _what_ type of match it is.
 	switch {
-
 	// We have a match! However, it's a partial fill for the bid.
 	// In this case we'll mark it as a proper match, but that the
 	// bid still has units to be fulfilled.
