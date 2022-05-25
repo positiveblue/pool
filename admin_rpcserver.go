@@ -1339,6 +1339,11 @@ func marshallBTCPrice(btcPrice *fiat.Price) *adminrpc.BTCPrice {
 // marshallAdminAccount translates an account.Account into its admin RPC
 // counterpart.
 func marshallAdminAccount(acct *account.Account) (*adminrpc.Account, error) {
+	rpcState, err := marshallAccountState(acct.State)
+	if err != nil {
+		return nil, err
+	}
+
 	rpcAcct := &adminrpc.Account{
 		Value:         uint64(acct.Value),
 		Expiry:        acct.Expiry,
@@ -1348,29 +1353,7 @@ func marshallAdminAccount(acct *account.Account) (*adminrpc.Account, error) {
 		HeightHint:    acct.HeightHint,
 		Outpoint:      acct.OutPoint.String(),
 		UserAgent:     acct.UserAgent,
-	}
-
-	switch acct.State {
-	case account.StatePendingOpen:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_OPEN
-
-	case account.StateOpen:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_OPEN
-
-	case account.StateExpired:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_EXPIRED
-
-	case account.StateClosed:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_CLOSED
-
-	case account.StatePendingUpdate:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_UPDATE
-
-	case account.StatePendingBatch:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_BATCH
-
-	default:
-		return nil, fmt.Errorf("unknown account state")
+		State:         rpcState,
 	}
 
 	if acct.LatestTx != nil {

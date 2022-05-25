@@ -1946,6 +1946,11 @@ func marshallAccountDiff(diff *matching.AccountDiff,
 
 // marshallServerAccount translates an account.Account into its RPC counterpart.
 func marshallServerAccount(acct *account.Account) (*auctioneerrpc.AuctionAccount, error) {
+	rpcState, err := marshallAccountState(acct.State)
+	if err != nil {
+		return nil, err
+	}
+
 	rpcAcct := &auctioneerrpc.AuctionAccount{
 		Value:         uint64(acct.Value),
 		Expiry:        acct.Expiry,
@@ -1957,29 +1962,7 @@ func marshallServerAccount(acct *account.Account) (*auctioneerrpc.AuctionAccount
 			Txid:        acct.OutPoint.Hash[:],
 			OutputIndex: acct.OutPoint.Index,
 		},
-	}
-
-	switch acct.State {
-	case account.StatePendingOpen:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_OPEN
-
-	case account.StateOpen:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_OPEN
-
-	case account.StateExpired:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_EXPIRED
-
-	case account.StateClosed:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_CLOSED
-
-	case account.StatePendingUpdate:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_UPDATE
-
-	case account.StatePendingBatch:
-		rpcAcct.State = auctioneerrpc.AuctionAccountState_STATE_PENDING_BATCH
-
-	default:
-		return nil, fmt.Errorf("unknown account state")
+		State: rpcState,
 	}
 
 	if acct.LatestTx != nil {
@@ -2788,6 +2771,40 @@ func parseOnionAddr(onionAddr string) (net.Addr, error) {
 		OnionService: addrHost,
 		Port:         portNum,
 	}, nil
+}
+
+// marshallAccountState maps the account state to its RPC counterpart.
+func marshallAccountState(
+	state account.State) (auctioneerrpc.AuctionAccountState, error) {
+
+	switch state {
+	case account.StatePendingOpen:
+		return auctioneerrpc.AuctionAccountState_STATE_PENDING_OPEN, nil
+
+	case account.StateOpen:
+		return auctioneerrpc.AuctionAccountState_STATE_OPEN, nil
+
+	case account.StateExpired:
+		return auctioneerrpc.AuctionAccountState_STATE_EXPIRED, nil
+
+	case account.StateClosed:
+		return auctioneerrpc.AuctionAccountState_STATE_CLOSED, nil
+
+	case account.StatePendingUpdate:
+		return auctioneerrpc.AuctionAccountState_STATE_PENDING_UPDATE,
+			nil
+
+	case account.StatePendingBatch:
+		return auctioneerrpc.AuctionAccountState_STATE_PENDING_BATCH,
+			nil
+
+	case account.StateExpiredPendingUpdate:
+		return auctioneerrpc.AuctionAccountState_STATE_EXPIRED_PENDING_UPDATE,
+			nil
+
+	default:
+		return 0, fmt.Errorf("unknown account state <%d>", state)
+	}
 }
 
 // unmarshallNodeTier maps the RPC node tier enum to the node tier used in
