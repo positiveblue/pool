@@ -23,13 +23,13 @@ func TestBanTrader(t *testing.T) {
 	currentHeight := uint32(100)
 
 	// Check that there are no bans for the current account/node keys.
-	banInfo, err := store.GetAccountBan(ctx, accountKey)
+	banInfo, err := store.GetAccountBan(ctx, accountKey, currentHeight)
 	if err != nil {
 		t.Fatalf("unable to get account ban: %v", err)
 	}
 	require.Nil(t, banInfo)
 
-	banInfo, err = store.GetNodeBan(ctx, nodeKey)
+	banInfo, err = store.GetNodeBan(ctx, nodeKey, currentHeight)
 	if err != nil {
 		t.Fatalf("unable to get node ban: %v", err)
 	}
@@ -48,13 +48,13 @@ func TestBanTrader(t *testing.T) {
 	}
 
 	// Check that the bans where stored properly.
-	banInfo, err = store.GetAccountBan(ctx, accountKey)
+	banInfo, err = store.GetAccountBan(ctx, accountKey, currentHeight)
 	if err != nil {
 		t.Fatalf("unable to get account ban: %v", err)
 	}
 	require.Equal(t, newBanInfo, banInfo)
 
-	banInfo, err = store.GetNodeBan(ctx, nodeKey)
+	banInfo, err = store.GetNodeBan(ctx, nodeKey, currentHeight)
 	if err != nil {
 		t.Fatalf("unable to get node ban: %v", err)
 	}
@@ -72,13 +72,13 @@ func TestBanTrader(t *testing.T) {
 	}
 
 	// Check that the bans where removed.
-	banInfo, err = store.GetAccountBan(ctx, accountKey)
+	banInfo, err = store.GetAccountBan(ctx, accountKey, currentHeight)
 	if err != nil {
 		t.Fatalf("unable to get account ban: %v", err)
 	}
 	require.Nil(t, banInfo)
 
-	banInfo, err = store.GetNodeBan(ctx, nodeKey)
+	banInfo, err = store.GetNodeBan(ctx, nodeKey, currentHeight)
 	if err != nil {
 		t.Fatalf("unable to get node ban: %v", err)
 	}

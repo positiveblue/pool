@@ -37,7 +37,7 @@ func (s *mockStore) BanAccount(ctx context.Context, accKey *btcec.PublicKey,
 }
 
 func (s *mockStore) GetAccountBan(_ context.Context,
-	accKey *btcec.PublicKey) (*Info, error) {
+	accKey *btcec.PublicKey, _ uint32) (*Info, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -63,7 +63,7 @@ func (s *mockStore) BanNode(_ context.Context, nodKey *btcec.PublicKey,
 }
 
 func (s *mockStore) GetNodeBan(_ context.Context,
-	nodKey *btcec.PublicKey) (*Info, error) {
+	nodKey *btcec.PublicKey, _ uint32) (*Info, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -75,7 +75,7 @@ func (s *mockStore) GetNodeBan(_ context.Context,
 }
 
 func (s *mockStore) ListBannedAccounts(
-	_ context.Context) (map[[33]byte]*Info, error) {
+	_ context.Context, _ uint32) (map[[33]byte]*Info, error) {
 
 	list := make(map[[33]byte]*Info, len(s.bannedAccounts))
 	for key, banInfo := range s.bannedAccounts {
@@ -85,7 +85,7 @@ func (s *mockStore) ListBannedAccounts(
 }
 
 func (s *mockStore) ListBannedNodes(
-	_ context.Context) (map[[33]byte]*Info, error) {
+	_ context.Context, _ uint32) (map[[33]byte]*Info, error) {
 
 	list := make(map[[33]byte]*Info, len(s.bannedNodes))
 	for key, banInfo := range s.bannedNodes {

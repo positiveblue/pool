@@ -98,7 +98,7 @@ func (s *EtcdStore) banAccount(stm conc.STM, accountKey *btcec.PublicKey,
 // GetAccountBan returns the ban Info for the given accountKey.
 // Info will be nil if the account is not currently banned.
 func (s *EtcdStore) GetAccountBan(ctx context.Context,
-	accKey *btcec.PublicKey) (*ban.Info, error) {
+	accKey *btcec.PublicKey, _ uint32) (*ban.Info, error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -153,7 +153,7 @@ func (s *EtcdStore) banNode(stm conc.STM, nodeKey *btcec.PublicKey,
 // GetNodeBan returns the ban Info for the given nodeKey.
 // Info will be nil if the node is not currently banned.
 func (s *EtcdStore) GetNodeBan(ctx context.Context,
-	nodeKey *btcec.PublicKey) (*ban.Info, error) {
+	nodeKey *btcec.PublicKey, _ uint32) (*ban.Info, error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -177,7 +177,8 @@ func (s *EtcdStore) GetNodeBan(ctx context.Context,
 // ListBannedAccounts returns a map of all accounts that are currently banned.
 // The map key is the account's trader key and the value is the ban info.
 func (s *EtcdStore) ListBannedAccounts(
-	ctx context.Context) (map[[33]byte]*ban.Info, error) {
+	ctx context.Context, _ uint32) (map[[33]byte]*ban.Info,
+	error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
@@ -207,7 +208,7 @@ func (s *EtcdStore) ListBannedAccounts(
 // ListBannedNodes returns a map of all nodes that are currently banned.
 // The map key is the node's identity pubkey and the value is the ban info.
 func (s *EtcdStore) ListBannedNodes(
-	ctx context.Context) (map[[33]byte]*ban.Info, error) {
+	ctx context.Context, _ uint32) (map[[33]byte]*ban.Info, error) {
 
 	if !s.initialized {
 		return nil, errNotInitialized
