@@ -1104,6 +1104,20 @@ func (mr *MockAdminStoreMockRecorder) HasReservationForKey(arg0, arg1 interface{
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "HasReservationForKey", reflect.TypeOf((*MockAdminStore)(nil).HasReservationForKey), arg0, arg1)
 }
 
+// IndexRatings mocks base method.
+func (m *MockAdminStore) IndexRatings(arg0 context.Context) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "IndexRatings", arg0)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// IndexRatings indicates an expected call of IndexRatings.
+func (mr *MockAdminStoreMockRecorder) IndexRatings(arg0 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "IndexRatings", reflect.TypeOf((*MockAdminStore)(nil).IndexRatings), arg0)
+}
+
 // Init mocks base method.
 func (m *MockAdminStore) Init(ctx context.Context) error {
 	m.ctrl.T.Helper()
@@ -1178,6 +1192,21 @@ func (mr *MockAdminStoreMockRecorder) ListBannedNodes(ctx, currentHeight interfa
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ListBannedNodes", reflect.TypeOf((*MockAdminStore)(nil).ListBannedNodes), ctx, currentHeight)
 }
 
+// LookupNode mocks base method.
+func (m *MockAdminStore) LookupNode(arg0 context.Context, arg1 [33]byte) (order.NodeTier, bool) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "LookupNode", arg0, arg1)
+	ret0, _ := ret[0].(order.NodeTier)
+	ret1, _ := ret[1].(bool)
+	return ret0, ret1
+}
+
+// LookupNode indicates an expected call of LookupNode.
+func (mr *MockAdminStoreMockRecorder) LookupNode(arg0, arg1 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupNode", reflect.TypeOf((*MockAdminStore)(nil).LookupNode), arg0, arg1)
+}
+
 // MirrorToSQL mocks base method.
 func (m *MockAdminStore) MirrorToSQL(ctx context.Context) error {
 	m.ctrl.T.Helper()
@@ -1190,6 +1219,20 @@ func (m *MockAdminStore) MirrorToSQL(ctx context.Context) error {
 func (mr *MockAdminStoreMockRecorder) MirrorToSQL(ctx interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MirrorToSQL", reflect.TypeOf((*MockAdminStore)(nil).MirrorToSQL), ctx)
+}
+
+// ModifyNodeRating mocks base method.
+func (m *MockAdminStore) ModifyNodeRating(arg0 context.Context, arg1 [33]byte, arg2 order.NodeTier) error {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "ModifyNodeRating", arg0, arg1, arg2)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+// ModifyNodeRating indicates an expected call of ModifyNodeRating.
+func (mr *MockAdminStoreMockRecorder) ModifyNodeRating(arg0, arg1, arg2 interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "ModifyNodeRating", reflect.TypeOf((*MockAdminStore)(nil).ModifyNodeRating), arg0, arg1, arg2)
 }
 
 // NodeRatings mocks base method.

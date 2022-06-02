@@ -80,7 +80,9 @@ type Config struct {
 	Cluster *lncfg.Cluster       `group:"cluster" namespace:"cluster" hidden:"true"`
 	Bitcoin *chain.BitcoinConfig `group:"bitcoin" namespace:"bitcoin" hidden:"true"`
 	SQL     *subastadb.SQLConfig `group:"sql" namespace:"sql" hidden:"true"`
-	Status  *status.Config       `group:"status" namespace:"status" hidden:"true"`
+	UseSQL  bool
+
+	Status *status.Config `group:"status" namespace:"status" hidden:"true"`
 
 	// Prometheus and etcd configs have a build tag so the regtest version
 	// doesn't expose any CLI flags and we don't get any collisions that

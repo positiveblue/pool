@@ -98,4 +98,8 @@ type AdminStore interface {
 	//
 	// TODO(positiveblue): Delete when sql migration is completed.
 	MirrorToSQL(ctx context.Context) error
+
+	// NodeRatingsDatabase is a logical ratings database. Before usage the
+	// IndexRatings() MUST be called.
+	ratings.NodeRatingsDatabase
 }
