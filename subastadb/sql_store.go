@@ -15,6 +15,8 @@ import (
 	"github.com/golang-migrate/migrate/v4/source/httpfs"
 	"github.com/jackc/pgx/v4"
 	"github.com/jackc/pgx/v4/pgxpool"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb/postgres"
 )
 
@@ -170,8 +172,38 @@ func (s *SQLStore) Init(ctx context.Context) error {
 		// TODO(positiveblue): run migrations in a different app/pod.
 		err = s.RunMigrations(ctx)
 	})
+	if err != nil {
+		return err
+	}
+
+	_, err = s.queries.GetCurrentBatchKey(ctx)
+	if err == pgx.ErrNoRows {
+		return s.insertDefaultValues(ctx)
+	}
 
 	return err
+}
+
+// insertDefaultValues adds default values to the database where needed.
+func (s *SQLStore) insertDefaultValues(ctx context.Context) error {
+	// Insert batchKey.
+	currentBatchKeyParams := postgres.UpsertCurrentBatchKeyParams{
+		BatchKey: InitialBatchKey.SerializeCompressed(),
+	}
+	err := s.queries.UpsertCurrentBatchKey(ctx, currentBatchKeyParams)
+	if err != nil {
+		return err
+	}
+
+	// Insert default lease durations.
+	duration := orderT.LegacyLeaseDurationBucket
+	marketState := order.BucketStateClearingMarket
+
+	params := postgres.UpsertLeaseDurationParams{
+		Duration: int64(duration),
+		State:    int16(marketState),
+	}
+	return s.queries.UpsertLeaseDuration(ctx, params)
 }
 
 // ExecTx is a wrapper for txBody to abstract the creation and commit of a db
