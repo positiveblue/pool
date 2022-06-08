@@ -156,6 +156,11 @@ itest-garble: $(GARBLE_BIN) build-itest aperture-dir
 	$(GARBLETEST) -c -o itest/subasta-itest -tags="$(ITEST_TAGS)" ./itest
 	cd itest; ./subasta-itest -test.v $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
 
+itest-sql: build-itest aperture-dir
+	@$(call print, "Running integration tests with ${backend} backend and SQL database.")
+	rm -rf itest/regtest; date
+	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest -usesql=true
+
 aperture-dir:
 ifeq ($(UNAME_S),Linux)
 	mkdir -p $$HOME/.aperture
