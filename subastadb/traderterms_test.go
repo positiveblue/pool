@@ -21,7 +21,7 @@ func TestStoreTraderTerms(t *testing.T) {
 	t.Parallel()
 
 	ctxb := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	terms := &traderterms.Custom{

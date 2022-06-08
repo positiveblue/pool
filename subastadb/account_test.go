@@ -113,7 +113,7 @@ func TestAccountReservation(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// A reservation hasn't been created yet, so we shouldn't find one.
@@ -174,7 +174,7 @@ func TestAccountAlreadyExists(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Start by adding a new account.
@@ -220,7 +220,7 @@ func TestAccounts(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Start by adding a new account.
@@ -318,7 +318,7 @@ func TestAccountDiffs(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Start by adding a new account.

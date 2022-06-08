@@ -91,7 +91,7 @@ func TestPersistBatchResult(t *testing.T) {
 		ctx     = context.Background()
 		batchID = orderT.BatchID{1, 2, 3}
 	)
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// The store should be initialized with the initial batch key.
@@ -288,7 +288,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 		ctx     = context.Background()
 		batchID = orderT.BatchID{1, 2, 3}
 	)
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Create a test order that we are going to try to modify.
@@ -371,7 +371,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 }
 
 func makeTestOrderBatches(ctx context.Context, t *testing.T,
-	store *EtcdStore) []*matching.OrderBatch {
+	store AdminStore) []*matching.OrderBatch {
 
 	// Create an order batch that contains dummy data.
 	askLegacyClientKit := dummyClientOrder(
@@ -551,7 +551,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	batches := makeTestOrderBatches(ctx, t, store)
@@ -559,7 +559,7 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	assertBatchSerialization(t, store, batches[1])
 }
 
-func assertBatchSerialization(t *testing.T, store *EtcdStore,
+func assertBatchSerialization(t *testing.T, store AdminStore,
 	batch *matching.OrderBatch) {
 
 	t.Helper()

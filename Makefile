@@ -135,6 +135,10 @@ unit:
 	@$(call print, "Running unit tests.")
 	$(UNIT)
 
+unit-sql:
+	@$(call print, "Running unit tests with SQL database.")
+	$(UNIT_SQL)
+
 unit-cover: $(GOACC_BIN)
 	@$(call print, "Running unit coverage tests.")
 	$(GOACC_BIN) $(COVER_PKG)
