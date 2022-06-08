@@ -145,28 +145,24 @@ unit-race:
 
 itest: build-itest itest-only
 
-itest-only:
+itest-only: aperture-dir
 	@$(call print, "Running integration tests with ${backend} backend.")
-ifeq ($(UNAME_S),Linux)
-	mkdir -p $$HOME/.aperture
-endif
-ifeq ($(UNAME_S),Darwin)
-	mkdir -p "$$HOME/Library/Application Support/Aperture"
-endif
 	rm -rf itest/regtest; date
 	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
 
-itest-garble: $(GARBLE_BIN) build-itest
+itest-garble: $(GARBLE_BIN) build-itest aperture-dir
 	@$(call print, "Running integration tests with ${backend} backend.")
+	rm -rf itest/regtest; date
+	$(GARBLETEST) -c -o itest/subasta-itest -tags="$(ITEST_TAGS)" ./itest
+	cd itest; ./subasta-itest -test.v $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
+
+aperture-dir:
 ifeq ($(UNAME_S),Linux)
 	mkdir -p $$HOME/.aperture
 endif
 ifeq ($(UNAME_S),Darwin)
 	mkdir -p "$$HOME/Library/Application Support/Aperture"
 endif
-	rm -rf itest/regtest; date
-	$(GARBLETEST) -c -o itest/subasta-itest -tags="$(ITEST_TAGS)" ./itest
-	cd itest; ./subasta-itest -test.v $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
 
 # =============
 # FLAKE HUNTING
