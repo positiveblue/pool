@@ -417,10 +417,11 @@
         "STATE_EXPIRED",
         "STATE_PENDING_UPDATE",
         "STATE_CLOSED",
-        "STATE_PENDING_BATCH"
+        "STATE_PENDING_BATCH",
+        "STATE_EXPIRED_PENDING_UPDATE"
       ],
       "default": "STATE_PENDING_OPEN",
-      "description": " - STATE_PENDING_OPEN: The account's funding transaction is not yet confirmed on-chain.\n - STATE_OPEN: The account is fully open and confirmed on-chain.\n - STATE_EXPIRED: The account is still open but the CLTV expiry has passed and the trader can\nclose it without the auctioneer's key. Orders for accounts in this state\nwon't be accepted.\n - STATE_PENDING_UPDATE: The account was modified by a deposit or withdrawal and is currently waiting\nfor the modifying transaction to confirm.\n - STATE_CLOSED: The account is closed. The auctioneer doesn't track whether the closing\ntransaction is already confirmed on-chain or not.\n - STATE_PENDING_BATCH: The account has recently participated in a batch and is not yet confirmed."
+      "description": " - STATE_PENDING_OPEN: The account's funding transaction is not yet confirmed on-chain.\n - STATE_OPEN: The account is fully open and confirmed on-chain.\n - STATE_EXPIRED: The account is still open but the CLTV expiry has passed and the trader can\nclose it without the auctioneer's key. Orders for accounts in this state\nwon't be accepted.\n - STATE_PENDING_UPDATE: The account was modified by a deposit or withdrawal and is currently waiting\nfor the modifying transaction to confirm.\n - STATE_CLOSED: The account is closed. The auctioneer doesn't track whether the closing\ntransaction is already confirmed on-chain or not.\n - STATE_PENDING_BATCH: The account has recently participated in a batch and is not yet confirmed.\n - STATE_EXPIRED_PENDING_UPDATE: The account has reached the expiration height while it had a pending update\nthat hasn't yet confirmed. This allows accounts to be renewed once\nconfirmed and expired."
     },
     "poolrpcBatchSnapshotResponse": {
       "type": "object",
