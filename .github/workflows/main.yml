@@ -119,6 +119,7 @@ jobs:
       matrix:
         unit_type:
           - unit-race
+          - unit-sql
     steps:
       - name: git checkout
         uses: actions/checkout@v2
@@ -220,4 +221,44 @@ jobs:
         with:
           name: logs-itest-garble
           path: logs-itest-garble.zip
+          retention-days: 5
+
+  ################################## 
+  # run SQL store integration tests
+  ##################################
+  integration-test-sql:
+    name: run SQL store itests
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: go cache
+        uses: actions/cache@v1
+        with:
+          path: /home/runner/work/go
+          key: subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+          restore-keys: |
+            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
+            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
+            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-
+            subasta-${{ runner.os }}-go-
+      - name: setup go ${{ env.GO_VERSION }}
+        uses: actions/setup-go@v2
+        with:
+          go-version: '${{ env.GO_VERSION }}'
+
+      - name: run itest
+        run: make itest-sql
+
+      - name: Zip log files on failure
+        if: ${{ failure() }}
+        run: 7z a logs-itest-sql.zip itest/**/*.log
+
+      - name: Upload log files on failure
+        uses: actions/upload-artifact@v2.2.4
+        if: ${{ failure() }}
+        with:
+          name: logs-itest-sql
+          path: logs-itest-sql.zip
           retention-days: 5
