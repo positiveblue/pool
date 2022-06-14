@@ -30,7 +30,7 @@ var (
 	// ErrAccountExists is an error returned when trying to initialize an
 	// account and the account already exists. This is a safety measure to
 	// avoid an arbitrary account overwrite by any user.
-	ErrAccountExists = errors.New("account alraedy exists")
+	ErrAccountExists = errors.New("account already exists")
 
 	// ErrZeroHashDisallowed is an error returned when InitAccount is called
 	// with the ZeroHash. This prevents both the ZeroOutpoint and the ZeroHash

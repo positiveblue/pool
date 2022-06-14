@@ -193,9 +193,6 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 	tokenID lsat.TokenID, bestHeight uint32) (*Reservation, error) {
 
 	// Check whether we have an existing reservation already.
-	//
-	// TODO(wilmer): Check whether we already have an account with the key
-	// they're trying to make a reservation with?
 	reservation, err := m.cfg.Store.HasReservation(ctx, tokenID)
 	switch err {
 	// If we do, make sure the existing reservation is for the same account
@@ -218,6 +215,19 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 
 	default:
 		return nil, err
+	}
+
+	// We also need to make sure there isn't already a full account for the
+	// key in question. This could happen if the trader's lnd node was
+	// restored from seed and starts at index 0 again. In that case they
+	// need to run the account recovery first to get everything up to speed.
+	existingAcct, err := m.cfg.Store.Account(ctx, params.TraderKey, false)
+	if err == nil {
+		return nil, fmt.Errorf("%w: cannot create reservation for "+
+			"account key %x, found existing account with state %v",
+			ErrAccountExists,
+			params.TraderKey.SerializeCompressed(),
+			existingAcct.State)
 	}
 
 	// Make sure we have valid parameters to create the account.
