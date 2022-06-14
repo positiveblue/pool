@@ -604,7 +604,7 @@ func (s *SQLTransaction) GetBatch(batchID orderT.BatchID) ( // nolint: interface
 }
 
 // UpdateBatchesSQL upserts more batches in one transaction to SQL.
-func UpdateBatchesSQL(ctx context.Context, store *SQLStore,
+func UpdateBatchesSQL(ctx context.Context, store *SQLGORMStore,
 	batches map[orderT.BatchID]*BatchSnapshot) {
 
 	if store == nil || len(batches) == 0 {

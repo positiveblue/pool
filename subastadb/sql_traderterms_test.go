@@ -24,7 +24,7 @@ func TestTraderTermsSQL(t *testing.T) {
 	defer f.TearDown(t)
 
 	f.ClearDB(t)
-	store := f.NewSQLStore(t)
+	store := f.NewSQLGORMStore(t)
 
 	testTermsEmpty := &traderterms.Custom{
 		TraderID: lsat.TokenID{},

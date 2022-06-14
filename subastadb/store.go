@@ -119,14 +119,14 @@ type EtcdStore struct {
 
 	// sqlMirror holds an optional SQLStore object which we'll use to mirror
 	// orders and accounts to a SQL backend.
-	sqlMirror *SQLStore
+	sqlMirror *SQLGORMStore
 }
 
 // NewEtcdStore creates a new etcd store instance. Chain indicates the chain to
 // use by its genesis block hash. The specified user and password should be
 // able to access al keys below that topLevelDir above.
 func NewEtcdStore(activeNet chaincfg.Params,
-	host, user, pass string, sqlMirror *SQLStore) (*EtcdStore, error) {
+	host, user, pass string, sqlMirror *SQLGORMStore) (*EtcdStore, error) {
 
 	cli, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{host},

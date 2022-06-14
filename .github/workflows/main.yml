@@ -57,6 +57,25 @@ jobs:
       - name: run check
         run: make mock-check
 
+  #######################
+  # sql model generation 
+  #######################
+  sqlc-check:
+    name: Sqlc check
+    runs-on: ubuntu-latest
+    steps:
+      - name: git checkout
+        uses: actions/checkout@v2
+
+      - name: docker image cache
+        uses: satackey/action-docker-layer-caching@v0.0.11
+
+      - name: Generate sql models
+        run: make sqlc
+
+      - name: run sqlc-check
+        run: make sqlc-check
+
   ########################
   # lint code
   ########################

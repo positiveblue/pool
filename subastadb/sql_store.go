@@ -2,10 +2,34 @@ package subastadb
 
 import (
 	"context"
+	"database/sql"
+	"embed"
 	"fmt"
+	"net/http"
+	"sync"
+	"time"
 
-	"gorm.io/driver/postgres"
-	"gorm.io/gorm"
+	"github.com/golang-migrate/migrate/v4"
+	pgx_migrate "github.com/golang-migrate/migrate/v4/database/pgx"
+	_ "github.com/golang-migrate/migrate/v4/source/file"
+	"github.com/golang-migrate/migrate/v4/source/httpfs"
+	"github.com/jackc/pgx/v4"
+	"github.com/jackc/pgx/v4/pgxpool"
+	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/order"
+	"github.com/lightninglabs/subasta/subastadb/postgres"
+)
+
+const (
+	dsnTemplate = "postgres://%v:%v@%v:%d/%v?sslmode=%v"
+)
+
+var (
+	//go:embed postgres/migrations/*.up.sql
+	sqlSchemas embed.FS
+
+	// migrateSync ensures that the migrations are run only once.
+	migrateSync sync.Once
 )
 
 // SQLConfig holds database configuration.
@@ -19,89 +43,202 @@ type SQLConfig struct {
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
 }
 
-// SQLStore is the main object to communicate with the SQL db.
-type SQLStore struct {
-	db *gorm.DB
-}
-
-// NewSQLStore constructs a new SQLStore.
-func NewSQLStore(cfg *SQLConfig) (*SQLStore, error) {
-	db, err := openPostgresDB(cfg)
-	if err != nil {
-		return nil, err
-	}
-
-	return &SQLStore{db: db}, nil
-}
-
-// openPostgresDB opens a PostreSQL database and initializes the tables
-// corresponding to the SQL models defined in this package.
-func openPostgresDB(cfg *SQLConfig) (*gorm.DB, error) {
-	sslMode := "disable"
-	if cfg.RequireSSL {
+// DSN returns the dns to connect to the database.
+func (s *SQLConfig) DSN(hidePassword bool) string {
+	var sslMode = "disable"
+	if s.RequireSSL {
 		sslMode = "require"
 	}
 
-	dsn := fmt.Sprintf(
-		"user=%v password=%v dbname=%v host=%v port=%v sslmode=%v",
-		cfg.User, cfg.Password, cfg.DBName, cfg.Host, cfg.Port, sslMode,
-	)
+	password := s.Password
+	if hidePassword {
+		// Placeholder used for logging the DSN safely.
+		password = "****"
+	}
 
-	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	return fmt.Sprintf(dsnTemplate, s.User, password, s.Host, s.Port,
+		s.DBName, sslMode)
+}
+
+// SQLStore is the main object to communicate with the SQL db.
+type SQLStore struct {
+	cfg     *SQLConfig
+	db      *pgxpool.Pool
+	queries *postgres.Queries
+}
+
+// NewSQLStore constructs a new SQLStore.
+func NewSQLStore(ctx context.Context, cfg *SQLConfig) (*SQLStore, error) {
+	log.Infof("Using SQL database '%s'", cfg.DSN(true))
+
+	db, err := pgxpool.Connect(ctx, cfg.DSN(false))
 	if err != nil {
 		return nil, err
 	}
 
-	sqlDb, err := db.DB()
+	queries := postgres.New(db)
+	return &SQLStore{
+		cfg:     cfg,
+		db:      db,
+		queries: queries,
+	}, nil
+}
+
+// RunMigrations applies the latest sql migrations from the embedded files in
+// the Go binary.
+func (s *SQLStore) RunMigrations(ctx context.Context) error {
+	// Create a specific connection for running the migrations.
+	// SQLStore uses pgxpool while pgx_migrates asks for a `sql.DB`.
+	db, err := sql.Open("pgx", s.cfg.DSN(false))
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	var maxOpenConnections int
-	if cfg.MaxOpenConnections != 0 {
-		maxOpenConnections = cfg.MaxOpenConnections
-	}
-	sqlDb.SetMaxOpenConns(maxOpenConnections)
-
-	if err := db.AutoMigrate(&SQLAskOrder{}); err != nil {
-		return nil, err
-	}
-
-	if err := db.AutoMigrate(&SQLBidOrder{}); err != nil {
-		return nil, err
-	}
-
-	if err := db.AutoMigrate(&SQLAccount{}); err != nil {
-		return nil, err
-	}
-
-	if err := db.AutoMigrate(
-		&SQLAccountDiff{}, &SQLMatchedOrder{}, &SQLBatchSnapshot{},
-	); err != nil {
-		return nil, err
-	}
-
-	if err := db.AutoMigrate(&SQLTraderTerms{}); err != nil {
-		return nil, err
-	}
-
-	return db, nil
-}
-
-// SQLTransaction is a higher level abstraction around the ORM provided sql
-// transaction.
-type SQLTransaction struct {
-	tx *gorm.DB
-}
-
-// Transaction starts and attempts to commit an SQL transaction.
-func (s *SQLStore) Transaction(ctx context.Context,
-	apply func(tx *SQLTransaction) error) error {
-
-	return s.db.WithContext(ctx).Transaction(func(dbTx *gorm.DB) error {
-		sqlTx := &SQLTransaction{
-			tx: dbTx,
+	// Close the db connection after we are done.
+	defer func() {
+		if err := db.Close(); err != nil {
+			log.Errorf("unable to close db after running "+
+				"migrations: %v", err)
 		}
-		return apply(sqlTx)
+	}()
+
+	// Now that the database is open, populate the database with
+	// our set of schemas based on our embedded in-memory file
+	// system.
+	//
+	// First, we'll need to open up a new migration instance for
+	// our current target database: pgx(postgres).
+	driver, err := pgx_migrate.WithInstance(db, &pgx_migrate.Config{})
+	if err != nil {
+		return err
+	}
+
+	// With the migrate instance open, we'll create a new migration
+	// source using the embedded file system stored in sqlSchemas.
+	// The library we're using can't handle a raw file system
+	// interface, so we wrap it in this intermediate layer.
+	migrateFileServer, err := httpfs.New(
+		http.FS(sqlSchemas), "postgres/migrations",
+	)
+	if err != nil {
+		return err
+	}
+	defer migrateFileServer.Close()
+
+	// Finally, we'll run the migration with our driver above based
+	// on the open DB, and also the migration source stored in the
+	// file system above.
+	sqlMigrate, err := migrate.NewWithInstance(
+		"migrations", migrateFileServer, "postgres", driver,
+	)
+	if err != nil {
+		return err
+	}
+
+	version, dirty, err := sqlMigrate.Version()
+	switch {
+	case err != nil && err != migrate.ErrNilVersion:
+		return err
+	case dirty:
+		return fmt.Errorf("unable to execute db migration: db is in " +
+			"a dirty state")
+	}
+
+	log.Infof("Current DB version: %v", version)
+
+	start := time.Now()
+	err = sqlMigrate.Up()
+	if err != nil && err != migrate.ErrNoChange {
+		return err
+	}
+
+	// TODO(positiveblue): send event data to prometheus.
+	log.Infof("Executing DB migrations took %v", time.Since(start))
+
+	version, _, err = sqlMigrate.Version()
+	if err != nil && err != migrate.ErrNilVersion {
+		return err
+	}
+
+	log.Infof("DB version after running migrations: %v", version)
+	return nil
+}
+
+// Init initializes the necessary versioning state if the database hasn't
+// already been created in the past.
+func (s *SQLStore) Init(ctx context.Context) error {
+	var err error
+	migrateSync.Do(func() {
+		// TODO(positiveblue): run migrations in a different app/pod.
+		err = s.RunMigrations(ctx)
 	})
+	if err != nil {
+		return err
+	}
+
+	_, err = s.queries.GetCurrentBatchKey(ctx)
+	if err == pgx.ErrNoRows {
+		return s.insertDefaultValues(ctx)
+	}
+
+	return err
+}
+
+// insertDefaultValues adds default values to the database where needed.
+func (s *SQLStore) insertDefaultValues(ctx context.Context) error {
+	// Insert batchKey.
+	currentBatchKeyParams := postgres.UpsertCurrentBatchKeyParams{
+		BatchKey: InitialBatchKey.SerializeCompressed(),
+	}
+	err := s.queries.UpsertCurrentBatchKey(ctx, currentBatchKeyParams)
+	if err != nil {
+		return err
+	}
+
+	// Insert default lease durations.
+	duration := orderT.LegacyLeaseDurationBucket
+	marketState := order.BucketStateClearingMarket
+
+	params := postgres.UpsertLeaseDurationParams{
+		Duration: int64(duration),
+		State:    int16(marketState),
+	}
+	return s.queries.UpsertLeaseDuration(ctx, params)
+}
+
+// ExecTx is a wrapper for txBody to abstract the creation and commit of a db
+// transaction. The db transaction is embedded in a `*postgres.Queries` that
+// txBody needs to use when executing each one of the queries that need to be
+// applied atomically.
+func (s *SQLStore) ExecTx(ctx context.Context,
+	txBody func(*postgres.Queries) error) error {
+
+	// Create the db transaction.
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return err
+	}
+
+	// Rollback is safe to call even if the tx is already closed, so if
+	// the tx commits successfully, this is a no-op.
+	defer func() {
+		err := tx.Rollback(ctx)
+		switch {
+		// If the tx was already closed (it was successfully executed)
+		// we do not need to log that error.
+		case err == pgx.ErrTxClosed:
+			return
+
+		// If this is an unexpected error, log it.
+		case err != nil:
+			log.Errorf("unable to rollback db tx: %v", err)
+		}
+	}()
+
+	if err := txBody(s.queries.WithTx(tx)); err != nil {
+		return err
+	}
+
+	// Commit transaction.
+	return tx.Commit(ctx)
 }
