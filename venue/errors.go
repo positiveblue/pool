@@ -30,7 +30,7 @@ func (e *ErrMissingTraders) Error() string {
 func traderKeysToString(keys map[matching.AccountID]struct{}) string {
 	accountIDs := make([]string, 0, len(keys))
 	for k := range keys {
-		accountIDs = append(accountIDs, fmt.Sprintf("%x", k))
+		accountIDs = append(accountIDs, fmt.Sprintf(" %x ", k))
 	}
 	return fmt.Sprintf("[%s]", strings.Join(accountIDs, ","))
 }
