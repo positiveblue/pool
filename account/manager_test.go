@@ -487,8 +487,8 @@ func TestAccountAlreadyExists(t *testing.T) {
 
 	_ = h.initAccount()
 
-	// After the account is already initialized, call ReserveAccount and then
-	// InitAccount. Assert that InitAccount fails with ErrAccountExists.
+	// After the account is already initialized, call ReserveAccount and
+	// assert that fails with ErrAccountExists.
 	ctx := context.Background()
 	heightHint := uint32(1)
 	params := &Parameters{
@@ -497,29 +497,11 @@ func TestAccountAlreadyExists(t *testing.T) {
 		TraderKey: testTraderKey,
 	}
 
-	reservation, err := h.manager.ReserveAccount(
+	_, err := h.manager.ReserveAccount(
 		ctx, params, testTokenID, heightHint,
 	)
-	if err != nil {
-		t.Fatalf("unable to reserve account: %v", err)
-	}
-	h.assertNewReservation()
-
-	script, err := poolscript.AccountScript(
-		params.Expiry, params.TraderKey,
-		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
-		sharedSecret,
-	)
-	if err != nil {
-		t.Fatalf("unable to construct new account script: %v", err)
-	}
-	params.Script = script
-	params.OutPoint = testOutPoint
-
-	err = h.manager.InitAccount(ctx, testTokenID, params, heightHint)
-	if err != ErrAccountExists {
-		t.Fatalf("unexpected err: %v", err)
-	}
+	require.ErrorIs(t, err, ErrAccountExists)
+	h.assertExistingReservation()
 }
 
 // TestAccountInvalidChainOutput ensures that we detect an account as invalid if
