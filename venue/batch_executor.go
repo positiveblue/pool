@@ -426,7 +426,6 @@ func (b *BatchExecutor) validateTradersOnline(
 		if bid.IsSidecar {
 			_, receiverOnline := activeTraders[bid.MultiSigKey]
 			if !receiverOnline {
-				offlineTraders[o.Bidder.AccountKey] = struct{}{}
 				offlineTraders[bid.MultiSigKey] = struct{}{}
 				offlineNonces[bid.Nonce()] = struct{}{}
 			}
