@@ -15,6 +15,7 @@ var adminCommands = []cli.Command{{
 		financialReportCommand,
 		shutdownCommand,
 		setStatusCommand,
+		setLogLevelCommand,
 	},
 }}
 

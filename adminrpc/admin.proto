@@ -42,6 +42,7 @@ service AuctionAdmin {
         returns (FinancialReportResponse);
     rpc Shutdown (EmptyRequest) returns (EmptyResponse);
     rpc SetStatus (SetStatusRequest) returns (EmptyResponse);
+    rpc SetLogLevel (SetLogLevelRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -702,4 +703,9 @@ message SetStatusRequest {
     The current server state to set for the k8s status endpoint.
     */
     string server_state = 1;
+}
+
+message SetLogLevelRequest {
+    // The new log level to set for the server.
+    string log_level = 1;
 }
