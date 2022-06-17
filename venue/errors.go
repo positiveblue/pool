@@ -1,8 +1,8 @@
 package venue
 
 import (
+	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
@@ -23,16 +23,31 @@ type ErrMissingTraders struct {
 // Error implements the error interface.
 func (e *ErrMissingTraders) Error() string {
 	return fmt.Sprintf("%v traders not online in venue: %v",
-		len(e.TraderKeys), traderKeysToString(e.TraderKeys))
+		len(e.TraderKeys), traderInfoToString(
+			e.TraderKeys, e.OrderNonces,
+		))
 }
 
-// traderKeysToString returns the trader keys as a string for printing.
-func traderKeysToString(keys map[matching.AccountID]struct{}) string {
-	accountIDs := make([]string, 0, len(keys))
-	for k := range keys {
-		accountIDs = append(accountIDs, fmt.Sprintf(" %x ", k))
+// traderInfoToString returns the trader keys as a string for printing.
+func traderInfoToString(keys map[matching.AccountID]struct{},
+	orders map[orderT.Nonce]struct{}) string {
+
+	type entry struct {
+		Traders []matching.AccountID `json:"traders"`
+		Orders  []string             `json:"nonces"`
 	}
-	return fmt.Sprintf("[%s]", strings.Join(accountIDs, ","))
+	e := &entry{
+		Traders: make([]matching.AccountID, 0, len(keys)),
+		Orders:  make([]string, 0, len(orders)),
+	}
+	for k := range keys {
+		e.Traders = append(e.Traders, k)
+	}
+	for k := range orders {
+		e.Orders = append(e.Orders, k.String())
+	}
+	jsonBytes, _ := json.Marshal(e)
+	return string(jsonBytes)
 }
 
 // ErrMsgTimeout is returned if a trader doesn't send an expected response in
