@@ -103,167 +103,14 @@ func (q *Queries) DeleteOrderNetworkAddresses(ctx context.Context, nonce []byte)
 	return result.RowsAffected(), nil
 }
 
-const getActiveOrderNonces = `-- name: GetActiveOrderNonces :many
-SELECT o.nonce
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE archived = FALSE
-LIMIT NULLIF($2::int, 0) OFFSET $1
-`
-
-type GetActiveOrderNoncesParams struct {
-	OffsetParam int32
-	LimitParam  int32
-}
-
-func (q *Queries) GetActiveOrderNonces(ctx context.Context, arg GetActiveOrderNoncesParams) ([][]byte, error) {
-	rows, err := q.db.Query(ctx, getActiveOrderNonces, arg.OffsetParam, arg.LimitParam)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items [][]byte
-	for rows.Next() {
-		var nonce []byte
-		if err := rows.Scan(&nonce); err != nil {
-			return nil, err
-		}
-		items = append(items, nonce)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getActiveOrdersCount = `-- name: GetActiveOrdersCount :one
-SELECT COUNT(*)
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE archived = FALSE
-`
-
-func (q *Queries) GetActiveOrdersCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, getActiveOrdersCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const getArchivedOrderNonces = `-- name: GetArchivedOrderNonces :many
-SELECT o.nonce
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE archived = TRUE
-LIMIT NULLIF($2::int, 0) OFFSET $1
-`
-
-type GetArchivedOrderNoncesParams struct {
-	OffsetParam int32
-	LimitParam  int32
-}
-
-func (q *Queries) GetArchivedOrderNonces(ctx context.Context, arg GetArchivedOrderNoncesParams) ([][]byte, error) {
-	rows, err := q.db.Query(ctx, getArchivedOrderNonces, arg.OffsetParam, arg.LimitParam)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items [][]byte
-	for rows.Next() {
-		var nonce []byte
-		if err := rows.Scan(&nonce); err != nil {
-			return nil, err
-		}
-		items = append(items, nonce)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getArchivedOrdersCount = `-- name: GetArchivedOrdersCount :one
-SELECT COUNT(*)
-FROM orders
-WHERE archived = TRUE
-`
-
-func (q *Queries) GetArchivedOrdersCount(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, getArchivedOrdersCount)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const getOrder = `-- name: GetOrder :one
-SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, ob.nonce, min_node_tier, self_chan_balance, is_sidecar 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE o.nonce=$1
-`
-
-type GetOrderRow struct {
-	Nonce            []byte
-	Type             int16
-	TraderKey        []byte
-	Version          int64
-	State            int16
-	FixedRate        int64
-	Amount           int64
-	Units            int64
-	UnitsUnfulfilled int64
-	MinUnitsMatch    int64
-	MaxBatchFeeRate  int64
-	LeaseDuration    int64
-	ChannelType      int16
-	Signature        []byte
-	MultisigKey      []byte
-	NodeKey          []byte
-	TokenID          []byte
-	UserAgent        string
-	Archived         bool
-	Nonce_2          []byte
-	MinNodeTier      sql.NullInt64
-	SelfChanBalance  sql.NullInt64
-	IsSidecar        sql.NullBool
-}
-
-func (q *Queries) GetOrder(ctx context.Context, nonce []byte) (GetOrderRow, error) {
-	row := q.db.QueryRow(ctx, getOrder, nonce)
-	var i GetOrderRow
-	err := row.Scan(
-		&i.Nonce,
-		&i.Type,
-		&i.TraderKey,
-		&i.Version,
-		&i.State,
-		&i.FixedRate,
-		&i.Amount,
-		&i.Units,
-		&i.UnitsUnfulfilled,
-		&i.MinUnitsMatch,
-		&i.MaxBatchFeeRate,
-		&i.LeaseDuration,
-		&i.ChannelType,
-		&i.Signature,
-		&i.MultisigKey,
-		&i.NodeKey,
-		&i.TokenID,
-		&i.UserAgent,
-		&i.Archived,
-		&i.Nonce_2,
-		&i.MinNodeTier,
-		&i.SelfChanBalance,
-		&i.IsSidecar,
-	)
-	return i, err
-}
-
 const getOrderAllowedNodeIds = `-- name: GetOrderAllowedNodeIds :many
 SELECT nonce, node_key, allowed 
-FROM order_allowed_node_ids 
-WHERE nonce = $1
+FROM order_allowed_node_ids
+WHERE nonce = ANY($1::BYTEA[])
 `
 
-func (q *Queries) GetOrderAllowedNodeIds(ctx context.Context, nonce []byte) ([]OrderAllowedNodeID, error) {
-	rows, err := q.db.Query(ctx, getOrderAllowedNodeIds, nonce)
+func (q *Queries) GetOrderAllowedNodeIds(ctx context.Context, nonces [][]byte) ([]OrderAllowedNodeID, error) {
+	rows, err := q.db.Query(ctx, getOrderAllowedNodeIds, nonces)
 	if err != nil {
 		return nil, err
 	}
@@ -302,12 +149,12 @@ func (q *Queries) GetOrderBid(ctx context.Context, nonce []byte) (OrderBid, erro
 
 const getOrderNetworkAddresses = `-- name: GetOrderNetworkAddresses :many
 SELECT nonce, network, address 
-FROM order_node_network_addresses 
-WHERE nonce=$1
+FROM order_node_network_addresses
+WHERE nonce = ANY($1::BYTEA[])
 `
 
-func (q *Queries) GetOrderNetworkAddresses(ctx context.Context, nonce []byte) ([]OrderNodeNetworkAddress, error) {
-	rows, err := q.db.Query(ctx, getOrderNetworkAddresses, nonce)
+func (q *Queries) GetOrderNetworkAddresses(ctx context.Context, nonces [][]byte) ([]OrderNodeNetworkAddress, error) {
+	rows, err := q.db.Query(ctx, getOrderNetworkAddresses, nonces)
 	if err != nil {
 		return nil, err
 	}
@@ -329,16 +176,18 @@ func (q *Queries) GetOrderNetworkAddresses(ctx context.Context, nonce []byte) ([
 const getOrderNonces = `-- name: GetOrderNonces :many
 SELECT o.nonce
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-LIMIT NULLIF($2::int, 0) OFFSET $1
+WHERE archived = $1
+LIMIT NULLIF($3::int, 0) OFFSET $2
 `
 
 type GetOrderNoncesParams struct {
+	Archived    bool
 	OffsetParam int32
 	LimitParam  int32
 }
 
 func (q *Queries) GetOrderNonces(ctx context.Context, arg GetOrderNoncesParams) ([][]byte, error) {
-	rows, err := q.db.Query(ctx, getOrderNonces, arg.OffsetParam, arg.LimitParam)
+	rows, err := q.db.Query(ctx, getOrderNonces, arg.Archived, arg.OffsetParam, arg.LimitParam)
 	if err != nil {
 		return nil, err
 	}
@@ -357,16 +206,49 @@ func (q *Queries) GetOrderNonces(ctx context.Context, arg GetOrderNoncesParams) 
 	return items, nil
 }
 
-const getOrders = `-- name: GetOrders :many
-SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, ob.nonce, min_node_tier, self_chan_balance, is_sidecar 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-LIMIT NULLIF($2::int, 0) OFFSET $1
+const getOrderNoncesByTraderKey = `-- name: GetOrderNoncesByTraderKey :many
+SELECT nonce, archived 
+FROM orders o
+WHERE trader_key = $1
+LIMIT NULLIF($3::int, 0) OFFSET $2
 `
 
-type GetOrdersParams struct {
+type GetOrderNoncesByTraderKeyParams struct {
+	TraderKey   []byte
 	OffsetParam int32
 	LimitParam  int32
 }
+
+type GetOrderNoncesByTraderKeyRow struct {
+	Nonce    []byte
+	Archived bool
+}
+
+func (q *Queries) GetOrderNoncesByTraderKey(ctx context.Context, arg GetOrderNoncesByTraderKeyParams) ([]GetOrderNoncesByTraderKeyRow, error) {
+	rows, err := q.db.Query(ctx, getOrderNoncesByTraderKey, arg.TraderKey, arg.OffsetParam, arg.LimitParam)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []GetOrderNoncesByTraderKeyRow
+	for rows.Next() {
+		var i GetOrderNoncesByTraderKeyRow
+		if err := rows.Scan(&i.Nonce, &i.Archived); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getOrders = `-- name: GetOrders :many
+SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, ob.nonce, min_node_tier, self_chan_balance, is_sidecar 
+FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
+WHERE o.nonce = ANY($1::BYTEA[])
+`
 
 type GetOrdersRow struct {
 	Nonce            []byte
@@ -394,8 +276,8 @@ type GetOrdersRow struct {
 	IsSidecar        sql.NullBool
 }
 
-func (q *Queries) GetOrders(ctx context.Context, arg GetOrdersParams) ([]GetOrdersRow, error) {
-	rows, err := q.db.Query(ctx, getOrders, arg.OffsetParam, arg.LimitParam)
+func (q *Queries) GetOrders(ctx context.Context, nonces [][]byte) ([]GetOrdersRow, error) {
+	rows, err := q.db.Query(ctx, getOrders, nonces)
 	if err != nil {
 		return nil, err
 	}
@@ -438,173 +320,14 @@ func (q *Queries) GetOrders(ctx context.Context, arg GetOrdersParams) ([]GetOrde
 	return items, nil
 }
 
-const getOrdersByNonces = `-- name: GetOrdersByNonces :many
-SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, ob.nonce, min_node_tier, self_chan_balance, is_sidecar 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE o.nonce = ANY($1::BYTEA[])
-`
-
-type GetOrdersByNoncesRow struct {
-	Nonce            []byte
-	Type             int16
-	TraderKey        []byte
-	Version          int64
-	State            int16
-	FixedRate        int64
-	Amount           int64
-	Units            int64
-	UnitsUnfulfilled int64
-	MinUnitsMatch    int64
-	MaxBatchFeeRate  int64
-	LeaseDuration    int64
-	ChannelType      int16
-	Signature        []byte
-	MultisigKey      []byte
-	NodeKey          []byte
-	TokenID          []byte
-	UserAgent        string
-	Archived         bool
-	Nonce_2          []byte
-	MinNodeTier      sql.NullInt64
-	SelfChanBalance  sql.NullInt64
-	IsSidecar        sql.NullBool
-}
-
-func (q *Queries) GetOrdersByNonces(ctx context.Context, dollar_1 [][]byte) ([]GetOrdersByNoncesRow, error) {
-	rows, err := q.db.Query(ctx, getOrdersByNonces, dollar_1)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetOrdersByNoncesRow
-	for rows.Next() {
-		var i GetOrdersByNoncesRow
-		if err := rows.Scan(
-			&i.Nonce,
-			&i.Type,
-			&i.TraderKey,
-			&i.Version,
-			&i.State,
-			&i.FixedRate,
-			&i.Amount,
-			&i.Units,
-			&i.UnitsUnfulfilled,
-			&i.MinUnitsMatch,
-			&i.MaxBatchFeeRate,
-			&i.LeaseDuration,
-			&i.ChannelType,
-			&i.Signature,
-			&i.MultisigKey,
-			&i.NodeKey,
-			&i.TokenID,
-			&i.UserAgent,
-			&i.Archived,
-			&i.Nonce_2,
-			&i.MinNodeTier,
-			&i.SelfChanBalance,
-			&i.IsSidecar,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getOrdersByTraderKey = `-- name: GetOrdersByTraderKey :many
-SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, ob.nonce, min_node_tier, self_chan_balance, is_sidecar 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE trader_key = $1
-LIMIT NULLIF($3::int, 0) OFFSET $2
-`
-
-type GetOrdersByTraderKeyParams struct {
-	TraderKey   []byte
-	OffsetParam int32
-	LimitParam  int32
-}
-
-type GetOrdersByTraderKeyRow struct {
-	Nonce            []byte
-	Type             int16
-	TraderKey        []byte
-	Version          int64
-	State            int16
-	FixedRate        int64
-	Amount           int64
-	Units            int64
-	UnitsUnfulfilled int64
-	MinUnitsMatch    int64
-	MaxBatchFeeRate  int64
-	LeaseDuration    int64
-	ChannelType      int16
-	Signature        []byte
-	MultisigKey      []byte
-	NodeKey          []byte
-	TokenID          []byte
-	UserAgent        string
-	Archived         bool
-	Nonce_2          []byte
-	MinNodeTier      sql.NullInt64
-	SelfChanBalance  sql.NullInt64
-	IsSidecar        sql.NullBool
-}
-
-func (q *Queries) GetOrdersByTraderKey(ctx context.Context, arg GetOrdersByTraderKeyParams) ([]GetOrdersByTraderKeyRow, error) {
-	rows, err := q.db.Query(ctx, getOrdersByTraderKey, arg.TraderKey, arg.OffsetParam, arg.LimitParam)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []GetOrdersByTraderKeyRow
-	for rows.Next() {
-		var i GetOrdersByTraderKeyRow
-		if err := rows.Scan(
-			&i.Nonce,
-			&i.Type,
-			&i.TraderKey,
-			&i.Version,
-			&i.State,
-			&i.FixedRate,
-			&i.Amount,
-			&i.Units,
-			&i.UnitsUnfulfilled,
-			&i.MinUnitsMatch,
-			&i.MaxBatchFeeRate,
-			&i.LeaseDuration,
-			&i.ChannelType,
-			&i.Signature,
-			&i.MultisigKey,
-			&i.NodeKey,
-			&i.TokenID,
-			&i.UserAgent,
-			&i.Archived,
-			&i.Nonce_2,
-			&i.MinNodeTier,
-			&i.SelfChanBalance,
-			&i.IsSidecar,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const getOrdersByTraderKeyCount = `-- name: GetOrdersByTraderKeyCount :one
+const getOrdersCount = `-- name: GetOrdersCount :one
 SELECT COUNT(*)
 FROM orders
-WHERE trader_key = $1
+WHERE archived = $1
 `
 
-func (q *Queries) GetOrdersByTraderKeyCount(ctx context.Context, traderKey []byte) (int64, error) {
-	row := q.db.QueryRow(ctx, getOrdersByTraderKeyCount, traderKey)
+func (q *Queries) GetOrdersCount(ctx context.Context, archived bool) (int64, error) {
+	row := q.db.QueryRow(ctx, getOrdersCount, archived)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
