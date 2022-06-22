@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/lightninglabs/pool/auctioneerrpc"
@@ -604,6 +605,157 @@ func testSidecarTicketCancellation(t *harnessTest) {
 	// Clear the mempool and all channels for the following tests.
 	_ = mineBlocks(t, t.lndHarness, 3, 1)
 	closeAllChannels(ctx, t, dave)
+}
+
+// sidecarChannelsRecipientOffline tests that opening a sidecar channel through
+// a bid order is possible between an online provider and recipient, even if
+// another recipient of the same provider is currently offline.
+func sidecarChannelsRecipientOffline(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third, fourth and fifth lnd node for the additional
+	// participants. Charlie is the sidecar channel provider (has an
+	// account, submits the bid order) while Dave and Eve are the sidecar
+	// channel recipients (have no account and only receive channel).
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
+	providerTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, providerTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
+	recipientTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, dave, recipientTrader)
+
+	eve := t.lndHarness.NewNode(t.t, "eve", lndDefaultArgs)
+	recipient2Trader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, eve, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, eve, recipient2Trader)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for both traders.
+	makerAccount := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 5_000,
+			},
+		},
+	)
+	providerAccount := openAccountAndAssert(
+		t, providerTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 5_000,
+			},
+		},
+	)
+
+	makerTokenID, err := t.trader.server.GetIdentity()
+	require.NoError(t.t, err)
+	providerTokenID, err := providerTrader.server.GetIdentity()
+	require.NoError(t.t, err)
+
+	// Now that the accounts are confirmed, submit an ask order from our
+	// maker, selling 200 units (200k sats) of liquidity.
+	const (
+		orderFixedRate  = 100
+		askAmt          = 200_000
+		selfChanBalance = 100_000
+	)
+	_, err = submitAskOrder(
+		t.trader, makerAccount.TraderKey, orderFixedRate, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.Version = uint32(orderT.VersionSidecarChannel)
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Create the sidecar channel ticket now, including the offer, order and
+	// channel expectation. This is for the recipient that will be online
+	// during the batch.
+	_, sidecarOnlineID := makeSidecar(
+		t, providerTrader, recipientTrader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, selfChanBalance, true,
+	)
+	resp, err := recipientTrader.ListSidecars(
+		ctx, &poolrpc.ListSidecarsRequest{SidecarId: sidecarOnlineID},
+	)
+	require.NoError(t.t, err)
+	require.Len(t.t, resp.Tickets, 1)
+	onlineMultiSigKey, err := btcec.ParsePubKey(
+		resp.Tickets[0].RecipientMultisigPubkey,
+	)
+	require.NoError(t.t, err)
+
+	// We now create a second sidecar channel ticket for the second
+	// recipient but then shut down that recipient's trader daemon before we
+	// attempt the batch.
+	_, sidecarOfflineID := makeSidecar(
+		t, providerTrader, recipient2Trader, providerAccount.TraderKey,
+		orderFixedRate, askAmt, selfChanBalance, true,
+	)
+	resp, err = recipient2Trader.ListSidecars(
+		ctx, &poolrpc.ListSidecarsRequest{SidecarId: sidecarOfflineID},
+	)
+	require.NoError(t.t, err)
+	require.Len(t.t, resp.Tickets, 1)
+	offlineMultiSigKey, err := btcec.ParsePubKey(
+		resp.Tickets[0].RecipientMultisigPubkey,
+	)
+	require.NoError(t.t, err)
+
+	// We have everything we need to know from the second recipient, let's
+	// shut it down now.
+	require.NoError(t.t, recipient2Trader.stop(false))
+
+	// Before we attempt the batch, make sure the expected traders are
+	// online while the second recipient is not.
+	assertTraderSubscribed(t, *makerTokenID, makerAccount, 3)
+	assertTraderSubscribed(t, *providerTokenID, providerAccount, 3)
+	assertSidecarTraderSubscribed(t, onlineMultiSigKey)
+	assertSidecarTraderNotSubscribed(t, offlineMultiSigKey)
+
+	// We are now ready to start the actual batch execution process. Let's
+	// kick the auctioneer to try and create a batch.
+	_, _ = t.auctioneer.AuctionAdminClient.SetLogLevel(
+		ctx, &adminrpc.SetLogLevelRequest{LogLevel: "trace"},
+	)
+	_, batchTXIDs := executeBatch(t, 1)
+	firstBatchTXID := batchTXIDs[0]
+
+	// At this point, the lnd nodes backed by each trader should have a
+	// single pending channel, which matches the amount of the order
+	// executed above.
+	//
+	// In our case, Bob is the maker, so he should be marked as the
+	// initiator of the channel.
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, askAmt+selfChanBalance, true,
+		dave.PubKey, remotePendingBalanceCheck(selfChanBalance),
+	)
+	assertPendingChannel(
+		t, dave, askAmt+selfChanBalance, false,
+		t.trader.cfg.LndNode.PubKey,
+		localPendingBalanceCheck(selfChanBalance),
+	)
+
+	// We'll now mine a block to confirm the channel. We should find the
+	// channel in the listchannels output for both nodes, and the
+	// thaw_height should be set accordingly.
+	blocks := mineBlocks(t, t.lndHarness, 1, 1)
+
+	// The block above should contain the batch transaction found in the
+	// mempool above.
+	assertTxInBlock(t, blocks[0], firstBatchTXID)
+
+	_, _ = t.auctioneer.AuctionAdminClient.SetLogLevel(
+		ctx, &adminrpc.SetLogLevelRequest{LogLevel: "debug"},
+	)
 }
 
 // makeSidecar creates a sidecar ticket with an offer on the provider node,

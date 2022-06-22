@@ -369,7 +369,7 @@ func (c *batchCollector) Collect(ch chan<- prometheus.Metric) {
 	// the time factor by querying these metrics periodically.
 	c.observeBatch(latestBatchID, batch, tx)
 
-	feeRate, err := c.cfg.Lnd.WalletKit.EstimateFee(
+	feeRate, err := c.cfg.Lnd.WalletKit.EstimateFeeRate(
 		ctx, c.cfg.BatchConfTarget,
 	)
 	if err != nil {

@@ -817,7 +817,7 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 // assertTraderSubscribed makes sure the trader with the given token is
 // connected to the auction server and has an active account subscription.
 func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
-	acct *poolrpc.Account) {
+	acct *poolrpc.Account, numTradersExpected int) {
 
 	// Make sure the trader stream was registered.
 	err := wait.NoError(func() error {
@@ -831,10 +831,10 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 				err)
 		}
 		traderStreams := resp.Streams
-		if len(traderStreams) != 1 {
+		if len(traderStreams) != numTradersExpected {
 			return fmt.Errorf("unexpected number of trader "+
 				"streams, got %d expected %d",
-				len(traderStreams), 1)
+				len(traderStreams), numTradersExpected)
 		}
 		stream, ok := traderStreams[token.String()]
 		if !ok {
@@ -888,10 +888,42 @@ func assertSidecarTraderSubscribed(t *harnessTest, multiSigKey *btcec.PublicKey)
 
 		return fmt.Errorf("account %x not subscribed", keyBytes)
 	}, defaultWaitTimeout)
-	if err != nil {
-		t.Fatalf("trader stream was not registered before timeout: %v",
-			err)
-	}
+	require.NoError(t.t, err)
+}
+
+// assertSidecarTraderNotSubscribed is similar to assertSidecarTraderSubscribed,
+// but instead we make sure the trader is not connected.
+func assertSidecarTraderNotSubscribed(t *harnessTest,
+	multiSigKey *btcec.PublicKey) {
+
+	keyBytes := multiSigKey.SerializeCompressed()
+
+	err := wait.NoError(func() error {
+		ctx := context.Background()
+		client := t.auctioneer.AuctionAdminClient
+		resp, err := client.ConnectedTraders(
+			ctx, &adminrpc.EmptyRequest{},
+		)
+		if err != nil {
+			return fmt.Errorf("error getting connected traders: %v",
+				err)
+		}
+		traderStreams := resp.Streams
+
+		// Loop through all subscribed account keys to see if the one
+		// we are looking for is included.
+		for _, stream := range traderStreams {
+			for _, subscribedKey := range stream.RawKeyBytes {
+				if bytes.Equal(subscribedKey, keyBytes) {
+					return fmt.Errorf("account %x still "+
+						"subscribed", keyBytes)
+				}
+			}
+		}
+
+		return nil
+	}, defaultWaitTimeout)
+	require.NoError(t.t, err)
 }
 
 // assertOrderEvents makes sure the order with the given nonce has the correct

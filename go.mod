@@ -1,9 +1,10 @@
 module github.com/lightninglabs/subasta
 
 require (
-	github.com/btcsuite/btcd v0.22.0-beta.0.20220316175102-8d5c75c28923
-	github.com/btcsuite/btcd/btcec/v2 v2.1.3
+	github.com/btcsuite/btcd v0.23.1
+	github.com/btcsuite/btcd/btcec/v2 v2.2.0
 	github.com/btcsuite/btcd/btcutil v1.1.1
+	github.com/btcsuite/btcd/btcutil/psbt v1.1.4
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d
@@ -20,22 +21,22 @@ require (
 	github.com/jackc/pgx/v4 v4.16.0
 	github.com/jessevdk/go-flags v1.4.0
 	github.com/lib/pq v1.10.3
-	github.com/lightninglabs/aperture v0.1.17-beta.0.20220328072456-4a2632d0be38
+	github.com/lightninglabs/aperture v0.1.18-beta
 	github.com/lightninglabs/faraday v0.2.7-alpha.0.20220328064033-d602082a718a
-	github.com/lightninglabs/lndclient v0.15.0-2
-	github.com/lightninglabs/pool v0.5.6-alpha.0.20220422072641-0c062755a09e
-	github.com/lightninglabs/pool/auctioneerrpc v1.0.6-0.20220407153640-53b437d9b8c3
+	github.com/lightninglabs/lndclient v0.15.0-9
+	github.com/lightninglabs/pool v0.5.6-alpha.0.20220620074824-76bac184b501
+	github.com/lightninglabs/pool/auctioneerrpc v1.0.7
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.14.1-beta.0.20220330161355-8072b20d548d
+	github.com/lightningnetwork/lnd v0.15.0-beta.rc6
 	github.com/lightningnetwork/lnd/cert v1.1.1
 	github.com/lightningnetwork/lnd/kvdb v1.3.1
 	github.com/lightningnetwork/lnd/ticker v1.1.0
-	github.com/lightningnetwork/lnd/tlv v1.0.2
-	github.com/lightningnetwork/lnd/tor v1.0.0
+	github.com/lightningnetwork/lnd/tlv v1.0.3
+	github.com/lightningnetwork/lnd/tor v1.0.1
 	github.com/ory/dockertest/v3 v3.8.0
 	github.com/prometheus/client_golang v1.11.0
 	github.com/shopspring/decimal v1.2.0
-	github.com/stretchr/testify v1.7.0
+	github.com/stretchr/testify v1.7.1
 	github.com/urfave/cli v1.22.4
 	go.etcd.io/etcd/client/v3 v3.5.1
 	go.etcd.io/etcd/server/v3 v3.5.1
@@ -58,8 +59,7 @@ require (
 	github.com/aead/siphash v1.0.1 // indirect
 	github.com/andybalholm/brotli v1.0.3 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/btcsuite/btcd/btcutil/psbt v1.1.2 // indirect
-	github.com/btcsuite/btcwallet v0.14.1-0.20220322182735-b0001c262734 // indirect
+	github.com/btcsuite/btcwallet v0.15.1 // indirect
 	github.com/btcsuite/btcwallet/wallet/txauthor v1.2.3 // indirect
 	github.com/btcsuite/btcwallet/wallet/txrules v1.2.0 // indirect
 	github.com/btcsuite/btcwallet/wallet/txsizes v1.1.0 // indirect
@@ -117,7 +117,7 @@ require (
 	github.com/klauspost/pgzip v1.2.5 // indirect
 	github.com/lightninglabs/gozmq v0.0.0-20191113021534-d20a764486bf // indirect
 	github.com/lightninglabs/lightning-node-connect/hashmailrpc v1.0.2 // indirect
-	github.com/lightninglabs/neutrino v0.13.2 // indirect
+	github.com/lightninglabs/neutrino v0.14.2 // indirect
 	github.com/lightningnetwork/lightning-onion v1.0.2-0.20220211021909-bb84a1ccb0c5 // indirect
 	github.com/lightningnetwork/lnd/clock v1.1.0 // indirect
 	github.com/lightningnetwork/lnd/healthcheck v1.2.2 // indirect
@@ -175,10 +175,10 @@ require (
 	go.uber.org/atomic v1.7.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	go.uber.org/zap v1.17.0 // indirect
-	golang.org/x/crypto v0.0.0-20210921155107-089bfa567519 // indirect
-	golang.org/x/net v0.0.0-20211015210444-4f30a5c0130f // indirect
+	golang.org/x/crypto v0.0.0-20211215153901-e495a2d5b3d3 // indirect
+	golang.org/x/net v0.0.0-20211216030914-fe4d6282115f // indirect
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c // indirect
-	golang.org/x/sys v0.0.0-20211216021012-1d35b9e2eb4e // indirect
+	golang.org/x/sys v0.0.0-20220520151302-bc2c85ada10a // indirect
 	golang.org/x/term v0.0.0-20201126162022-7de9c90e9dd1 // indirect
 	golang.org/x/text v0.3.7 // indirect
 	google.golang.org/genproto v0.0.0-20210617175327-b9e0b3197ced // indirect

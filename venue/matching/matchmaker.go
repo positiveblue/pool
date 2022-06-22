@@ -3,6 +3,7 @@ package matching
 import (
 	"container/list"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -187,7 +188,7 @@ func (u *UniformPriceCallMarket) clearSubBatch(matchMaker *MultiUnitMatchMaker,
 	}
 
 	// We have a successful set of matches for a sub batch of this duration.
-	// Let's log them in an easy to read manner.
+	// Let's log them in an easy-to-read manner.
 	logMatches := func(matches []MatchedOrder) string {
 		s := ""
 		for _, m := range matches {
@@ -200,8 +201,43 @@ func (u *UniformPriceCallMarket) clearSubBatch(matchMaker *MultiUnitMatchMaker,
 		return s
 	}
 
+	logMatchesJSON := func(matches []MatchedOrder) string {
+		type entry struct {
+			Bid    string `json:"bid"`
+			Ask    string `json:"ask"`
+			Bidder string `json:"bidder"`
+			Asker  string `json:"asker"`
+			Units  uint32 `json:"units"`
+		}
+		entries := make([]*entry, len(matches))
+		for idx, match := range matches {
+			entries[idx] = &entry{
+				Bid: match.Details.Bid.Nonce().String(),
+				Ask: match.Details.Ask.Nonce().String(),
+				Bidder: hex.EncodeToString(
+					match.Bidder.AccountKey[:],
+				),
+				Asker: hex.EncodeToString(
+					match.Asker.AccountKey[:],
+				),
+				Units: uint32(
+					match.Details.Quote.UnitsMatched,
+				),
+			}
+		}
+
+		jsonBytes, _ := json.Marshal(entries)
+		return string(jsonBytes)
+	}
+
 	log.Debugf("Final matches at clearing price %v: \n%v", clearingPrice,
-		logMatches(matches))
+		newLogClosure(func() string {
+			return logMatches(matches)
+		}))
+
+	log.Tracef("Full match dump: %v", newLogClosure(func() string {
+		return logMatchesJSON(matches)
+	}))
 
 	return matches, clearingPrice, nil
 }

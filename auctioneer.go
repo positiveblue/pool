@@ -119,8 +119,8 @@ type Wallet interface {
 	PublishTransaction(ctx context.Context, tx *wire.MsgTx,
 		label string) error
 
-	// EstimateFee gets a fee rate estimate for the confirmation target.
-	EstimateFee(context.Context, int32) (chainfee.SatPerKWeight, error)
+	// EstimateFeeRate gets a fee rate estimate for the confirmation target.
+	EstimateFeeRate(context.Context, int32) (chainfee.SatPerKWeight, error)
 }
 
 // OrderFeed is an interface that represents a live feed to the order book.
@@ -1317,7 +1317,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// TODO(roasbeef): rely on manual anchor down if not
 		// confirming? need admin RPC get current txid and anchor down
 		// if needed?
-		feeRate, err := a.cfg.Wallet.EstimateFee(
+		feeRate, err := a.cfg.Wallet.EstimateFeeRate(
 			ctxb, a.cfg.ConfTarget,
 		)
 		if err != nil {
@@ -1376,7 +1376,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// storing our pending state and before broadcasting our
 		// transaction.
 		case err == errTxNotFound:
-			feeRate, err := a.cfg.Wallet.EstimateFee(
+			feeRate, err := a.cfg.Wallet.EstimateFeeRate(
 				ctxb, a.cfg.ConfTarget,
 			)
 			if err != nil {
@@ -1509,7 +1509,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// estimate.
 		if feeRate == 0 {
 			var err error
-			feeRate, err = a.cfg.Wallet.EstimateFee(
+			feeRate, err = a.cfg.Wallet.EstimateFeeRate(
 				ctxb, confTarget,
 			)
 			if err != nil {

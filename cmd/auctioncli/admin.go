@@ -308,3 +308,17 @@ var setStatusCommand = cli.Command{
 		})
 	}),
 }
+
+var setLogLevelCommand = cli.Command{
+	Name:        "setloglevel",
+	Usage:       "Set a new server wide log level",
+	Description: `Set a new server wide log level.`,
+	ArgsUsage:   "loglevel",
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		return client.SetLogLevel(ctx, &adminrpc.SetLogLevelRequest{
+			LogLevel: cliCtx.Args().First(),
+		})
+	}),
+}

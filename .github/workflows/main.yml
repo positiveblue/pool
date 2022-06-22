@@ -193,15 +193,6 @@ jobs:
       - name: git checkout
         uses: actions/checkout@v2
 
-      - name: go cache
-        uses: actions/cache@v1
-        with:
-          path: /home/runner/work/go
-          key: subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
-          restore-keys: |
-            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-${{ hashFiles('**/go.sum') }}
-            subasta-${{ runner.os }}-go-${{ env.GO_VERSION }}-${{ github.job }}-
-
       - name: setup go ${{ env.GO_VERSION }}
         uses: actions/setup-go@v2
         with:

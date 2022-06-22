@@ -110,6 +110,10 @@ var testCases = []*testCase{
 		test: testSidecarTicketCancellation,
 	},
 	{
+		name: "sidecar channels with offline participant",
+		test: sidecarChannelsRecipientOffline,
+	},
+	{
 		name: "custom execution fee",
 		test: testCustomExecutionFee,
 	},

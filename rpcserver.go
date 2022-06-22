@@ -24,6 +24,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/btcsuite/btclog"
 	proxy "github.com/grpc-ecosystem/grpc-gateway/runtime"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -32,6 +33,7 @@ import (
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	"github.com/lightninglabs/pool/chaninfo"
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/pool/sidecar"
 	"github.com/lightninglabs/pool/terms"
@@ -43,6 +45,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -115,6 +118,10 @@ type TraderStream struct {
 	// are needed for the bi-directional communication between the server
 	// and a trader over the same long-lived stream.
 	comms *commChannels
+
+	// log is a prefixed logger that will print the trader's LSAT ID in
+	// front of each message.
+	log btclog.Logger
 }
 
 // commChannels is a set of bi-directional communication channels for exactly
@@ -732,12 +739,11 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 	// also the venue if it does, as essentially they need to re-establish
 	// their connection and we see them as offline.
 	defer func() {
-		rpcLog.Debugf("Removing trader connection (client_id=%x)",
-			traderID)
+		trader.log.Debugf("Removing trader connection")
 
 		if err := s.disconnectTrader(traderID); err != nil {
-			rpcLog.Errorf("Unable to disconnect/unregister "+
-				"trader (client_id=%x): %v", traderID, err)
+			trader.log.Errorf("Unable to disconnect/unregister "+
+				"trader: %v", err)
 		}
 	}()
 
@@ -754,9 +760,9 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 
 		// New incoming subscription.
 		case newSub := <-trader.comms.newSub:
-			rpcLog.Debugf("New subscription, client_id=%x, "+
-				"acct=%x, batch_version=%d", traderID,
-				newSub.AccountKey, newSub.BatchVersion)
+			trader.log.Debugf("New subscription, "+
+				"acct=%x, batch_version=%d", newSub.AccountKey,
+				newSub.BatchVersion)
 			err := s.addStreamSubscription(traderID, newSub)
 			if err != nil {
 				return fmt.Errorf("unable to register "+
@@ -800,8 +806,7 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 
 		// The trader is signaling abort or is closing the connection.
 		case <-trader.comms.quitConn:
-			rpcLog.Debugf("Trader client_id=%x is disconnecting",
-				trader.Lsat)
+			trader.log.Debugf("Trader is disconnecting")
 			return nil
 
 		// An error happened anywhere in the process, we need to abort
@@ -873,8 +878,7 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 				continue
 			}
 
-			rpcLog.Errorf("Error in trader (client_id=%x) "+
-				"stream: %v", traderID, err)
+			trader.log.Errorf("Error in trader stream: %v", err)
 
 			trader.comms.abort()
 			return fmt.Errorf("error reading client=%x stream: %v",
@@ -892,8 +896,8 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 				},
 			})
 			if err != nil {
-				rpcLog.Errorf("Unable to send shutdown msg: %v",
-					err)
+				trader.log.Errorf("Unable to send shutdown "+
+					"msg: %v", err)
 			}
 
 			trader.comms.abort()
@@ -964,6 +968,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 	// handshake between the auctioneer and the trader.
 	case *auctioneerrpc.ClientAuctionMessage_Commit:
 		commit := msg.Commit
+		trader.log.Tracef("Got commit msg: %s",
+			poolrpc.PrintMsg(commit))
 
 		// First check that they are using a version of the
 		// batch execution protocol that we support. If not, better
@@ -1020,6 +1026,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 	// the authentication process.
 	case *auctioneerrpc.ClientAuctionMessage_Subscribe:
 		subscribe := msg.Subscribe
+		trader.log.Tracef("Got subscribe msg: %s",
+			poolrpc.PrintMsg(subscribe))
 
 		// Parse their public key to validate the signature and later
 		// retrieve it from the store.
@@ -1160,10 +1168,14 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 	// The trader accepts an order execution.
 	case *auctioneerrpc.ClientAuctionMessage_Accept:
+		accept := msg.Accept
+		trader.log.Tracef("Got accept msg: %s",
+			poolrpc.PrintMsg(accept))
+
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
 			var batchID orderT.BatchID
-			copy(batchID[:], msg.Accept.BatchId)
+			copy(batchID[:], accept.BatchId)
 			traderMsg := &venue.TraderAcceptMsg{
 				BatchID: batchID,
 				Trader:  subscribedTrader,
@@ -1173,8 +1185,12 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 	// The trader rejected an order execution.
 	case *auctioneerrpc.ClientAuctionMessage_Reject:
+		reject := msg.Reject
+		trader.log.Tracef("Got reject msg: %s",
+			poolrpc.PrintMsg(reject))
+
 		var batchID orderT.BatchID
-		copy(batchID[:], msg.Reject.BatchId)
+		copy(batchID[:], reject.BatchId)
 
 		// De-multiplex the incoming message for the venue.
 		for _, subscribedTrader := range trader.Subscriptions {
@@ -1191,8 +1207,11 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 
 	// The trader signed their account inputs.
 	case *auctioneerrpc.ClientAuctionMessage_Sign:
+		sign := msg.Sign
+		trader.log.Tracef("Got sign msg: %s", poolrpc.PrintMsg(sign))
+
 		sigs := make(map[string]*ecdsa.Signature)
-		for acctString, sigBytes := range msg.Sign.AccountSigs {
+		for acctString, sigBytes := range sign.AccountSigs {
 			sig, err := ecdsa.ParseDERSignature(sigBytes)
 			if err != nil {
 				comms.sendErr(fmt.Errorf("unable to parse "+
@@ -1203,7 +1222,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			sigs[acctString] = sig
 		}
 
-		chanInfos, err := parseRPCChannelInfo(msg.Sign.ChannelInfos)
+		chanInfos, err := parseRPCChannelInfo(sign.ChannelInfos)
 		if err != nil {
 			comms.sendErr(err)
 			return
@@ -1227,7 +1246,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			}
 
 			traderMsg := &venue.TraderSignMsg{
-				BatchID:      msg.Sign.BatchId,
+				BatchID:      sign.BatchId,
 				Trader:       subscribedTrader,
 				Sigs:         sigs,
 				ChannelInfos: chanInfos,
@@ -1239,8 +1258,11 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 	// for accounts that are already subscribed so we can be sure it exists
 	// on our side.
 	case *auctioneerrpc.ClientAuctionMessage_Recover:
+		r := msg.Recover
+		trader.log.Tracef("Got recover msg: %s", poolrpc.PrintMsg(r))
+
 		var traderKey [33]byte
-		copy(traderKey[:], msg.Recover.TraderKey)
+		copy(traderKey[:], r.TraderKey)
 		_, ok := trader.Subscriptions[traderKey]
 		if !ok {
 			comms.sendErr(fmt.Errorf("account %x not subscribed",
@@ -1573,6 +1595,9 @@ func (s *rpcServer) connectTrader(traderID lsat.TokenID,
 			quitConn: make(chan struct{}),
 			err:      make(chan error),
 		},
+		log: build.NewPrefixLog(
+			fmt.Sprintf("client_id(%x):", traderID[:]), rpcLog,
+		),
 		IsSidecar: isSidecar,
 	}
 
@@ -1638,7 +1663,7 @@ func (s *rpcServer) OrderState(ctx context.Context,
 func (s *rpcServer) Terms(ctx context.Context, _ *auctioneerrpc.TermsRequest) (
 	*auctioneerrpc.TermsResponse, error) {
 
-	nextBatchFeeRate, err := s.auctioneer.cfg.Wallet.EstimateFee(
+	nextBatchFeeRate, err := s.auctioneer.cfg.Wallet.EstimateFeeRate(
 		ctx, s.auctioneer.cfg.ConfTarget,
 	)
 	if err != nil {

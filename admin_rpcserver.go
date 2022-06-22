@@ -33,6 +33,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/traderterms"
 	"github.com/lightninglabs/subasta/venue/batchtx"
+	"github.com/lightningnetwork/lnd/build"
 	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/sweep"
@@ -1294,6 +1295,16 @@ func (s *adminRPCServer) SetStatus(_ context.Context,
 	}
 
 	return &adminrpc.EmptyResponse{}, nil
+}
+
+// SetLogLevel sets the log level of the whole server to the new value.
+func (s *adminRPCServer) SetLogLevel(_ context.Context,
+	req *adminrpc.SetLogLevelRequest) (*adminrpc.EmptyResponse, error) {
+
+	log.Infof("Setting new log level to %s", req.LogLevel)
+	return &adminrpc.EmptyResponse{}, build.ParseAndSetDebugLevels(
+		req.LogLevel, logWriter,
+	)
 }
 
 // marshallBatchReportEntry translates an accounting.Entry into its admin RPC
