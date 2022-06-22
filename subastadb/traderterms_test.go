@@ -21,7 +21,7 @@ func TestStoreTraderTerms(t *testing.T) {
 	t.Parallel()
 
 	ctxb := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	terms := &traderterms.Custom{
@@ -31,8 +31,7 @@ func TestStoreTraderTerms(t *testing.T) {
 
 	// Try reading a non-existent entry.
 	_, err := store.GetTraderTerms(ctxb, terms.TraderID)
-	require.Error(t, err)
-	require.Equal(t, ErrNoTerms, err)
+	require.ErrorIs(t, err, ErrNoTerms)
 
 	// Store the terms entry then read it again.
 	require.NoError(t, store.PutTraderTerms(ctxb, terms))

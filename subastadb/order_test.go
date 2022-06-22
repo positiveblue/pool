@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
+	"errors"
 	"net"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
+	"github.com/stretchr/testify/require"
 	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
@@ -25,7 +27,7 @@ func TestSubmitOrder(t *testing.T) {
 	t.Parallel()
 
 	ctxb := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Create a dummy order and make sure it does not yet exist in the DB.
@@ -41,7 +43,7 @@ func TestSubmitOrder(t *testing.T) {
 	}
 	bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
 	_, err := store.GetOrder(ctxb, bid.Nonce())
-	if err != ErrNoOrder {
+	if !errors.Is(err, ErrNoOrder) {
 		t.Fatalf("unexpected error. got %v expected %v", err,
 			ErrNoOrder)
 	}
@@ -55,7 +57,8 @@ func TestSubmitOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	assertJSONDeepEqual(t, bid, storedOrder)
+
+	assertEqualStoredOrder(t, bid, storedOrder)
 
 	// Check that we got the correct type back.
 	if storedOrder.Type() != orderT.TypeBid {
@@ -73,7 +76,7 @@ func TestSubmitOrder(t *testing.T) {
 		t.Fatalf("unexpected number of orders. got %d expected %d",
 			len(allOrders), 1)
 	}
-	assertJSONDeepEqual(t, bid, allOrders[0])
+	assertEqualStoredOrder(t, bid, allOrders[0])
 
 	if allOrders[0].Type() != orderT.TypeBid {
 		t.Fatalf("unexpected order type. got %d expected %d",
@@ -82,16 +85,20 @@ func TestSubmitOrder(t *testing.T) {
 
 	// Finally, make sure we cannot submit the same order again.
 	err = store.SubmitOrder(ctxb, bid)
-	if err != ErrOrderExists {
+	if !errors.Is(err, ErrOrderExists) {
 		t.Fatalf("unexpected error. got %v expected %v", err,
 			ErrOrderExists)
 	}
 
-	// Finally, ensure that if we need to, we're able to properly re-fill
-	// the order cache. This essentially simulates a server restart with
-	// the same state as inserted above.
-	if err := store.fillActiveOrdersCache(ctxb); err != nil {
-		t.Fatalf("unable to re fresh cache: %v", err)
+	// Only available in the etcd tests.
+	etcdStore, ok := store.(*EtcdStore)
+	if ok {
+		// Finally, ensure that if we need to, we're able to properly
+		// re-fill the order cache. This essentially simulates a server
+		// restart with the same state as inserted above.
+		if err := etcdStore.fillActiveOrdersCache(ctxb); err != nil {
+			t.Fatalf("unable to re fresh cache: %v", err)
+		}
 	}
 
 	// Check that the order that we get from the db (now in the cache)
@@ -100,7 +107,7 @@ func TestSubmitOrder(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to retrieve order: %v", err)
 	}
-	assertJSONDeepEqual(t, bid, storedOrder)
+	assertEqualStoredOrder(t, bid, storedOrder)
 }
 
 // TestUpdateOrders tests that orders can be updated correctly.
@@ -108,7 +115,7 @@ func TestUpdateOrders(t *testing.T) {
 	t.Parallel()
 
 	ctxb := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Store two dummy orders that we are going to update later.
@@ -135,19 +142,19 @@ func TestUpdateOrders(t *testing.T) {
 		t.Fatalf("unable to store order: %v", err)
 	}
 
-	// Make sure they are both stored to the non-archived branch of orders.
+	// Make sure they are both stored to the non-archived branch of orders,
+	// at least in the etcd store.
 	keyOrderPrefix := keyPrefix + "order/"
-	orderMap, err := store.getAllValuesByPrefix(ctxb, keyOrderPrefix)
-	if err != nil {
-		t.Fatalf("unable to read order keys: %v", err)
-	}
-	key1 := keyPrefix + "order/false/" + o1.Nonce().String()
-	if _, ok := orderMap[key1]; !ok {
-		t.Fatalf("order 1 was not found with expected key '%s'", key1)
-	}
-	key2 := keyPrefix + "order/false/" + o2.Nonce().String()
-	if _, ok := orderMap[key2]; !ok {
-		t.Fatalf("order 2 was not found with expected key '%s'", key2)
+	etcdStore, isEtcdStore := store.(*EtcdStore)
+	if isEtcdStore {
+		orderMap, err := etcdStore.getAllValuesByPrefix(
+			ctxb, keyOrderPrefix,
+		)
+		require.NoError(t, err)
+		key1 := keyPrefix + "order/false/" + o1.Nonce().String()
+		require.Contains(t, orderMap, key1)
+		key2 := keyPrefix + "order/false/" + o2.Nonce().String()
+		require.Contains(t, orderMap, key2)
 	}
 
 	// Update the state of the first order and check that it is persisted.
@@ -172,20 +179,32 @@ func TestUpdateOrders(t *testing.T) {
 	// persisted correctly and moved out of the active bucket into the
 	// archive.
 	stateModifier := order.StateModifier(orderT.StateExecuted)
-	var cacheUpdates map[orderT.Nonce]order.ServerOrder
-	_, err = store.defaultSTM(ctxb, func(stm conc.STM) error {
-		var err error
-		cacheUpdates, err = store.updateOrdersSTM(
-			stm, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
-			[][]order.Modifier{{stateModifier}, {stateModifier}},
-		)
-		return err
-	})
-	if err != nil {
-		t.Fatalf("unable to update orders: %v", err)
-	}
+	if isEtcdStore {
+		var cacheUpdates map[orderT.Nonce]order.ServerOrder
+		_, err = etcdStore.defaultSTM(ctxb, func(stm conc.STM) error {
+			var err error
+			cacheUpdates, err = etcdStore.updateOrdersSTM(
+				stm, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
+				[][]order.Modifier{
+					{stateModifier}, {stateModifier},
+				},
+			)
+			return err
+		})
+		if err != nil {
+			t.Fatalf("unable to update orders: %v", err)
+		}
 
-	store.updateOrderCache(cacheUpdates)
+		etcdStore.updateOrderCache(cacheUpdates)
+	} else {
+		sqlStore := store.(*SQLStore)
+		for _, nonce := range []orderT.Nonce{o1.Nonce(), o2.Nonce()} {
+			err := sqlStore.UpdateOrder(ctxb, nonce, stateModifier)
+			if err != nil {
+				require.NoError(t, err)
+			}
+		}
+	}
 
 	allOrders, err := store.GetOrders(ctxb)
 	if err != nil {
@@ -213,18 +232,16 @@ func TestUpdateOrders(t *testing.T) {
 		}
 	}
 
-	// Make sure the keys reflect the change as well.
-	orderMap, err = store.getAllValuesByPrefix(ctxb, keyOrderPrefix)
-	if err != nil {
-		t.Fatalf("unable to read order keys: %v", err)
-	}
-	key1 = keyPrefix + "order/true/" + o1.Nonce().String()
-	if _, ok := orderMap[key1]; !ok {
-		t.Fatalf("order 1 was not found with expected key '%s'", key1)
-	}
-	key2 = keyPrefix + "order/true/" + o2.Nonce().String()
-	if _, ok := orderMap[key2]; !ok {
-		t.Fatalf("order 2 was not found with expected key '%s'", key2)
+	// Make sure the keys reflect the change as well in the etcd store.
+	if isEtcdStore {
+		orderMap, err := etcdStore.getAllValuesByPrefix(
+			ctxb, keyOrderPrefix,
+		)
+		require.NoError(t, err)
+		key1 := keyPrefix + "order/true/" + o1.Nonce().String()
+		require.Contains(t, orderMap, key1)
+		key2 := keyPrefix + "order/true/" + o2.Nonce().String()
+		require.Contains(t, orderMap, key2)
 	}
 
 	// We should still be able to look up an order by its nonce, even if
@@ -248,9 +265,24 @@ func TestUpdateOrders(t *testing.T) {
 	err = store.UpdateOrder(
 		ctxb, o3.Nonce(), order.StateModifier(orderT.StateExecuted),
 	)
-	if err != ErrNoOrder {
+	if !errors.Is(err, ErrNoOrder) {
 		t.Fatalf("unexpected error. got %v wanted %v", err, ErrNoOrder)
 	}
+}
+
+// assertEqualStoredOrder asserts that two server orders are equal removing
+// the orderT information that is not present in the server.
+func assertEqualStoredOrder(t *testing.T, expected, got order.ServerOrder) {
+	t.Helper()
+
+	preimage := expected.Details().Preimage
+	keyLocator := expected.Details().MultiSigKeyLocator
+
+	expected.Details().Preimage = got.Details().Preimage
+	expected.Details().MultiSigKeyLocator = got.Details().MultiSigKeyLocator
+	assertJSONDeepEqual(t, expected, got)
+	expected.Details().Preimage = preimage
+	expected.Details().MultiSigKeyLocator = keyLocator
 }
 
 // assertJSONDeepEqual deep compares two items for equality by both serializing
@@ -321,7 +353,7 @@ func randomPubKey(t *testing.T) *btcec.PublicKey {
 	return pub
 }
 
-func addDummyAccount(t *testing.T, store *EtcdStore) {
+func addDummyAccount(t *testing.T, store Store) {
 	t.Helper()
 
 	ctx := context.Background()

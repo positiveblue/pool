@@ -11,6 +11,9 @@ var (
 	// ErrAccountNotFound is the error wrapped by AccountNotFoundError that
 	// can be used with errors.Is() to avoid type assertions.
 	ErrAccountNotFound = errors.New("account not found")
+
+	// ErrNotImplemented is the default error for non implemented methods.
+	ErrNotImplemented = errors.New("method not implemented")
 )
 
 // AccountNotFoundError is returned if a trader tries to subscribe to an account

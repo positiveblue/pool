@@ -19,7 +19,7 @@ func TestLeaseDurations(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// We'll use a helper closure to correctly assert the state of our store

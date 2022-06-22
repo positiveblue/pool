@@ -172,11 +172,11 @@ func (h *harnessTest) Log(args ...interface{}) {
 }
 
 // shutdown stops both the auction and trader server.
-func (h *harnessTest) shutdown() error {
+func (h *harnessTest) shutdown(t *testing.T) error {
 	// Allow both server and client to stop but only return the first error
 	// that occurs.
 	err := h.trader.stop(true)
-	err2 := h.auctioneer.stop()
+	err2 := h.auctioneer.stop(t)
 	if err != nil {
 		return err
 	}
@@ -220,7 +220,7 @@ func (h *harnessTest) restartServer() {
 	// triggered.
 	time.Sleep(300 * time.Millisecond)
 
-	err = prepareServerConnection(h.auctioneer, true)
+	err = prepareServerConnection(h.t, h.auctioneer, true)
 	if err != nil {
 		h.t.Fatalf("could not recreate server connection: %v", err)
 	}
@@ -328,11 +328,13 @@ func (h *harnessTest) enableLSAT(traderNode *lntest.HarnessNode) {
 // prepareServerConnection creates a new connection in the auctioneer server
 // that clients can connect to. This should only be called once after any
 // (re)start of the auctioneer.
-func prepareServerConnection(ah *auctioneerHarness, isRestart bool) error {
+func prepareServerConnection(t *testing.T, ah *auctioneerHarness,
+	isRestart bool) error {
+
 	if isRestart {
 		return ah.runServer()
 	}
-	return ah.start()
+	return ah.start(t)
 }
 
 // nextAvailablePort returns the first port that is available for listening by
@@ -382,7 +384,7 @@ func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness,
 	}
 
 	// Create a new internal connection in the auctioneer server.
-	err = prepareServerConnection(auctioneerHarness, false)
+	err = prepareServerConnection(t, auctioneerHarness, false)
 	if err != nil {
 		t.Fatalf("could not create auctioneer connection: %v", err)
 	}

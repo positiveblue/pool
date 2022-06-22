@@ -16,57 +16,26 @@ DO UPDATE SET
         signature=$14, multisig_key=$15, node_key=$16, token_id=$17, 
         user_agent=$18, archived=$19;
 
--- name: GetOrder :one
+-- name: GetOrders :many
 SELECT * 
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE o.nonce=$1;
+WHERE o.nonce = ANY(@nonces::BYTEA[]);
 
--- name: GetOrdersByNonces :many
-SELECT * 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE o.nonce = ANY($1::BYTEA[]);
-
--- name: GetActiveOrdersCount :one
-SELECT COUNT(*)
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE archived = FALSE;
-
--- name: GetArchivedOrdersCount :one
+-- name: GetOrdersCount :one
 SELECT COUNT(*)
 FROM orders
-WHERE archived = TRUE;
+WHERE archived = $1;
 
 -- name: GetOrderNonces :many
 SELECT o.nonce
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
+WHERE archived = @archived
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
--- name: GetActiveOrderNonces :many
-SELECT o.nonce
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE archived = FALSE
-LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
-
--- name: GetArchivedOrderNonces :many
-SELECT o.nonce
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE archived = TRUE
-LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
-
--- name: GetOrders :many
-SELECT * 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
-
--- name: GetOrdersByTraderKeyCount :one
-SELECT COUNT(*)
-FROM orders
-WHERE trader_key = $1;
-
--- name: GetOrdersByTraderKey :many
-SELECT * 
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
-WHERE trader_key = $1
+-- name: GetOrderNoncesByTraderKey :many
+SELECT nonce, archived 
+FROM orders o
+WHERE trader_key = @trader_key
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteOrder :execrows
@@ -84,8 +53,8 @@ VALUES ($1, $2, $3);
 
 -- name: GetOrderAllowedNodeIds :many
 SELECT * 
-FROM order_allowed_node_ids 
-WHERE nonce = $1;
+FROM order_allowed_node_ids
+WHERE nonce = ANY(@nonces::BYTEA[]);
 
 -- name: DeleteOrderAllowedNodeIds :execrows
 DELETE 
@@ -102,8 +71,8 @@ VALUES ($1, $2, $3);
 
 -- name: GetOrderNetworkAddresses :many
 SELECT * 
-FROM order_node_network_addresses 
-WHERE nonce=$1;
+FROM order_node_network_addresses
+WHERE nonce = ANY(@nonces::BYTEA[]);
 
 -- name: DeleteOrderNetworkAddresses :execrows
 DELETE 

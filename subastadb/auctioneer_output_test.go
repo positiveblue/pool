@@ -16,7 +16,7 @@ func TestFetchUpdateAuctioneerAccount(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	acct := &account.Auctioneer{

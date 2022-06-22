@@ -175,7 +175,7 @@ func TestAuctioneerServer(t *testing.T) {
 			ht.RunTestCase(testCase)
 
 			// Shut down both client and server to remove all state.
-			err := ht.shutdown()
+			err := ht.shutdown(t)
 			if err != nil {
 				t1.Fatalf("error shutting down harness: %v", err)
 			}
@@ -217,7 +217,7 @@ func leaderElectionTestCase(t *testing.T,
 	)
 	require.NoError(t, err)
 
-	if err := primaryHarness.start(); err != nil {
+	if err := primaryHarness.start(t); err != nil {
 		t.Fatalf("unable to start primary harness: %v", err)
 	}
 
@@ -239,6 +239,9 @@ func leaderElectionTestCase(t *testing.T,
 	// secondaryHarness.start() tries to recreate the etcd database and it
 	// fails so we need to set the same database as the primary harness
 	// here.
+	if useSQL != nil && *useSQL {
+		secondaryHarness.initSQLDatabaseServer(t)
+	}
 	secondaryHarness.etcd = primaryHarness.etcd
 
 	// This server will hang, so we run it in a goroutine.

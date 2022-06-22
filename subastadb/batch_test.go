@@ -5,6 +5,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -16,6 +17,8 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/keychain"
+	"github.com/lightningnetwork/lnd/lntypes"
 	"github.com/stretchr/testify/require"
 )
 
@@ -91,7 +94,7 @@ func TestPersistBatchResult(t *testing.T) {
 		ctx     = context.Background()
 		batchID = orderT.BatchID{1, 2, 3}
 	)
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// The store should be initialized with the initial batch key.
@@ -288,7 +291,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 		ctx     = context.Background()
 		batchID = orderT.BatchID{1, 2, 3}
 	)
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	// Create a test order that we are going to try to modify.
@@ -371,7 +374,7 @@ func TestPersistBatchResultRollback(t *testing.T) {
 }
 
 func makeTestOrderBatches(ctx context.Context, t *testing.T,
-	store *EtcdStore) []*matching.OrderBatch {
+	store AdminStore) []*matching.OrderBatch {
 
 	// Create an order batch that contains dummy data.
 	askLegacyClientKit := dummyClientOrder(
@@ -418,6 +421,19 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 			Index: 17,
 		},
 		AccountBalance: 18,
+	}
+	askLegacyClientKit.AcctKey = trader1.AccountKey
+	bidLegacyClientKit.AcctKey = trader2.AccountKey
+	askNewClientKit.AcctKey = trader1.AccountKey
+	bidNewClientKit.AcctKey = trader2.AccountKey
+
+	allClientOrders := []*orderT.Kit{
+		askLegacyClientKit, bidLegacyClientKit,
+		askNewClientKit, bidNewClientKit,
+	}
+	for _, o := range allClientOrders {
+		o.Preimage = lntypes.Preimage{}
+		o.MultiSigKeyLocator = keychain.KeyLocator{}
 	}
 	legacyOrders := []matching.MatchedOrder{{
 		Asker:  trader1,
@@ -503,6 +519,22 @@ func makeTestOrderBatches(ctx context.Context, t *testing.T,
 	}
 
 	if store != nil {
+		// Only needed in the sql tests.
+		sqlStore, ok := store.(*SQLStore)
+		if ok {
+			createAccount := func(accKey [33]byte) {
+				acc := testAccount.Copy()
+				acc.TraderKeyRaw = accKey
+				err := upsertAccountWithTx(
+					ctx, sqlStore.queries, acc,
+				)
+				require.NoError(t, err)
+			}
+
+			createAccount(trader1.AccountKey)
+			createAccount(trader2.AccountKey)
+		}
+
 		// All the orders above also need to be inserted as normal
 		// orders to ensure we're able to retrieve all the supplemental
 		// data we need.
@@ -551,16 +583,27 @@ func TestPersistBatchSnapshot(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	batches := makeTestOrderBatches(ctx, t, store)
-	assertBatchSerialization(t, store, batches[0])
-	assertBatchSerialization(t, store, batches[1])
+
+	_, ok := store.(*SQLStore)
+	if ok {
+		for _, batch := range batches {
+			timestamp := batch.CreationTimestamp.Truncate(
+				time.Microsecond,
+			)
+			batch.CreationTimestamp = timestamp
+		}
+	}
+
+	assertBatchSerialization(t, store, 0, batches[0])
+	assertBatchSerialization(t, store, 1, batches[1])
 }
 
-func assertBatchSerialization(t *testing.T, store *EtcdStore,
-	batch *matching.OrderBatch) {
+func assertBatchSerialization(t *testing.T, store AdminStore,
+	batchNumber int, batch *matching.OrderBatch) {
 
 	t.Helper()
 
@@ -572,10 +615,14 @@ func assertBatchSerialization(t *testing.T, store *EtcdStore,
 		OrderBatch: batch,
 	}
 
+	currentBatch := InitialBatchKey
+	for i := 0; i < batchNumber; i++ {
+		currentBatch = poolscript.IncrementKey(currentBatch)
+	}
 	var batchID orderT.BatchID
-	copy(batchID[:], initialBatchKeyBytes)
+	copy(batchID[:], currentBatch.SerializeCompressed())
+	nextBatchKey := poolscript.IncrementKey(currentBatch)
 
-	nextBatchKey := poolscript.IncrementKey(InitialBatchKey)
 	ma1 := &account.Auctioneer{
 		OutPoint: wire.OutPoint{
 			Index: 5,

@@ -14,7 +14,7 @@ func TestBanTrader(t *testing.T) {
 
 	// We'll start the test by initializing our store and some variables
 	// we'll use throughout.
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	ctx := context.Background()

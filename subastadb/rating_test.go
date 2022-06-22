@@ -14,7 +14,7 @@ func TestNodeRatings(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	store, cleanup := newTestEtcdStore(t)
+	store, cleanup := newTestStore(t)
 	defer cleanup()
 
 	nodeKey1 := [33]byte{1}

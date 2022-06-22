@@ -67,6 +67,18 @@ type SQLStore struct {
 	queries *postgres.Queries
 }
 
+// Make sure that SQLStore implements the Store/AdminStore interfaces.
+var _ Store = (*SQLStore)(nil)
+var _ AdminStore = (*SQLStore)(nil)
+
+// MirrorToSQL attempts to mirror accounts, orders and batches to the configured
+// SQL database.
+//
+// TODO(positiveblue): Delete when sql migration is completed.
+func (s *SQLStore) MirrorToSQL(ctx context.Context) error {
+	return nil
+}
+
 // NewSQLStore constructs a new SQLStore.
 func NewSQLStore(ctx context.Context, cfg *SQLConfig) (*SQLStore, error) {
 	log.Infof("Using SQL database '%s'", cfg.DSN(true))

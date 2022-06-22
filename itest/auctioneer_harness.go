@@ -2,6 +2,7 @@ package itest
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -38,6 +40,17 @@ import (
 
 var (
 	etcdListenAddr = fmt.Sprintf("127.0.0.1:%d", nextAvailablePort())
+
+	// useSQL indicates whether the SQL store should be used.
+	//
+	// TODO(positiveblue): delete after sql migration.
+	useSQL = flag.Bool("usesql", false, "indicates whether the SQL store "+
+		"should be used")
+
+	// sqlFixtureKillAfter is the maximum time the SQL fixture docker
+	// container is allowed to run. This means, any individual test case
+	// must finish within this time, otherwise the database is shut down.
+	sqlFixtureKillAfter = 5 * time.Minute
 )
 
 // auctioneerHarness is a test harness that holds everything that is needed to
@@ -48,8 +61,9 @@ type auctioneerHarness struct {
 	serverCfg *subasta.Config
 	server    *subasta.Server
 
-	etcd  *embed.Etcd
-	store subastadb.Store
+	etcd       *embed.Etcd
+	store      subastadb.Store
+	sqlFixture *subastadb.TestPgFixture
 
 	apertureCfg *aperture.Config
 	aperture    *aperture.Aperture
@@ -135,6 +149,7 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
 				nextAvailablePort()),
 			AccountExpiryExtension: 3024,
+			UseSQL:                 *useSQL,
 		},
 		apertureCfg: &aperture.Config{
 			ListenAddr: fmt.Sprintf("127.0.0.1:%d",
@@ -189,11 +204,11 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 
 // start spins up an in-memory etcd server and the auctioneer server listening
 // for gRPC connections.
-func (hs *auctioneerHarness) start() error {
-	// Start the embedded etcd server.
-	err := hs.initEtcdServer()
+func (hs *auctioneerHarness) start(t *testing.T) error {
+	// Start the embedded etcd or Postgres server.
+	err := hs.initDatabaseServer(t)
 	if err != nil {
-		return fmt.Errorf("could not start embedded etcd: %v", err)
+		return fmt.Errorf("could not start embedded db: %v", err)
 	}
 
 	if err := hs.runServer(); err != nil {
@@ -253,10 +268,14 @@ func (hs *auctioneerHarness) halt() error {
 
 // stop shuts down the auctioneer server with its associated etcd server and
 // finally deletes the server's temporary data directory.
-func (hs *auctioneerHarness) stop() error {
+func (hs *auctioneerHarness) stop(t *testing.T) error {
+	returnErr := hs.halt()
+
 	// Don't return the error immediately if stopping goes wrong, give etcd
 	// a chance to stop as well and always remove the temp directory.
-	returnErr := hs.halt()
+	if hs.serverCfg.UseSQL {
+		hs.sqlFixture.TearDown(t)
+	}
 	hs.etcd.Close()
 
 	if err := hs.aperture.Stop(); err != nil {
@@ -270,8 +289,63 @@ func (hs *auctioneerHarness) stop() error {
 	return returnErr
 }
 
-// initEtcdServer starts and initializes an embedded etcd server.
-func (hs *auctioneerHarness) initEtcdServer() error {
+// initSQLDatabaseServer an starts and initializes embedded Postgres server.
+func (hs *auctioneerHarness) initSQLDatabaseServer(t *testing.T) error {
+	hs.sqlFixture = subastadb.NewTestPgFixture(
+		t, sqlFixtureKillAfter,
+	)
+	hs.serverCfg.SQL = hs.sqlFixture.GetConfig()
+
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+
+	store, err := subastadb.NewSQLStore(ctx, hs.serverCfg.SQL)
+	if err != nil {
+		return fmt.Errorf("unable to connect to sql: %v", err)
+	}
+
+	if err := store.RunMigrations(ctx); err != nil {
+		return fmt.Errorf("unable to run sql migrations: %v",
+			err)
+	}
+
+	if err := store.Init(ctx); err != nil {
+		return fmt.Errorf("unable to initialize sql: %v", err)
+	}
+
+	hs.store = store
+
+	return nil
+}
+
+// initETCDDatabaseServer starts and initializes an embedded etcd database.
+func (hs *auctioneerHarness) initETCDDatabaseServer(t *testing.T) error {
+	var err error
+	ctx := context.Background()
+	ctx, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+
+	hs.store, err = subastadb.NewEtcdStore(
+		*hs.cfg.LndNode.Cfg.NetParams, etcdListenAddr, "", "",
+		nil,
+	)
+	if err != nil {
+		return fmt.Errorf("unable to connect to etcd: %v", err)
+	}
+
+	if err := hs.store.Init(ctx); err != nil {
+		return fmt.Errorf("unable to initialize etcd: %v", err)
+	}
+
+	return nil
+}
+
+// initDatabaseServer starts and initializes an embedded etcd or Postgres
+// server.
+func (hs *auctioneerHarness) initDatabaseServer(t *testing.T) error {
+	// We still need etcd for aperture, so we're always spin up that
+	// that embedded server.
 	var err error
 	tempDir := filepath.Join(hs.cfg.BaseDir, "etcd")
 
@@ -296,21 +370,17 @@ func (hs *auctioneerHarness) initEtcdServer() error {
 		return fmt.Errorf("server took too long to start")
 	}
 
-	hs.store, err = subastadb.NewEtcdStore(
-		*hs.cfg.LndNode.Cfg.NetParams, etcdListenAddr, "", "", nil,
-	)
-	if err != nil {
-		return fmt.Errorf("unable to connect to etcd: %v", err)
+	if hs.serverCfg.UseSQL {
+		// In case we're using the SQL as main store for subasta, we
+		// now spin  up the Postgres backend.
+		err = hs.initSQLDatabaseServer(t)
+	} else {
+		// In case we're using etcd as main store for subasta, we
+		// initialize the db here.
+		err = hs.initETCDDatabaseServer(t)
 	}
 
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
-	defer cancel()
-	if err := hs.store.Init(ctx); err != nil {
-		return fmt.Errorf("unable to initialize etcd: %v", err)
-	}
-
-	return nil
+	return err
 }
 
 // initAperture starts the aperture proxy.
