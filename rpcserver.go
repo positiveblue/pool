@@ -2133,8 +2133,8 @@ func parseRPCServerOrder(version uint32, details *auctioneerrpc.ServerOrder,
 		len(details.NotAllowedNodeIds) > 0 {
 
 		return nil, [33]byte{}, nil, [33]byte{},
-			fmt.Errorf("allowed node and not allowed node ids " +
-				"cannot be set together")
+			fmt.Errorf("allowed and not allowed node ids cannot " +
+				"be set together")
 	}
 
 	kit.AllowedNodeIDs = make([][33]byte, len(details.AllowedNodeIds))

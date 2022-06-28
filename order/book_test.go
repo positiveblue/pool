@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"fmt"
+	"net"
 	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -64,6 +65,11 @@ var (
 		HeightHint:    100,
 		OutPoint:      wire.OutPoint{Index: 12},
 	}
+
+	testNonce = [33]byte{5, 6, 7}
+
+	addr, _       = net.ResolveTCPAddr("tcp", "127.0.0.1:9735")
+	testNodeAddrs = []net.Addr{addr}
 )
 
 type mockSigner struct {
@@ -527,7 +533,7 @@ func TestBookPrepareOrder(t *testing.T) {
 				return err
 			}
 
-			storedOrder, err := store.GetOrder(ctxb, orderT.Nonce{})
+			storedOrder, err := store.GetOrder(ctxb, o.Nonce())
 			if err != nil {
 				return err
 			}
@@ -551,6 +557,45 @@ func TestBookPrepareOrder(t *testing.T) {
 				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
 				MinUnitsMatch:    1,
 			})
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name: "order invalid allowed/not allowed ids fields set",
+		expectedErr: "allowed and not allowed node ids cannot be " +
+			"set together",
+		run: func() error {
+			o := ask(orderT.Kit{
+				Version:          orderT.VersionChannelType,
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+				ChannelType:      orderT.ChannelTypeScriptEnforced,
+			})
+			o.Details().AllowedNodeIDs = [][33]byte{{1, 2, 3}}
+			o.Details().NotAllowedNodeIDs = [][33]byte{{2, 4, 5}}
+			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
+		},
+	}, {
+		name: "order invalid ask must have advertised node " +
+			"addresses",
+		expectedErr: "ask orders must have advertised node addresses",
+		run: func() error {
+			o := ask(orderT.Kit{
+				Version:          orderT.VersionChannelType,
+				Amt:              100_000,
+				Units:            orderT.NewSupplyFromSats(100_000),
+				UnitsUnfulfilled: orderT.NewSupplyFromSats(100_000),
+				AcctKey:          toRawKey(testTraderKey),
+				MaxBatchFeeRate:  chainfee.FeePerKwFloor,
+				LeaseDuration:    orderT.LegacyLeaseDurationBucket,
+				MinUnitsMatch:    1,
+				ChannelType:      orderT.ChannelTypeScriptEnforced,
+			})
+			o.ServerDetails().NodeAddrs = nil
 			return book.PrepareOrder(ctxb, o, feeSchedule, bestHeight)
 		},
 	}}
@@ -616,6 +661,9 @@ func TestCancelOrderWithPreimage(t *testing.T) {
 		Ask: orderT.Ask{
 			Kit: *kit,
 		},
+		Kit: order.Kit{
+			NodeAddrs: testNodeAddrs,
+		},
 	}
 	feeSchedule := terms.NewLinearFeeSchedule(1, 100)
 	require.NoError(t, book.PrepareOrder(ctx, o, feeSchedule, 100))
@@ -643,17 +691,48 @@ func toRawKey(pubkey *btcec.PublicKey) [33]byte {
 }
 
 func ask(kit orderT.Kit) *order.Ask {
+	var nonce orderT.Nonce
+	copy(nonce[:], testNonce[:])
+	kitWithNonce := orderT.NewKit(nonce)
+	kitWithNonce.Version = kit.Version
+	kitWithNonce.Amt = kit.Amt
+	kitWithNonce.Units = kit.Units
+	kitWithNonce.UnitsUnfulfilled = kit.UnitsUnfulfilled
+	kitWithNonce.AcctKey = kit.AcctKey
+	kitWithNonce.MaxBatchFeeRate = kit.MaxBatchFeeRate
+	kitWithNonce.FixedRate = kit.FixedRate
+	kitWithNonce.LeaseDuration = kit.LeaseDuration
+	kitWithNonce.MinUnitsMatch = kit.MinUnitsMatch
+	kitWithNonce.ChannelType = kit.ChannelType
+
 	return &order.Ask{
 		Ask: orderT.Ask{
-			Kit: kit,
+			Kit: *kitWithNonce,
+		},
+		Kit: order.Kit{
+			NodeAddrs: testNodeAddrs,
 		},
 	}
 }
 
 func bid(kit orderT.Kit) *order.Bid {
+	var nonce orderT.Nonce
+	copy(nonce[:], testNonce[:])
+	kitWithNonce := orderT.NewKit(nonce)
+	kitWithNonce.Version = kit.Version
+	kitWithNonce.Amt = kit.Amt
+	kitWithNonce.Units = kit.Units
+	kitWithNonce.UnitsUnfulfilled = kit.UnitsUnfulfilled
+	kitWithNonce.AcctKey = kit.AcctKey
+	kitWithNonce.FixedRate = kit.FixedRate
+	kitWithNonce.MaxBatchFeeRate = kit.MaxBatchFeeRate
+	kitWithNonce.LeaseDuration = kit.LeaseDuration
+	kitWithNonce.MinUnitsMatch = kit.MinUnitsMatch
+	kitWithNonce.ChannelType = kit.ChannelType
+
 	return &order.Bid{
 		Bid: orderT.Bid{
-			Kit: kit,
+			Kit: *kitWithNonce,
 		},
 	}
 }

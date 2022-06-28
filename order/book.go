@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"sync"
 
 	"github.com/btcsuite/btcd/btcec/v2"
@@ -287,6 +288,11 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	kit := srvOrder.ServerDetails()
 	srvOrder.Details().State = orderT.StateSubmitted
 
+	// The server orders must have a nonce.
+	if srvOrder.Details().Nonce() == orderT.ZeroNonce {
+		return fmt.Errorf("invalid nonce")
+	}
+
 	// Anything below the supply unit size cannot be filled anyway so we
 	// don't allow any order size that's not dividable by the supply size.
 	amt := srvOrder.Details().Amt
@@ -346,6 +352,15 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	case *Ask:
 		leaseDuration = o.LeaseDuration()
 
+		// We expect nodes that submit ask orders to have an advertised
+		// address so they can accept inbound connections.
+		// For bids, it's ok if they don't have an addr as they'll be
+		// connecting out to the maker.
+		if len(o.NodeAddrs) == 0 {
+			return fmt.Errorf("ask orders must have advertised " +
+				"node addresses")
+		}
+
 	case *Bid:
 		leaseDuration = o.LeaseDuration()
 
@@ -396,6 +411,19 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 
 		return errors.New("cannot submit channel type preference with " +
 			"old trader client, please update your software")
+	}
+
+	// AllowedNodeIDs and NotAllowedNodeIDs fields are not compatible.
+	if len(srvOrder.Details().AllowedNodeIDs) > 0 &&
+		len(srvOrder.Details().NotAllowedNodeIDs) > 0 {
+
+		return errors.New("allowed and not allowed node ids cannot " +
+			"be set together")
+	}
+
+	// UserAgent cannot be too large.
+	if len(srvOrder.ServerDetails().UserAgent) > math.MaxUint8 {
+		return fmt.Errorf("invalid user agent")
 	}
 
 	return nil
