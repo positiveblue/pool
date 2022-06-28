@@ -20,6 +20,11 @@ import (
 	"github.com/lightningnetwork/lnd/subscribe"
 )
 
+const (
+	// maxUserAgentLen defines the length limit for accepted strings.
+	maxUserAgentLen = math.MaxUint8
+)
+
 // NewOrderUpdate is an update sent each time a new order has been added.
 type NewOrderUpdate struct {
 	// Order is the order that was added.
@@ -422,7 +427,7 @@ func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	}
 
 	// UserAgent cannot be too large.
-	if len(srvOrder.ServerDetails().UserAgent) > math.MaxUint8 {
+	if len(srvOrder.ServerDetails().UserAgent) > maxUserAgentLen {
 		return fmt.Errorf("invalid user agent")
 	}
 
