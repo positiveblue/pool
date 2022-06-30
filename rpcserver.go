@@ -555,29 +555,22 @@ func (s *rpcServer) SubmitOrder(ctx context.Context,
 	//  * allow order cancellations tho?
 	o, err := order.ParseRPCOrder(req)
 	if err != nil {
-		return nil, err
+		return mapOrderResp(o.Nonce(), err)
 	}
 
-	// Make sure the referenced account exists.
-	acctKey, err := btcec.ParsePubKey(o.Details().AcctKey[:])
-	if err != nil {
-		return nil, err
-	}
-	_, err = s.store.Account(ctx, acctKey, true)
-	if err != nil {
-		return nil, fmt.Errorf("account (%x) not found: %v",
-			o.Details().AcctKey[:], err)
-	}
-
-	// TODO(roasbeef): instead have callback/notification system on order
-	// book itself?
-	//  * eventually needed if we want to stream the info out live
-
-	// Formally everything seems OK, hand over the order to the manager for
-	// further validation and processing.
-	err = s.orderBook.PrepareOrder(
-		ctx, o, s.terms.FeeSchedule(), s.bestHeight(),
+	acct, err := s.orderBook.ValidateAccount(
+		ctx, o.Details().AcctKey[:], s.bestHeight(),
 	)
+	if err != nil {
+		return mapOrderResp(o.Nonce(), err)
+	}
+
+	if err = s.orderBook.ValidateOrder(ctx, o); err != nil {
+		err = status.Error(codes.InvalidArgument, err.Error())
+		return mapOrderResp(o.Nonce(), err)
+	}
+
+	err = s.orderBook.SubmitOrder(ctx, acct, o, s.terms.FeeSchedule())
 	return mapOrderResp(o.Nonce(), err)
 }
 

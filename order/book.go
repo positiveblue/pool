@@ -109,34 +109,9 @@ func (b *Book) DurationBuckets() *DurationBuckets {
 	return b.cfg.DurationBuckets
 }
 
-// PrepareOrder validates an incoming order and stores it to the database.
-func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
-	feeSchedule terms.FeeSchedule, bestHeight uint32) error {
-
-	// Get the account that is making this order.
-	rawKey := o.Details().AcctKey
-	acctKey, err := btcec.ParsePubKey(rawKey[:])
-	if err != nil {
-		return err
-	}
-
-	acct, err := b.cfg.Store.Account(ctx, acctKey, false)
-	if err != nil {
-		return fmt.Errorf("unable to locate account with key %x: %v",
-			acctKey.SerializeCompressed(), err)
-	}
-
-	// First we make sure the account is ready to submit orders.
-	err = b.validateAccountState(acctKey, acct, bestHeight)
-	if err != nil {
-		return err
-	}
-
-	// Now that the account is cleared, validate the order.
-	err = b.validateOrder(ctx, o)
-	if err != nil {
-		return err
-	}
+// SubmitOrder validates an incoming order and stores it to the database.
+func (b *Book) SubmitOrder(ctx context.Context, acct *account.Account,
+	o ServerOrder, feeSchedule terms.FeeSchedule) error {
 
 	// The order was valid in isolation, but it still might be the case the
 	// account has active orders that make the balance too low to accept
@@ -147,32 +122,32 @@ func (b *Book) PrepareOrder(ctx context.Context, o ServerOrder,
 	// locked value and submitted this order, we get a mutex exclusive for
 	// this account. We use the first 32 bytes as an account identifier.
 	var acctID lntypes.Hash
-	copy(acctID[:], rawKey[:32])
+	copy(acctID[:], acct.TraderKeyRaw[:32])
 	b.acctMutex.Lock(acctID)
 	defer b.acctMutex.Unlock(acctID)
 
-	totalCost, err := b.LockedValue(ctx, rawKey, feeSchedule, o)
+	totalCost, err := b.LockedValue(ctx, acct.TraderKeyRaw, feeSchedule, o)
 	if err != nil {
 		return err
 	}
 
 	log.Debugf("Total locked value for account %x (value=%v) after adding "+
-		"order %v: %v", rawKey, acct.Value, o.Nonce(), totalCost)
+		"order %v: %v", acct.TraderKeyRaw, acct.Value, o.Nonce(),
+		totalCost)
 
 	// Check if the trader can afford this set of orders in the worst case.
 	if totalCost > acct.Value {
 		return ErrInvalidAmt
 	}
 
-	// Order can be safely submitted.
+	// Store order.
 	err = b.cfg.Store.SubmitOrder(ctx, o)
 	if err != nil {
 		return err
 	}
 
-	if err := b.ntfnServer.SendUpdate(&NewOrderUpdate{
-		Order: o,
-	}); err != nil {
+	err = b.ntfnServer.SendUpdate(&NewOrderUpdate{Order: o})
+	if err != nil {
 		log.Errorf("unable to send order update: %v", err)
 	}
 
@@ -255,10 +230,21 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 	return reserved, nil
 }
 
-// validateAccountState makes sure the account is in a state where we can
-// accept a new order.
-func (b *Book) validateAccountState(acctKey *btcec.PublicKey,
-	acct *account.Account, bestHeight uint32) error {
+// ValidateAccount makes sure the account can accept a new orders.
+func (b *Book) ValidateAccount(ctx context.Context, acctKeyRaw []byte,
+	bestHeight uint32) (*account.Account, error) {
+
+	// Make sure the referenced account exists.
+	acctKey, err := btcec.ParsePubKey(acctKeyRaw)
+	if err != nil {
+		return nil, err
+	}
+
+	acct, err := b.cfg.Store.Account(ctx, acctKey, true)
+	if err != nil {
+		return nil, fmt.Errorf("account (%x) not found: %w", acctKeyRaw,
+			err)
+	}
 
 	// Only allow orders to be submitted if the account is open, or open
 	// and pending an update (so they can submit orders while the update is
@@ -268,28 +254,26 @@ func (b *Book) validateAccountState(acctKey *btcec.PublicKey,
 		account.StateOpen:
 
 	default:
-		return fmt.Errorf("account must be open or pending open to "+
-			"submit orders, instead state=%v", acct.State)
+		return nil, fmt.Errorf("unable to submit order with the "+
+			"account in this state (%v)", acct.State)
 	}
 
 	// Is the account banned? Don't accept the order.
 	isBanned, expiration, err := b.cfg.BanManager.IsAccountBanned(
 		acctKey, bestHeight,
 	)
-	if err != nil {
-		return err
-	}
-	if isBanned {
-		return account.NewErrBannedAccount(expiration)
+	switch {
+	case err != nil:
+		return nil, err
+	case isBanned:
+		return nil, account.NewErrBannedAccount(expiration)
 	}
 
-	return nil
+	return acct, nil
 }
 
-// validateOrder makes sure the order is formally correct, has a correct
-// signature and that the account has enough balance to actually execute the
-// order.
-func (b *Book) validateOrder(ctx context.Context, srvOrder ServerOrder) error {
+// ValidateOrder makes sure the order is formally correct.
+func (b *Book) ValidateOrder(ctx context.Context, srvOrder ServerOrder) error {
 	kit := srvOrder.ServerDetails()
 	srvOrder.Details().State = orderT.StateSubmitted
 
@@ -452,6 +436,7 @@ func (b *Book) validateSidecarOrder(ctx context.Context, bid *Bid) error {
 			err)
 	}
 
+	// TODO(positiveblue): check this in a db query.
 	dbOrders, err := b.cfg.Store.GetOrders(ctx)
 	if err != nil {
 		return fmt.Errorf("error validating sidecar order against "+

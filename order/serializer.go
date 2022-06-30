@@ -14,6 +14,8 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/lightningnetwork/lnd/tor"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // parseOnionAddr parses an onion address specified in host:port format.
@@ -238,7 +240,8 @@ func ParseRPCOrder(req *auctioneerrpc.ServerSubmitOrderRequest) (ServerOrder,
 
 		nodeTier, err := unmarshalNodeTier(b.MinNodeTier)
 		if err != nil {
-			return nil, err
+			return nil, status.Error(codes.InvalidArgument,
+				err.Error())
 		}
 		clientBid := &orderT.Bid{
 			Kit:             *clientKit,
@@ -262,7 +265,8 @@ func ParseRPCOrder(req *auctioneerrpc.ServerSubmitOrderRequest) (ServerOrder,
 		}
 
 	default:
-		return nil, fmt.Errorf("invalid order request")
+		return nil, status.Error(codes.InvalidArgument, "invalid "+
+			"order details type")
 	}
 
 	// New clients optionally send their user agent string.
