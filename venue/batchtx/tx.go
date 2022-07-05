@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil/txsort"
 	orderT "github.com/lightninglabs/pool/order"
@@ -745,14 +746,18 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 
 // OutputsForOrder returns the corresponding output within the execution
 // transaction for the passed order nonce.
-func (e *ExecutionContext) OutputsForOrder(nonce orderT.Nonce) ([]*OrderOutput, bool) {
+func (e *ExecutionContext) OutputsForOrder(nonce orderT.Nonce) ([]*OrderOutput,
+	bool) {
+
 	output, ok := e.orderIndex[nonce]
 	return output, ok
 }
 
 // ChanOutputsForTrader returns the set of outputs that create channels for the
 // set of matched orders.
-func (e *ExecutionContext) ChanOutputsForTrader(acct matching.AccountID) ([]*OrderOutput, bool) {
+func (e *ExecutionContext) ChanOutputsForTrader(
+	acct matching.AccountID) ([]*OrderOutput, bool) {
+
 	outputs, ok := e.traderIndex[acct]
 	return outputs, ok
 }
@@ -783,26 +788,30 @@ func (e *ExecutionContext) AllChanOutputs() []wire.OutPoint {
 //
 // NOTE: If the trader's account was fully consumed, then there won't be an
 // entry for them.
-func (e *ExecutionContext) AcctOutputForTrader(acct matching.AccountID) (wire.OutPoint, bool) {
+func (e *ExecutionContext) AcctOutputForTrader(
+	acct matching.AccountID) (wire.OutPoint, bool) {
+
 	op, ok := e.accountOutputIndex[acct]
 	return op, ok
 }
 
 // AcctInputForTrader returns the account input information for the target
 // trader, if it exists.
-func (e *ExecutionContext) AcctInputForTrader(acct matching.AccountID) (*BatchInput, bool) {
+func (e *ExecutionContext) AcctInputForTrader(
+	acct matching.AccountID) (*BatchInput, bool) {
+
 	op, ok := e.acctInputIndex[acct]
 	if !ok {
 		return nil, false
 	}
 
-	input, ok := e.batchInputIndex[op]
-	return input, ok
+	inp, ok := e.batchInputIndex[op]
+	return inp, ok
 }
 
 func (e *ExecutionContext) BatchInput(op wire.OutPoint) (*BatchInput, bool) {
-	input, ok := e.batchInputIndex[op]
-	return input, ok
+	inp, ok := e.batchInputIndex[op]
+	return inp, ok
 }
 
 // ExtraInputs returns a list of extra batch inputs added by the auctioneer.
@@ -813,4 +822,38 @@ func (e *ExecutionContext) ExtraInputs() []*BatchInput {
 		extra[i] = e.batchInputIndex[prev]
 	}
 	return extra
+}
+
+// PrevOutputs returns the list of UTXOs the batch transaction is spending.
+func (e *ExecutionContext) PrevOutputs() []*wire.TxOut {
+	prevOutputs := make([]*wire.TxOut, len(e.ExeTx.TxIn))
+	for idx, txIn := range e.ExeTx.TxIn {
+		utxo := e.batchInputIndex[txIn.PreviousOutPoint].PrevOutput
+		pkScriptCopy := make([]byte, len(utxo.PkScript))
+		copy(pkScriptCopy, utxo.PkScript)
+		prevOutputs[idx] = &wire.TxOut{
+			Value:    utxo.Value,
+			PkScript: pkScriptCopy,
+		}
+	}
+
+	return prevOutputs
+}
+
+// PrevOutputFetcher returns a previous output fetcher for the current full
+// execution TX.
+func (e *ExecutionContext) PrevOutputFetcher() txscript.PrevOutputFetcher {
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
+	prevOutputs := e.PrevOutputs()
+	for idx := range e.ExeTx.TxIn {
+		prevOutputFetcher.AddPrevOut(
+			e.ExeTx.TxIn[idx].PreviousOutPoint,
+			&wire.TxOut{
+				Value:    prevOutputs[idx].Value,
+				PkScript: prevOutputs[idx].PkScript,
+			},
+		)
+	}
+
+	return prevOutputFetcher
 }
