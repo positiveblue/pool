@@ -36,6 +36,43 @@ func (s *SQLStore) BatchKey(ctx context.Context) (*btcec.PublicKey, error) {
 	return batchKey, nil
 }
 
+// StoreBatch inserts a batch with its confirmation status in the db.
+func (s *SQLStore) StoreBatch(ctx context.Context, batchID orderT.BatchID,
+	batch *BatchSnapshot, confirmed bool) error {
+
+	txBody := func(txQueries *postgres.Queries) error {
+		err := storeBatchWithTx(ctx, txQueries, batchID, batch)
+		if err != nil {
+			return err
+		}
+		return nil
+	}
+	err := s.ExecTx(ctx, txBody)
+	if err != nil {
+		return fmt.Errorf("unable to persist batch(%x): %v", batchID,
+			err)
+	}
+
+	if confirmed {
+		err = s.ConfirmBatch(ctx, batchID)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// SetCurrentBatch inserts the current batch key in the db.
+func (s *SQLStore) SetCurrentBatch(ctx context.Context,
+	batchID orderT.BatchID) error {
+
+	currentBatchKeyParams := postgres.UpsertCurrentBatchKeyParams{
+		BatchKey: batchID[:],
+	}
+	return s.queries.UpsertCurrentBatchKey(ctx, currentBatchKeyParams)
+}
+
 // PersistBatchResult atomically updates all modified orders/accounts,
 // persists a snapshot of the batch and switches to the next batch ID.
 // If any single operation fails, the whole set of changes is rolled

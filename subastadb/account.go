@@ -353,6 +353,147 @@ func (s *EtcdStore) updateAccountSTM(stm conc.STM, acctKey *btcec.PublicKey,
 	return dbAccount, nil
 }
 
+// StoreAccount inserts a new account in the db.
+func (s *EtcdStore) StoreAccount(ctx context.Context,
+	acc *account.Account) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	// Make sure we can serialize the new account before trying to store it.
+	var buf bytes.Buffer
+	if err := serializeAccount(&buf, acc); err != nil {
+		return err
+	}
+	traderKey, err := acc.TraderKey()
+	if err != nil {
+		return err
+	}
+
+	// If we do, we'll need to remove the reservation and add the account
+	// atomically. Create both operations in an STM to commit them under the
+	// same database transaction.
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+		accountKey := s.getAccountKey(traderKey)
+		if stm.Get(accountKey) != "" {
+			return account.ErrAccountExists
+		}
+
+		stm.Put(s.getAccountKey(traderKey), buf.String())
+
+		// Now write all remaining additional data as a tlv encoded
+		// stream.
+		return s.storeAccountTlv(stm, acc, traderKey)
+	})
+	return err
+}
+
+// Reservations returns all the reservation in the db.
+func (s *EtcdStore) Reservations(ctx context.Context) ([]*account.Reservation,
+	[]lsat.TokenID, error) {
+
+	if !s.initialized {
+		return nil, nil, errNotInitialized
+	}
+
+	resp, err := s.getAllValuesByPrefix(ctx, s.getKeyPrefix(reservationDir))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	reservations := make([]*account.Reservation, 0, len(resp))
+	tokens := make([]lsat.TokenID, 0, len(resp))
+	for k, v := range resp {
+		res, err := deserializeReservation(bytes.NewReader(v))
+		if err != nil {
+			return nil, nil, err
+		}
+		reservations = append(reservations, res)
+
+		// Parse the token ID from the last part of the key.
+		keyParts := strings.Split(k, keyDelimiter)
+		tokenPart := keyParts[len(keyParts)-1]
+		tokenID, err := lsat.MakeIDFromString(tokenPart)
+		if err != nil {
+			return nil, nil, err
+		}
+		tokens = append(tokens, tokenID)
+	}
+	return reservations, tokens, nil
+}
+
+// CreateAccountDiff inserts a new account diff in the db.
+func (s *EtcdStore) CreateAccountDiff(ctx context.Context,
+	acc *account.Account) error {
+
+	if !s.initialized {
+		return errNotInitialized
+	}
+
+	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
+		var buf bytes.Buffer
+		if err := serializeAccount(&buf, acc); err != nil {
+			return err
+		}
+
+		traderKey, err := acc.TraderKey()
+		if err != nil {
+			return err
+		}
+		accountDiffKey := s.getAccountDiffKey(traderKey)
+		stm.Put(accountDiffKey, buf.String())
+		return nil
+	})
+	return err
+}
+
+// ListAccountDiffs returns all the account diffs in the db.
+func (s *EtcdStore) ListAccountDiffs(ctx context.Context) ([]*account.Account,
+	error) {
+
+	if !s.initialized {
+		return nil, errNotInitialized
+	}
+
+	resp, err := s.getAllValuesByPrefix(ctx, s.getKeyPrefix(accountDir))
+	if err != nil {
+		return nil, err
+	}
+
+	accounts := make([]*account.Account, 0, len(resp))
+	for k, v := range resp {
+		if !strings.HasSuffix(k, "/diff") {
+			continue
+		}
+
+		acct, err := deserializeAccount(bytes.NewReader(v))
+		if err != nil {
+			return nil, err
+		}
+
+		// Decode any additional data that's stored in a tlv encoded
+		// stream. If there is no data in the map we'll just get a nil
+		// byte slice from the map which the reader and tlv decoder can
+		// handle.
+		traderKey, err := acct.TraderKey()
+		if err != nil {
+			return nil, err
+		}
+		tlvKey := s.getAccountTlvKey(traderKey)
+		err = deserializeAccountTlvData(
+			bytes.NewReader(resp[tlvKey]), acct,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		accounts = append(accounts, acct)
+	}
+
+	return accounts, nil
+}
+
 // StoreAccountDiff stores a pending set of updates that should be applied to an
 // account after an invocation of CommitAccountDiff.
 //
