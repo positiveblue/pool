@@ -16,6 +16,14 @@ func getParser(cfg *Config) *flags.Parser {
 		panic(err)
 	}
 
+	_, err = parser.AddCommand(
+		"diff", "Run the diff between two files", "",
+		&diffCommand{cfg: cfg},
+	)
+	if err != nil {
+		panic(err)
+	}
+
 	return parser
 }
 

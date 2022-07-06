@@ -347,7 +347,7 @@ func (s *EtcdStore) Batches(ctx context.Context) (
 			continue
 		}
 
-		snapshot, err := deserializeBatchSnapshot(bytes.NewReader(v))
+		snapshot, err := DeserializeBatchSnapshot(bytes.NewReader(v))
 		if err != nil {
 			return nil, err
 		}
@@ -390,7 +390,7 @@ func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
 		}
 
 		var err error
-		snapshot, err = deserializeBatchSnapshot(strings.NewReader(resp))
+		snapshot, err = DeserializeBatchSnapshot(strings.NewReader(resp))
 		if err != nil {
 			return err
 		}
@@ -699,9 +699,9 @@ func serializeAccountTally(w *bytes.Buffer, t *orderT.AccountTally) error {
 	)
 }
 
-// deserializeBatchSnapshot reconstructs a batch snapshot from binary data in
+// DeserializeBatchSnapshot reconstructs a batch snapshot from binary data in
 // the LN wire format.
-func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
+func DeserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 	var (
 		txFee btcutil.Amount
 		b     = &matching.OrderBatch{
