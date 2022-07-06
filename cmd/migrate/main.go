@@ -8,6 +8,14 @@ import (
 func getParser(cfg *Config) *flags.Parser {
 	parser := flags.NewParser(cfg, flags.Default)
 
+	_, err := parser.AddCommand(
+		"migrate", "Run auction server", "",
+		&migrateCommand{cfg: cfg},
+	)
+	if err != nil {
+		panic(err)
+	}
+
 	return parser
 }
 
