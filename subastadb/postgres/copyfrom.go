@@ -121,7 +121,13 @@ func (r iteratorForCreateMatchedOrder) Values() ([]interface{}, error) {
 		r.rows[0].TotalSatsCleared,
 		r.rows[0].UnitsMatched,
 		r.rows[0].UnitsUnmatched,
+		r.rows[0].AskUnitsUnmatched,
+		r.rows[0].BidUnitsUnmatched,
 		r.rows[0].FulfillType,
+		r.rows[0].AskState,
+		r.rows[0].BidState,
+		r.rows[0].AskerExpiry,
+		r.rows[0].BidderExpiry,
 	}, nil
 }
 
@@ -131,7 +137,7 @@ func (r iteratorForCreateMatchedOrder) Err() error {
 
 //- Matched Order Queries ---
 func (q *Queries) CreateMatchedOrder(ctx context.Context, arg []CreateMatchedOrderParams) (int64, error) {
-	return q.db.CopyFrom(ctx, []string{"batch_matched_orders"}, []string{"batch_key", "ask_order_nonce", "bid_order_nonce", "lease_duration", "matching_rate", "total_sats_cleared", "units_matched", "units_unmatched", "fulfill_type"}, &iteratorForCreateMatchedOrder{rows: arg})
+	return q.db.CopyFrom(ctx, []string{"batch_matched_orders"}, []string{"batch_key", "ask_order_nonce", "bid_order_nonce", "lease_duration", "matching_rate", "total_sats_cleared", "units_matched", "units_unmatched", "ask_units_unmatched", "bid_units_unmatched", "fulfill_type", "ask_state", "bid_state", "asker_expiry", "bidder_expiry"}, &iteratorForCreateMatchedOrder{rows: arg})
 }
 
 // iteratorForCreateOrderAllowedNodeIds implements pgx.CopyFromSource.

@@ -114,15 +114,21 @@ type BatchClearingPrice struct {
 }
 
 type BatchMatchedOrder struct {
-	BatchKey         []byte
-	AskOrderNonce    []byte
-	BidOrderNonce    []byte
-	LeaseDuration    int64
-	MatchingRate     int64
-	TotalSatsCleared int64
-	UnitsMatched     int64
-	UnitsUnmatched   int64
-	FulfillType      int16
+	BatchKey          []byte
+	AskOrderNonce     []byte
+	BidOrderNonce     []byte
+	LeaseDuration     int64
+	MatchingRate      int64
+	TotalSatsCleared  int64
+	UnitsMatched      int64
+	UnitsUnmatched    int64
+	FulfillType       int16
+	AskUnitsUnmatched int64
+	BidUnitsUnmatched int64
+	AskState          int16
+	BidState          int16
+	AskerExpiry       int64
+	BidderExpiry      int64
 }
 
 type CurrentBatchKey struct {
