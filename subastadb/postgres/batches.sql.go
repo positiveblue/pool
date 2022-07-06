@@ -51,19 +51,25 @@ type CreateClearingPriceParams struct {
 }
 
 type CreateMatchedOrderParams struct {
-	BatchKey         []byte
-	AskOrderNonce    []byte
-	BidOrderNonce    []byte
-	LeaseDuration    int64
-	MatchingRate     int64
-	TotalSatsCleared int64
-	UnitsMatched     int64
-	UnitsUnmatched   int64
-	FulfillType      int16
+	BatchKey          []byte
+	AskOrderNonce     []byte
+	BidOrderNonce     []byte
+	LeaseDuration     int64
+	MatchingRate      int64
+	TotalSatsCleared  int64
+	UnitsMatched      int64
+	UnitsUnmatched    int64
+	AskUnitsUnmatched int64
+	BidUnitsUnmatched int64
+	FulfillType       int16
+	AskState          int16
+	BidState          int16
+	AskerExpiry       int64
+	BidderExpiry      int64
 }
 
 const getAllMatchedOrdersByBatchID = `-- name: GetAllMatchedOrdersByBatchID :many
-SELECT batch_key, ask_order_nonce, bid_order_nonce, lease_duration, matching_rate, total_sats_cleared, units_matched, units_unmatched, fulfill_type 
+SELECT batch_key, ask_order_nonce, bid_order_nonce, lease_duration, matching_rate, total_sats_cleared, units_matched, units_unmatched, fulfill_type, ask_units_unmatched, bid_units_unmatched, ask_state, bid_state, asker_expiry, bidder_expiry 
 FROM batch_matched_orders
 WHERE batch_key=$1
 `
@@ -87,6 +93,12 @@ func (q *Queries) GetAllMatchedOrdersByBatchID(ctx context.Context, batchKey []b
 			&i.UnitsMatched,
 			&i.UnitsUnmatched,
 			&i.FulfillType,
+			&i.AskUnitsUnmatched,
+			&i.BidUnitsUnmatched,
+			&i.AskState,
+			&i.BidState,
+			&i.AskerExpiry,
+			&i.BidderExpiry,
 		); err != nil {
 			return nil, err
 		}
@@ -356,7 +368,7 @@ func (q *Queries) GetCurrentBatchKey(ctx context.Context) (CurrentBatchKey, erro
 }
 
 const getMatchedOrders = `-- name: GetMatchedOrders :many
-SELECT batch_key, ask_order_nonce, bid_order_nonce, lease_duration, matching_rate, total_sats_cleared, units_matched, units_unmatched, fulfill_type 
+SELECT batch_key, ask_order_nonce, bid_order_nonce, lease_duration, matching_rate, total_sats_cleared, units_matched, units_unmatched, fulfill_type, ask_units_unmatched, bid_units_unmatched, ask_state, bid_state, asker_expiry, bidder_expiry 
 FROM batch_matched_orders
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
@@ -385,6 +397,12 @@ func (q *Queries) GetMatchedOrders(ctx context.Context, arg GetMatchedOrdersPara
 			&i.UnitsMatched,
 			&i.UnitsUnmatched,
 			&i.FulfillType,
+			&i.AskUnitsUnmatched,
+			&i.BidUnitsUnmatched,
+			&i.AskState,
+			&i.BidState,
+			&i.AskerExpiry,
+			&i.BidderExpiry,
 		); err != nil {
 			return nil, err
 		}

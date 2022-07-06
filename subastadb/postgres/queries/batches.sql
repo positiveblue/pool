@@ -57,9 +57,10 @@ LIMIT $1 OFFSET $2;
 -- name: CreateMatchedOrder :copyfrom
 INSERT INTO batch_matched_orders(
         batch_key, ask_order_nonce, bid_order_nonce, lease_duration,
-        matching_rate, total_sats_cleared, units_matched, units_unmatched, 
-        fulfill_type)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+        matching_rate, total_sats_cleared, units_matched, units_unmatched,
+        ask_units_unmatched, bid_units_unmatched, fulfill_type, ask_state, 
+        bid_state, asker_expiry, bidder_expiry)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15);
 
 -- name: GetAllMatchedOrdersByBatchID :many
 SELECT * 
