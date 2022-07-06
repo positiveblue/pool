@@ -306,7 +306,17 @@ func storeBatchWithTx(ctx context.Context, txQueries *postgres.Queries,
 			TotalSatsCleared: int64(quote.TotalSatsCleared),
 			UnitsMatched:     int64(quote.UnitsMatched),
 			UnitsUnmatched:   int64(quote.UnitsUnmatched),
-			FulfillType:      int16(quote.Type),
+			AskUnitsUnmatched: int64(
+				o.Details.Ask.UnitsUnfulfilled,
+			),
+			BidUnitsUnmatched: int64(
+				o.Details.Bid.UnitsUnfulfilled,
+			),
+			FulfillType:  int16(quote.Type),
+			AskState:     int16(o.Details.Ask.State),
+			BidState:     int16(o.Details.Bid.State),
+			AskerExpiry:  int64(o.Asker.AccountExpiry),
+			BidderExpiry: int64(o.Bidder.AccountExpiry),
 		}
 
 		matchedOrderParams = append(matchedOrderParams, params)
@@ -467,6 +477,16 @@ func unmarshalBatchSnapshot(batchRow postgres.Batch,
 				nonce)
 		}
 
+		ask.Details().State = orderT.State(matchedOrder.AskState)
+		ask.Details().UnitsUnfulfilled = orderT.SupplyUnit(
+			matchedOrder.AskUnitsUnmatched,
+		)
+
+		bid.Details().State = orderT.State(matchedOrder.BidState)
+		bid.Details().UnitsUnfulfilled = orderT.SupplyUnit(
+			matchedOrder.BidUnitsUnmatched,
+		)
+
 		rate := orderT.FixedRatePremium(matchedOrder.MatchingRate)
 		satsCleared := btcutil.Amount(matchedOrder.TotalSatsCleared)
 		matched := orderT.SupplyUnit(matchedOrder.UnitsMatched)
@@ -499,6 +519,13 @@ func unmarshalBatchSnapshot(batchRow postgres.Batch,
 
 		asker := getTraderFromBatcAccDiff(askerDiff)
 		bidder := getTraderFromBatcAccDiff(bidderDiff)
+
+		// This expires are from the snapshot taken during the batch
+		// creation. That means that the account expiry could have
+		// been exteneded. The new account expiry could be found in the
+		// `diff.NewExpiry`.
+		asker.AccountExpiry = uint32(matchedOrder.AskerExpiry)
+		bidder.AccountExpiry = uint32(matchedOrder.BidderExpiry)
 
 		order := matching.MatchedOrder{
 			Asker:   asker,
@@ -591,7 +618,6 @@ func unmarshalBatchAccountDiff(
 // information of a *matching.AccountDiff.
 func getTraderFromBatcAccDiff(diff *matching.AccountDiff) matching.Trader {
 	trader := matching.Trader{
-		AccountExpiry:   diff.StartingState.AccountExpiry,
 		AccountOutPoint: diff.StartingState.AccountOutPoint,
 		AccountBalance:  diff.StartingState.AccountBalance,
 	}
