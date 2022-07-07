@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -319,6 +320,36 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 		HashType:      signDescriptors[0].HashType,
 		SigHashes:     input.NewTxSigHashesV0Only(tx),
 		InputIndex:    signDescriptors[0].InputIndex,
+		SignMethod:    signDescriptors[0].SignMethod,
+	}
+
+	if lndSignDescriptor.SignMethod == input.TaprootKeySpendBIP0086SignMethod {
+		prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
+		for idx := range tx.TxIn {
+			prevOutputFetcher.AddPrevOut(
+				tx.TxIn[idx].PreviousOutPoint, prevOutputs[idx],
+			)
+		}
+		sigHashes := txscript.NewTxSigHashes(tx, prevOutputFetcher)
+
+		privKey := m.PrivKeys[0]
+		if len(lndSignDescriptor.SingleTweak) > 0 {
+			privKey = input.TweakPrivKey(
+				privKey, lndSignDescriptor.SingleTweak,
+			)
+		}
+
+		witnessScript, err := txscript.TaprootWitnessSignature(
+			tx, sigHashes, lndSignDescriptor.InputIndex,
+			lndSignDescriptor.Output.Value,
+			lndSignDescriptor.Output.PkScript,
+			txscript.SigHashDefault, privKey,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		return witnessScript, nil
 	}
 
 	sig, err := s.SignOutputRaw(tx, lndSignDescriptor)

@@ -21,61 +21,58 @@ func TestAuctioneerAccountWitness(t *testing.T) {
 	// First we'll generate the auctioneer key and a random batch key that
 	// we'll use for this purpose.
 	batchKey, err := btcec.NewPrivateKey()
-	if err != nil {
-		t.Fatalf("unable to make batch key: %v", err)
-	}
+	require.NoError(t, err)
 	auctioneerKey, err := btcec.NewPrivateKey()
-	if err != nil {
-		t.Fatalf("unable to make auctioneer key: %v", err)
-	}
+	require.NoError(t, err)
 
-	// With these two keys generated, we can now make the full auctioneer
-	// account.
-	acct := &Auctioneer{
-		Balance: 1_000_000,
-		AuctioneerKey: &keychain.KeyDescriptor{
-			PubKey: auctioneerKey.PubKey(),
-		},
-	}
-	copy(acct.BatchKey[:], batchKey.PubKey().SerializeCompressed())
+	runTest := func(masterAcctVersion AuctioneerVersion) {
+		// With these two keys generated, we can now make the full
+		// auctioneer account.
+		acct := &Auctioneer{
+			Balance: 1_000_000,
+			AuctioneerKey: &keychain.KeyDescriptor{
+				PubKey: auctioneerKey.PubKey(),
+			},
+			Version: masterAcctVersion,
+		}
+		copy(acct.BatchKey[:], batchKey.PubKey().SerializeCompressed())
 
-	acctOutput, err := acct.Output()
-	if err != nil {
-		t.Fatalf("unable to create acct output: %v", err)
-	}
+		acctOutput, err := acct.Output()
+		require.NoError(t, err)
 
-	// We'll construct a sweep transaction that just sweeps the output back
-	// into an identical one.
-	spendTx := wire.NewMsgTx(2)
-	spendTx.AddTxIn(&wire.TxIn{})
-	spendTx.AddTxOut(acctOutput)
+		// We'll construct a sweep transaction that just sweeps the
+		// output back into an identical one.
+		spendTx := wire.NewMsgTx(2)
+		spendTx.AddTxIn(&wire.TxIn{})
+		spendTx.AddTxOut(acctOutput)
 
-	// Now we'll construct the witness to simulate a spend of the account.
-	signer := &MockSigner{
-		[]*btcec.PrivateKey{auctioneerKey},
-	}
-	witness, err := acct.AccountWitness(
-		signer, spendTx, 0, []*wire.TxOut{acctOutput},
-	)
-	if err != nil {
-		t.Fatalf("unable to generate witness: %v", err)
-	}
-	spendTx.TxIn[0].Witness = witness
+		// Now we'll construct the witness to simulate a spend of the
+		// account.
+		signer := &MockSigner{
+			[]*btcec.PrivateKey{auctioneerKey},
+		}
+		witness, err := acct.AccountWitness(
+			signer, spendTx, 0, masterAcctVersion,
+			[]*wire.TxOut{acctOutput},
+		)
+		require.NoError(t, err)
+		spendTx.TxIn[0].Witness = witness
 
-	// Ensure that the witness script we generate is valid.
-	vm, err := txscript.NewEngine(
-		acctOutput.PkScript, spendTx, 0, txscript.StandardVerifyFlags,
-		nil, nil, acctOutput.Value,
-		txscript.NewCannedPrevOutputFetcher(
+		// Ensure that the witness script we generate is valid.
+		prevOutFetcher := txscript.NewCannedPrevOutputFetcher(
 			acctOutput.PkScript, acctOutput.Value,
-		),
-	)
-	if err != nil {
-		t.Fatalf("unable to create engine: %v", err)
+		)
+		sigHashes := txscript.NewTxSigHashes(spendTx, prevOutFetcher)
+		vm, err := txscript.NewEngine(
+			acctOutput.PkScript, spendTx, 0,
+			txscript.StandardVerifyFlags, nil, sigHashes,
+			acctOutput.Value, prevOutFetcher,
+		)
+		require.NoError(t, err)
+		require.NoError(t, vm.Execute())
 	}
-	if err := vm.Execute(); err != nil {
-		t.Fatalf("invalid spend: %v", err)
-	}
+	runTest(VersionInitialNoVersion)
+	runTest(VersionTaprootEnabled)
 }
 
 // TestAuctioneerInputWitness tests that we are able to properly produce valid

@@ -136,18 +136,22 @@ type MasterAccountState struct {
 	// AuctioneerKey is the main key for the auctioneer, this never
 	// changes, yet is threaded along in this diff for convenience.
 	AuctioneerKey [33]byte
+
+	// Version is the current version of the auctioneer account, influencing
+	// the script using to spend the previous output.
+	Version account.AuctioneerVersion
 }
 
 // AccountScript derives the auctioneer's account script.
-//
-// TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;).
-func (m *MasterAccountState) AccountScript() ([]byte, error) {
+func (m *MasterAccountState) AccountScript(
+	version account.AuctioneerVersion) ([]byte, error) {
+
 	batchKey, err := btcec.ParsePubKey(m.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
 
-	return m.script(batchKey)
+	return m.script(version, batchKey)
 }
 
 // PrevAccountScript derives the auctioneer's account script for the previous
@@ -159,18 +163,20 @@ func (m *MasterAccountState) PrevAccountScript() ([]byte, error) {
 	}
 
 	prevBatchKey := poolscript.DecrementKey(batchKey)
-	return m.script(prevBatchKey)
+	return m.script(m.Version, prevBatchKey)
 }
 
 // script derives the auctioneer's account script for the given batch key.
-func (m *MasterAccountState) script(batchKey *btcec.PublicKey) ([]byte, error) {
+func (m *MasterAccountState) script(version account.AuctioneerVersion,
+	batchKey *btcec.PublicKey) ([]byte, error) {
+
 	auctioneerKey, err := btcec.ParsePubKey(m.AuctioneerKey[:])
 	if err != nil {
 		return nil, err
 	}
 
 	return account.AuctioneerAccountScript(
-		batchKey, auctioneerKey,
+		version, batchKey, auctioneerKey,
 	)
 }
 
@@ -621,7 +627,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// Next, we'll derive the account script for the auctioneer itself,
 	// which is the final thing we need in order to generate the batch
 	// execution transaction.
-	auctioneerAccountScript, err := mAccountDiff.AccountScript()
+	auctioneerAccountScript, err := mAccountDiff.AccountScript(
+		account.VersionTaprootEnabled,
+	)
 	if err != nil {
 		return err
 	}
@@ -689,6 +697,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		AuctioneerKey:  mAccountDiff.AuctioneerKey,
 		BatchKey:       mAccountDiff.BatchKey,
 		InputIndex:     masterAcctInputIndex,
+		Version:        mAccountDiff.Version,
 	}
 
 	return nil
@@ -707,6 +716,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	masterAcctState := &MasterAccountState{
 		PriorPoint:     masterAcct.OutPoint,
 		AccountBalance: masterAcct.Balance,
+		Version:        masterAcct.Version,
 	}
 	copy(
 		masterAcctState.AuctioneerKey[:],

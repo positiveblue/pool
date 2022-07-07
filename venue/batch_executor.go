@@ -869,7 +869,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
 		auctioneerWitness, err := env.exeCtx.MasterAcct.AccountWitness(
 			b.cfg.Signer, batchTx, auctioneerInputIndex,
-			env.exeCtx.PrevOutputs(),
+			exeCtx.MasterAcct.Version, env.exeCtx.PrevOutputs(),
 		)
 		if err != nil {
 			return 0, env, err
