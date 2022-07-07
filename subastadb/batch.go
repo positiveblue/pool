@@ -128,6 +128,42 @@ func (s *EtcdStore) BatchKey(ctx context.Context) (*btcec.PublicKey, error) {
 	return s.perBatchKey(ctx)
 }
 
+// StoreBatch inserts a batch with its confirmation status in the db.
+func (s *EtcdStore) StoreBatch(ctx context.Context, batchID orderT.BatchID,
+	batchSnapshot *BatchSnapshot, confirmed bool) error {
+
+	// Store a self-contained snapshot of the current batch.
+	var buf bytes.Buffer
+	err := serializeBatchSnapshot(&buf, batchSnapshot)
+	if err != nil {
+		return err
+	}
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+		stm.Put(s.batchSnapshotKeyPath(batchID), buf.String())
+		if confirmed {
+			stm.Put(s.batchStatusKeyPath(batchID), "1")
+		} else {
+			stm.Put(s.batchStatusKeyPath(batchID), "0")
+		}
+		return nil
+	})
+	return err
+}
+
+// SetCurrentBatch inserts the current batch key in the db.
+func (s *EtcdStore) SetCurrentBatch(ctx context.Context,
+	batchID orderT.BatchID) error {
+
+	pub, err := btcec.ParsePubKey(batchID[:])
+	if err != nil {
+		return err
+	}
+	_, err = s.defaultSTM(ctx, func(stm conc.STM) error {
+		return s.putPerBatchKeySTM(stm, pub)
+	})
+	return err
+}
+
 // PersistBatchResult atomically updates all modified orders/accounts, persists
 // a snapshot of the batch and switches to the next batch ID. If any single
 // operation fails, the whole set of changes is rolled back.
@@ -311,7 +347,7 @@ func (s *EtcdStore) Batches(ctx context.Context) (
 			continue
 		}
 
-		snapshot, err := deserializeBatchSnapshot(bytes.NewReader(v))
+		snapshot, err := DeserializeBatchSnapshot(bytes.NewReader(v))
 		if err != nil {
 			return nil, err
 		}
@@ -354,7 +390,7 @@ func (s *EtcdStore) GetBatchSnapshot(ctx context.Context, id orderT.BatchID) (
 		}
 
 		var err error
-		snapshot, err = deserializeBatchSnapshot(strings.NewReader(resp))
+		snapshot, err = DeserializeBatchSnapshot(strings.NewReader(resp))
 		if err != nil {
 			return err
 		}
@@ -663,9 +699,9 @@ func serializeAccountTally(w *bytes.Buffer, t *orderT.AccountTally) error {
 	)
 }
 
-// deserializeBatchSnapshot reconstructs a batch snapshot from binary data in
+// DeserializeBatchSnapshot reconstructs a batch snapshot from binary data in
 // the LN wire format.
-func deserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
+func DeserializeBatchSnapshot(r io.Reader) (*BatchSnapshot, error) {
 	var (
 		txFee btcutil.Amount
 		b     = &matching.OrderBatch{

@@ -432,6 +432,113 @@ func (s *SQLStore) DeleteAccountDiff(ctx context.Context,
 	return nil
 }
 
+// CreateAccountDiff inserts a new account diff in the db.
+func (s *SQLStore) CreateAccountDiff(ctx context.Context,
+	acc *account.Account) error {
+
+	txBody := func(txQueries *postgres.Queries) error {
+		return createAccountDiffWithTx(ctx, txQueries, false, acc)
+	}
+
+	err := s.ExecTx(ctx, txBody)
+	if err != nil {
+		return fmt.Errorf("unable to create account diff for trader "+
+			"(%x): %w", acc.TraderKeyRaw, err)
+	}
+
+	return nil
+}
+
+// ListAccountDiffs returns all the account diffs in the db.
+func (s *SQLStore) ListAccountDiffs(ctx context.Context) ([]*account.Account,
+	error) {
+
+	errMsg := "%v %v"
+	var accounts []*account.Account
+	txBody := func(txQueries *postgres.Queries) error {
+		dbAccounts, err := s.Accounts(ctx)
+		if err != nil {
+			return err
+		}
+
+		accounts = make([]*account.Account, 0, len(dbAccounts))
+		for _, dbAccount := range dbAccounts {
+			traderKey := dbAccount.TraderKeyRaw
+			row, err := s.queries.GetNotConfirmedAccountDiff(
+				ctx, traderKey[:],
+			)
+			switch {
+			// Return any unexpected error.
+			case err != nil && err != pgx.ErrNoRows:
+				return fmt.Errorf(errMsg, traderKey, err)
+
+				// If the account diff exists return that.
+			case err == nil:
+				accDiff, err := unmarshalAccountDiff(row)
+				if err != nil {
+					return fmt.Errorf(errMsg, traderKey,
+						err)
+				}
+				accounts = append(accounts, accDiff)
+			}
+		}
+		return nil
+	}
+
+	err := s.ExecTx(ctx, txBody)
+	return accounts, err
+}
+
+// StoreAccount inserts a new account in the db.
+func (s *SQLStore) StoreAccount(ctx context.Context,
+	acc *account.Account) error {
+
+	txBody := func(txQueries *postgres.Queries) error {
+		return upsertAccountWithTx(ctx, txQueries, acc)
+	}
+
+	err := s.ExecTx(ctx, txBody)
+	if err != nil {
+		return fmt.Errorf("unable to upsert account (%x): %w",
+			acc.TraderKeyRaw, err)
+	}
+	return nil
+}
+
+// Reservations returns all the reservation in the db.
+func (s *SQLStore) Reservations(ctx context.Context) ([]*account.Reservation,
+	[]lsat.TokenID, error) {
+
+	reservations := []*account.Reservation{}
+	tokens := []lsat.TokenID{}
+	txBody := func(txQueries *postgres.Queries) error {
+		params := postgres.GetAccountReservationsParams{}
+		rows, err := txQueries.GetAccountReservations(ctx, params)
+		if err != nil {
+			return err
+		}
+
+		for _, row := range rows {
+			reservation, err := unmarshalReservation(row)
+			if err != nil {
+				return err
+			}
+			var token lsat.TokenID
+			copy(token[:], row.TokenID)
+			tokens = append(tokens, token)
+			reservations = append(reservations, reservation)
+		}
+		return nil
+	}
+
+	err := s.ExecTx(ctx, txBody)
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to get reservations: %w",
+			err)
+	}
+	return reservations, tokens, nil
+}
+
 // RemoveReservation deletes a reservation identified by the LSAT ID.
 func (s *SQLStore) RemoveReservation(ctx context.Context,
 	tokenID lsat.TokenID) error {

@@ -74,7 +74,7 @@ var (
 // TestDecodeEmptyBatch tests that an empty batch (which has clearingPrice of 0)
 // can still be correctly decoded.
 func TestDecodeEmptyBatch(t *testing.T) {
-	b, err := deserializeBatchSnapshot(bytes.NewReader(testEmptyBatch))
+	b, err := DeserializeBatchSnapshot(bytes.NewReader(testEmptyBatch))
 	require.NoError(t, err)
 
 	// The empty batch didn't have a version or creation timestamp, so we

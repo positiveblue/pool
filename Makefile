@@ -85,6 +85,7 @@ build:
 	@$(call print, "Building auction server and cli.")
 	$(GOBUILD) -tags=kvdb_etcd $(PKG)/cmd/auctionserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
+	$(GOBUILD) $(PKG)/cmd/migrate
 
 build-itest:
 	@$(call print, "Building itest btcd.")
@@ -97,6 +98,7 @@ install:
 	@$(call print, "Installing auction server and cli.")
 	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
+	$(GOINSTALL) $(PKG)/cmd/migrate
 
 regtest-build: $(GARBLE_BIN)
 	@$(call print, "Building stripped down regtest only binary of auction server.")
@@ -238,4 +240,5 @@ clean:
 	@$(call print, "Cleaning source.$(NC)")
 	$(RM) ./auctionserver
 	$(RM) ./auctioncli
+	$(RM) ./migrate
 	$(RM) coverage.txt
