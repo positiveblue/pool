@@ -38,7 +38,6 @@ require (
 	github.com/shopspring/decimal v1.2.0
 	github.com/stretchr/testify v1.7.1
 	github.com/urfave/cli v1.22.9
-	go.etcd.io/etcd/client/v3 v3.5.1
 	go.etcd.io/etcd/server/v3 v3.5.1
 	golang.org/x/time v0.0.0-20210220033141-f8bda1e9f3ba
 	google.golang.org/grpc v1.39.0
@@ -156,6 +155,7 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.1 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.1 // indirect
 	go.etcd.io/etcd/client/v2 v2.305.1 // indirect
+	go.etcd.io/etcd/client/v3 v3.5.1 // indirect
 	go.etcd.io/etcd/pkg/v3 v3.5.1 // indirect
 	go.etcd.io/etcd/raft/v3 v3.5.1 // indirect
 	go.opentelemetry.io/contrib v0.20.0 // indirect

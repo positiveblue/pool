@@ -338,8 +338,8 @@ func (hs *auctioneerHarness) initDatabaseServer(t *testing.T) error {
 		return fmt.Errorf("server took too long to start")
 	}
 
-	// In case we're using the SQL as main store for subasta, we
-	// now spin  up the Postgres backend.
+	// We're using the SQL as main store for subasta, we now spin up the
+	// Postgres backend.
 	err = hs.initSQLDatabaseServer(t)
 
 	return err

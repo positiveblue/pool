@@ -16,6 +16,11 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 )
 
+const (
+	networkRegtest   = "regtest"
+	etcdUserEmbedded = "embedded"
+)
+
 var (
 	dockerAuctioneerAddr = fmt.Sprintf("0.0.0.0:%d", defaultAuctioneerRPCPort)
 	dockerRestAddr       = fmt.Sprintf("0.0.0.0:%d", defaultAuctioneerRESTPort)
