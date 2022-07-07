@@ -332,6 +332,11 @@ type ExecutorConfig struct {
 	// active traders. An active trader is one that's online and has a live
 	// communication channel with the BatchExecutor.
 	ActiveTraders func() map[matching.AccountID]*ActiveTrader
+
+	// DefaultAuctioneerVersion is the default version of the auctioneer
+	// output we use when creating new outputs. If this is changed from one
+	// restart to the next it means the account will be upgraded.
+	DefaultAuctioneerVersion account.AuctioneerVersion
 }
 
 // BatchExecutor is the primary state machine that executes a cleared batch.

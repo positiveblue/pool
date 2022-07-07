@@ -208,6 +208,7 @@ func TestBatchStorer(t *testing.T) {
 			PriorPoint:     oldMasterAccount.OutPoint,
 			OutPoint:       &wire.OutPoint{Hash: newMasterOutHash},
 			AccountBalance: 999,
+			Version:        account.VersionTaprootEnabled,
 		},
 		BatchID: batchID,
 		BatchTx: batchTx,

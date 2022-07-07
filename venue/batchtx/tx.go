@@ -140,6 +140,10 @@ type MasterAccountState struct {
 	// Version is the current version of the auctioneer account, influencing
 	// the script using to spend the previous output.
 	Version account.AuctioneerVersion
+
+	// NewVersion is the new version of the auctioneer account to set,
+	// influencing the script used to create the new output.
+	NewVersion account.AuctioneerVersion
 }
 
 // AccountScript derives the auctioneer's account script.
@@ -628,7 +632,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// which is the final thing we need in order to generate the batch
 	// execution transaction.
 	auctioneerAccountScript, err := mAccountDiff.AccountScript(
-		account.VersionTaprootEnabled,
+		mAccountDiff.NewVersion,
 	)
 	if err != nil {
 		return err
@@ -708,7 +712,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	masterAcct *account.Auctioneer, masterIO *BatchIO,
 	batchFeeRate chainfee.SatPerKWeight, batchHeightHint uint32,
-	feeScheduler matching.FeeScheduler) (*ExecutionContext, error) {
+	feeScheduler matching.FeeScheduler,
+	nextMasterAcctVersion account.AuctioneerVersion) (*ExecutionContext,
+	error) {
 
 	// When we create this master account state, we'll ensure that
 	// we provide the "next" batch key, as this is what will be
@@ -717,6 +723,7 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 		PriorPoint:     masterAcct.OutPoint,
 		AccountBalance: masterAcct.Balance,
 		Version:        masterAcct.Version,
+		NewVersion:     nextMasterAcctVersion,
 	}
 	copy(
 		masterAcctState.AuctioneerKey[:],

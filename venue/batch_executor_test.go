@@ -149,9 +149,11 @@ func newExecutorTestHarness(t *testing.T, msgTimeout time.Duration) *executorTes
 		outgoingChans: make(map[matching.AccountID]chan ExecutionMsg),
 		activeTraders: activeTraders,
 		executor: NewBatchExecutor(&ExecutorConfig{
-			Store:            store,
-			Signer:           signer,
-			BatchStorer:      NewExeBatchStorer(store),
+			Store:  store,
+			Signer: signer,
+			BatchStorer: NewExeBatchStorer(
+				store, account.VersionTaprootEnabled,
+			),
 			AccountWatcher:   watcher,
 			TraderMsgTimeout: msgTimeout,
 			ActiveTraders: func() map[matching.AccountID]*ActiveTrader {
@@ -189,6 +191,7 @@ func (e *executorTestHarness) newTestExecutionContext(
 	exeCtx, err := batchtx.NewExecutionContext(
 		startBatchKey, batch, masterAcct, &batchtx.BatchIO{}, feeRate,
 		1337, test.NewMockFeeSchedule(1, 1000),
+		account.VersionTaprootEnabled,
 	)
 	if err != nil {
 		e.t.Fatal(err)

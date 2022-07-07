@@ -8,6 +8,7 @@ import (
 	"time"
 
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/status"
@@ -61,6 +62,8 @@ type Config struct {
 
 	FundingConflictResetInterval time.Duration `long:"fundingconflictresetinterval" description:"the reset interval for funding conflicts (errors during channel opens), set to 0 for no automatic reset"`
 	TraderRejectResetInterval    time.Duration `long:"traderrejectresetinterval" description:"the reset interval for trader rejects (partial rejects because of --newnodesonly flag)"`
+
+	DefaultAuctioneerVersion account.AuctioneerVersion `long:"defaultauctioneerversion" description:"the version to use when creating new auctioneer account outputs"`
 
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
@@ -127,5 +130,6 @@ func DefaultConfig() *Config {
 		BosScoreWebURL:               defaultBosScoreURL,
 		FundingConflictResetInterval: defaultFundingConflictResetInterval,
 		TraderRejectResetInterval:    defaultTraderRejectResetInterval,
+		DefaultAuctioneerVersion:     account.VersionTaprootEnabled,
 	}
 }

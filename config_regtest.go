@@ -9,6 +9,7 @@ import (
 	"time"
 
 	orderT "github.com/lightninglabs/pool/order"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/status"
@@ -75,6 +76,8 @@ type Config struct {
 
 	FundingConflictResetInterval time.Duration
 	TraderRejectResetInterval    time.Duration
+
+	DefaultAuctioneerVersion account.AuctioneerVersion
 
 	// Lnd config is exposed because that always needs to be configured,
 	// even in a regtest environment.
@@ -144,5 +147,6 @@ func DefaultConfig() *Config {
 		FundingConflictResetInterval: defaultFundingConflictResetInterval,
 		TraderRejectResetInterval:    defaultTraderRejectResetInterval,
 		AllowFakeTokens:              true,
+		DefaultAuctioneerVersion:     account.VersionInitialNoVersion,
 	}
 }

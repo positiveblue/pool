@@ -358,7 +358,7 @@ func TestBatchTransactionAssembly(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
 		test.batchKey, test.orderBatch, test.masterAcct, &BatchIO{},
-		feeRate, 1337, feeSchedule,
+		feeRate, 1337, feeSchedule, account.VersionTaprootEnabled,
 	)
 	require.NoError(t, err)
 
@@ -512,7 +512,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		feeSchedule,
+		feeSchedule, account.VersionTaprootEnabled,
 	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
@@ -745,7 +745,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	_, err = NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		feeSchedule,
+		feeSchedule, account.VersionTaprootEnabled,
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -803,7 +803,7 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 	// to fail since the master account balance is now dust.
 	_, err := NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		feeSchedule,
+		feeSchedule, account.VersionTaprootEnabled,
 	)
 	if err != ErrMasterBalanceDust {
 		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
@@ -884,7 +884,7 @@ func TestBatchTransactionExtraIO(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(0)
 	batchTxCtx, err := NewExecutionContext(
 		test.batchKey, test.orderBatch, test.masterAcct, extraIO,
-		feeRate, 1337, feeSchedule,
+		feeRate, 1337, feeSchedule, account.VersionTaprootEnabled,
 	)
 	require.NoError(t, err)
 

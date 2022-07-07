@@ -503,9 +503,11 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		defaultFeeSchedule: auctionTerms.FeeSchedule(),
 	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
-		Store:            exeStore,
-		Signer:           lnd.Signer,
-		BatchStorer:      venue.NewExeBatchStorer(store),
+		Store:  exeStore,
+		Signer: lnd.Signer,
+		BatchStorer: venue.NewExeBatchStorer(
+			store, cfg.DefaultAuctioneerVersion,
+		),
 		AccountWatcher:   accountManager,
 		TraderMsgTimeout: defaultMsgTimeout,
 		ActiveTraders:    activeTraders.GetTraders,
@@ -617,7 +619,8 @@ func NewServer(cfg *Config, // nolint:gocyclo
 			TraderOnline: matching.NewTraderOnlineFilter(
 				activeTraders.IsActive,
 			),
-			RatingsAgency: ratingsAgency,
+			RatingsAgency:            ratingsAgency,
+			DefaultAuctioneerVersion: cfg.DefaultAuctioneerVersion,
 		}),
 		channelEnforcer: channelEnforcer,
 		ratingsDB:       ratingsDB,

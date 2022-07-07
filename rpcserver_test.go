@@ -337,8 +337,10 @@ func newServer(store subastadb.Store,
 		Store: &executorStore{
 			Store: store,
 		},
-		Signer:           mockSigner,
-		BatchStorer:      venue.NewExeBatchStorer(store),
+		Signer: mockSigner,
+		BatchStorer: venue.NewExeBatchStorer(
+			store, account.VersionInitialNoVersion,
+		),
 		TraderMsgTimeout: time.Second * 15,
 		ActiveTraders:    activeTraders.GetTraders,
 	})
