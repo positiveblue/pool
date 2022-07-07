@@ -684,11 +684,52 @@ message FinancialReportLSATEntry {
     BTCPrice btc_price = 4;
 }
 
-message FinancialReportResponse {
+message FinancialReportSummary {
+    // The unix timestamp in seconds for the report's creation time.
+    int64 creation_timestamp = 1;
+
     // The unix timestamp in seconds for the report's starting time.
-    int64 start_timestamp = 1;
+    int64 start_timestamp = 2;
 
     // The unix timestamp in seconds for the report's ending time.
+    int64 end_timestamp = 3;
+
+    // Full balance of the auctioneer at CreationTime.
+    int64 closing_balance = 4;
+
+    // Full balance of the auctioneer at CreationTime in USD.
+    string closing_balance_in_usd = 5;
+
+    // Total amount earned in fees.
+    int64 lease_batch_fees = 6;
+
+    // Total amount earned in fees in USD.
+    string lease_batch_fees_in_usd = 7;
+
+    // Total amount earned in LSAT tickets.
+    int64 lsat = 8;
+
+    // Total amount earned in LSAT tickets in USD.
+    string lsat_in_usd = 9;
+
+    // The amount we paid in on-chain fees.
+    int64 chain_fees = 10;
+
+    // The amount we paid in on-chain fees in USD.
+    string chain_fees_in_usd = 11;
+
+    // Net revenue as gross revenue - direct costs.
+    int64 net_revenue = 12;
+
+    // Net revenue in USD as gross revenue - direct costs.
+    string net_revenue_in_usd = 13;
+}
+
+message FinancialReportResponse {
+    // Deprecated, use summary.start_timestamp.
+    int64 start_timestamp = 1;
+
+    // Deprecated, use summary.end_timestamp.
     int64 end_timestamp = 2;
 
     // The report batch entries.
@@ -696,6 +737,9 @@ message FinancialReportResponse {
 
     // The report LSAT entries.
     repeated FinancialReportLSATEntry lsat_entries = 4;
+
+    // Report summary.
+    FinancialReportSummary summary = 5;
 }
 
 message SetStatusRequest {

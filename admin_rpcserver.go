@@ -1199,6 +1199,8 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 		endDate = time.Now().UTC()
 	}
 
+	// TODO(positieblue): make this a simple db query + set the store
+	// in the accounting cfg.
 	getBatches := func(context.Context) (accounting.BatchSnapshotMap,
 		error) {
 
@@ -1243,6 +1245,18 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 		return nil, fmt.Errorf("unable to create report: %v", err)
 	}
 
+	masterAcct, err := s.store.FetchAuctioneerAccount(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to fetch master account: %v",
+			err)
+	}
+
+	err = report.PopulateCurrentBalance(masterAcct.Balance)
+	if err != nil {
+		return nil, fmt.Errorf("unable to populate current balance: %v",
+			err)
+	}
+
 	batchEntries := make(
 		[]*adminrpc.FinancialReportBatchEntry,
 		0,
@@ -1266,11 +1280,11 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 		)
 	}
 
+	summary := marshalReportSummary(&report.Summary)
 	return &adminrpc.FinancialReportResponse{
-		StartTimestamp: report.Start.Unix(),
-		EndTimestamp:   report.End.Unix(),
-		BatchEntries:   batchEntries,
-		LsatEntries:    LSATEntries,
+		BatchEntries: batchEntries,
+		LsatEntries:  LSATEntries,
+		Summary:      summary,
 	}, nil
 }
 
@@ -1344,6 +1358,28 @@ func marshallBTCPrice(btcPrice *fiat.Price) *adminrpc.BTCPrice {
 		Timestamp: btcPrice.Timestamp.Unix(),
 		Price:     btcPrice.Price.String(),
 		Currency:  btcPrice.Currency,
+	}
+}
+
+// marshalReportSummary translates an accounting.Summary into its admin RPC
+// counterpart.
+func marshalReportSummary(
+	summary *accounting.Summary) *adminrpc.FinancialReportSummary {
+
+	return &adminrpc.FinancialReportSummary{
+		CreationTimestamp:   summary.CreationTime.Unix(),
+		StartTimestamp:      summary.Start.Unix(),
+		EndTimestamp:        summary.End.Unix(),
+		ClosingBalance:      int64(summary.ClosingBalance),
+		ClosingBalanceInUsd: summary.ClosingBalanceInUSD.String(),
+		LeaseBatchFees:      int64(summary.LeaseBatchFees),
+		LeaseBatchFeesInUsd: summary.LeaseBatchFeesInUSD.String(),
+		Lsat:                int64(summary.LSAT),
+		LsatInUsd:           summary.LSATInUSD.String(),
+		ChainFees:           int64(summary.ChainFees),
+		ChainFeesInUsd:      summary.ChainFeesInUSD.String(),
+		NetRevenue:          int64(summary.NetRevenue),
+		NetRevenueInUsd:     summary.NetRevenueInUSD.String(),
 	}
 }
 

@@ -2,6 +2,7 @@ package main
 
 import (
 	"archive/zip"
+	"bufio"
 	"context"
 	"encoding/csv"
 	"encoding/hex"
@@ -25,6 +26,9 @@ const (
 
 	// Financial Report zip filename.
 	zipFileName = "pool_accounting_%s.zip"
+
+	// timestampFormat is the default format for rpc timestamps.
+	timestampFormat = "2006-01-02 15:04:05"
 )
 
 var mirrorDatabaseCommand = cli.Command{
@@ -37,6 +41,12 @@ var mirrorDatabaseCommand = cli.Command{
 
 		return client.MirrorDatabase(ctx, &adminrpc.EmptyRequest{})
 	}),
+}
+
+// formatTimestamp formats an rpc timestamp field (int64) for printing.
+func formatTimestamp(timestamp int64) string {
+	t := time.Unix(timestamp, 0)
+	return t.Format(timestampFormat)
 }
 
 // generateBatchReport generate a csv file with all the lsat financial report data.
@@ -73,9 +83,8 @@ func generateBatchReport(filename string,
 	}
 
 	for _, entry := range report.BatchEntries {
-		timestamp := time.Unix(entry.Timestamp, 0).UTC()
 		line := []string{
-			timestamp.Format("2006-01-02 15:04:05"),
+			formatTimestamp(entry.Timestamp),
 			fmt.Sprintf("%d", entry.Timestamp),
 
 			fmt.Sprintf("%v", entry.ProfitInSats),
@@ -128,9 +137,8 @@ func generateLSATReport(filename string,
 	}
 
 	for _, entry := range report.LsatEntries {
-		timestamp := time.Unix(entry.Timestamp, 0)
 		line := []string{
-			timestamp.Format("2006-01-02 15:04:05"),
+			formatTimestamp(entry.Timestamp),
 			fmt.Sprintf("%d", entry.Timestamp),
 
 			fmt.Sprintf("%v", entry.ProfitInSats),
@@ -146,6 +154,71 @@ func generateLSATReport(filename string,
 		}
 	}
 
+	return nil
+}
+
+// generateSummaryReport generates a file with all the summary data.
+func generateSummaryReport(filename string,
+	report *adminrpc.FinancialReportResponse) error {
+
+	summary := report.Summary
+	file, err := os.Create(filename)
+	if err != nil {
+		return fmt.Errorf("failed creating summary file: %s", err)
+	}
+	defer file.Close()
+
+	w := bufio.NewWriter(file)
+
+	_, err = fmt.Fprintf(w, "Creation time: %v\n", formatTimestamp(
+		summary.CreationTimestamp))
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "Start date: %v\n", formatTimestamp(
+		summary.StartTimestamp))
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "End date: %v\n", formatTimestamp(
+		summary.EndTimestamp))
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "Closing balance: %v sats, %s USD\n",
+		summary.ClosingBalance, summary.ClosingBalanceInUsd)
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "Lease batch fees: %v sats, %s USD\n",
+		summary.LeaseBatchFees, summary.LeaseBatchFeesInUsd)
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "LSAT: %v sats, %s USD\n",
+		summary.Lsat, summary.LsatInUsd)
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "Chain fees: %v sats, %s USD\n",
+		summary.ChainFees, summary.ChainFeesInUsd)
+	if err != nil {
+		return nil
+	}
+
+	_, err = fmt.Fprintf(w, "net revenue: %v sats, %s USD\n",
+		summary.NetRevenue, summary.NetRevenueInUsd)
+	if err != nil {
+		return nil
+	}
+
+	w.Flush()
 	return nil
 }
 
@@ -258,7 +331,6 @@ var financialReportCommand = cli.Command{
 		// Generate csv.
 		batchFilename := fmt.Sprintf(csvFileName, "batch", timeSpan)
 		if err := generateBatchReport(batchFilename, report); err != nil {
-
 			return err
 		}
 
@@ -267,14 +339,25 @@ var financialReportCommand = cli.Command{
 			return err
 		}
 
+		summaryFilename := fmt.Sprintf("pool_accounting_summary_%s.txt",
+			timeSpan)
+		err = generateSummaryReport(summaryFilename, report)
+		if err != nil {
+			return err
+		}
+
 		zipName := fmt.Sprintf(zipFileName, timeSpan)
-		err = generateZip(zipName, batchFilename, lsatFilename)
+		err = generateZip(
+			zipName, batchFilename, lsatFilename, summaryFilename,
+		)
 		if err != nil {
 			return nil
 		}
 
 		// Remove intermediate files.
-		if err = removeFiles(batchFilename, lsatFilename); err != nil {
+		if err = removeFiles(
+			batchFilename, lsatFilename, summaryFilename,
+		); err != nil {
 			return err
 		}
 
