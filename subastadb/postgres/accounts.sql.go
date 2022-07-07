@@ -472,7 +472,7 @@ func (q *Queries) GetAccoutsCount(ctx context.Context) (int64, error) {
 }
 
 const getAuctioneerAccount = `-- name: GetAuctioneerAccount :one
-SELECT balance, batch_key, is_pending, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, out_point_hash, out_point_index 
+SELECT balance, batch_key, is_pending, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, out_point_hash, out_point_index, version 
 FROM auctioneer_account
 `
 
@@ -488,6 +488,7 @@ func (q *Queries) GetAuctioneerAccount(ctx context.Context) (AuctioneerAccount, 
 		&i.AuctioneerPublicKey,
 		&i.OutPointHash,
 		&i.OutPointIndex,
+		&i.Version,
 	)
 	return i, err
 }
@@ -633,11 +634,11 @@ const upsertAuctioneerAccount = `-- name: UpsertAuctioneerAccount :exec
 
 INSERT INTO auctioneer_account(
     balance, batch_key, is_pending, auctioneer_key_family, auctioneer_key_index,
-    auctioneer_public_key, out_point_hash, out_point_index)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+    auctioneer_public_key, out_point_hash, out_point_index, version)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 ON CONFLICT (auctioneer_public_key, auctioneer_key_family)
 DO UPDATE SET balance=$1, batch_key=$2, is_pending=$3, auctioneer_key_index=$5,
-    out_point_hash=$7, out_point_index=$8
+    out_point_hash=$7, out_point_index=$8, version=$9
 `
 
 type UpsertAuctioneerAccountParams struct {
@@ -649,6 +650,7 @@ type UpsertAuctioneerAccountParams struct {
 	AuctioneerPublicKey []byte
 	OutPointHash        []byte
 	OutPointIndex       int64
+	Version             int16
 }
 
 //- AuctioneerAccount Queries ---
@@ -662,6 +664,7 @@ func (q *Queries) UpsertAuctioneerAccount(ctx context.Context, arg UpsertAuction
 		arg.AuctioneerPublicKey,
 		arg.OutPointHash,
 		arg.OutPointIndex,
+		arg.Version,
 	)
 	return err
 }
