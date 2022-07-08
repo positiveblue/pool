@@ -23,7 +23,6 @@ import (
 	"github.com/davecgh/go-spew/spew"
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture"
-	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/pool"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
@@ -818,11 +817,14 @@ func closeAccountAndAssert(t *harnessTest, trader *traderHarness,
 
 // assertTraderSubscribed makes sure the trader with the given token is
 // connected to the auction server and has an active account subscription.
-func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
+func assertTraderSubscribed(t *harnessTest, trader *traderHarness,
 	acct *poolrpc.Account, numTradersExpected int) {
 
+	tokenID, err := trader.server.GetIdentity()
+	require.NoError(t.t, err)
+
 	// Make sure the trader stream was registered.
-	err := wait.NoError(func() error {
+	err = wait.NoError(func() error {
 		ctx := context.Background()
 		client := t.auctioneer.AuctionAdminClient
 		resp, err := client.ConnectedTraders(
@@ -838,10 +840,10 @@ func assertTraderSubscribed(t *harnessTest, token lsat.TokenID,
 				"streams, got %d expected %d",
 				len(traderStreams), numTradersExpected)
 		}
-		stream, ok := traderStreams[token.String()]
+		stream, ok := traderStreams[tokenID.String()]
 		if !ok {
 			return fmt.Errorf("trader stream for token %v not "+
-				"found", token)
+				"found", tokenID)
 		}
 
 		// Loop through all subscribed account keys to see if the one we

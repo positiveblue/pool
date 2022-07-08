@@ -655,11 +655,6 @@ func sidecarChannelsRecipientOffline(t *harnessTest) {
 		},
 	)
 
-	makerTokenID, err := t.trader.server.GetIdentity()
-	require.NoError(t.t, err)
-	providerTokenID, err := providerTrader.server.GetIdentity()
-	require.NoError(t.t, err)
-
 	// Now that the accounts are confirmed, submit an ask order from our
 	// maker, selling 200 units (200k sats) of liquidity.
 	const (
@@ -667,7 +662,7 @@ func sidecarChannelsRecipientOffline(t *harnessTest) {
 		askAmt          = 200_000
 		selfChanBalance = 100_000
 	)
-	_, err = submitAskOrder(
+	_, err := submitAskOrder(
 		t.trader, makerAccount.TraderKey, orderFixedRate, askAmt,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.Version = uint32(orderT.VersionSidecarChannel)
@@ -715,8 +710,8 @@ func sidecarChannelsRecipientOffline(t *harnessTest) {
 
 	// Before we attempt the batch, make sure the expected traders are
 	// online while the second recipient is not.
-	assertTraderSubscribed(t, *makerTokenID, makerAccount, 3)
-	assertTraderSubscribed(t, *providerTokenID, providerAccount, 3)
+	assertTraderSubscribed(t, t.trader, makerAccount, 3)
+	assertTraderSubscribed(t, providerTrader, providerAccount, 3)
 	assertSidecarTraderSubscribed(t, onlineMultiSigKey)
 	assertSidecarTraderNotSubscribed(t, offlineMultiSigKey)
 
