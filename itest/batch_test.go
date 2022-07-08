@@ -90,6 +90,19 @@ func testBatchExecution(t *harnessTest) {
 		},
 	)
 
+	// Before we start batch execution, we want to allow the master account
+	// to upgrade itself to a Taproot account. We did start out with a v0
+	// (p2wsh) master account for this test, so we should be able to upgrade
+	// it with a restart.
+	assertAuctioneerVersion(t, account.VersionInitialNoVersion)
+	assertAuctioneerOutputType(t, account.VersionInitialNoVersion)
+
+	t.auctioneer.serverCfg.DefaultAuctioneerVersion = account.VersionTaprootEnabled
+	t.restartServer()
+	assertTraderSubscribed(t, t.trader, account1, 3)
+	assertTraderSubscribed(t, secondTrader, account2, 3)
+	assertTraderSubscribed(t, secondTrader, account3, 3)
+
 	// Now that the accounts are confirmed, submit an ask order from our
 	// default trader, selling 15 units (1.5M sats) of liquidity.
 	const orderFixedRate = 100
@@ -177,6 +190,10 @@ func testBatchExecution(t *harnessTest) {
 	// No tx should be in the mempool as no market should be possible.
 	_, _ = executeBatch(t, 0)
 
+	// There was no successful batch so the auctioneer should not have
+	// upgraded its version.
+	assertAuctioneerVersion(t, account.VersionInitialNoVersion)
+
 	// Proceed to fully confirm the account deposit.
 	_ = mineBlocks(t, t.lndHarness, 5, 0)
 	assertAuctioneerAccountState(
@@ -186,6 +203,10 @@ func testBatchExecution(t *harnessTest) {
 	// Let's kick the auctioneer once again to try and create a batch.
 	_, batchTXIDs := executeBatch(t, 1)
 	firstBatchTXID := batchTXIDs[0]
+
+	// The auctioneer should have upgraded to taproot.
+	assertAuctioneerVersion(t, account.VersionTaprootEnabled)
+	assertAuctioneerOutputType(t, account.VersionTaprootEnabled)
 
 	// At this point, the lnd nodes backed by each trader should have a
 	// single pending channel, which matches the amount of the order

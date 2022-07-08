@@ -28,6 +28,7 @@ import (
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightninglabs/subasta"
+	"github.com/lightninglabs/subasta/account"
 	auctioneerAccount "github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/build"
@@ -89,6 +90,7 @@ type testCase struct {
 	name               string
 	test               func(t *harnessTest)
 	skipMasterAcctInit bool // nolint:structcheck
+	useV0MasterAcct    bool // nolint:structcheck
 }
 
 // harnessTest wraps a regular testing.T providing enhanced error detection
@@ -367,16 +369,19 @@ func nextAvailablePort() int {
 // setupHarnesses creates new server and client harnesses that are connected
 // to each other through an in-memory gRPC connection.
 func setupHarnesses(t *testing.T, lndHarness *lntest.NetworkHarness,
-	interceptor signal.Interceptor) (*traderHarness, *auctioneerHarness) {
+	interceptor signal.Interceptor,
+	masterAcctVersion auctioneerAccount.AuctioneerVersion) (*traderHarness,
+	*auctioneerHarness) {
 
 	// Create the two harnesses but don't start them yet, they need to be
 	// connected first.
 	auctioneerHarness, err := newAuctioneerHarness(auctioneerConfig{
-		BackendCfg:  lndHarness.BackendCfg,
-		NetParams:   harnessNetParams,
-		LndNode:     lndHarness.Alice,
-		Interceptor: interceptor,
-		ClusterCfg:  lncfg.DefaultCluster(),
+		BackendCfg:               lndHarness.BackendCfg,
+		NetParams:                harnessNetParams,
+		LndNode:                  lndHarness.Alice,
+		Interceptor:              interceptor,
+		ClusterCfg:               lncfg.DefaultCluster(),
+		DefaultMasterAcctVersion: masterAcctVersion,
 	})
 	if err != nil {
 		t.Fatalf("could not create auction server: %v", err)
@@ -695,6 +700,38 @@ func assertAuctionState(t *harnessTest, state subasta.AuctionState) {
 	}, defaultWaitTimeout)
 	if err != nil {
 		t.Fatalf(err.Error())
+	}
+}
+
+// assertAuctioneerVersion asserts that the auctioneer version matches the
+// expected value.
+func assertAuctioneerVersion(t *harnessTest, ver account.AuctioneerVersion) {
+	ctxb := context.Background()
+	masterAcct, err := t.auctioneer.AuctionAdminClient.MasterAccount(
+		ctxb, &adminrpc.EmptyRequest{},
+	)
+	require.NoError(t.t, err)
+
+	currentVersion := account.AuctioneerVersion(masterAcct.Version)
+	require.Equal(t.t, ver, currentVersion)
+}
+
+// assertAuctioneerVersion asserts that the auctioneer pkScript in the last
+// output matches the expected type.
+func assertAuctioneerOutputType(t *harnessTest, ver account.AuctioneerVersion) {
+	ctxb := context.Background()
+	auctioneer, err := t.auctioneer.store.FetchAuctioneerAccount(ctxb)
+	require.NoError(t.t, err)
+
+	output, err := auctioneer.Output()
+	require.NoError(t.t, err)
+
+	switch ver {
+	case account.VersionInitialNoVersion:
+		txscript.IsPayToWitnessScriptHash(output.PkScript)
+
+	case account.VersionTaprootEnabled:
+		txscript.IsPayToTaproot(output.PkScript)
 	}
 }
 

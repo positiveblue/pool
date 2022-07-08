@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightningnetwork/lnd/lntest"
 	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/signal"
@@ -144,11 +145,17 @@ func TestAuctioneerServer(t *testing.T) {
 			testCase.name)
 
 		success := t.Run(testCase.name, func(t1 *testing.T) {
+			masterAcctVersion := account.VersionTaprootEnabled
+			if testCase.useV0MasterAcct {
+				masterAcctVersion = account.VersionInitialNoVersion
+			}
+
 			// The auction server and client are both freshly
 			// created and later discarded for each test run to
 			// assure no state is taken over between runs.
 			traderHarness, auctioneerHarness := setupHarnesses(
 				t1, lndHarness, signal.Interceptor{},
+				masterAcctVersion,
 			)
 			lndHarness.EnsureConnected(
 				t1, lndHarness.Alice, lndHarness.Bob,
