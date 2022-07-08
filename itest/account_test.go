@@ -21,6 +21,7 @@ import (
 	"github.com/lightningnetwork/lnd/lnrpc/signrpc"
 	"github.com/lightningnetwork/lnd/lnrpc/walletrpc"
 	"github.com/lightningnetwork/lnd/lntest"
+	"github.com/lightningnetwork/lnd/lntest/wait"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/metadata"
@@ -208,22 +209,15 @@ func testAccountDeposit(t *harnessTest) {
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	}
 	depositResp, err := t.trader.DepositAccount(ctx, depositReq)
-	if err != nil {
-		t.Fatalf("unable to process account deposit: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
 		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("deposit transaction not found in mempool: %v", err)
-	}
-	if !txids[0].IsEqual(depositTxid) {
-		t.Fatalf("found mempool transaction %v instead of %v",
-			txids[0], depositTxid)
-	}
+	require.NoError(t.t, err)
+	require.Equal(t.t, depositTxid, txids[0])
 
 	// Assert that the account state is reflected correctly for both the
 	// trader and auctioneer while the deposit hasn't confirmed.
@@ -243,16 +237,11 @@ func testAccountDeposit(t *harnessTest) {
 		TraderKey:       account.TraderKey,
 		FeeRateSatPerKw: depositReq.FeeRateSatPerKw * 250 * 10,
 	})
-	if err != nil {
-		t.Fatalf("unable to bump account fee: %v", err)
-	}
+	require.NoError(t.t, err)
 	_, err = waitForNTxsInMempool(
 		t.lndHarness.Miner.Client, 2, minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("deposit and bump transaction not found in mempool: %v",
-			err)
-	}
+	require.NoError(t.t, err)
 
 	// Confirm the deposit, and once again assert that the account state
 	// is reflected correctly.
@@ -270,46 +259,54 @@ func testAccountDeposit(t *harnessTest) {
 	// We'll then attempt a deposit using a NP2WKH input. To do so, we'll
 	// need a NP2WKH available to spend. We send over 4 BTC and will attempt
 	// a 3 BTC deposit to ensure the NP2WKH input is chosen.
-	t.lndHarness.SendCoinsNP2WKH(
-		t.t, btcutil.SatoshiPerBitcoin*4, t.trader.cfg.LndNode,
+	sendAllCoinsToAddrType(
+		ctx, t, t.lndHarness, t.trader.cfg.LndNode,
+		lnrpc.AddressType_NESTED_PUBKEY_HASH,
 	)
-	depositReq.AmountSat = btcutil.SatoshiPerBitcoin * 3
+	depositReq.AmountSat = 100000
+	_, err = t.trader.DepositAccount(ctx, depositReq)
+	require.Error(t.t, err)
+	require.Contains(
+		t.t, err.Error(), "depositing from np2wkh inputs is not "+
+			"possible",
+	)
+
+	// TODO(guggero): Make sure NP2WKH deposits work correctly after tagging
+	// and using lnd 0.15.1-beta.
+
+	// We'll next attempt a deposit using a P2TR input. To do so, we'll
+	// need a P2TR available to spend. We send over 4 BTC and will attempt
+	// a 3 BTC deposit to ensure the P2TR input is chosen.
+	sendAllCoinsToAddrType(
+		ctx, t, t.lndHarness, t.trader.cfg.LndNode,
+		lnrpc.AddressType_TAPROOT_PUBKEY,
+	)
 	valueAfterSecondDeposit := btcutil.Amount(
 		depositResp.Account.Value + depositReq.AmountSat,
 	)
 	depositResp, err = t.trader.DepositAccount(ctx, depositReq)
-	if err != nil {
-		t.Fatalf("unable to process account deposit: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ = chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err = waitForNTxsInMempool(
 		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("deposit transaction not found in mempool: %v", err)
-	}
-	if !txids[0].IsEqual(depositTxid) {
-		t.Fatalf("found mempool transaction %v instead of %v",
-			txids[0], depositTxid)
-	}
+	require.NoError(t.t, err)
+	require.Equal(t.t, depositTxid, txids[0])
 
-	// The deposit transaction should contain at least one NP2WKH input.
-	depositTx, err := t.lndHarness.Miner.Client.GetRawTransaction(depositTxid)
-	if err != nil {
-		t.Fatalf("unable to retrieve mempool transaction: %v", err)
-	}
-	foundNP2WKHInput := false
+	// The deposit transaction should contain at least one P2TR input.
+	depositTx, err := t.lndHarness.Miner.Client.GetRawTransaction(
+		depositTxid,
+	)
+	require.NoError(t.t, err)
+	foundP2TRInput := false
 	for _, input := range depositTx.MsgTx().TxIn {
-		if len(input.SignatureScript) > 0 {
-			foundNP2WKHInput = true
+		if len(input.Witness) == 1 && len(input.Witness[0]) == 64 {
+			foundP2TRInput = true
 		}
 	}
-	if !foundNP2WKHInput {
-		t.Fatalf("expected NP2WKH input in deposit transaction %v: %v",
-			depositTxid, depositTx)
-	}
+	require.True(t.t, foundP2TRInput, "P2TR input in deposit")
 
 	// Confirm the deposit, and once again assert that the account state
 	// is reflected correctly.
@@ -774,4 +771,44 @@ func getTokenContext(token *lsat.TokenID) context.Context {
 		context.Background(), lsat.HeaderAuthorization,
 		fmt.Sprintf("LSATID %x", token[:]),
 	)
+}
+
+// sendAllCoinsToAddrType sweeps all coins from the wallet and sends them to a
+// new address of the given type.
+func sendAllCoinsToAddrType(ctx context.Context, t *harnessTest,
+	net *lntest.NetworkHarness, node *lntest.HarnessNode,
+	addrType lnrpc.AddressType) {
+
+	resp, err := node.NewAddress(ctx, &lnrpc.NewAddressRequest{
+		Type: addrType,
+	})
+	require.NoError(t.t, err)
+
+	_, err = node.SendCoins(ctx, &lnrpc.SendCoinsRequest{
+		Addr:    resp.Address,
+		SendAll: true,
+	})
+	require.NoError(t.t, err)
+
+	_ = mineBlocks(t, net, 1, 1)[0]
+
+	err = wait.NoError(func() error {
+		unspentResp, err := node.WalletKitClient.ListUnspent(
+			ctx, &walletrpc.ListUnspentRequest{
+				MinConfs: 1,
+				MaxConfs: 99,
+			},
+		)
+		if err != nil {
+			return err
+		}
+
+		if len(unspentResp.Utxos) != 1 {
+			return fmt.Errorf("expected one unspent output to be "+
+				"confirmed, got %d", len(unspentResp.Utxos))
+		}
+
+		return nil
+	}, defaultTimeout)
+	require.NoError(t.t, err)
 }
