@@ -453,7 +453,8 @@ func (b *BatchExecutor) validateTradersOnline(
 // witness script as well, so the final witness can easily be fully verified.
 func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	trader *ActiveTrader, batchTx *wire.MsgTx,
-	traderAcctInput *batchtx.BatchInput) (*ecdsa.Signature, []byte, error) {
+	traderAcctInput *batchtx.BatchInput,
+	prevOutputs []*wire.TxOut) (*ecdsa.Signature, []byte, error) {
 
 	log.Debugf("Signing account input for trader=%x", trader.AccountKey[:])
 
@@ -499,7 +500,7 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	}
 	auctioneerSigs, err := b.cfg.Signer.SignOutputRaw(
 		context.Background(), batchTx,
-		[]*lndclient.SignDescriptor{signDesc}, nil,
+		[]*lndclient.SignDescriptor{signDesc}, prevOutputs,
 	)
 	if err != nil {
 		return nil, nil, err
@@ -868,6 +869,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 		auctioneerInputIndex := exeCtx.MasterAccountDiff.InputIndex
 		auctioneerWitness, err := env.exeCtx.MasterAcct.AccountWitness(
 			b.cfg.Signer, batchTx, auctioneerInputIndex,
+			env.exeCtx.PrevOutputs(),
 		)
 		if err != nil {
 			return 0, env, err
@@ -999,7 +1001,7 @@ func (b *BatchExecutor) handleSignMsg(signMsg *TraderSignMsg,
 		}
 		auctioneerSig, witnessScript, err := b.signAcctInput(
 			env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
-			traderAcctInput,
+			traderAcctInput, env.exeCtx.PrevOutputs(),
 		)
 		if err != nil {
 			return 0, fmt.Errorf("unable to generate auctioneer "+
