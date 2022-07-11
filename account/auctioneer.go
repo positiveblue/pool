@@ -73,7 +73,8 @@ func (a *Auctioneer) Output() (*wire.TxOut, error) {
 // AccountWitness attempts to construct a fully valid witness which can be used
 // to spend the auctioneer's account on the batch execution transaction.
 func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
-	tx *wire.MsgTx, inputIndex int) (wire.TxWitness, error) {
+	tx *wire.MsgTx, inputIndex int,
+	prevOutputs []*wire.TxOut) (wire.TxWitness, error) {
 
 	// First, we'll compute the witness script, and its corresponding
 	// witness program as we'll need both for the sign descriptor below.
@@ -118,7 +119,7 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	}
 	ctx := context.Background()
 	sigs, err := signer.SignOutputRaw(
-		ctx, tx, []*lndclient.SignDescriptor{signDesc}, nil,
+		ctx, tx, []*lndclient.SignDescriptor{signDesc}, prevOutputs,
 	)
 	if err != nil {
 		return nil, err

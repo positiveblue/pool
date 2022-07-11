@@ -175,7 +175,11 @@ func (s *SQLStore) GetBatchSnapshot(ctx context.Context,
 
 		// Get batch.
 		batchRow, err := txQueries.GetBatch(ctx, batchID[:])
-		if err != nil {
+		switch {
+		case err == pgx.ErrNoRows:
+			return errBatchSnapshotNotFound
+
+		case err != nil:
 			return err
 		}
 

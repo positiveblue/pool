@@ -987,10 +987,25 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		return nil, nil, nil, err
 	}
 
+	prevOutputs := make([]*wire.TxOut, len(tx.TxIn))
 	accountInputIdx := -1
 	for i, txIn := range tx.TxIn {
 		if txIn.PreviousOutPoint == account.OutPoint {
 			accountInputIdx = i
+			prevOutputs[i] = accountOutput
+		} else {
+			// For compatibility with lnd 0.15, we need to send a
+			// previous output, even if we're not signing for that
+			// specific input. Otherwise, this call will fail in a
+			// remote signing setup of subasta. This will be
+			// properly addressed by the taproot upgrade where the
+			// trader always sends all previous outputs.
+			//
+			// TODO (guggero): Fix in Taproot account upgrade PR.
+			prevOutputs[i] = &wire.TxOut{
+				Value:    1,
+				PkScript: []byte("dummy"),
+			}
 		}
 	}
 	if accountInputIdx == -1 {
@@ -1027,7 +1042,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	}
 
 	sigs, err := m.cfg.Signer.SignOutputRaw(
-		ctx, tx, []*lndclient.SignDescriptor{signDesc}, nil,
+		ctx, tx, []*lndclient.SignDescriptor{signDesc}, prevOutputs,
 	)
 	if err != nil {
 		return nil, nil, nil, err
