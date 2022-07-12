@@ -30,6 +30,7 @@ WHERE batch_key = $1;
 -- name: GetBatchKeys :many
 SELECT batch_key 
 FROM batches 
+ORDER BY id
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: ConfirmBatch :execrows
@@ -49,6 +50,7 @@ FROM batches;
 -- name: GetBatches :many
 SELECT *
 FROM batches
+ORDER BY id
 LIMIT $1 OFFSET $2;
 
 
@@ -74,6 +76,7 @@ FROM batch_matched_orders;
 -- name: GetMatchedOrders :many
 SELECT * 
 FROM batch_matched_orders
+ORDER BY batch_key
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 

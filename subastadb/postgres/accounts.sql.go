@@ -232,6 +232,7 @@ func (q *Queries) GetAccountDiffByID(ctx context.Context, id int64) (AccountDiff
 const getAccountDiffs = `-- name: GetAccountDiffs :many
 SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
 FROM account_diffs
+ORDER BY id
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 
@@ -371,6 +372,7 @@ func (q *Queries) GetAccountReservationByTraderKey(ctx context.Context, traderKe
 const getAccountReservations = `-- name: GetAccountReservations :many
 SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id 
 FROM account_reservations
+ORDER BY token_id
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 
@@ -412,6 +414,7 @@ func (q *Queries) GetAccountReservations(ctx context.Context, arg GetAccountRese
 const getAccounts = `-- name: GetAccounts :many
 SELECT trader_key, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
 FROM accounts
+ORDER BY trader_key
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 

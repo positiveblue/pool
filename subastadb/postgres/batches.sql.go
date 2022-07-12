@@ -274,6 +274,7 @@ func (q *Queries) GetBatchClearingPricesMatchingBatchIDs(ctx context.Context, do
 const getBatchKeys = `-- name: GetBatchKeys :many
 SELECT batch_key 
 FROM batches 
+ORDER BY id
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 
@@ -305,6 +306,7 @@ func (q *Queries) GetBatchKeys(ctx context.Context, arg GetBatchKeysParams) ([][
 const getBatches = `-- name: GetBatches :many
 SELECT batch_key, batch_tx, batch_tx_fee, version, auctioneer_fees_accrued, confirmed, created_at
 FROM batches
+ORDER BY id
 LIMIT $1 OFFSET $2
 `
 
@@ -370,6 +372,7 @@ func (q *Queries) GetCurrentBatchKey(ctx context.Context) (CurrentBatchKey, erro
 const getMatchedOrders = `-- name: GetMatchedOrders :many
 SELECT batch_key, ask_order_nonce, bid_order_nonce, lease_duration, matching_rate, total_sats_cleared, units_matched, units_unmatched, fulfill_type, ask_units_unmatched, bid_units_unmatched, ask_state, bid_state, asker_expiry, bidder_expiry 
 FROM batch_matched_orders
+ORDER BY batch_key
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 

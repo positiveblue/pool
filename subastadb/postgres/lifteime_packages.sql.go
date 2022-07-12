@@ -53,6 +53,7 @@ func (q *Queries) GetLifetimePackage(ctx context.Context, channelPointString str
 const getLifetimePackages = `-- name: GetLifetimePackages :many
 SELECT channel_point_string, channel_point_hash, channel_point_index, channel_script, height_hint, maturity_height, version, ask_account_key, bid_account_key, ask_node_key, bid_node_key, ask_payment_base_point, bid_payment_base_point 
 FROM lifetime_packages
+ORDER BY channel_point_string
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 

@@ -22,6 +22,7 @@ WHERE channel_point_string = $1;
 -- name: GetLifetimePackages :many
 SELECT * 
 FROM lifetime_packages
+ORDER BY channel_point_string
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteLifetimePackage :execrows

@@ -14,6 +14,7 @@ WHERE token_id=$1;
 -- name: GetTraderTerms :many
 SELECT *
 FROM tarder_terms
+ORDER BY token_id
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteTraderTerms :execrows

@@ -39,6 +39,7 @@ WHERE token_id = $1;
 -- name: GetAccountReservations :many
 SELECT * 
 FROM account_reservations
+ORDER BY token_id
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteAccountReservation :execrows
@@ -73,6 +74,7 @@ FROM accounts;
 -- name: GetAccounts :many
 SELECT * 
 FROM accounts
+ORDER BY trader_key
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteAccount :execrows
@@ -107,6 +109,7 @@ WHERE trader_key = $1;
 -- name: GetAccountDiffs :many
 SELECT * 
 FROM account_diffs
+ORDER BY id
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: ConfirmAccountDiff :execrows

@@ -30,12 +30,14 @@ WHERE archived = $1;
 SELECT o.nonce
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
 WHERE archived = @archived
+ORDER BY nonce
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: GetOrderNoncesByTraderKey :many
 SELECT nonce, archived 
 FROM orders o
 WHERE trader_key = @trader_key
+ORDER BY nonce
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteOrder :execrows
