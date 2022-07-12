@@ -60,6 +60,10 @@ func TestBanTrader(t *testing.T) {
 	}
 	require.Equal(t, newBanInfo, banInfo)
 
+	activeBans, err := store.ListBannedAccounts(ctx, currentHeight)
+	require.NoError(t, err)
+	require.Len(t, activeBans, 1)
+
 	// Remove the ban for both the account and node, then check they're not
 	// banned anymore.
 	err = store.RemoveAccountBan(ctx, accountKey)
@@ -83,4 +87,8 @@ func TestBanTrader(t *testing.T) {
 		t.Fatalf("unable to get node ban: %v", err)
 	}
 	require.Nil(t, banInfo)
+
+	activeBans, err = store.ListBannedAccounts(ctx, currentHeight)
+	require.NoError(t, err)
+	require.Len(t, activeBans, 0)
 }
