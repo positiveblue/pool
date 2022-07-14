@@ -477,19 +477,12 @@ func NewServer(cfg *Config, // nolint:gocyclo
 
 	// Next, we'll open our primary connection to the main backing
 	// database.
-	var store subastadb.AdminStore
-	if cfg.UseSQL {
-		store, err = subastadb.NewSQLStore(ctx, cfg.SQL)
-		if err == nil {
-			err = store.Init(ctx)
-		}
-	} else {
-		store, err = subastadb.NewEtcdStore(
-			*lnd.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
-			cfg.Etcd.Password,
-		)
-	}
+	store, err := subastadb.NewSQLStore(ctx, cfg.SQL)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := store.Init(ctx); err != nil {
 		return nil, err
 	}
 

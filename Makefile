@@ -134,10 +134,6 @@ unit:
 	@$(call print, "Running unit tests.")
 	$(UNIT)
 
-unit-sql:
-	@$(call print, "Running unit tests with SQL database.")
-	$(UNIT_SQL)
-
 unit-cover: $(GOACC_BIN)
 	@$(call print, "Running unit coverage tests.")
 	$(GOACC_BIN) $(COVER_PKG)
@@ -158,11 +154,6 @@ itest-garble: $(GARBLE_BIN) build-itest aperture-dir
 	rm -rf itest/regtest; date
 	$(GARBLETEST) -c -o itest/subasta-itest -tags="$(ITEST_TAGS)" ./itest
 	cd itest; ./subasta-itest -test.v $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
-
-itest-sql: build-itest aperture-dir
-	@$(call print, "Running integration tests with ${backend} backend and SQL database.")
-	rm -rf itest/regtest; date
-	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest -usesql=true
 
 aperture-dir:
 ifeq ($(UNAME_S),Linux)
