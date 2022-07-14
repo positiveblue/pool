@@ -15,7 +15,6 @@ LINT_BIN := $(GO_BIN)/golangci-lint
 GOACC_BIN := $(GO_BIN)/go-acc
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
 GARBLE_BIN := $(GO_BIN)/garble
-MIGRATE_BIN := $(GO_BIN)/migrate
 
 GOBUILD := go build -v
 GOINSTALL := go install -v
@@ -85,7 +84,6 @@ build:
 	@$(call print, "Building auction server and cli.")
 	$(GOBUILD) -tags=kvdb_etcd $(PKG)/cmd/auctionserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
-	$(GOBUILD) $(PKG)/cmd/migrate
 
 build-itest:
 	@$(call print, "Building itest btcd.")
@@ -98,7 +96,6 @@ install:
 	@$(call print, "Installing auction server and cli.")
 	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
-	$(GOINSTALL) $(PKG)/cmd/migrate
 
 regtest-build: $(GARBLE_BIN)
 	@$(call print, "Building stripped down regtest only binary of auction server.")
@@ -240,5 +237,4 @@ clean:
 	@$(call print, "Cleaning source.$(NC)")
 	$(RM) ./auctionserver
 	$(RM) ./auctioncli
-	$(RM) ./migrate
 	$(RM) coverage.txt

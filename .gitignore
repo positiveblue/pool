@@ -52,7 +52,6 @@ coverage.txt
 /auctioncli
 /auctionserver-regtest
 /auctioncli-regtest
-/migrate
 /itest/lnd-itest
 /itest/btcd-itest
 /itest/regtest/*
