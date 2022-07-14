@@ -2,7 +2,6 @@ package itest
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -40,12 +39,6 @@ import (
 
 var (
 	etcdListenAddr = fmt.Sprintf("127.0.0.1:%d", nextAvailablePort())
-
-	// useSQL indicates whether the SQL store should be used.
-	//
-	// TODO(positiveblue): delete after sql migration.
-	useSQL = flag.Bool("usesql", false, "indicates whether the SQL store "+
-		"should be used")
 
 	// sqlFixtureKillAfter is the maximum time the SQL fixture docker
 	// container is allowed to run. This means, any individual test case
@@ -149,7 +142,6 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
 				nextAvailablePort()),
 			AccountExpiryExtension: 3024,
-			UseSQL:                 *useSQL,
 		},
 		apertureCfg: &aperture.Config{
 			ListenAddr: fmt.Sprintf("127.0.0.1:%d",
@@ -273,9 +265,7 @@ func (hs *auctioneerHarness) stop(t *testing.T) error {
 
 	// Don't return the error immediately if stopping goes wrong, give etcd
 	// a chance to stop as well and always remove the temp directory.
-	if hs.serverCfg.UseSQL {
-		hs.sqlFixture.TearDown(t)
-	}
+	hs.sqlFixture.TearDown(t)
 	hs.etcd.Close()
 
 	if err := hs.aperture.Stop(); err != nil {
@@ -319,28 +309,6 @@ func (hs *auctioneerHarness) initSQLDatabaseServer(t *testing.T) error {
 	return nil
 }
 
-// initETCDDatabaseServer starts and initializes an embedded etcd database.
-func (hs *auctioneerHarness) initETCDDatabaseServer(t *testing.T) error {
-	var err error
-	ctx := context.Background()
-	ctx, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
-	defer cancel()
-
-	hs.store, err = subastadb.NewEtcdStore(
-		*hs.cfg.LndNode.Cfg.NetParams, etcdListenAddr, "", "",
-		nil,
-	)
-	if err != nil {
-		return fmt.Errorf("unable to connect to etcd: %v", err)
-	}
-
-	if err := hs.store.Init(ctx); err != nil {
-		return fmt.Errorf("unable to initialize etcd: %v", err)
-	}
-
-	return nil
-}
-
 // initDatabaseServer starts and initializes an embedded etcd or Postgres
 // server.
 func (hs *auctioneerHarness) initDatabaseServer(t *testing.T) error {
@@ -370,15 +338,9 @@ func (hs *auctioneerHarness) initDatabaseServer(t *testing.T) error {
 		return fmt.Errorf("server took too long to start")
 	}
 
-	if hs.serverCfg.UseSQL {
-		// In case we're using the SQL as main store for subasta, we
-		// now spin  up the Postgres backend.
-		err = hs.initSQLDatabaseServer(t)
-	} else {
-		// In case we're using etcd as main store for subasta, we
-		// initialize the db here.
-		err = hs.initETCDDatabaseServer(t)
-	}
+	// In case we're using the SQL as main store for subasta, we
+	// now spin  up the Postgres backend.
+	err = hs.initSQLDatabaseServer(t)
 
 	return err
 }

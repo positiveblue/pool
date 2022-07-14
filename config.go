@@ -62,9 +62,6 @@ type Config struct {
 	FundingConflictResetInterval time.Duration `long:"fundingconflictresetinterval" description:"the reset interval for funding conflicts (errors during channel opens), set to 0 for no automatic reset"`
 	TraderRejectResetInterval    time.Duration `long:"traderrejectresetinterval" description:"the reset interval for trader rejects (partial rejects because of --newnodesonly flag)"`
 
-	SQLMirror bool `long:"sqlmirror" description:"if true, then bids and accounts will be mirrored to the SQL db"`
-	UseSQL    bool `long:"usesql" description:"if true, the server will use postgres as the main db"`
-
 	Lnd        *LndConfig                   `group:"lnd" namespace:"lnd"`
 	Etcd       *EtcdConfig                  `group:"etcd" namespace:"etcd"`
 	Cluster    *lncfg.Cluster               `group:"cluster" namespace:"cluster"`

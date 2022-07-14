@@ -447,15 +447,6 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, err
 	}
 
-	// Attempt to create a new SQL connection for data optional mirroring.
-	var sqlStore *subastadb.SQLGORMStore
-	if cfg.SQLMirror {
-		sqlStore, err = subastadb.NewSQLGORMStore(cfg.SQL)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	// If we're in regtest only mode, spin up an embedded etcd server.
 	if cfg.Network == networkRegtest && cfg.Etcd.User == etcdUserEmbedded {
 		etcdCfg := embed.NewConfig()
@@ -486,19 +477,12 @@ func NewServer(cfg *Config, // nolint:gocyclo
 
 	// Next, we'll open our primary connection to the main backing
 	// database.
-	var store subastadb.AdminStore
-	if cfg.UseSQL {
-		store, err = subastadb.NewSQLStore(ctx, cfg.SQL)
-		if err == nil {
-			err = store.Init(ctx)
-		}
-	} else {
-		store, err = subastadb.NewEtcdStore(
-			*lnd.ChainParams, cfg.Etcd.Host, cfg.Etcd.User,
-			cfg.Etcd.Password, sqlStore,
-		)
-	}
+	store, err := subastadb.NewSQLStore(ctx, cfg.SQL)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := store.Init(ctx); err != nil {
 		return nil, err
 	}
 
@@ -855,7 +839,7 @@ func (s *Server) Start() error {
 		ctx := context.Background()
 		// Use one timeout context for the store initialization. This
 		// is a context with a long timeout to allow enough time for
-		// filling up caches as well as mirroring things to SQL.
+		// filling up caches.
 		storeInitCtx, storeInitCancel := context.WithTimeout(
 			ctx, initTimeout,
 		)

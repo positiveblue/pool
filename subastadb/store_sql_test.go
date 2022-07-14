@@ -1,13 +1,19 @@
-//go:build sql
-// +build sql
-
 package subastadb
 
 import (
 	"context"
+	"encoding/hex"
 	"testing"
 	"time"
+
+	"github.com/btcsuite/btcd/btcec/v2"
 )
+
+func fromHex(s string) *btcec.PublicKey {
+	rawKey, _ := hex.DecodeString(s)
+	key, _ := btcec.ParsePubKey(rawKey)
+	return key
+}
 
 func newTestStore(t *testing.T) (AdminStore, func()) {
 	t.Helper()

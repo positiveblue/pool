@@ -132,22 +132,6 @@ func (f *TestPgFixture) ClearDB(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// NewSQLGORMStore constructs a new SQLGORMStore object that connects to the
-// started Postgres instance.
-func (f *TestPgFixture) NewSQLGORMStore(t *testing.T) *SQLGORMStore {
-	store, err := NewSQLGORMStore(
-		&SQLConfig{
-			Host:     f.host,
-			Port:     f.port,
-			User:     testPgUser,
-			Password: testPgPass,
-			DBName:   testPgDBName,
-		},
-	)
-	require.NoError(t, err)
-	return store
-}
-
 // NewSQLStore constructs a new SQLStore object that connects to the started
 // Postgres instance.
 func (f *TestPgFixture) NewSQLStore(t *testing.T) *SQLStore {

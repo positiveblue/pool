@@ -1,7 +1,6 @@
 package subastadb
 
 import (
-	"bytes"
 	"io"
 
 	"github.com/btcsuite/btcd/btcutil"
@@ -14,93 +13,7 @@ import (
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/chanbackup"
 	"github.com/lightningnetwork/lnd/lnwire"
-	"github.com/lightningnetwork/lnd/tlv"
 )
-
-const (
-	// userAgentType is the tlv record type for the order's user agent
-	// string.
-	userAgentType tlv.Type = 1
-
-	// bidSelfChanBalanceType is the tlv type we use to store the self
-	// channel balance on bid orders.
-	bidSelfChanBalanceType tlv.Type = 2
-
-	// bidIsSidecarType is the tlv record type for the sidecar flag of a bid
-	// order.
-	bidIsSidecarType tlv.Type = 3
-
-	// allowedNodeIDsType is the tlv type we use to store the list of node
-	// ids an order is allowed to match with.
-	allowedNodeIDsType tlv.Type = 4
-
-	// notAllowedNodeIDsType is the tlv type we use to store the list of
-	// node ids an order is not allowed to match with.
-	notAllowedNodeIDsType tlv.Type = 5
-)
-
-// WriteElements is writes each element in the elements slice to the passed
-// io.Writer using WriteElement.
-func WriteElements(w *bytes.Buffer, elements ...interface{}) error {
-	for _, element := range elements {
-		err := WriteElement(w, element)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-// WriteElement is a one-stop shop to write the big endian representation of
-// any element which is to be serialized. The passed io.Writer should be backed
-// by an appropriately sized byte slice, or be able to dynamically expand to
-// accommodate additional data.
-func WriteElement(w *bytes.Buffer, element interface{}) error {
-	switch e := element.(type) {
-	case lsat.TokenID:
-		if _, err := w.Write(e[:]); err != nil {
-			return err
-		}
-
-	case account.State:
-		return lnwire.WriteElement(w, uint8(e))
-
-	case orderT.ChannelType:
-		return lnwire.WriteElement(w, uint8(e))
-
-	case order.DurationBucketState:
-		return lnwire.WriteElement(w, uint8(e))
-
-	case matching.FulfillType:
-		return lnwire.WriteElement(w, uint8(e))
-
-	case matching.AccountID:
-		return lnwire.WriteElement(w, e[:])
-
-	case chanbackup.SingleBackupVersion:
-		return lnwire.WriteElement(w, uint8(e))
-
-	case []byte:
-		return lnwire.WriteElements(w, uint32(len(e)), e)
-
-	case *wire.TxOut:
-		// We allow the values of TX outputs to be nil and just write a
-		// boolean value for hasValue = false.
-		if e == nil {
-			return WriteElement(w, false)
-		}
-
-		// We have a non-nil value, write it.
-		return WriteElements(
-			w, true, btcutil.Amount(e.Value), e.PkScript,
-		)
-
-	default:
-		return clientdb.WriteElement(w, element)
-	}
-
-	return nil
-}
 
 // ReadElements deserializes a variable number of elements into the passed
 // io.Reader, with each element being deserialized according to the ReadElement

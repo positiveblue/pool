@@ -19,7 +19,6 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/stretchr/testify/require"
-	conc "go.etcd.io/etcd/client/v3/concurrency"
 )
 
 // TestSubmitOrder tests that orders can be stored and retrieved correctly.
@@ -90,17 +89,6 @@ func TestSubmitOrder(t *testing.T) {
 			ErrOrderExists)
 	}
 
-	// Only available in the etcd tests.
-	etcdStore, ok := store.(*EtcdStore)
-	if ok {
-		// Finally, ensure that if we need to, we're able to properly
-		// re-fill the order cache. This essentially simulates a server
-		// restart with the same state as inserted above.
-		if err := etcdStore.fillActiveOrdersCache(ctxb); err != nil {
-			t.Fatalf("unable to re fresh cache: %v", err)
-		}
-	}
-
 	// Check that the order that we get from the db (now in the cache)
 	// matches the expected values.
 	storedOrder, err = store.GetOrder(ctxb, bid.Nonce())
@@ -142,21 +130,6 @@ func TestUpdateOrders(t *testing.T) {
 		t.Fatalf("unable to store order: %v", err)
 	}
 
-	// Make sure they are both stored to the non-archived branch of orders,
-	// at least in the etcd store.
-	keyOrderPrefix := keyPrefix + "order/"
-	etcdStore, isEtcdStore := store.(*EtcdStore)
-	if isEtcdStore {
-		orderMap, err := etcdStore.getAllValuesByPrefix(
-			ctxb, keyOrderPrefix,
-		)
-		require.NoError(t, err)
-		key1 := keyPrefix + "order/false/" + o1.Nonce().String()
-		require.Contains(t, orderMap, key1)
-		key2 := keyPrefix + "order/false/" + o2.Nonce().String()
-		require.Contains(t, orderMap, key2)
-	}
-
 	// Update the state of the first order and check that it is persisted.
 	err = store.UpdateOrder(
 		ctxb, o1.Nonce(),
@@ -179,30 +152,10 @@ func TestUpdateOrders(t *testing.T) {
 	// persisted correctly and moved out of the active bucket into the
 	// archive.
 	stateModifier := order.StateModifier(orderT.StateExecuted)
-	if isEtcdStore {
-		var cacheUpdates map[orderT.Nonce]order.ServerOrder
-		_, err = etcdStore.defaultSTM(ctxb, func(stm conc.STM) error {
-			var err error
-			cacheUpdates, err = etcdStore.updateOrdersSTM(
-				stm, []orderT.Nonce{o1.Nonce(), o2.Nonce()},
-				[][]order.Modifier{
-					{stateModifier}, {stateModifier},
-				},
-			)
-			return err
-		})
+	for _, nonce := range []orderT.Nonce{o1.Nonce(), o2.Nonce()} {
+		err := store.UpdateOrder(ctxb, nonce, stateModifier)
 		if err != nil {
-			t.Fatalf("unable to update orders: %v", err)
-		}
-
-		etcdStore.updateOrderCache(cacheUpdates)
-	} else {
-		sqlStore := store.(*SQLStore)
-		for _, nonce := range []orderT.Nonce{o1.Nonce(), o2.Nonce()} {
-			err := sqlStore.UpdateOrder(ctxb, nonce, stateModifier)
-			if err != nil {
-				require.NoError(t, err)
-			}
+			require.NoError(t, err)
 		}
 	}
 
@@ -230,18 +183,6 @@ func TestUpdateOrders(t *testing.T) {
 				o.Details().State,
 				orderT.StateExecuted)
 		}
-	}
-
-	// Make sure the keys reflect the change as well in the etcd store.
-	if isEtcdStore {
-		orderMap, err := etcdStore.getAllValuesByPrefix(
-			ctxb, keyOrderPrefix,
-		)
-		require.NoError(t, err)
-		key1 := keyPrefix + "order/true/" + o1.Nonce().String()
-		require.Contains(t, orderMap, key1)
-		key2 := keyPrefix + "order/true/" + o2.Nonce().String()
-		require.Contains(t, orderMap, key2)
 	}
 
 	// We should still be able to look up an order by its nonce, even if

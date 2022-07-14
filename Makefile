@@ -15,7 +15,6 @@ LINT_BIN := $(GO_BIN)/golangci-lint
 GOACC_BIN := $(GO_BIN)/go-acc
 GOIMPORTS_BIN := $(GO_BIN)/gosimports
 GARBLE_BIN := $(GO_BIN)/garble
-MIGRATE_BIN := $(GO_BIN)/migrate
 
 GOBUILD := go build -v
 GOINSTALL := go install -v
@@ -85,7 +84,6 @@ build:
 	@$(call print, "Building auction server and cli.")
 	$(GOBUILD) -tags=kvdb_etcd $(PKG)/cmd/auctionserver
 	$(GOBUILD) $(PKG)/cmd/auctioncli
-	$(GOBUILD) $(PKG)/cmd/migrate
 
 build-itest:
 	@$(call print, "Building itest btcd.")
@@ -98,7 +96,6 @@ install:
 	@$(call print, "Installing auction server and cli.")
 	$(GOINSTALL) $(PKG)/cmd/auctionserver
 	$(GOINSTALL) $(PKG)/cmd/auctioncli
-	$(GOINSTALL) $(PKG)/cmd/migrate
 
 regtest-build: $(GARBLE_BIN)
 	@$(call print, "Building stripped down regtest only binary of auction server.")
@@ -137,10 +134,6 @@ unit:
 	@$(call print, "Running unit tests.")
 	$(UNIT)
 
-unit-sql:
-	@$(call print, "Running unit tests with SQL database.")
-	$(UNIT_SQL)
-
 unit-cover: $(GOACC_BIN)
 	@$(call print, "Running unit coverage tests.")
 	$(GOACC_BIN) $(COVER_PKG)
@@ -161,11 +154,6 @@ itest-garble: $(GARBLE_BIN) build-itest aperture-dir
 	rm -rf itest/regtest; date
 	$(GARBLETEST) -c -o itest/subasta-itest -tags="$(ITEST_TAGS)" ./itest
 	cd itest; ./subasta-itest -test.v $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest
-
-itest-sql: build-itest aperture-dir
-	@$(call print, "Running integration tests with ${backend} backend and SQL database.")
-	rm -rf itest/regtest; date
-	$(GOTEST) ./itest -tags="$(ITEST_TAGS)" $(TEST_FLAGS) -logoutput -goroutinedump -btcdexec=./btcd-itest -logdir=regtest -usesql=true
 
 aperture-dir:
 ifeq ($(UNAME_S),Linux)
@@ -240,5 +228,4 @@ clean:
 	@$(call print, "Cleaning source.$(NC)")
 	$(RM) ./auctionserver
 	$(RM) ./auctioncli
-	$(RM) ./migrate
 	$(RM) coverage.txt

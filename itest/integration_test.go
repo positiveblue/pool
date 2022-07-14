@@ -236,12 +236,11 @@ func leaderElectionTestCase(t *testing.T,
 	)
 	require.NoError(t, err)
 
+	secondaryHarness.initSQLDatabaseServer(t)
+
 	// secondaryHarness.start() tries to recreate the etcd database and it
 	// fails so we need to set the same database as the primary harness
 	// here.
-	if useSQL != nil && *useSQL {
-		secondaryHarness.initSQLDatabaseServer(t)
-	}
 	secondaryHarness.etcd = primaryHarness.etcd
 
 	// This server will hang, so we run it in a goroutine.

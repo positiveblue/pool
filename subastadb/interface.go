@@ -2,8 +2,11 @@ package subastadb
 
 import (
 	"context"
+	"encoding/hex"
 
 	"github.com/btcsuite/btcd/btcec/v2"
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
@@ -12,7 +15,30 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
 	"github.com/lightninglabs/subasta/traderterms"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
+
+var (
+	// InitialBatchKey serves as our initial global batch key. This key will
+	// be incremented by the curve's base point every time a new batch is
+	// cleared.
+	initialBatchKeyBytes, _ = hex.DecodeString(
+		"02824d0cbac65e01712124c50ff2cc74ce22851d7b444c1bf2ae66afefb8eaf27f",
+	)
+	InitialBatchKey, _ = btcec.ParsePubKey(initialBatchKeyBytes)
+)
+
+// BatchSnapshot holds a self-contained snapshot of a batch.
+type BatchSnapshot struct {
+	// BatchTx is the final, signed batch transaction for this batch.
+	BatchTx *wire.MsgTx
+
+	// BatchTxFee is the chain fee paid by the above batch tx.
+	BatchTxFee btcutil.Amount
+
+	// OrderBatch is the matched orders part of this batch.
+	OrderBatch *matching.OrderBatch
+}
 
 // LeaseDurationStore is responsible for storing and retrieving information
 // about lease durations reliably.
@@ -92,12 +118,6 @@ type AdminStore interface {
 
 	// Batches retrieves all existing batches.
 	Batches(ctx context.Context) (map[orderT.BatchID]*BatchSnapshot, error)
-
-	// MirrorToSQL attempts to mirror accounts, orders and batches to the configured
-	// SQL database.
-	//
-	// TODO(positiveblue): Delete when sql migration is completed.
-	MirrorToSQL(ctx context.Context) error
 
 	// NodeRatingsDatabase is a logical ratings database. Before usage the
 	// IndexRatings() MUST be called.

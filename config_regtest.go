@@ -71,8 +71,6 @@ type Config struct {
 	FundingConflictResetInterval time.Duration
 	TraderRejectResetInterval    time.Duration
 
-	SQLMirror bool
-
 	// Lnd config is exposed because that always needs to be configured,
 	// even in a regtest environment.
 	Lnd *LndConfig `group:"lnd" namespace:"lnd"`
@@ -80,7 +78,6 @@ type Config struct {
 	Cluster *lncfg.Cluster       `group:"cluster" namespace:"cluster" hidden:"true"`
 	Bitcoin *chain.BitcoinConfig `group:"bitcoin" namespace:"bitcoin" hidden:"true"`
 	SQL     *subastadb.SQLConfig `group:"sql" namespace:"sql" hidden:"true"`
-	UseSQL  bool
 
 	Status *status.Config `group:"status" namespace:"status" hidden:"true"`
 

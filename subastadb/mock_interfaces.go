@@ -1207,20 +1207,6 @@ func (mr *MockAdminStoreMockRecorder) LookupNode(arg0, arg1 interface{}) *gomock
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "LookupNode", reflect.TypeOf((*MockAdminStore)(nil).LookupNode), arg0, arg1)
 }
 
-// MirrorToSQL mocks base method.
-func (m *MockAdminStore) MirrorToSQL(ctx context.Context) error {
-	m.ctrl.T.Helper()
-	ret := m.ctrl.Call(m, "MirrorToSQL", ctx)
-	ret0, _ := ret[0].(error)
-	return ret0
-}
-
-// MirrorToSQL indicates an expected call of MirrorToSQL.
-func (mr *MockAdminStoreMockRecorder) MirrorToSQL(ctx interface{}) *gomock.Call {
-	mr.mock.ctrl.T.Helper()
-	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "MirrorToSQL", reflect.TypeOf((*MockAdminStore)(nil).MirrorToSQL), ctx)
-}
-
 // ModifyNodeRating mocks base method.
 func (m *MockAdminStore) ModifyNodeRating(arg0 context.Context, arg1 [33]byte, arg2 order.NodeTier) error {
 	m.ctrl.T.Helper()

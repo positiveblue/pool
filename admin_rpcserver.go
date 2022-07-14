@@ -1181,13 +1181,6 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
-// MirrorDatabase mirrors accounts, orders and batches from etcd to SQL.
-func (s *adminRPCServer) MirrorDatabase(ctx context.Context,
-	_ *adminrpc.EmptyRequest) (*adminrpc.EmptyResponse, error) {
-
-	return &adminrpc.EmptyResponse{}, s.store.MirrorToSQL(ctx)
-}
-
 // FinancialReport returns a financial report for the specified dates.
 func (s *adminRPCServer) FinancialReport(ctx context.Context,
 	req *adminrpc.FinancialReportRequest) (*adminrpc.FinancialReportResponse,
