@@ -71,8 +71,6 @@ type Config struct {
 	FundingConflictResetInterval time.Duration
 	TraderRejectResetInterval    time.Duration
 
-	SQLMirror bool
-
 	// Lnd config is exposed because that always needs to be configured,
 	// even in a regtest environment.
 	Lnd *LndConfig `group:"lnd" namespace:"lnd"`

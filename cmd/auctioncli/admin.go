@@ -31,18 +31,6 @@ const (
 	timestampFormat = "2006-01-02 15:04:05"
 )
 
-var mirrorDatabaseCommand = cli.Command{
-	Name:        "mirror",
-	ShortName:   "m",
-	Usage:       "Mirror database to SQL",
-	Description: `Mirror database to SQL.`,
-	Action: wrapSimpleCmd(func(ctx context.Context, _ *cli.Context,
-		client adminrpc.AuctionAdminClient) (proto.Message, error) {
-
-		return client.MirrorDatabase(ctx, &adminrpc.EmptyRequest{})
-	}),
-}
-
 // formatTimestamp formats an rpc timestamp field (int64) for printing.
 func formatTimestamp(timestamp int64) string {
 	t := time.Unix(timestamp, 0)

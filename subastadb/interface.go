@@ -93,12 +93,6 @@ type AdminStore interface {
 	// Batches retrieves all existing batches.
 	Batches(ctx context.Context) (map[orderT.BatchID]*BatchSnapshot, error)
 
-	// MirrorToSQL attempts to mirror accounts, orders and batches to the configured
-	// SQL database.
-	//
-	// TODO(positiveblue): Delete when sql migration is completed.
-	MirrorToSQL(ctx context.Context) error
-
 	// NodeRatingsDatabase is a logical ratings database. Before usage the
 	// IndexRatings() MUST be called.
 	ratings.NodeRatingsDatabase

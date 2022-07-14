@@ -43,7 +43,7 @@ func (x *migrateCommand) NewStore(source string) (Store, error) {
 		activeNet := chaincfg.Params{Name: x.cfg.Network}
 		store, err := subastadb.NewEtcdStore(
 			activeNet, x.cfg.Etcd.Host, x.cfg.Etcd.User,
-			x.cfg.Etcd.Password, nil,
+			x.cfg.Etcd.Password,
 		)
 		if err != nil {
 			return nil, err

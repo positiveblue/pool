@@ -277,9 +277,6 @@ func (s *EtcdStore) UpdateAccount(ctx context.Context, a *account.Account,
 		return nil, errNotInitialized
 	}
 
-	s.accountUpdateMtx.Lock()
-	defer s.accountUpdateMtx.Unlock()
-
 	// Get the parsed key from the account.
 	traderKey, err := a.TraderKey()
 	if err != nil {
@@ -298,9 +295,6 @@ func (s *EtcdStore) UpdateAccount(ctx context.Context, a *account.Account,
 	if err != nil {
 		return nil, err
 	}
-
-	// Optionally mirror account to SQL.
-	UpdateAccountsSQL(ctx, s.sqlMirror, dbAccount)
 
 	return dbAccount, nil
 }
@@ -551,9 +545,6 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 		return errNotInitialized
 	}
 
-	s.accountUpdateMtx.Lock()
-	defer s.accountUpdateMtx.Unlock()
-
 	var rawAccountDiff string
 	_, err := s.defaultSTM(ctx, func(stm conc.STM) error {
 		accountKey := s.getAccountKey(traderKey)
@@ -574,18 +565,6 @@ func (s *EtcdStore) CommitAccountDiff(ctx context.Context,
 	})
 	if err != nil {
 		return err
-	}
-
-	// Optionally update the accunt in SQL.
-	if s.sqlMirror != nil {
-		dbAccount, err := deserializeAccount(
-			bytes.NewReader([]byte(rawAccountDiff)),
-		)
-		if err != nil {
-			return err
-		}
-
-		UpdateAccountsSQL(ctx, s.sqlMirror, dbAccount)
 	}
 
 	return nil

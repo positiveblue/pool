@@ -108,12 +108,6 @@ func (s *EtcdStore) PutTraderTerms(ctx context.Context,
 		return nil
 	})
 
-	// Only update the SQL mirror if we successfully stored them in the etcd
-	// database.
-	if err == nil {
-		UpdateTraderTermsSQL(ctx, s.sqlMirror, terms)
-	}
-
 	return err
 }
 

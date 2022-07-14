@@ -11,7 +11,6 @@ var adminCommands = []cli.Command{{
 	Usage:     "Server maintenance and administration.",
 	Category:  "Maintenance",
 	Subcommands: []cli.Command{
-		mirrorDatabaseCommand,
 		financialReportCommand,
 		shutdownCommand,
 		setStatusCommand,

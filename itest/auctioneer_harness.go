@@ -328,7 +328,6 @@ func (hs *auctioneerHarness) initETCDDatabaseServer(t *testing.T) error {
 
 	hs.store, err = subastadb.NewEtcdStore(
 		*hs.cfg.LndNode.Cfg.NetParams, etcdListenAddr, "", "",
-		nil,
 	)
 	if err != nil {
 		return fmt.Errorf("unable to connect to etcd: %v", err)
