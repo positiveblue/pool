@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
@@ -783,16 +784,15 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 		AuctioneerKey: &keychain.KeyDescriptor{
 			PubKey: auctioneerKey.PubKey(),
 		},
+		Version: account.VersionTaprootEnabled,
 	}
 	batchKey := auctioneerKey.PubKey()
 
 	// Since the batch is empty, fee estimation will be performed using a
 	// 1-input, 1-output transaction.
 	var weightEstimator input.TxWeightEstimator
-	weightEstimator.AddP2WSHOutput()
-	weightEstimator.AddWitnessInput(
-		account.AuctioneerWitnessSize,
-	)
+	weightEstimator.AddP2TROutput()
+	weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
 
 	// We'll use a fee rate for batch assembly that will leave only 434
 	// sats left for the auctioneer after chain fees.
@@ -805,9 +805,7 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
 		feeSchedule, account.VersionTaprootEnabled,
 	)
-	if err != ErrMasterBalanceDust {
-		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
-	}
+	require.ErrorIs(t, err, ErrMasterBalanceDust)
 }
 
 // TestBatchTransactionExtraIO tests that the batch transaction created when

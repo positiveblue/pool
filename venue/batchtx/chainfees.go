@@ -1,7 +1,10 @@
 package batchtx
 
 import (
+	"fmt"
+
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/txscript"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -29,12 +32,21 @@ type chainFeeEstimator struct {
 
 	// extraIO are extra inputs and outputs added to the batch.
 	extraIO *BatchIO
+
+	// masterAccountVersion is the master account version that was used to
+	// create the output that we are spending.
+	masterAccountVersion account.AuctioneerVersion
+
+	// masterAccountNewVersion is the master account version that will be
+	// used to create the new master account output.
+	masterAccountNewVersion account.AuctioneerVersion
 }
 
 // newChainFeeEstimator creates a new instance a chainFeeEstimator for an order
 // batch.
 func newChainFeeEstimator(orders []matching.MatchedOrder,
-	feeRate chainfee.SatPerKWeight, io *BatchIO) *chainFeeEstimator {
+	feeRate chainfee.SatPerKWeight, io *BatchIO, masterAccountVersion,
+	masterAccountNewVersion account.AuctioneerVersion) *chainFeeEstimator {
 
 	traderChanCount := make(map[matching.AccountID]uint32)
 	for _, order := range orders {
@@ -43,10 +55,12 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 	}
 
 	return &chainFeeEstimator{
-		feeRate:         feeRate,
-		traderChanCount: traderChanCount,
-		orders:          orders,
-		extraIO:         io,
+		feeRate:                 feeRate,
+		traderChanCount:         traderChanCount,
+		orders:                  orders,
+		extraIO:                 io,
+		masterAccountVersion:    masterAccountVersion,
+		masterAccountNewVersion: masterAccountNewVersion,
 	}
 }
 
@@ -81,10 +95,33 @@ func (c *chainFeeEstimator) EstimateBatchWeight(
 	// Now that we've processed all the orders for each trader, we'll
 	// account for the master output for the auctioneer, as well as the
 	// size of the witness when we go to spend our master output.
-	weightEstimator.AddP2WSHOutput()
-	weightEstimator.AddWitnessInput(
-		account.AuctioneerWitnessSize,
-	)
+	switch c.masterAccountVersion {
+	case account.VersionInitialNoVersion:
+		weightEstimator.AddWitnessInput(
+			account.AuctioneerWitnessSize,
+		)
+
+	case account.VersionTaprootEnabled:
+		weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
+
+	default:
+		return 0, fmt.Errorf("unable to spend from auctioneer "+
+			"version: %v", c.masterAccountVersion.String(),
+		)
+	}
+
+	switch c.masterAccountNewVersion {
+	case account.VersionInitialNoVersion:
+		weightEstimator.AddP2WSHOutput()
+
+	case account.VersionTaprootEnabled:
+		weightEstimator.AddP2TROutput()
+
+	default:
+		return 0, fmt.Errorf("unable to spend to auctioneer "+
+			"version: %v", c.masterAccountNewVersion.String(),
+		)
+	}
 
 	// If there are extra inputs requested added to the batch, use the
 	// witness type to estimate the added weight.

@@ -423,7 +423,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 
 	// As we go estimate and count the chain fees paid by the traders.
 	txFeeEstimator := newChainFeeEstimator(
-		orderBatch.Orders, feeRate, e.masterIO,
+		orderBatch.Orders, feeRate, e.masterIO, mAccountDiff.Version,
+		mAccountDiff.NewVersion,
 	)
 	var totalTraderFees btcutil.Amount
 

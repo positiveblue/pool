@@ -7,6 +7,7 @@ import (
 	"testing/quick"
 
 	"github.com/btcsuite/btcd/btcutil"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
 )
@@ -116,14 +117,38 @@ func genRandMatchedOrders(r *rand.Rand, numTraders, numOrders int32) []matching.
 	return randOrders
 }
 
+func masterAccountVersions(startTaproot,
+	upgradeTaproot bool) (account.AuctioneerVersion,
+	account.AuctioneerVersion) {
+
+	version := account.VersionInitialNoVersion
+	newVersion := account.VersionInitialNoVersion
+	if startTaproot {
+		version = account.VersionTaprootEnabled
+		newVersion = account.VersionTaprootEnabled
+	}
+	if upgradeTaproot {
+		newVersion = account.VersionTaprootEnabled
+	}
+
+	return version, newVersion
+}
+
 // TestChainFeeEstimatorFeeOrderScaling asserts the property that if one trader
 // has more matched orders than another in a batch, then they always have a
 // greater fee contribution on their end.
 func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 	t.Parallel()
 
-	scenario := func(orders []matching.MatchedOrder) bool {
-		feeEstimator := newChainFeeEstimator(orders, testFeeRate, &BatchIO{})
+	scenario := func(orders []matching.MatchedOrder, startTaproot,
+		upgradeTaproot bool) bool {
+
+		version, newVersion := masterAccountVersions(
+			startTaproot, upgradeTaproot,
+		)
+		feeEstimator := newChainFeeEstimator(
+			orders, testFeeRate, &BatchIO{}, version, newVersion,
+		)
 
 		// For each pair of traders in this randomly generated batch,
 		// assert that if one trader has a greater number of channels
@@ -194,6 +219,8 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 			randOrders := genRandMatchedOrders(r, 100, 50)
 
 			v[0] = reflect.ValueOf(randOrders)
+			v[1] = reflect.ValueOf(r.Intn(2) == 1)
+			v[2] = reflect.ValueOf(r.Intn(2) == 1)
 		},
 	}
 	if err := quick.Check(scenario, &quickCfg); err != nil {
@@ -207,6 +234,9 @@ type matchedOrderSet struct {
 
 	feeRateA chainfee.SatPerKWeight
 	feeRateB chainfee.SatPerKWeight
+
+	startTaproot   bool
+	upgradeTaproot bool
 }
 
 // TestChainFeeEstimatorEstimateBatchWeight asserts the property that given two
@@ -219,14 +249,21 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 	scenario := func(set matchedOrderSet) bool {
 		setA, setB := set.orderSetA, set.orderSetB
 
-		estA := newChainFeeEstimator(setA, testFeeRate, &BatchIO{})
+		version, newVersion := masterAccountVersions(
+			set.startTaproot, set.upgradeTaproot,
+		)
+		estA := newChainFeeEstimator(
+			setA, testFeeRate, &BatchIO{}, version, newVersion,
+		)
 		feeSetA, err := estA.EstimateBatchWeight(len(estA.traderChanCount))
 		if err != nil {
 			t.Logf("unable to estimate batch weight: %v", err)
 			return false
 		}
 
-		estB := newChainFeeEstimator(setB, testFeeRate, &BatchIO{})
+		estB := newChainFeeEstimator(
+			setB, testFeeRate, &BatchIO{}, version, newVersion,
+		)
 		feeSetB, err := estB.EstimateBatchWeight(len(estB.traderChanCount))
 		if err != nil {
 			t.Logf("unable to estimate batch weight: %v", err)
@@ -266,8 +303,10 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 			)
 
 			v[0] = reflect.ValueOf(matchedOrderSet{
-				orderSetA: setA,
-				orderSetB: setB,
+				orderSetA:      setA,
+				orderSetB:      setB,
+				startTaproot:   r.Intn(2) == 1,
+				upgradeTaproot: r.Intn(2) == 1,
 			})
 		},
 	}
@@ -275,7 +314,8 @@ func TestChainFeeEstimatorEstimateBatchWeight(t *testing.T) {
 		t.Fatalf("fee scaling property violated: %v", err)
 	}
 
-	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)", n+y, y, n)
+	t.Logf("Total number of scenarios run: %v (%v positive, %v negative)",
+		n+y, y, n)
 }
 
 // TestChainFeeEstimatorFeeRateScaling asserts the property that given two
@@ -290,7 +330,13 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 		estimateFee := func(
 			orderSet []matching.MatchedOrder) (btcutil.Amount, error) {
 
-			estimator := newChainFeeEstimator(orderSet, testFeeRate, &BatchIO{})
+			version, newVersion := masterAccountVersions(
+				set.startTaproot, set.upgradeTaproot,
+			)
+			estimator := newChainFeeEstimator(
+				orderSet, testFeeRate, &BatchIO{}, version,
+				newVersion,
+			)
 
 			// Get estimated fees paid by the traders.
 			var traders btcutil.Amount
@@ -344,8 +390,14 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 			v[0] = reflect.ValueOf(matchedOrderSet{
 				orderSetA: setA,
 				orderSetB: setB,
-				feeRateA:  chainfee.SatPerKWeight(uint16(r.Int31())),
-				feeRateB:  chainfee.SatPerKWeight(uint16(r.Int31())),
+				feeRateA: chainfee.SatPerKWeight(
+					uint16(r.Int31()),
+				),
+				feeRateB: chainfee.SatPerKWeight(
+					uint16(r.Int31()),
+				),
+				startTaproot:   r.Intn(2) == 1,
+				upgradeTaproot: r.Intn(2) == 1,
 			})
 		},
 	}
@@ -355,9 +407,11 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 }
 
 type dustAccScenario struct {
-	orderSet    []matching.MatchedOrder
-	endingAccsA int32
-	endingAccsB int32
+	orderSet       []matching.MatchedOrder
+	endingAccsA    int32
+	endingAccsB    int32
+	startTaproot   bool
+	upgradeTaproot bool
 }
 
 // TestChainFeeEstimatorDustAccounts asserts the property that the lower number
@@ -369,8 +423,12 @@ func TestChainFeeEstimatorDustAccounts(t *testing.T) {
 	n := 0
 	scenario := func(d dustAccScenario) bool {
 		set := d.orderSet
-
-		estimator := newChainFeeEstimator(set, testFeeRate, &BatchIO{})
+		version, newVersion := masterAccountVersions(
+			d.startTaproot, d.upgradeTaproot,
+		)
+		estimator := newChainFeeEstimator(
+			set, testFeeRate, &BatchIO{}, version, newVersion,
+		)
 
 		weightA, err := estimator.EstimateBatchWeight(int(d.endingAccsA))
 		if err != nil {
@@ -410,9 +468,11 @@ func TestChainFeeEstimatorDustAccounts(t *testing.T) {
 			)
 
 			testCase := dustAccScenario{
-				orderSet:    set,
-				endingAccsA: rand.Int31n(50),
-				endingAccsB: rand.Int31n(50),
+				orderSet:       set,
+				endingAccsA:    rand.Int31n(50),
+				endingAccsB:    rand.Int31n(50),
+				startTaproot:   r.Intn(2) == 1,
+				upgradeTaproot: r.Intn(2) == 1,
 			}
 
 			v[0] = reflect.ValueOf(testCase)
@@ -426,8 +486,10 @@ func TestChainFeeEstimatorDustAccounts(t *testing.T) {
 }
 
 type singleSet struct {
-	orderSet []matching.MatchedOrder
-	feeRate  chainfee.SatPerKWeight
+	orderSet       []matching.MatchedOrder
+	feeRate        chainfee.SatPerKWeight
+	startTaproot   bool
+	upgradeTaproot bool
 }
 
 // TestChainFeeEstimatorMeetFeeRate checks that the fees calculated for the
@@ -440,7 +502,12 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 		feeRate := singleSet.feeRate
 		orderSet := singleSet.orderSet
 
-		estimator := newChainFeeEstimator(orderSet, feeRate, &BatchIO{})
+		version, newVersion := masterAccountVersions(
+			singleSet.startTaproot, singleSet.upgradeTaproot,
+		)
+		estimator := newChainFeeEstimator(
+			orderSet, feeRate, &BatchIO{}, version, newVersion,
+		)
 
 		// Get estimated fees paid by the traders.
 		var traders btcutil.Amount
@@ -497,7 +564,11 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 
 			v[0] = reflect.ValueOf(singleSet{
 				orderSet: set,
-				feeRate:  chainfee.SatPerKWeight(uint16(r.Int31())),
+				feeRate: chainfee.SatPerKWeight(
+					uint16(r.Int31()),
+				),
+				startTaproot:   r.Intn(2) == 1,
+				upgradeTaproot: r.Intn(2) == 1,
 			})
 		},
 	}
