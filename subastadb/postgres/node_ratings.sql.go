@@ -39,6 +39,7 @@ func (q *Queries) GetNodeRating(ctx context.Context, nodeKey []byte) (NodeRating
 const getNodeRatings = `-- name: GetNodeRatings :many
 SELECT node_key, node_tier
 FROM node_ratings
+ORDER BY node_key
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 

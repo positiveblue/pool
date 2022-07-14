@@ -177,6 +177,7 @@ const getOrderNonces = `-- name: GetOrderNonces :many
 SELECT o.nonce
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
 WHERE archived = $1
+ORDER BY nonce
 LIMIT NULLIF($3::int, 0) OFFSET $2
 `
 
@@ -210,6 +211,7 @@ const getOrderNoncesByTraderKey = `-- name: GetOrderNoncesByTraderKey :many
 SELECT nonce, archived 
 FROM orders o
 WHERE trader_key = $1
+ORDER BY nonce
 LIMIT NULLIF($3::int, 0) OFFSET $2
 `
 

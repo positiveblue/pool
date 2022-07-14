@@ -14,6 +14,7 @@ WHERE node_key = $1;
 -- name: GetNodeRatings :many
 SELECT *
 FROM node_ratings
+ORDER BY node_key
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: DeleteNodeRating :execrows

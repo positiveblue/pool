@@ -27,6 +27,7 @@ func (q *Queries) DeleteTraderTerms(ctx context.Context, tokenID []byte) (int64,
 const getTraderTerms = `-- name: GetTraderTerms :many
 SELECT token_id, base_fee, fee_rate
 FROM tarder_terms
+ORDER BY token_id
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 
