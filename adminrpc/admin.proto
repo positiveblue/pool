@@ -357,6 +357,13 @@ message AuctionStatusResponse {
     The current server state as exposed through the k8s status endpoint.
     */
     string server_state = 9;
+
+    /*
+    The estimated fee rate that will be used for the next batch. This might be
+    a manually bumped fee rate or an estimation based on the current mempool
+    state.
+    */
+    uint32 next_batch_fee_rate_sat_per_kw = 10;
 }
 
 message ListBatchesResponse {

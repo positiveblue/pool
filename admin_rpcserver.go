@@ -441,6 +441,11 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 		return nil, err
 	}
 
+	feeRate, _, err := s.auctioneer.EstimateNextBatchFee(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	durationBuckets, err := s.store.LeaseDurations(ctx)
 	if err != nil {
 		return nil, err
@@ -457,14 +462,15 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	batchTicker := s.auctioneer.cfg.BatchTicker
 	pendingID := s.auctioneer.getPendingBatchID()
 	result := &adminrpc.AuctionStatusResponse{
-		PendingBatchId:       pendingID[:],
-		CurrentBatchId:       currentBatchKey.SerializeCompressed(),
-		BatchTickerActive:    batchTicker.IsActive(),
-		LastTimedTick:        uint64(batchTicker.LastTimedTick().Unix()),
-		SecondsToNextTick:    uint64(batchTicker.NextTickIn().Seconds()),
-		AuctionState:         state.String(),
-		LeaseDurationBuckets: rpcDurationBuckets,
-		ServerState:          s.statusReporter.GetStatus().Status,
+		PendingBatchId:           pendingID[:],
+		CurrentBatchId:           currentBatchKey.SerializeCompressed(),
+		BatchTickerActive:        batchTicker.IsActive(),
+		LastTimedTick:            uint64(batchTicker.LastTimedTick().Unix()),
+		SecondsToNextTick:        uint64(batchTicker.NextTickIn().Seconds()),
+		AuctionState:             state.String(),
+		LeaseDurationBuckets:     rpcDurationBuckets,
+		ServerState:              s.statusReporter.GetStatus().Status,
+		NextBatchFeeRateSatPerKw: uint32(feeRate),
 	}
 
 	// Don't calculate the last key if the current one is the initial one as
