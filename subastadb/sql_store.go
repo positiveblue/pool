@@ -39,7 +39,7 @@ type SQLConfig struct {
 	User               string `long:"user" description:"Database user."`
 	Password           string `long:"password" description:"Database user's password."`
 	DBName             string `long:"dbname" description:"Database name to use."`
-	MaxOpenConnections int    `long:"maxconnections" description:"Max open connections to keep alive to the database server."`
+	MaxOpenConnections int32  `long:"maxconnections" description:"Max open connections to keep alive to the database server."`
 	RequireSSL         bool   `long:"requiressl" description:"Whether to require using SSL (mode: require) when connecting to the server."`
 }
 
@@ -75,7 +75,20 @@ var _ AdminStore = (*SQLStore)(nil)
 func NewSQLStore(ctx context.Context, cfg *SQLConfig) (*SQLStore, error) {
 	log.Infof("Using SQL database '%s'", cfg.DSN(true))
 
-	db, err := pgxpool.Connect(ctx, cfg.DSN(false))
+	config, err := pgxpool.ParseConfig(cfg.DSN(false))
+	if err != nil {
+		return nil, err
+	}
+
+	// If we use the "pool_max_conns" parameter that pgxpool allegedly
+	// supports, that string is sent to the backend which results in an
+	// error (because Postgres doesn't know that parameter). So this is a
+	// workaround to set the max open connections on the config manually.
+	if cfg.MaxOpenConnections > 0 {
+		config.MaxConns = cfg.MaxOpenConnections
+	}
+
+	db, err := pgxpool.ConnectConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}
