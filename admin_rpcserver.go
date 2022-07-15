@@ -182,15 +182,15 @@ func (s *adminRPCServer) ConnectedTraders(_ context.Context,
 	}
 	streams := s.mainRPCServer.ConnectedStreams()
 	for lsatID, stream := range streams {
-		acctList := &adminrpc.PubKeyList{RawKeyBytes: make(
-			[][]byte, 0, len(stream.Subscriptions),
-		)}
+		traderKeys := make([][]byte, 0, len(stream.Subscriptions))
 		for acctKey := range stream.Subscriptions {
-			acctList.RawKeyBytes = append(
-				acctList.RawKeyBytes, acctKey[:],
-			)
+			traderKey := make([]byte, len(acctKey[:]))
+			copy(traderKey, acctKey[:])
+			traderKeys = append(traderKeys, traderKey)
 		}
-		result.Streams[lsatID.String()] = acctList
+		result.Streams[lsatID.String()] = &adminrpc.PubKeyList{
+			RawKeyBytes: traderKeys,
+		}
 	}
 
 	return result, nil
