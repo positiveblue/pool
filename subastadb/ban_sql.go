@@ -100,7 +100,9 @@ func (s *SQLStore) GetNodeBan(ctx context.Context,
 func (s *SQLStore) ListBannedAccounts(ctx context.Context,
 	currentHeight uint32) (map[[33]byte]*ban.Info, error) {
 
-	rows, err := s.queries.GetAllAccountBans(ctx)
+	rows, err := s.queries.GetAllActiveAccountBans(
+		ctx, int64(currentHeight),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get all account bans: %v",
 			err)
@@ -127,7 +129,9 @@ func (s *SQLStore) ListBannedAccounts(ctx context.Context,
 func (s *SQLStore) ListBannedNodes(ctx context.Context,
 	currentHeight uint32) (map[[33]byte]*ban.Info, error) {
 
-	rows, err := s.queries.GetAllNodeBans(ctx)
+	rows, err := s.queries.GetAllActiveNodeBans(
+		ctx, int64(currentHeight),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("unable to get all node bans: %v", err)
 	}
