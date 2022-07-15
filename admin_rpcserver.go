@@ -838,9 +838,23 @@ func (s *adminRPCServer) ClearConflicts(context.Context,
 func (s *adminRPCServer) BumpBatchFeeRate(_ context.Context,
 	req *adminrpc.BumpBatchFeeRateRequest) (*adminrpc.EmptyResponse, error) {
 
-	feePref := sweep.FeePreference{
-		ConfTarget: req.ConfTarget,
-		FeeRate:    chainfee.SatPerKWeight(req.FeeRateSatPerKw),
+	feePref := sweep.FeePreference{}
+	switch {
+	case req.FeeRateSatPerKw > 0:
+		feePref.FeeRate = chainfee.SatPerKWeight(req.FeeRateSatPerKw)
+
+	case req.FeeRateSatPerVbyte > 0:
+		satPerKVByte := chainfee.SatPerKVByte(
+			req.FeeRateSatPerVbyte * 1000,
+		)
+		feePref.FeeRate = satPerKVByte.FeePerKWeight()
+
+	case req.ConfTarget > 0:
+		feePref.ConfTarget = req.ConfTarget
+
+	default:
+		return nil, fmt.Errorf("must set either conf target or one " +
+			"of the fee rates")
 	}
 	if err := s.auctioneer.RequestBatchFeeBump(feePref); err != nil {
 		return nil, err

@@ -274,18 +274,37 @@ var bumpBatchFeeRateCommand = cli.Command{
 		},
 		cli.Uint64Flag{
 			Name: "fee_rate",
-			Usage: "set the fee rate for next batch to this " +
+			Usage: "set the fee rate for the next batch to this " +
 				"sat/kw (overrides conf_target)",
+		},
+		cli.Uint64Flag{
+			Name: "fee_rate_sat_per_vbyte",
+			Usage: "set the fee rate for the next batch to this " +
+				"sat/vByte (overrides conf_target)",
 		},
 	},
 
 	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
 		client adminrpc.AuctionAdminClient) (proto.Message, error) {
 
+		if cliCtx.IsSet("fee_rate") &&
+			cliCtx.IsSet("fee_rate_sat_per_vbyte") {
+
+			return nil, fmt.Errorf("cannot set both fee_rate and " +
+				"fee_rate_sat_per_vbyte")
+		}
+
 		return client.BumpBatchFeeRate(
 			ctx, &adminrpc.BumpBatchFeeRateRequest{
-				ConfTarget:      uint32(cliCtx.Uint64("conf_target")),
-				FeeRateSatPerKw: uint32(cliCtx.Uint64("fee_rate")),
+				ConfTarget: uint32(
+					cliCtx.Uint64("conf_target"),
+				),
+				FeeRateSatPerKw: uint32(
+					cliCtx.Uint64("fee_rate"),
+				),
+				FeeRateSatPerVbyte: uint32(
+					cliCtx.Uint64("fee_rate_sat_per_vbyte"),
+				),
 			},
 		)
 	}),

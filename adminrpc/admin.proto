@@ -572,6 +572,10 @@ message BumpBatchFeeRateRequest {
     // Request the next batch transaction to bump the effective fee rate of all
     // unconfirmed batches to this exact fee rate.
     uint32 fee_rate_sat_per_kw = 2;
+
+    // Request the next batch transaction to bump the effective fee rate of all
+    // unconfirmed batches to this approximate fee rate expressed in sat/vByte.
+    uint32 fee_rate_sat_per_vbyte = 3;
 }
 
 message NodeRating {
