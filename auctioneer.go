@@ -301,7 +301,12 @@ type Auctioneer struct {
 	// even if it is empty.
 	feeBumpPreference *sweep.FeePreference
 
-	// batchIORequets is a channel where we'll send requests for extra
+	// feeBumpPreferenceMtx is a mutex that guards the feeBumpPreference
+	// field, since it can be accessed by both the auctioneer's state
+	// machine and the RPC server.
+	feeBumpPreferenceMtx sync.Mutex
+
+	// batchIORequests is a channel where we'll send requests for extra
 	// inputs/outputs to add to the batch transaction.
 	batchIORequests chan *batchtx.BatchIO
 
@@ -935,7 +940,9 @@ func (a *Auctioneer) auctionCoordinator(newBlockChan chan int32,
 		// A fee bump request have arrived, set it so we'll use it for
 		// the next batch.
 		case feeReq := <-a.feeBumpRequests:
+			a.feeBumpPreferenceMtx.Lock()
 			a.feeBumpPreference = &feeReq
+			a.feeBumpPreferenceMtx.Unlock()
 
 		// The ticker to reset the funding conflict tracker just ticked,
 		// let's clear the map now.
@@ -1474,47 +1481,12 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// infinite loop.
 		a.batchRetry = true
 
-		// Get a up to date fee rate estimate. We'll use this to only
+		// Get an up-to-date fee rate estimate. We'll use this to only
 		// include orders with a max fee rate below this value during
 		// matchmaking.
-		var (
-			feeRate    chainfee.SatPerKWeight
-			confTarget = a.cfg.ConfTarget
-			bump       bool
-		)
-
-		// If we have requested a fee preference for the next batch,
-		// use that.
-		if a.feeBumpPreference != nil {
-			// Since the bumped fee preference was set, we take
-			// note of this, since we will allow empty batches to
-			// be created in order to bump any unconfirmed batches.
-			bump = true
-
-			// We'll use the specified fee rate, or if not set
-			// we'll use the given conf target.
-			feeRate = a.feeBumpPreference.FeeRate
-			if feeRate == 0 {
-				confTarget = int32(
-					a.feeBumpPreference.ConfTarget,
-				)
-			}
-
-			log.Infof("Using bumped fee preference for match "+
-				"making (feerate=%v, conf_target=%v)", feeRate,
-				confTarget)
-		}
-
-		// If fee rate wasn't specified, use the conf target to get an
-		// estimate.
-		if feeRate == 0 {
-			var err error
-			feeRate, err = a.cfg.Wallet.EstimateFeeRate(
-				ctxb, confTarget,
-			)
-			if err != nil {
-				return nil, err
-			}
+		feeRate, bump, err := a.EstimateNextBatchFee(ctxb)
+		if err != nil {
+			return nil, err
 		}
 
 		return MatchMakingState{
@@ -2036,6 +2008,57 @@ func (a *Auctioneer) locateTxByOutput(ctx context.Context,
 	}
 
 	return nil, errTxNotFound
+}
+
+// EstimateNextBatchFee returns the fee estimation for the next batch. This
+// takes into account any fee bump preference options that might have been set
+// manually through the admin RPC interface.
+func (a *Auctioneer) EstimateNextBatchFee(
+	ctx context.Context) (chainfee.SatPerKWeight, bool, error) {
+
+	var bumpPreference *sweep.FeePreference
+
+	a.feeBumpPreferenceMtx.Lock()
+	if a.feeBumpPreference != nil {
+		prefCopy := *a.feeBumpPreference
+		bumpPreference = &prefCopy
+	}
+	a.feeBumpPreferenceMtx.Unlock()
+
+	var (
+		feeRate    chainfee.SatPerKWeight
+		confTarget = a.cfg.ConfTarget
+		bump       bool
+	)
+
+	// If we have requested a fee preference for the next batch, use that.
+	if bumpPreference != nil {
+		// Since the bumped fee preference was set, we take note of
+		// this, since we will allow empty batches to be created in
+		// order to bump any unconfirmed batches.
+		bump = true
+
+		// We'll use the specified fee rate, or if not set we'll use the
+		// given conf target.
+		feeRate = bumpPreference.FeeRate
+		if feeRate == 0 {
+			confTarget = int32(bumpPreference.ConfTarget)
+		}
+
+		log.Infof("Using bumped fee preference for match making "+
+			"(feerate=%v, conf_target=%v)", feeRate, confTarget)
+	}
+
+	// If fee rate wasn't specified, use the conf target to get an estimate.
+	if feeRate == 0 {
+		var err error
+		feeRate, err = a.cfg.Wallet.EstimateFeeRate(ctx, confTarget)
+		if err != nil {
+			return 0, false, err
+		}
+	}
+
+	return feeRate, bump, nil
 }
 
 // AllowAccountUpdate determines whether the auctioneer should honor a trader's
