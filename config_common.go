@@ -123,6 +123,10 @@ const (
 	// (14 months * 30 days * 24 hours).
 	DefaultAutogenValidity = 14 * 30 * 24 * time.Hour
 
+	// defaultMaxSQLConnections is the default number of connections we
+	// allow the SQL client to open simultaneously against the server.
+	defaultMaxSQLConnections = 10
+
 	networkRegtest   = "regtest"
 	etcdUserEmbedded = "embedded"
 )

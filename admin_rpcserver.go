@@ -182,15 +182,15 @@ func (s *adminRPCServer) ConnectedTraders(_ context.Context,
 	}
 	streams := s.mainRPCServer.ConnectedStreams()
 	for lsatID, stream := range streams {
-		acctList := &adminrpc.PubKeyList{RawKeyBytes: make(
-			[][]byte, 0, len(stream.Subscriptions),
-		)}
+		traderKeys := make([][]byte, 0, len(stream.Subscriptions))
 		for acctKey := range stream.Subscriptions {
-			acctList.RawKeyBytes = append(
-				acctList.RawKeyBytes, acctKey[:],
-			)
+			traderKey := make([]byte, len(acctKey[:]))
+			copy(traderKey, acctKey[:])
+			traderKeys = append(traderKeys, traderKey)
 		}
-		result.Streams[lsatID.String()] = acctList
+		result.Streams[lsatID.String()] = &adminrpc.PubKeyList{
+			RawKeyBytes: traderKeys,
+		}
 	}
 
 	return result, nil
@@ -441,6 +441,11 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 		return nil, err
 	}
 
+	feeRate, _, err := s.auctioneer.EstimateNextBatchFee(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	durationBuckets, err := s.store.LeaseDurations(ctx)
 	if err != nil {
 		return nil, err
@@ -457,14 +462,15 @@ func (s *adminRPCServer) AuctionStatus(ctx context.Context,
 	batchTicker := s.auctioneer.cfg.BatchTicker
 	pendingID := s.auctioneer.getPendingBatchID()
 	result := &adminrpc.AuctionStatusResponse{
-		PendingBatchId:       pendingID[:],
-		CurrentBatchId:       currentBatchKey.SerializeCompressed(),
-		BatchTickerActive:    batchTicker.IsActive(),
-		LastTimedTick:        uint64(batchTicker.LastTimedTick().Unix()),
-		SecondsToNextTick:    uint64(batchTicker.NextTickIn().Seconds()),
-		AuctionState:         state.String(),
-		LeaseDurationBuckets: rpcDurationBuckets,
-		ServerState:          s.statusReporter.GetStatus().Status,
+		PendingBatchId:           pendingID[:],
+		CurrentBatchId:           currentBatchKey.SerializeCompressed(),
+		BatchTickerActive:        batchTicker.IsActive(),
+		LastTimedTick:            uint64(batchTicker.LastTimedTick().Unix()),
+		SecondsToNextTick:        uint64(batchTicker.NextTickIn().Seconds()),
+		AuctionState:             state.String(),
+		LeaseDurationBuckets:     rpcDurationBuckets,
+		ServerState:              s.statusReporter.GetStatus().Status,
+		NextBatchFeeRateSatPerKw: uint32(feeRate),
 	}
 
 	// Don't calculate the last key if the current one is the initial one as
@@ -838,9 +844,23 @@ func (s *adminRPCServer) ClearConflicts(context.Context,
 func (s *adminRPCServer) BumpBatchFeeRate(_ context.Context,
 	req *adminrpc.BumpBatchFeeRateRequest) (*adminrpc.EmptyResponse, error) {
 
-	feePref := sweep.FeePreference{
-		ConfTarget: req.ConfTarget,
-		FeeRate:    chainfee.SatPerKWeight(req.FeeRateSatPerKw),
+	feePref := sweep.FeePreference{}
+	switch {
+	case req.FeeRateSatPerKw > 0:
+		feePref.FeeRate = chainfee.SatPerKWeight(req.FeeRateSatPerKw)
+
+	case req.FeeRateSatPerVbyte > 0:
+		satPerKVByte := chainfee.SatPerKVByte(
+			req.FeeRateSatPerVbyte * 1000,
+		)
+		feePref.FeeRate = satPerKVByte.FeePerKWeight()
+
+	case req.ConfTarget > 0:
+		feePref.ConfTarget = req.ConfTarget
+
+	default:
+		return nil, fmt.Errorf("must set either conf target or one " +
+			"of the fee rates")
 	}
 	if err := s.auctioneer.RequestBatchFeeBump(feePref); err != nil {
 		return nil, err
