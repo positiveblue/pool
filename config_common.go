@@ -126,9 +126,6 @@ const (
 	// defaultMaxSQLConnections is the default number of connections we
 	// allow the SQL client to open simultaneously against the server.
 	defaultMaxSQLConnections = 10
-
-	networkRegtest   = "regtest"
-	etcdUserEmbedded = "embedded"
 )
 
 var (

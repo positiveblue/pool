@@ -256,6 +256,11 @@ type AuctioneerConfig struct {
 
 	// BanManager is responsible for banning accounts.
 	BanManager ban.Manager
+
+	// DefaultAuctioneerVersion is the default version of the auctioneer
+	// output we use when creating new outputs. If this is changed from one
+	// restart to the next it means the account will be upgraded.
+	DefaultAuctioneerVersion account.AuctioneerVersion
 }
 
 // orderFeederState is the current state of the order feeder goroutine. It will
@@ -1631,6 +1636,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
 			a.BestHeight(), a.cfg.FeeScheduler,
+			a.cfg.DefaultAuctioneerVersion,
 		)
 
 		// If we had non-nil batchIO requested, it could be the reason
@@ -1644,7 +1650,9 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 			io = &batchtx.BatchIO{}
 			exeCtx, err = batchtx.NewExecutionContext(
 				batchKey, orderBatch, masterAcct, io,
-				s.batchFeeRate, a.BestHeight(), a.cfg.FeeScheduler,
+				s.batchFeeRate, a.BestHeight(),
+				a.cfg.FeeScheduler,
+				a.cfg.DefaultAuctioneerVersion,
 			)
 		}
 
@@ -1977,6 +1985,7 @@ func (a *Auctioneer) baseAuctioneerAcct(ctx context.Context,
 		AuctioneerKey: auctioneerKey,
 		Balance:       startingBalance,
 		IsPending:     true,
+		Version:       a.cfg.DefaultAuctioneerVersion,
 	}
 	copy(
 		startingAcct.BatchKey[:], batchKey.SerializeCompressed(),

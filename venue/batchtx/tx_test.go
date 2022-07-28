@@ -8,6 +8,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/account"
@@ -358,7 +359,7 @@ func TestBatchTransactionAssembly(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
 		test.batchKey, test.orderBatch, test.masterAcct, &BatchIO{},
-		feeRate, 1337, feeSchedule,
+		feeRate, 1337, feeSchedule, account.VersionTaprootEnabled,
 	)
 	require.NoError(t, err)
 
@@ -512,7 +513,7 @@ func TestBatchTransactionDustAccounts(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	batchTxCtx, err := NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		feeSchedule,
+		feeSchedule, account.VersionTaprootEnabled,
 	)
 	if err != nil {
 		t.Fatalf("unable to construct batch tx: %v", err)
@@ -745,7 +746,7 @@ func TestBatchTxPoorTrader(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(200)
 	_, err = NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		feeSchedule,
+		feeSchedule, account.VersionTaprootEnabled,
 	)
 	if err == nil {
 		t.Fatalf("expected error")
@@ -783,16 +784,15 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 		AuctioneerKey: &keychain.KeyDescriptor{
 			PubKey: auctioneerKey.PubKey(),
 		},
+		Version: account.VersionTaprootEnabled,
 	}
 	batchKey := auctioneerKey.PubKey()
 
 	// Since the batch is empty, fee estimation will be performed using a
 	// 1-input, 1-output transaction.
 	var weightEstimator input.TxWeightEstimator
-	weightEstimator.AddP2WSHOutput()
-	weightEstimator.AddWitnessInput(
-		account.AuctioneerWitnessSize,
-	)
+	weightEstimator.AddP2TROutput()
+	weightEstimator.AddTaprootKeySpendInput(txscript.SigHashDefault)
 
 	// We'll use a fee rate for batch assembly that will leave only 434
 	// sats left for the auctioneer after chain fees.
@@ -803,11 +803,9 @@ func TestBatchTransactionDustAuctioneer(t *testing.T) {
 	// to fail since the master account balance is now dust.
 	_, err := NewExecutionContext(
 		batchKey, orderBatch, masterAcct, &BatchIO{}, feeRate, 1337,
-		feeSchedule,
+		feeSchedule, account.VersionTaprootEnabled,
 	)
-	if err != ErrMasterBalanceDust {
-		t.Fatalf("expected ErrMasterBalanceDust, got: %v", err)
-	}
+	require.ErrorIs(t, err, ErrMasterBalanceDust)
 }
 
 // TestBatchTransactionExtraIO tests that the batch transaction created when
@@ -884,7 +882,7 @@ func TestBatchTransactionExtraIO(t *testing.T) {
 	feeRate := chainfee.SatPerKWeight(0)
 	batchTxCtx, err := NewExecutionContext(
 		test.batchKey, test.orderBatch, test.masterAcct, extraIO,
-		feeRate, 1337, feeSchedule,
+		feeRate, 1337, feeSchedule, account.VersionTaprootEnabled,
 	)
 	require.NoError(t, err)
 

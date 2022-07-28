@@ -5,7 +5,13 @@ package itest
 
 var testCases = []*testCase{
 	{
-		name:               "master acct init",
+		name:               "master acct init v0",
+		test:               testMasterAcctInit,
+		skipMasterAcctInit: true,
+		useV0MasterAcct:    true,
+	},
+	{
+		name:               "master acct init v1",
 		test:               testMasterAcctInit,
 		skipMasterAcctInit: true,
 	},
@@ -34,8 +40,9 @@ var testCases = []*testCase{
 		test: testOrderSubmission,
 	},
 	{
-		name: "batch execution",
-		test: testBatchExecution,
+		name:            "batch execution",
+		test:            testBatchExecution,
+		useV0MasterAcct: true,
 	},
 	{
 		name: "service level enforcement",

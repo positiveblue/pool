@@ -169,6 +169,7 @@ func (s *adminRPCServer) MasterAccount(ctx context.Context,
 		},
 		BatchKey: masterAcct.BatchKey[:],
 		Pending:  masterAcct.IsPending,
+		Version:  int32(masterAcct.Version),
 	}, nil
 }
 

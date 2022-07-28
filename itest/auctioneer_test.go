@@ -6,9 +6,12 @@ import (
 	"errors"
 	"time"
 
+	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightningnetwork/lnd/lntest/wait"
+	"github.com/stretchr/testify/require"
 )
 
 // testMasterAcctInit tests that after we start up the auctioneer, if an account
@@ -77,5 +80,15 @@ func testMasterAcctInit(t *harnessTest) {
 	if !bytes.Equal(acctOutPoint.Txid, genTxHash[:]) {
 		t.Fatalf("gen txid mismatch: expected %v, got %x",
 			&genTxHash, acctOutPoint.Txid)
+	}
+
+	pkScript := genesisTx.TxOut[acctOutPoint.OutputIndex].PkScript
+	version := account.AuctioneerVersion(masterAcct.Version)
+	switch version {
+	case account.VersionInitialNoVersion:
+		require.True(t.t, txscript.IsPayToWitnessScriptHash(pkScript))
+
+	case account.VersionTaprootEnabled:
+		require.True(t.t, txscript.IsPayToTaproot(pkScript))
 	}
 }

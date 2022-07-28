@@ -714,20 +714,21 @@ func newAuctioneerTestHarness(t *testing.T,
 	// We always use a batch ticker w/ a very long interval so it'll only
 	// tick when we force one.
 	auctioneer := NewAuctioneer(AuctioneerConfig{
-		BanManager:             banManager,
-		DB:                     mockDB,
-		Wallet:                 wallet,
-		ChainNotifier:          notifier,
-		OrderFeed:              orderFeeder,
-		StartingAcctValue:      1_000_000,
-		BatchTicker:            NewIntervalAwareForceTicker(time.Hour * 24),
-		CallMarket:             callMarket,
-		BatchExecutor:          executor,
-		ChannelEnforcer:        channelEnforcer,
-		TraderRejected:         matching.NewNodeConflictPredicate(),
-		FundingConflicts:       matching.NewNodeConflictPredicate(),
-		GetActiveTrader:        activeTraders.GetTrader,
-		AccountExpiryExtension: 1000,
+		BanManager:               banManager,
+		DB:                       mockDB,
+		Wallet:                   wallet,
+		ChainNotifier:            notifier,
+		OrderFeed:                orderFeeder,
+		StartingAcctValue:        1_000_000,
+		BatchTicker:              NewIntervalAwareForceTicker(time.Hour * 24),
+		CallMarket:               callMarket,
+		BatchExecutor:            executor,
+		ChannelEnforcer:          channelEnforcer,
+		TraderRejected:           matching.NewNodeConflictPredicate(),
+		FundingConflicts:         matching.NewNodeConflictPredicate(),
+		GetActiveTrader:          activeTraders.GetTrader,
+		AccountExpiryExtension:   1000,
+		DefaultAuctioneerVersion: account.VersionInitialNoVersion,
 	})
 
 	return &auctioneerTestHarness{
@@ -861,14 +862,15 @@ func (a *auctioneerTestHarness) RestartAuctioneer() {
 	a.db.quit = make(chan struct{})
 
 	a.auctioneer = NewAuctioneer(AuctioneerConfig{
-		DB:                     a.db,
-		Wallet:                 a.wallet,
-		ChainNotifier:          a.notifier,
-		OrderFeed:              a.orderFeed,
-		StartingAcctValue:      1_000_000,
-		BatchTicker:            NewIntervalAwareForceTicker(time.Hour * 24),
-		GetActiveTrader:        a.auctioneer.cfg.GetActiveTrader,
-		AccountExpiryExtension: a.auctioneer.cfg.AccountExpiryExtension,
+		DB:                       a.db,
+		Wallet:                   a.wallet,
+		ChainNotifier:            a.notifier,
+		OrderFeed:                a.orderFeed,
+		StartingAcctValue:        1_000_000,
+		BatchTicker:              NewIntervalAwareForceTicker(time.Hour * 24),
+		GetActiveTrader:          a.auctioneer.cfg.GetActiveTrader,
+		AccountExpiryExtension:   a.auctioneer.cfg.AccountExpiryExtension,
+		DefaultAuctioneerVersion: a.auctioneer.cfg.DefaultAuctioneerVersion,
 	})
 
 	a.StartAuctioneer()

@@ -76,6 +76,7 @@ func upsertAuctioneerAccountWithTx(ctx context.Context,
 		AuctioneerPublicKey: pubKey,
 		OutPointHash:        outPointHash,
 		OutPointIndex:       outPointIndex,
+		Version:             int16(auctioneer.Version),
 	}
 
 	return txQueries.UpsertAuctioneerAccount(ctx, params)
@@ -138,5 +139,6 @@ func unmarshalAuctioneerAccount(
 		AuctioneerKey: auctioneerKey,
 		BatchKey:      batchKey,
 		IsPending:     row.IsPending,
+		Version:       account.AuctioneerVersion(row.Version),
 	}, nil
 }

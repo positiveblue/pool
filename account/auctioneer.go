@@ -14,6 +14,33 @@ import (
 	"github.com/lightningnetwork/lnd/lnwallet"
 )
 
+// AuctioneerVersion represents the version of the auctioneer account.
+type AuctioneerVersion uint8
+
+const (
+	// VersionInitialNoVersion is the initial version any legacy account has
+	// that technically wasn't versioned at all.
+	VersionInitialNoVersion AuctioneerVersion = 0
+
+	// VersionTaprootEnabled is the version that introduced account
+	// versioning and the upgrade to Taproot (with MuSig2 multi-sig).
+	VersionTaprootEnabled AuctioneerVersion = 1
+)
+
+// String returns the string representation of the version.
+func (v AuctioneerVersion) String() string {
+	switch v {
+	case VersionInitialNoVersion:
+		return "account_p2wsh"
+
+	case VersionTaprootEnabled:
+		return "account_p2tr"
+
+	default:
+		return fmt.Sprintf("unknown <%d>", v)
+	}
+}
+
 // Auctioneer is the master auctioneer account, this will be threaded along in
 // the batch along side all the other accounts. We'll use this account to
 // accrue all the execution fees we earn each batch.
@@ -38,16 +65,19 @@ type Auctioneer struct {
 	// IsPending determines whether the account is pending its confirmation
 	// in the chain.
 	IsPending bool
+
+	// Version is the version of the auctioneer account.
+	Version AuctioneerVersion
 }
 
-// AccountWitnessScript computes the raw witness script of the target account.
-func (a *Auctioneer) AccountWitnessScript() ([]byte, error) {
+// accountV0WitnessScript computes the raw witness script of the target account.
+func (a *Auctioneer) accountV0WitnessScript() ([]byte, error) {
 	batchKey, err := btcec.ParsePubKey(a.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
 
-	return AuctioneerWitnessScript(
+	return AuctioneerV0WitnessScript(
 		batchKey, a.AuctioneerKey.PubKey,
 	)
 }
@@ -55,11 +85,14 @@ func (a *Auctioneer) AccountWitnessScript() ([]byte, error) {
 // Output returns the output of auctioneer's output as it should appear on the
 // last batch transaction.
 func (a *Auctioneer) Output() (*wire.TxOut, error) {
-	witnessScript, err := a.AccountWitnessScript()
+	batchKey, err := btcec.ParsePubKey(a.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
-	pkScript, err := input.WitnessScriptHash(witnessScript)
+
+	pkScript, err := AuctioneerAccountScript(
+		a.Version, batchKey, a.AuctioneerKey.PubKey,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -73,16 +106,12 @@ func (a *Auctioneer) Output() (*wire.TxOut, error) {
 // AccountWitness attempts to construct a fully valid witness which can be used
 // to spend the auctioneer's account on the batch execution transaction.
 func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
-	tx *wire.MsgTx, inputIndex int,
+	tx *wire.MsgTx, inputIndex int, version AuctioneerVersion,
 	prevOutputs []*wire.TxOut) (wire.TxWitness, error) {
 
 	// First, we'll compute the witness script, and its corresponding
 	// witness program as we'll need both for the sign descriptor below.
-	witnessScript, err := a.AccountWitnessScript()
-	if err != nil {
-		return nil, err
-	}
-	pkScript, err := input.WitnessScriptHash(witnessScript)
+	witnessScript, err := a.accountV0WitnessScript()
 	if err != nil {
 		return nil, err
 	}
@@ -96,9 +125,13 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 	if err != nil {
 		return nil, err
 	}
-	batchTweak := input.SingleTweakBytes(
-		batchKey, a.AuctioneerKey.PubKey,
+	batchTweak := input.SingleTweakBytes(batchKey, a.AuctioneerKey.PubKey)
+	pkScript, err := AuctioneerAccountScript(
+		version, batchKey, a.AuctioneerKey.PubKey,
 	)
+	if err != nil {
+		return nil, err
+	}
 
 	// Now that we have all the required items, we'll query the Signer for
 	// a valid signature for our account output.
@@ -117,6 +150,14 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 		HashType:   txscript.SigHashAll,
 		InputIndex: inputIndex,
 	}
+
+	// Signing for a Taproot input works somewhat differently.
+	if version == VersionTaprootEnabled {
+		signDesc.WitnessScript = nil
+		signDesc.HashType = txscript.SigHashDefault
+		signDesc.SignMethod = input.TaprootKeySpendBIP0086SignMethod
+	}
+
 	ctx := context.Background()
 	sigs, err := signer.SignOutputRaw(
 		ctx, tx, []*lndclient.SignDescriptor{signDesc}, prevOutputs,
@@ -127,18 +168,23 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 
 	// Next we'll construct the account witness given our witness script,
 	// pubkey, and signature.
-	witness := AuctioneerWitness(witnessScript, sigs[0])
+	witness := AuctioneerWitness(version, witnessScript, sigs[0])
 
 	txCopy := tx.Copy()
 	txCopy.TxIn[inputIndex].Witness = witness
 
 	// As a final step, we'll ensure the signature we just generated above
 	// is valid.
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
+	for idx := range prevOutputs {
+		prevOutputFetcher.AddPrevOut(
+			txCopy.TxIn[idx].PreviousOutPoint, prevOutputs[idx],
+		)
+	}
+	sigHashes := txscript.NewTxSigHashes(txCopy, prevOutputFetcher)
 	vm, err := txscript.NewEngine(
 		pkScript, txCopy, inputIndex, txscript.StandardVerifyFlags,
-		nil, nil, int64(a.Balance), txscript.NewCannedPrevOutputFetcher(
-			pkScript, int64(a.Balance),
-		),
+		nil, sigHashes, int64(a.Balance), prevOutputFetcher,
 	)
 	if err != nil {
 		return nil, err

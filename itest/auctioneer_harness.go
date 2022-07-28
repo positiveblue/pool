@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta"
+	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/monitoring"
@@ -68,13 +69,14 @@ type auctioneerHarness struct {
 // auctioneerConfig holds all configuration items that are required to start an
 // auctioneer server.
 type auctioneerConfig struct {
-	BackendCfg  lntest.BackendConfig
-	LndNode     *lntest.HarnessNode
-	NetParams   *chaincfg.Params
-	ClusterCfg  *lncfg.Cluster
-	Status      *status.Config
-	Interceptor signal.Interceptor
-	BaseDir     string
+	BackendCfg               lntest.BackendConfig
+	LndNode                  *lntest.HarnessNode
+	NetParams                *chaincfg.Params
+	ClusterCfg               *lncfg.Cluster
+	Status                   *status.Config
+	Interceptor              signal.Interceptor
+	BaseDir                  string
+	DefaultMasterAcctVersion account.AuctioneerVersion
 }
 
 // newAuctioneerHarness creates a new auctioneer server harness with the given
@@ -141,7 +143,8 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 			RPCListen:      subastaListenAddr,
 			AdminRPCListen: fmt.Sprintf("127.0.0.1:%d",
 				nextAvailablePort()),
-			AccountExpiryExtension: 3024,
+			AccountExpiryExtension:   3024,
+			DefaultAuctioneerVersion: cfg.DefaultMasterAcctVersion,
 		},
 		apertureCfg: &aperture.Config{
 			ListenAddr: fmt.Sprintf("127.0.0.1:%d",
@@ -338,8 +341,8 @@ func (hs *auctioneerHarness) initDatabaseServer(t *testing.T) error {
 		return fmt.Errorf("server took too long to start")
 	}
 
-	// In case we're using the SQL as main store for subasta, we
-	// now spin  up the Postgres backend.
+	// We're using the SQL as main store for subasta, we now spin up the
+	// Postgres backend.
 	err = hs.initSQLDatabaseServer(t)
 
 	return err

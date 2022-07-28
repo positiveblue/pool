@@ -18,13 +18,21 @@ import (
 // to the etcd database.
 type ExeBatchStorer struct {
 	store subastadb.Store
+
+	// defaultAuctioneerVersion is the default version of the auctioneer
+	// output we use when creating new outputs. If this is changed from one
+	// restart to the next it means the account will be upgraded.
+	defaultAuctioneerVersion account.AuctioneerVersion
 }
 
 // NewExeBatchStorer returns a new instance of the ExeBatchStorer given an
 // initialized database.
-func NewExeBatchStorer(store subastadb.Store) *ExeBatchStorer {
+func NewExeBatchStorer(store subastadb.Store,
+	defaultAuctioneerVersion account.AuctioneerVersion) *ExeBatchStorer {
+
 	return &ExeBatchStorer{
-		store: store,
+		store:                    store,
+		defaultAuctioneerVersion: defaultAuctioneerVersion,
 	}
 }
 
@@ -194,6 +202,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 	}
 	auctAcct.OutPoint = *result.MasterAccountDiff.OutPoint
 	auctAcct.Balance = result.MasterAccountDiff.AccountBalance
+	auctAcct.Version = s.defaultAuctioneerVersion
 
 	// Parse the current per-batch key (=BatchID) and increment it by the
 	// curve's base point to get the next one. We'll store the new/next

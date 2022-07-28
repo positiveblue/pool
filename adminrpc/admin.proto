@@ -76,6 +76,9 @@ message MasterAccountResponse {
 
     // Whether the master account is pending its confirmation.
     bool pending = 5;
+
+    // Current version of the auctioneer account.
+    int32 version = 6;
 }
 
 message ConnectedTradersResponse {

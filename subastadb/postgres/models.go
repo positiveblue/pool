@@ -75,6 +75,7 @@ type AuctioneerAccount struct {
 	AuctioneerPublicKey []byte
 	OutPointHash        []byte
 	OutPointIndex       int64
+	Version             int16
 }
 
 type Batch struct {

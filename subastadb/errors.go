@@ -45,9 +45,6 @@ var (
 	// ErrNoTerms is the error that is returned if no trader specific terms
 	// can be found in the database.
 	ErrNoTerms = errors.New("no trader specific terms found")
-
-	// ErrNotImplemented is the default error for non implemented methods.
-	ErrNotImplemented = errors.New("method not implemented")
 )
 
 // AccountNotFoundError is returned if a trader tries to subscribe to an account

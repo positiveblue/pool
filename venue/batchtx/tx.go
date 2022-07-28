@@ -136,18 +136,26 @@ type MasterAccountState struct {
 	// AuctioneerKey is the main key for the auctioneer, this never
 	// changes, yet is threaded along in this diff for convenience.
 	AuctioneerKey [33]byte
+
+	// Version is the current version of the auctioneer account, influencing
+	// the script using to spend the previous output.
+	Version account.AuctioneerVersion
+
+	// NewVersion is the new version of the auctioneer account to set,
+	// influencing the script used to create the new output.
+	NewVersion account.AuctioneerVersion
 }
 
 // AccountScript derives the auctioneer's account script.
-//
-// TODO(roasbeef): post tapscript, all can appear uniform w/ their spends ;).
-func (m *MasterAccountState) AccountScript() ([]byte, error) {
+func (m *MasterAccountState) AccountScript(
+	version account.AuctioneerVersion) ([]byte, error) {
+
 	batchKey, err := btcec.ParsePubKey(m.BatchKey[:])
 	if err != nil {
 		return nil, err
 	}
 
-	return m.script(batchKey)
+	return m.script(version, batchKey)
 }
 
 // PrevAccountScript derives the auctioneer's account script for the previous
@@ -159,18 +167,20 @@ func (m *MasterAccountState) PrevAccountScript() ([]byte, error) {
 	}
 
 	prevBatchKey := poolscript.DecrementKey(batchKey)
-	return m.script(prevBatchKey)
+	return m.script(m.Version, prevBatchKey)
 }
 
 // script derives the auctioneer's account script for the given batch key.
-func (m *MasterAccountState) script(batchKey *btcec.PublicKey) ([]byte, error) {
+func (m *MasterAccountState) script(version account.AuctioneerVersion,
+	batchKey *btcec.PublicKey) ([]byte, error) {
+
 	auctioneerKey, err := btcec.ParsePubKey(m.AuctioneerKey[:])
 	if err != nil {
 		return nil, err
 	}
 
 	return account.AuctioneerAccountScript(
-		batchKey, auctioneerKey,
+		version, batchKey, auctioneerKey,
 	)
 }
 
@@ -413,7 +423,8 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 
 	// As we go estimate and count the chain fees paid by the traders.
 	txFeeEstimator := newChainFeeEstimator(
-		orderBatch.Orders, feeRate, e.masterIO,
+		orderBatch.Orders, feeRate, e.masterIO, mAccountDiff.Version,
+		mAccountDiff.NewVersion,
 	)
 	var totalTraderFees btcutil.Amount
 
@@ -621,7 +632,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 	// Next, we'll derive the account script for the auctioneer itself,
 	// which is the final thing we need in order to generate the batch
 	// execution transaction.
-	auctioneerAccountScript, err := mAccountDiff.AccountScript()
+	auctioneerAccountScript, err := mAccountDiff.AccountScript(
+		mAccountDiff.NewVersion,
+	)
 	if err != nil {
 		return err
 	}
@@ -689,6 +702,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		AuctioneerKey:  mAccountDiff.AuctioneerKey,
 		BatchKey:       mAccountDiff.BatchKey,
 		InputIndex:     masterAcctInputIndex,
+		Version:        mAccountDiff.Version,
 	}
 
 	return nil
@@ -699,7 +713,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	masterAcct *account.Auctioneer, masterIO *BatchIO,
 	batchFeeRate chainfee.SatPerKWeight, batchHeightHint uint32,
-	feeScheduler matching.FeeScheduler) (*ExecutionContext, error) {
+	feeScheduler matching.FeeScheduler,
+	nextMasterAcctVersion account.AuctioneerVersion) (*ExecutionContext,
+	error) {
 
 	// When we create this master account state, we'll ensure that
 	// we provide the "next" batch key, as this is what will be
@@ -707,6 +723,8 @@ func NewExecutionContext(batchKey *btcec.PublicKey, batch *matching.OrderBatch,
 	masterAcctState := &MasterAccountState{
 		PriorPoint:     masterAcct.OutPoint,
 		AccountBalance: masterAcct.Balance,
+		Version:        masterAcct.Version,
+		NewVersion:     nextMasterAcctVersion,
 	}
 	copy(
 		masterAcctState.AuctioneerKey[:],

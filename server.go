@@ -6,8 +6,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net"
-	"net/url"
-	"path"
 	"regexp"
 	"sync"
 	"sync/atomic"
@@ -38,7 +36,6 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 	"github.com/lightningnetwork/lnd/lnrpc/verrpc"
 	"github.com/lightningnetwork/lnd/signal"
-	"go.etcd.io/etcd/server/v3/embed"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/metadata"
@@ -447,34 +444,6 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		return nil, err
 	}
 
-	// If we're in regtest only mode, spin up an embedded etcd server.
-	if cfg.Network == networkRegtest && cfg.Etcd.User == etcdUserEmbedded {
-		etcdCfg := embed.NewConfig()
-		etcdCfg.Logger = "zap"
-		etcdCfg.LogLevel = "error"
-		etcdCfg.Dir = path.Join(cfg.BaseDir, "etcd")
-		etcdCfg.LCUrls = []url.URL{{Host: cfg.Etcd.Host}}
-		etcdCfg.LPUrls = []url.URL{{Host: "127.0.0.1:9126"}}
-
-		// Set empty username and password to avoid an error being
-		// being logged about authentication not being enabled.
-		cfg.Etcd.User = ""
-		cfg.Etcd.Password = ""
-
-		etcdServer, err := embed.StartEtcd(etcdCfg)
-		if err != nil {
-			return nil, err
-		}
-
-		select {
-		case <-etcdServer.Server.ReadyNotify():
-		case <-time.After(5 * time.Second):
-			etcdServer.Close()
-			return nil, fmt.Errorf("etcd server took too long to" +
-				"start")
-		}
-	}
-
 	// Next, we'll open our primary connection to the main backing
 	// database.
 	store, err := subastadb.NewSQLStore(ctx, cfg.SQL)
@@ -534,9 +503,11 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		defaultFeeSchedule: auctionTerms.FeeSchedule(),
 	}
 	batchExecutor := venue.NewBatchExecutor(&venue.ExecutorConfig{
-		Store:            exeStore,
-		Signer:           lnd.Signer,
-		BatchStorer:      venue.NewExeBatchStorer(store),
+		Store:  exeStore,
+		Signer: lnd.Signer,
+		BatchStorer: venue.NewExeBatchStorer(
+			store, cfg.DefaultAuctioneerVersion,
+		),
 		AccountWatcher:   accountManager,
 		TraderMsgTimeout: defaultMsgTimeout,
 		ActiveTraders:    activeTraders.GetTraders,
@@ -648,7 +619,8 @@ func NewServer(cfg *Config, // nolint:gocyclo
 			TraderOnline: matching.NewTraderOnlineFilter(
 				activeTraders.IsActive,
 			),
-			RatingsAgency: ratingsAgency,
+			RatingsAgency:            ratingsAgency,
+			DefaultAuctioneerVersion: cfg.DefaultAuctioneerVersion,
 		}),
 		channelEnforcer: channelEnforcer,
 		ratingsDB:       ratingsDB,
