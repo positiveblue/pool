@@ -216,7 +216,7 @@ type TraderSignMsg struct {
 	// Sigs is the set of account input signatures for each account the
 	// trader has in this batch. This maps the trader's account ID to the
 	// set of valid witnesses.
-	Sigs map[string]*ecdsa.Signature
+	Sigs map[string][]byte
 
 	// ChannelInfos tracks each channel's information relevant to the trader
 	// that must be submitted to the auctioneer in order to enforce the
@@ -987,10 +987,11 @@ func (b *BatchExecutor) handleSignMsg(signMsg *TraderSignMsg,
 	// Sidecar recipients are the only traders that don't send signatures.
 	// Everyone else must always send signatures in this step.
 	if !isSidecarRecipient {
-		acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
+		rpcAcctKey := hex.EncodeToString(src[:])
+		rawAcctSig, ok := signMsg.Sigs[rpcAcctKey]
 		if !ok {
-			return 0, fmt.Errorf("account witness for %x not "+
-				"found", src)
+			return 0, fmt.Errorf("account witness for %s not "+
+				"found", rpcAcctKey)
 		}
 
 		// As we want to fully validate the witness, we'll generate our
@@ -1004,6 +1005,22 @@ func (b *BatchExecutor) handleSignMsg(signMsg *TraderSignMsg,
 			return 0, fmt.Errorf("unable to find input for trader "+
 				"%x", trader.AccountKey[:])
 		}
+
+		log.Tracef("Creating auctioneer signature for "+
+			"account %x", trader.AccountKey[:])
+
+		// We weren't able to formally validate the trader's
+		// signature before because we weren't sure if it is
+		// supposed to be a DER encoded ECDSA signature or a
+		// MuSig2 partial signature. Now we know, so let's make
+		// sure the format is correct before even attempting to
+		// run the script.
+		acctSig, err := ecdsa.ParseDERSignature(rawAcctSig)
+		if err != nil {
+			return 0, fmt.Errorf("unable to parse "+
+				"account %x sig: %v", rpcAcctKey, err)
+		}
+
 		auctioneerSig, witnessScript, err := b.signAcctInput(
 			env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
 			traderAcctInput, env.exeCtx.PrevOutputs(),

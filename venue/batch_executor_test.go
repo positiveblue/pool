@@ -556,10 +556,11 @@ func (e *executorTestHarness) SendSignMsg(batchCtx *batchtx.ExecutionContext,
 		}
 	}
 
+	acctKeyHex := hex.EncodeToString(sender.AccountKey[:])
 	signMsg := &TraderSignMsg{
 		Trader: sender,
-		Sigs: map[string]*ecdsa.Signature{
-			hex.EncodeToString(sender.AccountKey[:]): traderSig,
+		Sigs: map[string][]byte{
+			acctKeyHex: traderSig.Serialize(),
 		},
 		ChannelInfos: chanInfos,
 	}

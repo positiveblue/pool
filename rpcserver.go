@@ -19,7 +19,6 @@ import (
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -1172,18 +1171,6 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		sign := msg.Sign
 		trader.log.Tracef("Got sign msg: %s", poolrpc.PrintMsg(sign))
 
-		sigs := make(map[string]*ecdsa.Signature)
-		for acctString, sigBytes := range sign.AccountSigs {
-			sig, err := ecdsa.ParseDERSignature(sigBytes)
-			if err != nil {
-				comms.sendErr(fmt.Errorf("unable to parse "+
-					"account sig: %v", err))
-				return
-			}
-
-			sigs[acctString] = sig
-		}
-
 		chanInfos, err := parseRPCChannelInfo(sign.ChannelInfos)
 		if err != nil {
 			comms.sendErr(err)
@@ -1202,7 +1189,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			// which itself doesn't send signatures. There the
 			// auctioneer will handle the case correctly.
 			key := hex.EncodeToString(subscribedTrader.AccountKey[:])
-			_, ok := sigs[key]
+			_, ok := sign.AccountSigs[key]
 			if !ok && !trader.IsSidecar {
 				continue
 			}
@@ -1210,7 +1197,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			traderMsg := &venue.TraderSignMsg{
 				BatchID:      sign.BatchId,
 				Trader:       subscribedTrader,
-				Sigs:         sigs,
+				Sigs:         sign.AccountSigs,
 				ChannelInfos: chanInfos,
 			}
 			comms.toServer <- traderMsg
