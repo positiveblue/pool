@@ -213,11 +213,19 @@ type OrderAllowedNodeID struct {
 	Allowed bool
 }
 
+type OrderAsk struct {
+	Nonce                          []byte
+	ChannelAnnouncementConstraints int16
+	ChannelConfirmationConstraints int16
+}
+
 type OrderBid struct {
-	Nonce           []byte
-	MinNodeTier     int64
-	SelfChanBalance int64
-	IsSidecar       bool
+	Nonce              []byte
+	MinNodeTier        int64
+	SelfChanBalance    int64
+	IsSidecar          bool
+	UnannouncedChannel bool
+	ZeroConfChannel    bool
 }
 
 type OrderNodeNetworkAddress struct {

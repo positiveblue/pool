@@ -20,63 +20,103 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var submitOrderTestCases = []struct {
+	name     string
+	getOrder func(t *testing.T) order.ServerOrder
+}{{
+	name: "submit ask successfully",
+	getOrder: func(t *testing.T) order.ServerOrder {
+		ask := &order.Ask{
+			Ask: orderT.Ask{
+				Kit: *dummyClientOrder(
+					t, 500000, 1337,
+				),
+				AnnouncementConstraints: 1,
+				ConfirmationConstraints: 2,
+			},
+			Kit: *dummyOrder(t),
+		}
+		ask.NotAllowedNodeIDs = [][33]byte{{1, 2, 3}}
+
+		return ask
+	},
+}, {
+	name: "submit bid successfully",
+	getOrder: func(t *testing.T) order.ServerOrder {
+		bid := &order.Bid{
+			Bid: orderT.Bid{
+				Kit: *dummyClientOrder(
+					t, 500000, 1337,
+				),
+				MinNodeTier:        9,
+				SelfChanBalance:    12345,
+				UnannouncedChannel: true,
+				ZeroConfChannel:    true,
+			},
+			Kit:       *dummyOrder(t),
+			IsSidecar: true,
+		}
+		bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
+
+		return bid
+	},
+}}
+
 // TestSubmitOrder tests that orders can be stored and retrieved correctly.
 func TestSubmitOrder(t *testing.T) {
-	t.Parallel()
+	for _, tc := range submitOrderTestCases {
+		tc := tc
 
-	ctxb := context.Background()
-	store, cleanup := newTestStore(t)
-	defer cleanup()
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
 
-	// Create a dummy order and make sure it does not yet exist in the DB.
-	addDummyAccount(t, store)
-	bid := &order.Bid{
-		Bid: orderT.Bid{
-			Kit:             *dummyClientOrder(t, 500000, 1337),
-			MinNodeTier:     9,
-			SelfChanBalance: 12345,
-		},
-		Kit:       *dummyOrder(t),
-		IsSidecar: true,
+			ctxb := context.Background()
+			store, cleanup := newTestStore(t)
+			defer cleanup()
+
+			// Create a dummy order and make sure it does not yet
+			// exist in the DB.
+			addDummyAccount(t, store)
+
+			// Make sure the order does not exists.
+			o := tc.getOrder(t)
+			_, err := store.GetOrder(ctxb, o.Nonce())
+			require.ErrorIs(t, err, ErrNoOrder)
+
+			// Store the dummy order now.
+			err = store.SubmitOrder(ctxb, o)
+			require.NoError(t, err)
+
+			// We are able to fetch the order.
+			storedOrder, err := store.GetOrder(ctxb, o.Nonce())
+			require.NoError(t, err)
+
+			// Check that the order was timestamped.
+			require.False(
+				t,
+				storedOrder.ServerDetails().CreatedAt.IsZero(),
+			)
+
+			assertEqualStoredOrder(t, o, storedOrder)
+
+			// Check that we got the correct type back.
+			require.Equal(t, storedOrder.Type(), o.Type())
+
+			// Get all orders and check that we get the same as
+			// when querying a specific one.
+			allOrders, err := store.GetOrders(ctxb)
+			require.NoError(t, err)
+			require.Len(t, allOrders, 1)
+
+			assertEqualStoredOrder(t, o, allOrders[0])
+			require.Equal(t, allOrders[0].Type(), o.Type())
+
+			// Finally, make sure we cannot submit the same order
+			// again.
+			err = store.SubmitOrder(ctxb, o)
+			require.ErrorIs(t, err, ErrOrderExists)
+		})
 	}
-	bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
-	_, err := store.GetOrder(ctxb, bid.Nonce())
-	require.ErrorIs(t, err, ErrNoOrder)
-
-	// Store the dummy order now.
-	err = store.SubmitOrder(ctxb, bid)
-	require.NoError(t, err)
-
-	storedOrder, err := store.GetOrder(ctxb, bid.Nonce())
-	require.NoError(t, err)
-
-	// Check that the order was timestamped.
-	require.False(t, storedOrder.ServerDetails().CreatedAt.IsZero())
-
-	assertEqualStoredOrder(t, bid, storedOrder)
-
-	// Check that we got the correct type back.
-	require.Equal(t, orderT.TypeBid, storedOrder.Type())
-
-	// Get all orders and check that we get the same as when querying a
-	// specific one.
-	allOrders, err := store.GetOrders(ctxb)
-	require.NoError(t, err)
-	require.Len(t, allOrders, 1)
-
-	assertEqualStoredOrder(t, bid, allOrders[0])
-
-	require.Equal(t, orderT.TypeBid, allOrders[0].Type())
-
-	// Finally, make sure we cannot submit the same order again.
-	err = store.SubmitOrder(ctxb, bid)
-	require.ErrorIs(t, err, ErrOrderExists)
-
-	// Check that the order that we get from the db (now in the cache)
-	// matches the expected values.
-	storedOrder, err = store.GetOrder(ctxb, bid.Nonce())
-	require.NoError(t, err)
-	assertEqualStoredOrder(t, bid, storedOrder)
 }
 
 // TestUpdateOrders tests that orders can be updated correctly.
