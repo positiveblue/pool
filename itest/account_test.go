@@ -1,8 +1,8 @@
 package itest
 
 import (
-	"bytes"
 	"context"
+	"crypto/rand"
 	"fmt"
 	"strings"
 
@@ -54,9 +54,7 @@ func testAccountCreation(t *harnessTest) {
 	resp, err := t.trader.cfg.LndNode.NewAddress(ctxt, &lnrpc.NewAddressRequest{
 		Type: lnrpc.AddressType_WITNESS_PUBKEY_HASH,
 	})
-	if err != nil {
-		t.Fatalf("could not create new address: %v", err)
-	}
+	require.NoError(t.t, err)
 	closeAddr := resp.Address
 	closeTx := closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
 		TraderKey: account.TraderKey,
@@ -73,26 +71,14 @@ func testAccountCreation(t *harnessTest) {
 	})
 
 	// Ensure the transaction was crafted as expected.
-	if len(closeTx.TxOut) != 1 {
-		t.Fatalf("expected 1 output in close transaction, found %v",
-			len(closeTx.TxOut))
-	}
-	if closeTx.TxOut[0].Value != int64(outputValue) {
-		t.Fatalf("expected output value %v, found %v", outputValue,
-			closeTx.TxOut[0].Value)
-	}
+	require.Len(t.t, closeTx.TxOut, 1)
+	require.Equal(t.t, int64(outputValue), closeTx.TxOut[0].Value)
+
 	addr, err := btcutil.DecodeAddress(closeAddr, &chaincfg.MainNetParams)
-	if err != nil {
-		t.Fatalf("unable to decode address %v: %v", closeAddr, err)
-	}
+	require.NoError(t.t, err)
 	outputScript, err := txscript.PayToAddrScript(addr)
-	if err != nil {
-		t.Fatalf("unable to construct output script: %v", err)
-	}
-	if !bytes.Equal(closeTx.TxOut[0].PkScript, outputScript) {
-		t.Fatalf("expected output script %x, found %x", outputScript,
-			closeTx.TxOut[0].PkScript)
-	}
+	require.NoError(t.t, err)
+	require.Equal(t.t, outputScript, closeTx.TxOut[0].PkScript)
 
 	// Make sure the default account limit is enforced on the auctioneer
 	// side.
@@ -132,20 +118,15 @@ func testAccountWithdrawal(t *harnessTest) {
 	withdrawValue := account.Value / 2
 	withdrawReq := &poolrpc.WithdrawAccountRequest{
 		TraderKey: account.TraderKey,
-		Outputs: []*poolrpc.Output{
-			{
-				ValueSat: withdrawValue,
-				Address:  "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
-			},
-		},
+		Outputs: []*poolrpc.Output{{
+			ValueSat: withdrawValue,
+			Address:  "bc1qvata6vu0eldas9qqm6qguflcf55x20exkzxujh",
+		}},
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	}
 	_, err := t.trader.WithdrawAccount(ctx, withdrawReq)
-	isInvalidAddrErr := err != nil &&
-		strings.Contains(err.Error(), "invalid address")
-	if err == nil || !isInvalidAddrErr {
-		t.Fatalf("expected invalid address error, got %v", err)
-	}
+	require.Error(t.t, err)
+	require.Contains(t.t, err.Error(), "invalid address")
 
 	// Now try a valid address.
 	withdrawTxid, valueAfterWithdrawal := withdrawAccountAndAssertMempool(
@@ -160,10 +141,8 @@ func testAccountWithdrawal(t *harnessTest) {
 		TraderKey:       account.TraderKey,
 		FeeRateSatPerKw: withdrawReq.FeeRateSatPerKw * 250 * 10,
 	})
-	if err == nil || !strings.Contains(err.Error(), "eligible outputs") {
-		t.Fatalf("expected BumpAccountFee to fail on account "+
-			"transaction without eligible outputs, got err=%v", err)
-	}
+	require.Error(t.t, err)
+	require.Contains(t.t, err.Error(), "eligible outputs")
 
 	// Confirm the withdrawal, and once again assert that the account state
 	// is reflected correctly.
@@ -499,21 +478,15 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		},
 		Fees: &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
-	if err != nil {
-		t.Fatalf("could not create account: %v", err)
-	}
+	require.NoError(t.t, err)
 	_, err = waitForNTxsInMempool(
 		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("open tx not published in time: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Now that we've opened the account(s), we should also have an LSAT.
 	tokenID, err := t.trader.server.GetIdentity()
-	if err != nil {
-		t.Fatalf("could not get the trader's identity: %v", err)
-	}
+	require.NoError(t.t, err)
 	idCtx := getTokenContext(tokenID)
 
 	// Also create an order for the open account so we can make sure it'll
@@ -536,17 +509,10 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 			},
 		},
 	})
-	if err != nil {
-		t.Fatalf("could not submit order: %v", err)
-	}
+	require.NoError(t.t, err)
 	list, err := t.trader.ListOrders(ctxb, &poolrpc.ListOrdersRequest{})
-	if err != nil {
-		t.Fatalf("could not list orders: %v", err)
-	}
-	if len(list.Asks) != 1 {
-		t.Fatalf("unexpected number of asks. got %d, expected %d",
-			len(list.Asks), 1)
-	}
+	require.NoError(t.t, err)
+	require.Len(t.t, list.Asks, 1)
 	askNonce := list.Asks[0].Details.OrderNonce
 
 	// Now we also create two reservations. One we send funds to, the other
@@ -554,11 +520,12 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// will still try to recover them. We need to use a dummy token for the
 	// first one, otherwise we couldn't register the second one.
 	_, minerHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
-	if err != nil {
-		t.Fatalf("unable to retrieve miner height: %v", err)
-	}
+	require.NoError(t.t, err)
+
+	var randToken lsat.TokenID
+	_, _ = rand.Read(randToken[16:])
 	resRecoveryFailed := addReservation(
-		getTokenContext(&lsat.TokenID{0x02}), t, t.lndHarness.Bob,
+		getTokenContext(&randToken), t, t.lndHarness.Bob,
 		defaultAccountValue, uint32(minerHeight)+defaultRelativeExpiration,
 		false,
 	)
@@ -570,9 +537,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// Now we simulate data loss by shutting down the trader and removing
 	// its data directory completely.
 	err = t.trader.stop(true)
-	if err != nil {
-		t.Fatalf("could not stop trader: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Now we just create a new trader, connected to the same lnd instance.
 	t.trader = setupTraderHarness(
@@ -583,13 +548,8 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	accounts, err := t.trader.ListAccounts(
 		ctxb, &poolrpc.ListAccountsRequest{},
 	)
-	if err != nil {
-		t.Fatalf("could not query accounts: %v", err)
-	}
-	if len(accounts.Accounts) != 0 {
-		t.Fatalf("unexpected number of accounts. got %d wanted %d",
-			len(accounts.Accounts), 0)
-	}
+	require.NoError(t.t, err)
+	require.Len(t.t, accounts.Accounts, 0)
 
 	// Start the recovery process. We expect four accounts to be recovered
 	// even though there were 5 accounts. One of them isn't counted because
@@ -598,25 +558,15 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	recovery, err := t.trader.RecoverAccounts(
 		ctxb, &poolrpc.RecoverAccountsRequest{},
 	)
-	if err != nil {
-		t.Fatalf("could not recover accounts: %v", err)
-	}
-	if recovery.NumRecoveredAccounts != 4 {
-		t.Fatalf("unexpected number of recovered accounts. got %d "+
-			"wanted %d", recovery.NumRecoveredAccounts, 4)
-	}
+	require.NoError(t.t, err)
+	require.Equal(t.t, uint32(4), recovery.NumRecoveredAccounts)
 
 	// Now make sure the accounts are all in the correct state.
 	accounts, err = t.trader.ListAccounts(
 		ctxb, &poolrpc.ListAccountsRequest{},
 	)
-	if err != nil {
-		t.Fatalf("could not query accounts: %v", err)
-	}
-	if len(accounts.Accounts) != 5 {
-		t.Fatalf("unexpected number of accounts. got %d wanted %d",
-			len(accounts.Accounts), 5)
-	}
+	require.NoError(t.t, err)
+	require.Len(t.t, accounts.Accounts, 5)
 	assertTraderAccountState(
 		t.t, t.trader, resRecoveryFailed,
 		poolrpc.AccountState_RECOVERY_FAILED,
@@ -662,15 +612,12 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// Query the auctioneer directly about the status of the ask we
 	// submitted earlier.
 	resp, err := t.auctioneer.OrderState(
-		idCtx, &auctioneerrpc.ServerOrderStateRequest{OrderNonce: askNonce},
+		idCtx, &auctioneerrpc.ServerOrderStateRequest{
+			OrderNonce: askNonce,
+		},
 	)
-	if err != nil {
-		t.Fatalf("could not query order status: %v", err)
-	}
-	if resp.State != auctioneerrpc.OrderState_ORDER_CANCELED {
-		t.Fatalf("unexpected order state, got %d wanted %d",
-			resp.State, auctioneerrpc.OrderState_ORDER_CANCELED)
-	}
+	require.NoError(t.t, err)
+	require.Equal(t.t, auctioneerrpc.OrderState_ORDER_CANCELED, resp.State)
 }
 
 func addReservation(lsatCtx context.Context, t *harnessTest,
@@ -686,9 +633,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 			KeyFamily: int32(poolscript.AccountKeyFamily),
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not derive key for reservation: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Reserve the account with the auctioneer now and parse the returned
 	// keys so we can derive the account script later.
@@ -699,39 +644,22 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 			AccountExpiry: expiry,
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not reserve account: %v", err)
-	}
+	require.NoError(t.t, err)
 	traderKey, err := btcec.ParsePubKey(keyDesc.RawKeyBytes)
-	if err != nil {
-		t.Fatalf("could not parse trader key: %v", err)
-	}
+	require.NoError(t.t, err)
 	auctioneerKey, err := btcec.ParsePubKey(res.AuctioneerKey)
-	if err != nil {
-		t.Fatalf("could not parse auctioneer key: %v", err)
-	}
+	require.NoError(t.t, err)
 	batchKey, err := btcec.ParsePubKey(res.InitialBatchKey)
-	if err != nil {
-		t.Fatalf("could not parse batch key: %v", err)
-	}
+	require.NoError(t.t, err)
 
-	// To know the script we need to get the derived secret. Unfortunately
-	// the signer RPC of the lnd harness node isn't exposed so we have to
-	// open a new connection for that.
-	//
-	// TODO(guggero): Expose signer client in lnd test harness.
-	conn, err := node.ConnectRPC(true)
-	if err != nil {
-		t.Fatalf("could not connect to node RPC: %v", err)
-	}
-	signer := signrpc.NewSignerClient(conn)
-	keyRes, err := signer.DeriveSharedKey(ctxb, &signrpc.SharedKeyRequest{
-		EphemeralPubkey: res.AuctioneerKey,
-		KeyLoc:          keyDesc.KeyLoc,
-	})
-	if err != nil {
-		t.Fatalf("could not derive shared key: %v", err)
-	}
+	// To know the script we need to get the derived secret.
+	keyRes, err := node.SignerClient.DeriveSharedKey(
+		ctxb, &signrpc.SharedKeyRequest{
+			EphemeralPubkey: res.AuctioneerKey,
+			KeyLoc:          keyDesc.KeyLoc,
+		},
+	)
+	require.NoError(t.t, err)
 
 	var sharedKey [32]byte
 	copy(sharedKey[:], keyRes.SharedKey)
@@ -739,15 +667,13 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 		poolscript.VersionWitnessScript, expiry, traderKey,
 		auctioneerKey, batchKey, sharedKey,
 	)
-	if err != nil {
-		t.Fatalf("could not derive account script: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	if !sendFunds {
 		return keyDesc.RawKeyBytes
 	}
 
-	_, err = t.lndHarness.Bob.WalletKitClient.SendOutputs(
+	_, err = node.WalletKitClient.SendOutputs(
 		ctxb, &walletrpc.SendOutputsRequest{
 			Outputs: []*signrpc.TxOut{{
 				Value:    int64(value),
@@ -756,9 +682,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 			SatPerKw: 300,
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not send to reserved account: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	return keyDesc.RawKeyBytes
 }

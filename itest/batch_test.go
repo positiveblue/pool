@@ -110,9 +110,7 @@ func testBatchExecution(t *harnessTest) {
 	ask1Nonce, err := submitAskOrder(
 		t.trader, account1.TraderKey, orderFixedRate, askAmt,
 	)
-	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
-	}
+	require.NoError(t.t, err)
 	ask1Created := time.Now()
 
 	// Our second trader, connected to Charlie, wants to buy 8 units of
@@ -121,9 +119,7 @@ func testBatchExecution(t *harnessTest) {
 	bid1Nonce, err := submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 	bid1Created := time.Now()
 
 	// From the secondary account of the second trader, we also create an
@@ -134,9 +130,7 @@ func testBatchExecution(t *harnessTest) {
 	bid2Nonce, err := submitBidOrder(
 		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 	bid2Created := time.Now()
 
 	// Make the third account submit a bid that will get matched, but shut
@@ -144,9 +138,7 @@ func testBatchExecution(t *harnessTest) {
 	_, err = submitBidOrder(
 		thirdTrader, account4.TraderKey, orderFixedRate, bidAmt2,
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	if err := thirdTrader.stop(false); err != nil {
 		t.Fatalf("unable to stop trader %v", err)
@@ -159,18 +151,14 @@ func testBatchExecution(t *harnessTest) {
 		AmountSat:       100_000,
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	})
-	if err != nil {
-		t.Fatalf("could not deposit into account: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
 		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("deposit transaction not found in mempool: %v", err)
-	}
+	require.NoError(t.t, err)
 	if !txids[0].IsEqual(depositTxid) {
 		t.Fatalf("found mempool transaction %v instead of %v",
 			txids[0], depositTxid)
@@ -296,18 +284,14 @@ func testBatchExecution(t *harnessTest) {
 	ctxt, cancel := context.WithTimeout(ctxb, defaultWaitTimeout)
 	defer cancel()
 	resp, err := charlie.AddInvoice(ctxt, invoice)
-	if err != nil {
-		t.Fatalf("unable to add invoice: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	ctxt, cancel = context.WithTimeout(ctxb, defaultWaitTimeout)
 	defer cancel()
 	err = completePaymentRequests(
 		ctxt, t.trader.cfg.LndNode, []string{resp.PaymentRequest}, true,
 	)
-	if err != nil {
-		t.Fatalf("unable to send payments: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Now that the batch has been fully executed, we'll ensure that all
 	// the expected state has been updated from the client's PoV.
@@ -339,9 +323,7 @@ func testBatchExecution(t *harnessTest) {
 	// remaining Ask order that should now have zero units remaining.
 	bidAmt3 := btcutil.Amount(300_000)
 	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt3)
-	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// We'll now tick off another batch, which should trigger a clearing of
 	// the market, to produce another channel which Charlie has just
@@ -372,9 +354,7 @@ func testBatchExecution(t *harnessTest) {
 	// orders being included in the batch. This time, we'll query with the
 	// exact batch ID we expect.
 	firstBatchKey, err := btcec.ParsePubKey(firstBatchID[:])
-	if err != nil {
-		t.Fatalf("unable to decode first batch key: %v", err)
-	}
+	require.NoError(t.t, err)
 	secondBatchKey := poolscript.IncrementKey(firstBatchKey)
 	secondBatchID := secondBatchKey.SerializeCompressed()
 	assertBatchSnapshot(
@@ -400,20 +380,14 @@ func closeAllChannels(ctx context.Context, t *harnessTest,
 
 	chanReq := &lnrpc.ListChannelsRequest{}
 	openChans, err := node.ListChannels(context.Background(), chanReq)
-	if err != nil {
-		t.Fatalf("unable to list charlie's channels: %v", err)
-	}
+	require.NoError(t.t, err)
 	for _, openChan := range openChans.Channels {
 		chanPointStr := openChan.ChannelPoint
 		chanPointParts := strings.Split(chanPointStr, ":")
 		txid, err := chainhash.NewHashFromStr(chanPointParts[0])
-		if err != nil {
-			t.Fatalf("unable txid to convert to hash: %v", err)
-		}
+		require.NoError(t.t, err)
 		index, err := strconv.Atoi(chanPointParts[1])
-		if err != nil {
-			t.Fatalf("unable to convert string to int: %v", err)
-		}
+		require.NoError(t.t, err)
 
 		chanPoint := &lnrpc.ChannelPoint{
 			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
@@ -424,9 +398,7 @@ func closeAllChannels(ctx context.Context, t *harnessTest,
 		closeUpdates, _, err := t.lndHarness.CloseChannel(
 			node, chanPoint, false,
 		)
-		if err != nil {
-			t.Fatalf("unable to close channel: %v", err)
-		}
+		require.NoError(t.t, err)
 
 		assertChannelClosed(
 			ctx, t, t.lndHarness, node, chanPoint, closeUpdates,
@@ -1028,9 +1000,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 			ask.Ask.LeaseDurationBlocks = durationBlocks
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	_, err = submitBidOrder(
 		secondTrader, account2.TraderKey, matchRate, orderSize,
@@ -1038,9 +1008,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 			bid.Bid.LeaseDurationBlocks = durationBlocks
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Let's kick the auctioneer now to try and create a batch.
 	_, batchTXIDs := executeBatch(t, 1)
@@ -1056,16 +1024,12 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 
 	// The batch tx should have 3 inputs: the master account and the two
 	// traders.
-	if len(batchTx.TxIn) != 3 {
-		t.Fatalf("expected 3 inputs, found %d", len(batchTx.TxIn))
-	}
+	require.Len(t.t, batchTx.TxIn, 3)
 
 	// There should be 3 outputs: master account, the new channel, and the
 	// first trader. The second trader's output is dust and does not
 	// materialize.
-	if len(batchTx.TxOut) != 3 {
-		t.Fatalf("expected 3 outputs, found %d", len(batchTx.TxOut))
-	}
+	require.Len(t.t, batchTx.TxOut, 3)
 
 	// We'll conclude by mining enough blocks to have the channels be
 	// confirmed.

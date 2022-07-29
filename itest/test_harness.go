@@ -406,6 +406,8 @@ func setupTraderHarness(t *testing.T, backend lntest.BackendConfig,
 	node *lntest.HarnessNode, auctioneer *auctioneerHarness,
 	opts ...traderCfgOpt) *traderHarness {
 
+	t.Helper()
+
 	apertureDataDir := btcutil.AppDataDir("aperture", false)
 
 	traderHarness, err := newTraderHarness(traderConfig{
