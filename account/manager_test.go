@@ -161,6 +161,7 @@ func (h *testHarness) initAccount() *Account {
 
 	params.OutPoint = testOutPoint
 	script, err := poolscript.AccountScript(
+		poolscript.VersionWitnessScript,
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		sharedSecret,
@@ -312,6 +313,7 @@ func TestZeroHashDisallowed(t *testing.T) {
 	h.assertNewReservation()
 
 	script, err := poolscript.AccountScript(
+		poolscript.VersionWitnessScript,
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		sharedSecret,
@@ -461,6 +463,7 @@ func TestAccountDifferentTraderKey(t *testing.T) {
 	heightHint := uint32(1)
 	params.OutPoint = testOutPoint
 	script, err := poolscript.AccountScript(
+		poolscript.VersionWitnessScript,
 		params.Expiry, testAuctioneerKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		sharedSecret,

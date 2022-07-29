@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
@@ -218,13 +219,17 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 			continue
 		}
 
-		reserved += o.ReservedValue(feeSchedule)
+		reserved += o.ReservedValue(
+			feeSchedule, accountT.VersionInitialNoVersion,
+		)
 	}
 
 	// Add the new orders to the list if any and return the worst case
 	// cost.
 	for _, o := range newOrders {
-		reserved += o.ReservedValue(feeSchedule)
+		reserved += o.ReservedValue(
+			feeSchedule, accountT.VersionInitialNoVersion,
+		)
 	}
 
 	return reserved, nil

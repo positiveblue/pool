@@ -47,7 +47,7 @@ func newNodesOnlyOpt() traderCfgOpt {
 
 func batchVersionOpt(version orderT.BatchVersion) traderCfgOpt {
 	return func(cfg *pool.Config) {
-		cfg.DebugConfig.BatchVersion = uint32(version)
+		cfg.DebugConfig.BatchVersion = int32(version)
 	}
 }
 
@@ -98,7 +98,7 @@ func newTraderHarness(cfg traderConfig, opts []traderCfgOpt) (*traderHarness,
 			TLSPath:      cfg.LndNode.Cfg.TLSCertPath,
 		},
 		DebugConfig: &pool.DebugConfig{
-			BatchVersion: uint32(orderT.LatestBatchVersion),
+			BatchVersion: int32(orderT.LatestBatchVersion),
 		},
 	}
 	for _, opt := range opts {

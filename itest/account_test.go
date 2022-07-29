@@ -736,7 +736,8 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 	var sharedKey [32]byte
 	copy(sharedKey[:], keyRes.SharedKey)
 	script, err := poolscript.AccountScript(
-		expiry, traderKey, auctioneerKey, batchKey, sharedKey,
+		poolscript.VersionWitnessScript, expiry, traderKey,
+		auctioneerKey, batchKey, sharedKey,
 	)
 	if err != nil {
 		t.Fatalf("could not derive account script: %v", err)

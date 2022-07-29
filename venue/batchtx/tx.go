@@ -9,6 +9,7 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil/txsort"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -386,6 +387,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			return err
 		}
 		accountScript, err := poolscript.AccountScript(
+			poolscript.VersionWitnessScript,
 			acctPreBatch.AccountExpiry, acctKey, auctioneerKey,
 			batchKey, acctPreBatch.VenueSecret,
 		)
@@ -439,7 +441,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// We start by finding the chain fee that should be paid by
 		// this trader, and subtracting that value from their ending
 		// balance.
-		traderFee := txFeeEstimator.EstimateTraderFee(acctID)
+		traderFee := txFeeEstimator.EstimateTraderFee(
+			acctID, accountT.VersionInitialNoVersion,
+		)
 
 		// The trader should always have enough balance to cover the on
 		// chain fees, otherwise we shouldn't have accepted the order
@@ -482,6 +486,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 				acctParams.AccountExpiry = trader.NewExpiry
 			}
 			accountScript, err := poolscript.AccountScript(
+				poolscript.VersionWitnessScript,
 				acctParams.AccountExpiry, acctKey,
 				auctioneerKey, batchKey, acctParams.VenueSecret,
 			)

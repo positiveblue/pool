@@ -10,6 +10,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -142,7 +143,10 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 	premium := orderT.FixedRatePremium(orderFixedRate).LumpSumPremium(
 		askAmt, defaultOrderDuration,
 	)
-	chainFees := orderT.EstimateTraderFee(1, chainfee.SatPerKWeight(12_500))
+	chainFees := orderT.EstimateTraderFee(
+		1, chainfee.SatPerKWeight(12_500),
+		accountT.VersionInitialNoVersion,
+	)
 	makerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -
 		chainFees - askAmt + premium
 	takerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -

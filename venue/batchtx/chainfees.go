@@ -5,6 +5,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/txscript"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -146,13 +147,17 @@ func (c *chainFeeEstimator) EstimateBatchWeight(
 // EstimateTraderFee returns the estimate for the fee that a trader will need
 // to pay in the BET. The more outputs a trader creates (channels), the higher
 // fee it will pay.
-func (c *chainFeeEstimator) EstimateTraderFee(acctID matching.AccountID) btcutil.Amount {
+func (c *chainFeeEstimator) EstimateTraderFee(acctID matching.AccountID,
+	accountVersion accountT.Version) btcutil.Amount {
+
 	numTraderChans, ok := c.traderChanCount[acctID]
 	if !ok {
 		return 0
 	}
 
-	return orderT.EstimateTraderFee(numTraderChans, c.feeRate)
+	return orderT.EstimateTraderFee(
+		numTraderChans, c.feeRate, accountVersion,
+	)
 }
 
 // AuctioneerFee computes the "fee surplus" or the fees that the auctioneer

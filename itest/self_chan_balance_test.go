@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/btcsuite/btcd/btcutil"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -171,7 +172,10 @@ func testSelfChanBalance(t *harnessTest) {
 	premium := orderT.FixedRatePremium(orderFixedRate).LumpSumPremium(
 		bidAmt, defaultOrderDuration,
 	)
-	chainFees := orderT.EstimateTraderFee(1, chainfee.SatPerKWeight(12_500))
+	chainFees := orderT.EstimateTraderFee(
+		1, chainfee.SatPerKWeight(12_500),
+		accountT.VersionInitialNoVersion,
+	)
 	makerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -
 		chainFees - bidAmt + premium
 	takerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -

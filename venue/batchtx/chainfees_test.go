@@ -7,6 +7,7 @@ import (
 	"testing/quick"
 
 	"github.com/btcsuite/btcd/btcutil"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -154,6 +155,7 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 		// assert that if one trader has a greater number of channels
 		// in this batch than the other, than the one with more orders
 		// has a higher fee contribution.
+		acctVersion := accountT.VersionInitialNoVersion
 		for traderA, traderAChanCount := range feeEstimator.traderChanCount {
 			for traderB, traderBChanCount := range feeEstimator.traderChanCount {
 				if traderA == traderB {
@@ -161,10 +163,10 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 				}
 
 				traderAFees := feeEstimator.EstimateTraderFee(
-					traderA,
+					traderA, acctVersion,
 				)
 				traderBfees := feeEstimator.EstimateTraderFee(
-					traderB,
+					traderB, acctVersion,
 				)
 				switch {
 				case traderAChanCount > traderBChanCount &&
@@ -206,7 +208,7 @@ func TestChainFeeEstimatorFeeOrderScaling(t *testing.T) {
 
 		// Finally, it should be the case that a trader that isn't in
 		// the batch doesn't report any fee contribution.
-		if feeEstimator.EstimateTraderFee(emptyAcct) != 0 {
+		if feeEstimator.EstimateTraderFee(emptyAcct, acctVersion) != 0 {
 			t.Logf("empty account should have no fees due")
 			return false
 		}
@@ -326,6 +328,7 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 
 	scenario := func(set matchedOrderSet) bool {
 		setA, setB := set.orderSetA, set.orderSetB
+		acctVersion := accountT.VersionInitialNoVersion
 
 		estimateFee := func(
 			orderSet []matching.MatchedOrder) (btcutil.Amount, error) {
@@ -341,7 +344,9 @@ func TestChainFeeEstimatorFeeRateScaling(t *testing.T) {
 			// Get estimated fees paid by the traders.
 			var traders btcutil.Amount
 			for trader := range estimator.traderChanCount {
-				traders += estimator.EstimateTraderFee(trader)
+				traders += estimator.EstimateTraderFee(
+					trader, acctVersion,
+				)
 			}
 
 			// Given what the traders paid, return auctioneer fee.
@@ -501,6 +506,7 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 	scenario := func(singleSet singleSet) bool {
 		feeRate := singleSet.feeRate
 		orderSet := singleSet.orderSet
+		acctVersion := accountT.VersionInitialNoVersion
 
 		version, newVersion := masterAccountVersions(
 			singleSet.startTaproot, singleSet.upgradeTaproot,
@@ -513,7 +519,9 @@ func TestChainFeeEstimatorMeetFeeRate(t *testing.T) {
 		var traders btcutil.Amount
 		var numOuts int
 		for trader, cnt := range estimator.traderChanCount {
-			traders += estimator.EstimateTraderFee(trader)
+			traders += estimator.EstimateTraderFee(
+				trader, acctVersion,
+			)
 			numOuts += int(cnt)
 		}
 

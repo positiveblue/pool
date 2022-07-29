@@ -351,6 +351,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 		return err
 	}
 	derivedScript, err := poolscript.AccountScript(
+		poolscript.VersionWitnessScript,
 		params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		secret,

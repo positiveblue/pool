@@ -24,8 +24,8 @@ require (
 	github.com/lightninglabs/aperture v0.1.18-beta
 	github.com/lightninglabs/faraday v0.2.7-alpha.0.20220328064033-d602082a718a
 	github.com/lightninglabs/lndclient v0.15.0-10
-	github.com/lightninglabs/pool v0.5.7-alpha.0.20220704095031-b6da8dd40125
-	github.com/lightninglabs/pool/auctioneerrpc v1.0.7
+	github.com/lightninglabs/pool v0.5.7-alpha.0.20220805122546-536c50028382
+	github.com/lightninglabs/pool/auctioneerrpc v1.0.8
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
 	github.com/lightningnetwork/lnd v0.15.0-beta
 	github.com/lightningnetwork/lnd/cert v1.1.1
