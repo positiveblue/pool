@@ -23,8 +23,9 @@ WHERE auctioneer_public_key=$1 AND auctioneer_key_family=$2;
 -- name: CreateAccountReservation :exec
 INSERT INTO account_reservations(
     trader_key, value, auctioneer_key_family, auctioneer_key_index, 
-    auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
+    auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id,
+    version)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10);
 
 -- name: GetAccountReservationByTraderKey :one
 SELECT * 
@@ -54,13 +55,14 @@ WHERE token_id = $1;
 INSERT INTO accounts (
     trader_key, token_id, value, expiry, auctioneer_key_family,
     auctioneer_key_index, auctioneer_public_key, batch_key, secret, state,
-    height_hint, out_point_hash, out_point_index, latest_tx, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    height_hint, out_point_hash, out_point_index, latest_tx, user_agent,
+    version)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 ON CONFLICT (trader_key)
 DO UPDATE SET token_id=$2, value=$3, expiry=$4, auctioneer_key_family=$5,
     auctioneer_key_index=$6, auctioneer_public_key=$7, batch_key=$8, secret=$9,
     state=$10, height_hint=$11, out_point_hash=$12, out_point_index=$13, 
-    latest_tx=$14, user_agent=$15;
+    latest_tx=$14, user_agent=$15, version=$16;
 
 -- name: GetAccount :one
 SELECT * 
@@ -88,8 +90,10 @@ WHERE trader_key=$1;
 INSERT INTO account_diffs (
     trader_key, token_id, confirmed, value, expiry, auctioneer_key_family,
     auctioneer_key_index, auctioneer_public_key, batch_key, secret, state,
-    height_hint, out_point_hash, out_point_index, latest_tx, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16);
+    height_hint, out_point_hash, out_point_index, latest_tx, user_agent,
+    version)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17);
 
 -- name: GetAccountDiffByID :one
 SELECT * 
@@ -122,7 +126,7 @@ UPDATE account_diffs SET
     trader_key=$2, token_id=$3, confirmed=$4, value=$5, expiry=$6, 
     auctioneer_key_family=$7, auctioneer_key_index=$8, auctioneer_public_key=$9,
     batch_key=$10, secret=$11, state=$12, height_hint=$13, out_point_hash=$14, 
-    out_point_index=$15, latest_tx=$16, user_agent=$17
+    out_point_index=$15, latest_tx=$16, user_agent=$17, version=$18
 WHERE id=$1;
 
 -- name: DeleteAccountDiff :execrows

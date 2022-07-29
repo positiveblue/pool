@@ -28,8 +28,10 @@ const createAccountDiff = `-- name: CreateAccountDiff :exec
 INSERT INTO account_diffs (
     trader_key, token_id, confirmed, value, expiry, auctioneer_key_family,
     auctioneer_key_index, auctioneer_public_key, batch_key, secret, state,
-    height_hint, out_point_hash, out_point_index, latest_tx, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    height_hint, out_point_hash, out_point_index, latest_tx, user_agent,
+    version)
+VALUES (
+    $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
 `
 
 type CreateAccountDiffParams struct {
@@ -49,6 +51,7 @@ type CreateAccountDiffParams struct {
 	OutPointIndex       int64
 	LatestTx            []byte
 	UserAgent           string
+	Version             int16
 }
 
 //- Account Diff Queries ---
@@ -70,6 +73,7 @@ func (q *Queries) CreateAccountDiff(ctx context.Context, arg CreateAccountDiffPa
 		arg.OutPointIndex,
 		arg.LatestTx,
 		arg.UserAgent,
+		arg.Version,
 	)
 	return err
 }
@@ -78,8 +82,9 @@ const createAccountReservation = `-- name: CreateAccountReservation :exec
 
 INSERT INTO account_reservations(
     trader_key, value, auctioneer_key_family, auctioneer_key_index, 
-    auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+    auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id,
+    version)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
 `
 
 type CreateAccountReservationParams struct {
@@ -92,6 +97,7 @@ type CreateAccountReservationParams struct {
 	Expiry              int64
 	HeightHint          int64
 	TokenID             []byte
+	Version             int16
 }
 
 //- AccountReservation Queries ---
@@ -106,6 +112,7 @@ func (q *Queries) CreateAccountReservation(ctx context.Context, arg CreateAccoun
 		arg.Expiry,
 		arg.HeightHint,
 		arg.TokenID,
+		arg.Version,
 	)
 	return err
 }
@@ -170,7 +177,7 @@ func (q *Queries) DeleteAuctioneerAccount(ctx context.Context, arg DeleteAuction
 }
 
 const getAccount = `-- name: GetAccount :one
-SELECT trader_key, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
+SELECT trader_key, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent, version 
 FROM accounts
 WHERE trader_key = $1
 `
@@ -194,12 +201,13 @@ func (q *Queries) GetAccount(ctx context.Context, traderKey []byte) (Account, er
 		&i.OutPointIndex,
 		&i.LatestTx,
 		&i.UserAgent,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getAccountDiffByID = `-- name: GetAccountDiffByID :one
-SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
+SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent, version 
 FROM account_diffs
 WHERE id = $1
 `
@@ -225,12 +233,13 @@ func (q *Queries) GetAccountDiffByID(ctx context.Context, id int64) (AccountDiff
 		&i.OutPointIndex,
 		&i.LatestTx,
 		&i.UserAgent,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getAccountDiffs = `-- name: GetAccountDiffs :many
-SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
+SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent, version 
 FROM account_diffs
 ORDER BY id
 LIMIT NULLIF($2::int, 0) OFFSET $1
@@ -268,6 +277,7 @@ func (q *Queries) GetAccountDiffs(ctx context.Context, arg GetAccountDiffsParams
 			&i.OutPointIndex,
 			&i.LatestTx,
 			&i.UserAgent,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -280,7 +290,7 @@ func (q *Queries) GetAccountDiffs(ctx context.Context, arg GetAccountDiffsParams
 }
 
 const getAccountDiffsByTraderID = `-- name: GetAccountDiffsByTraderID :many
-SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
+SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent, version 
 FROM account_diffs
 WHERE trader_key = $1
 `
@@ -312,6 +322,7 @@ func (q *Queries) GetAccountDiffsByTraderID(ctx context.Context, traderKey []byt
 			&i.OutPointIndex,
 			&i.LatestTx,
 			&i.UserAgent,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -324,7 +335,7 @@ func (q *Queries) GetAccountDiffsByTraderID(ctx context.Context, traderKey []byt
 }
 
 const getAccountReservationByTokenID = `-- name: GetAccountReservationByTokenID :one
-SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id 
+SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id, version 
 FROM account_reservations
 WHERE token_id = $1
 `
@@ -342,12 +353,13 @@ func (q *Queries) GetAccountReservationByTokenID(ctx context.Context, tokenID []
 		&i.Expiry,
 		&i.HeightHint,
 		&i.TokenID,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getAccountReservationByTraderKey = `-- name: GetAccountReservationByTraderKey :one
-SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id 
+SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id, version 
 FROM account_reservations
 WHERE trader_key = $1
 `
@@ -365,12 +377,13 @@ func (q *Queries) GetAccountReservationByTraderKey(ctx context.Context, traderKe
 		&i.Expiry,
 		&i.HeightHint,
 		&i.TokenID,
+		&i.Version,
 	)
 	return i, err
 }
 
 const getAccountReservations = `-- name: GetAccountReservations :many
-SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id 
+SELECT trader_key, value, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, initial_batch_key, expiry, height_hint, token_id, version 
 FROM account_reservations
 ORDER BY token_id
 LIMIT NULLIF($2::int, 0) OFFSET $1
@@ -400,6 +413,7 @@ func (q *Queries) GetAccountReservations(ctx context.Context, arg GetAccountRese
 			&i.Expiry,
 			&i.HeightHint,
 			&i.TokenID,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -412,7 +426,7 @@ func (q *Queries) GetAccountReservations(ctx context.Context, arg GetAccountRese
 }
 
 const getAccounts = `-- name: GetAccounts :many
-SELECT trader_key, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
+SELECT trader_key, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent, version 
 FROM accounts
 ORDER BY trader_key
 LIMIT NULLIF($2::int, 0) OFFSET $1
@@ -448,6 +462,7 @@ func (q *Queries) GetAccounts(ctx context.Context, arg GetAccountsParams) ([]Acc
 			&i.OutPointIndex,
 			&i.LatestTx,
 			&i.UserAgent,
+			&i.Version,
 		); err != nil {
 			return nil, err
 		}
@@ -494,7 +509,7 @@ func (q *Queries) GetAuctioneerAccount(ctx context.Context) (AuctioneerAccount, 
 }
 
 const getNotConfirmedAccountDiff = `-- name: GetNotConfirmedAccountDiff :one
-SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent 
+SELECT id, trader_key, confirmed, token_id, value, expiry, auctioneer_key_family, auctioneer_key_index, auctioneer_public_key, batch_key, secret, state, height_hint, out_point_hash, out_point_index, latest_tx, user_agent, version 
 FROM account_diffs
 WHERE trader_key = $1 AND confirmed = FALSE
 `
@@ -520,6 +535,7 @@ func (q *Queries) GetNotConfirmedAccountDiff(ctx context.Context, traderKey []by
 		&i.OutPointIndex,
 		&i.LatestTx,
 		&i.UserAgent,
+		&i.Version,
 	)
 	return i, err
 }
@@ -529,7 +545,7 @@ UPDATE account_diffs SET
     trader_key=$2, token_id=$3, confirmed=$4, value=$5, expiry=$6, 
     auctioneer_key_family=$7, auctioneer_key_index=$8, auctioneer_public_key=$9,
     batch_key=$10, secret=$11, state=$12, height_hint=$13, out_point_hash=$14, 
-    out_point_index=$15, latest_tx=$16, user_agent=$17
+    out_point_index=$15, latest_tx=$16, user_agent=$17, version=$18
 WHERE id=$1
 `
 
@@ -551,6 +567,7 @@ type UpdateAccountDiffParams struct {
 	OutPointIndex       int64
 	LatestTx            []byte
 	UserAgent           string
+	Version             int16
 }
 
 func (q *Queries) UpdateAccountDiff(ctx context.Context, arg UpdateAccountDiffParams) error {
@@ -572,6 +589,7 @@ func (q *Queries) UpdateAccountDiff(ctx context.Context, arg UpdateAccountDiffPa
 		arg.OutPointIndex,
 		arg.LatestTx,
 		arg.UserAgent,
+		arg.Version,
 	)
 	return err
 }
@@ -581,13 +599,14 @@ const upsertAccount = `-- name: UpsertAccount :exec
 INSERT INTO accounts (
     trader_key, token_id, value, expiry, auctioneer_key_family,
     auctioneer_key_index, auctioneer_public_key, batch_key, secret, state,
-    height_hint, out_point_hash, out_point_index, latest_tx, user_agent)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+    height_hint, out_point_hash, out_point_index, latest_tx, user_agent,
+    version)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
 ON CONFLICT (trader_key)
 DO UPDATE SET token_id=$2, value=$3, expiry=$4, auctioneer_key_family=$5,
     auctioneer_key_index=$6, auctioneer_public_key=$7, batch_key=$8, secret=$9,
     state=$10, height_hint=$11, out_point_hash=$12, out_point_index=$13, 
-    latest_tx=$14, user_agent=$15
+    latest_tx=$14, user_agent=$15, version=$16
 `
 
 type UpsertAccountParams struct {
@@ -606,6 +625,7 @@ type UpsertAccountParams struct {
 	OutPointIndex       int64
 	LatestTx            []byte
 	UserAgent           string
+	Version             int16
 }
 
 //- Account Queries ---
@@ -626,6 +646,7 @@ func (q *Queries) UpsertAccount(ctx context.Context, arg UpsertAccountParams) er
 		arg.OutPointIndex,
 		arg.LatestTx,
 		arg.UserAgent,
+		arg.Version,
 	)
 	return err
 }

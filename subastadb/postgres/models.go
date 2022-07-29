@@ -24,6 +24,7 @@ type Account struct {
 	OutPointIndex       int64
 	LatestTx            []byte
 	UserAgent           string
+	Version             int16
 }
 
 type AccountBan struct {
@@ -52,6 +53,7 @@ type AccountDiff struct {
 	OutPointIndex       int64
 	LatestTx            []byte
 	UserAgent           string
+	Version             int16
 }
 
 type AccountReservation struct {
@@ -64,6 +66,7 @@ type AccountReservation struct {
 	Expiry              int64
 	HeightHint          int64
 	TokenID             []byte
+	Version             int16
 }
 
 type AuctioneerAccount struct {
