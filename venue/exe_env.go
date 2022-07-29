@@ -504,6 +504,44 @@ func (e *environment) validateAccountWitness(witnessScript []byte,
 	return nil
 }
 
+// validateAccountWitness attempts to validate a signature (by verifying a
+// complete witness) for the Taproot account input of a given trader. If the
+// trader isn't a part of the batch, or the signature is invalid, then we'll
+// return an error.
+func (e *environment) validateAccountWitnessTaproot(
+	traderAcctInput *batchtx.BatchInput, fullSig []byte) error {
+
+	batchTx := e.exeCtx.ExeTx.Copy()
+
+	inputIndex := int(traderAcctInput.InputIndex)
+	prevOutputFetcher := e.exeCtx.PrevOutputFetcher()
+
+	// For a VM that verifies Taproot inputs the sigHashes parameter must be
+	// passed, apparently for SegWit v0 inputs that's not necessary.
+	sigHashes := txscript.NewTxSigHashes(batchTx, prevOutputFetcher)
+
+	accountWitness := poolscript.SpendMuSig2Taproot(fullSig)
+	batchTx.TxIn[int(traderAcctInput.InputIndex)].Witness = accountWitness
+
+	pkScript := traderAcctInput.PrevOutput.PkScript
+	value := traderAcctInput.PrevOutput.Value
+	vm, err := txscript.NewEngine(
+		pkScript, batchTx, inputIndex, txscript.StandardVerifyFlags,
+		nil, sigHashes, value, prevOutputFetcher,
+	)
+	if err != nil {
+		return err
+	}
+
+	if err := vm.Execute(); err != nil {
+		return err
+	}
+
+	e.acctWitnesses[inputIndex] = accountWitness
+
+	return nil
+}
+
 // validateChanInfo ensures that the two traders behind the creation of a
 // channel submit its information accurately. If any aspect does not match, an
 // error is returned.

@@ -1198,6 +1198,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 				BatchID:      sign.BatchId,
 				Trader:       subscribedTrader,
 				Sigs:         sign.AccountSigs,
+				TraderNonces: sign.TraderNonces,
 				ChannelInfos: chanInfos,
 			}
 			comms.toServer <- traderMsg
