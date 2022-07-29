@@ -517,9 +517,6 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 		}
 	}
 
-	var rawTraderKey [33]byte
-	copy(rawTraderKey[:], traderKey.SerializeCompressed())
-
 	previousOutputs := make([]*wire.TxOut, len(req.PrevOutputs))
 	for idx, utxo := range req.PrevOutputs {
 		if utxo.Value == 0 {
@@ -542,8 +539,12 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 	}
 
 	// Get the value locked up in orders for this account.
+	acct, err := s.store.Account(ctx, traderKey, true)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching account: %v", err)
+	}
 	lockedValue, err := s.orderBook.LockedValue(
-		ctx, rawTraderKey, s.terms.FeeSchedule(),
+		ctx, acct, s.terms.FeeSchedule(),
 	)
 	if err != nil {
 		return nil, err

@@ -10,7 +10,6 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
-	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
@@ -127,7 +126,7 @@ func (b *Book) SubmitOrder(ctx context.Context, acct *account.Account,
 	b.acctMutex.Lock(acctID)
 	defer b.acctMutex.Unlock(acctID)
 
-	totalCost, err := b.LockedValue(ctx, acct.TraderKeyRaw, feeSchedule, o)
+	totalCost, err := b.LockedValue(ctx, acct, feeSchedule, o)
 	if err != nil {
 		return err
 	}
@@ -202,7 +201,7 @@ func (b *Book) CancelOrder(ctx context.Context, nonce orderT.Nonce) error {
 // calculate an upper bound of how much might be deducted from the account if
 // they are matched. newOrders can be added to get this upper bound if
 // additional orders are added.
-func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
+func (b *Book) LockedValue(ctx context.Context, acct *account.Account,
 	feeSchedule terms.FeeSchedule, newOrders ...ServerOrder) (
 	btcutil.Amount, error) {
 
@@ -215,21 +214,17 @@ func (b *Book) LockedValue(ctx context.Context, acctKey [33]byte,
 	var reserved btcutil.Amount
 	for _, o := range allOrders {
 		// Filter by account.
-		if o.Details().AcctKey != acctKey {
+		if o.Details().AcctKey != acct.TraderKeyRaw {
 			continue
 		}
 
-		reserved += o.ReservedValue(
-			feeSchedule, accountT.VersionInitialNoVersion,
-		)
+		reserved += o.ReservedValue(feeSchedule, acct.Version)
 	}
 
 	// Add the new orders to the list if any and return the worst case
 	// cost.
 	for _, o := range newOrders {
-		reserved += o.ReservedValue(
-			feeSchedule, accountT.VersionInitialNoVersion,
-		)
+		reserved += o.ReservedValue(feeSchedule, acct.Version)
 	}
 
 	return reserved, nil
