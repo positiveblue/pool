@@ -375,6 +375,7 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 		Value:     btcutil.Amount(req.AccountValue),
 		Expiry:    req.AccountExpiry,
 		TraderKey: traderKey,
+		Version:   accountT.Version(req.Version),
 	}
 	reservation, err := s.accountManager.ReserveAccount(
 		ctx, params, tokenID, s.bestHeight(),
@@ -426,6 +427,7 @@ func parseRPCAccountParams(
 		Expiry:    req.AccountExpiry,
 		TraderKey: traderKey,
 		UserAgent: userAgent,
+		Version:   accountT.Version((req.Version)),
 	}, nil
 }
 
@@ -508,10 +510,29 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 			m := account.ExpiryModifier(req.NewParams.Expiry)
 			modifiers = append(modifiers, m)
 		}
+		if req.NewParams.Version != 0 {
+			version := accountT.Version(req.NewParams.Version)
+			m := account.VersionModifier(version)
+			modifiers = append(modifiers, m)
+		}
 	}
 
 	var rawTraderKey [33]byte
 	copy(rawTraderKey[:], traderKey.SerializeCompressed())
+
+	previousOutputs := make([]*wire.TxOut, len(req.PrevOutputs))
+	for idx, utxo := range req.PrevOutputs {
+		if utxo.Value == 0 {
+			return nil, fmt.Errorf("invalid previous output amount")
+		}
+		if len(utxo.PkScript) == 0 {
+			return nil, fmt.Errorf("invalid previous output script")
+		}
+		previousOutputs[idx] = &wire.TxOut{
+			Value:    int64(utxo.Value),
+			PkScript: utxo.PkScript,
+		}
+	}
 
 	// Consult with the auctioneer whether an account update should be
 	// allowed at the moment as it may interfere with an ongoing batch.
@@ -528,16 +549,17 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 		return nil, err
 	}
 
-	accountSig, err := s.accountManager.ModifyAccount(
+	accountSig, serverNonces, err := s.accountManager.ModifyAccount(
 		ctx, traderKey, lockedValue, newInputs, newOutputs, modifiers,
-		s.bestHeight(),
+		s.bestHeight(), previousOutputs, req.TraderNonces,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &auctioneerrpc.ServerModifyAccountResponse{
-		AccountSig: accountSig,
+		AccountSig:   accountSig,
+		ServerNonces: serverNonces,
 	}, nil
 }
 
@@ -795,6 +817,7 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 					BatchKey:      e2.InitialBatchKey[:],
 					Expiry:        e2.Expiry,
 					HeightHint:    e2.HeightHint,
+					Version:       e2.Version,
 				}
 				errMsg := &auctioneerrpc.SubscribeError{
 					Error:              err.Error(),
@@ -1884,7 +1907,8 @@ func marshallServerAccount(acct *account.Account) (*auctioneerrpc.AuctionAccount
 			Txid:        acct.OutPoint.Hash[:],
 			OutputIndex: acct.OutPoint.Index,
 		},
-		State: rpcState,
+		State:   rpcState,
+		Version: uint32(acct.Version),
 	}
 
 	if acct.LatestTx != nil {
@@ -2148,6 +2172,7 @@ func newAcctResNotCompletedError(
 		AcctKey:    res.TraderKeyRaw,
 		Expiry:     res.Expiry,
 		HeightHint: res.HeightHint,
+		Version:    uint32(res.Version),
 	}
 	copy(
 		result.AuctioneerKey[:],

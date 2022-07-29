@@ -267,9 +267,8 @@ func (a *Account) Output() (*wire.TxOut, error) {
 	}
 
 	script, err := poolscript.AccountScript(
-		poolscript.VersionWitnessScript,
-		a.Expiry, traderKey, a.AuctioneerKey.PubKey, a.BatchKey,
-		a.Secret,
+		a.Version.ScriptVersion(), a.Expiry, traderKey,
+		a.AuctioneerKey.PubKey, a.BatchKey, a.Secret,
 	)
 	if err != nil {
 		return nil, err
@@ -302,9 +301,8 @@ func (a *Account) NextOutputScript() ([]byte, error) {
 
 	nextBatchKey := poolscript.IncrementKey(a.BatchKey)
 	return poolscript.AccountScript(
-		poolscript.VersionWitnessScript,
-		a.Expiry, traderKey, a.AuctioneerKey.PubKey, nextBatchKey,
-		a.Secret,
+		a.Version.ScriptVersion(), a.Expiry, traderKey,
+		a.AuctioneerKey.PubKey, nextBatchKey, a.Secret,
 	)
 }
 

@@ -387,7 +387,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			return err
 		}
 		accountScript, err := poolscript.AccountScript(
-			poolscript.VersionWitnessScript,
+			acctPreBatch.AccountVersion.ScriptVersion(),
 			acctPreBatch.AccountExpiry, acctKey, auctioneerKey,
 			batchKey, acctPreBatch.VenueSecret,
 		)
@@ -485,8 +485,9 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			if trader.NewExpiry != 0 {
 				acctParams.AccountExpiry = trader.NewExpiry
 			}
+
 			accountScript, err := poolscript.AccountScript(
-				poolscript.VersionWitnessScript,
+				acctParams.AccountVersion.ScriptVersion(),
 				acctParams.AccountExpiry, acctKey,
 				auctioneerKey, batchKey, acctParams.VenueSecret,
 			)
