@@ -239,6 +239,11 @@
           "type": "integer",
           "format": "int64",
           "description": "The new expiry of the account as an absolute height."
+        },
+        "version": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The new version of the account."
         }
       }
     },
@@ -303,7 +308,12 @@
         "new_expiry": {
           "type": "integer",
           "format": "int64",
-          "description": "The new account expiry height used to verify the batch. If the batch is\nsuccessfully executed the account must update its expiry height to this\nvalue. This field can be safely ignored if its value is 0 (zero)."
+          "description": "The new account expiry height used to verify the batch. If the batch is\nsuccessfully executed the account must update its expiry height to this\nvalue."
+        },
+        "new_version": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The new account version used to verify the batch. If this is non-zero, it\nmeans the account was automatically upgraded to the given version during the\nbatch execution."
         }
       }
     },
@@ -406,6 +416,11 @@
           "type": "string",
           "format": "byte",
           "description": "The latest transaction of an account. This is only known by the auctioneer\nafter the account has met its initial funding confirmation."
+        },
+        "version": {
+          "type": "integer",
+          "format": "int64",
+          "description": "The account version. Will be set to 0 for legacy (non-taproot) accounts."
         }
       }
     },
@@ -925,7 +940,7 @@
             "type": "string",
             "format": "byte"
           },
-          "description": "A map with the signatures to spend the accounts being spent in a batch\ntransaction. The map key corresponds to the trader's account key of the\naccount in the batch transaction. The account key/ID has to be hex encoded\ninto a string because protobuf doesn't allow bytes as a map key data type."
+          "description": "A map with the signatures to spend the accounts being spent in a batch\ntransaction. The map key corresponds to the trader's account key of the\naccount in the batch transaction. The account key/ID has to be hex encoded\ninto a string because protobuf doesn't allow bytes as a map key data type.\nFor version 1 (Taproot enabled) accounts, this merely represents a partial\nMuSig2 signature that can be combined into a full signature by the auction\nserver by adding its own partial signature. A set of nonces will be provided\nby the trader for each v1 account to allow finalizing the MuSig2 signing\nsession."
         },
         "channel_infos": {
           "type": "object",
@@ -933,6 +948,14 @@
             "$ref": "#/definitions/poolrpcChannelInfo"
           },
           "description": "The information for each channel created as part of a batch that's submitted\nto the auctioneer to ensure they can properly enforce a channel's service\nlifetime. Entries are indexed by the string representation of a channel's\noutpoint."
+        },
+        "trader_nonces": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "A set of 66-byte nonces for each version 1 (Taproot enabled) account. The\nnonces can be used to produce a MuSig2 partial signature to spend the\naccount using the key spend path, which is a MuSig2 combined key of the\nauctioneer key and the trader key."
         }
       }
     },
@@ -943,6 +966,21 @@
           "type": "string",
           "format": "byte",
           "description": "The 32 byte unique identifier of this batch."
+        },
+        "server_nonces": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "byte"
+          },
+          "description": "A set of 66-byte nonces for each version 1 (Taproot enabled) account. The\nnonces can be used to produce a MuSig2 partial signature to spend the\naccount using the key spend path, which is a MuSig2 combined key of the\nauctioneer key and the trader key."
+        },
+        "prev_outputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/poolrpcTxOut"
+          },
+          "description": "The full list of UTXO information for each of the inputs being spent. This\nis required when spending one or more Taproot enabled (account version 1)\noutputs."
         }
       }
     },
@@ -1053,7 +1091,7 @@
         "auctioneer_key": {
           "type": "string",
           "format": "byte",
-          "description": "The base key of the auctioneer. This key should be tweaked with the trader's\nper-batch tweaked key to obtain the corresponding per-batch tweaked\nauctioneer key."
+          "description": "The base key of the auctioneer. This key should be tweaked with the trader's\nper-batch tweaked key to obtain the corresponding per-batch tweaked\nauctioneer key. Or, in case of the version 1, Taproot enabled account, the\ntrader and auctioneer key will be combined into a MuSig2 combined key that\nis static throughout the lifetime of the account. The on-chain uniqueness of\nthe generated output will be ensured by the merkle root hash that is applied\nas a tweak to the MuSig2 combined internal key. The merkle root hash is\neither the hash of the timeout script path (which uses the trader key\ntweaked with the per-batch key) directly or the root of a tree with one leaf\nthat is the timeout script path and a leaf that is a Taro commitment (which\nis a root hash by itself)."
         },
         "initial_batch_key": {
           "type": "string",
@@ -1188,7 +1226,12 @@
         "account_sig": {
           "type": "string",
           "format": "byte",
-          "description": "The auctioneer's signature that allows a trader to broadcast a transaction\nspending from an account output."
+          "description": "The auctioneer's signature that allows a trader to broadcast a transaction\nspending from an account output. For version 1 (Taproot enabled) accounts,\nthis merely represents a partial MuSig2 signature that can be combined into\na full signature by the trader daemon by adding its own partial signature. A\nset of nonces will be provided by the server (in case this is a v1 account)\nto allow finalizing the MuSig2 signing session."
+        },
+        "server_nonces": {
+          "type": "string",
+          "format": "byte",
+          "description": "An optional set of 66-byte nonces for a version 1 (Taproot enabled) account\nspend. The nonces can be used to produce a MuSig2 partial signature to spend\nthe account using the key spend path, which is a MuSig2 combined key of the\nauctioneer key and the trader key."
         }
       }
     },
@@ -1417,6 +1460,21 @@
           "type": "integer",
           "format": "int64",
           "description": "The value used by the auctioneer to determine if an account expiry height\nneeds to be extended after participating in a batch and for how long."
+        }
+      }
+    },
+    "poolrpcTxOut": {
+      "type": "object",
+      "properties": {
+        "value": {
+          "type": "string",
+          "format": "uint64",
+          "description": "The value of the transaction output in satoshis."
+        },
+        "pk_script": {
+          "type": "string",
+          "format": "byte",
+          "description": "The public key script of the output."
         }
       }
     },
