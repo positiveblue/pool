@@ -9,7 +9,6 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/btcsuite/btcutil/txsort"
-	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -442,7 +441,7 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 		// this trader, and subtracting that value from their ending
 		// balance.
 		traderFee := txFeeEstimator.EstimateTraderFee(
-			acctID, accountT.VersionInitialNoVersion,
+			acctID, trader.StartingState.AccountVersion,
 		)
 
 		// The trader should always have enough balance to cover the on

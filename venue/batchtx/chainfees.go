@@ -28,6 +28,10 @@ type chainFeeEstimator struct {
 	// trader will have created in this batch.
 	traderChanCount map[matching.AccountID]uint32
 
+	// traderAccountVersion is a map between a trader's account ID and the
+	// version that account currently has.
+	traderAccountVersion map[matching.AccountID]accountT.Version
+
 	// orders is the test of orders within the given batch.
 	orders []matching.MatchedOrder
 
@@ -55,9 +59,16 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 		traderChanCount[order.Bidder.AccountKey]++
 	}
 
+	versions := make(map[matching.AccountID]accountT.Version)
+	for _, order := range orders {
+		versions[order.Asker.AccountKey] = order.Asker.AccountVersion
+		versions[order.Bidder.AccountKey] = order.Bidder.AccountVersion
+	}
+
 	return &chainFeeEstimator{
 		feeRate:                 feeRate,
 		traderChanCount:         traderChanCount,
+		traderAccountVersion:    versions,
 		orders:                  orders,
 		extraIO:                 io,
 		masterAccountVersion:    masterAccountVersion,
@@ -68,22 +79,31 @@ func newChainFeeEstimator(orders []matching.MatchedOrder,
 // EstimateBatchWeight attempts to estimate the total weight of the fully
 // signed batch execution transaction, given the number of non-dust trader
 // outputs.
-func (c *chainFeeEstimator) EstimateBatchWeight(
-	numTraderOuts int) (int64, error) {
+func (c *chainFeeEstimator) EstimateBatchWeight(numTraderOuts int) (int64,
+	error) {
 
 	var weightEstimator input.TxWeightEstimator
 
 	// For each trader in this set, we'll add an input for their account
 	// spend.
-	for range c.traderChanCount {
-		weightEstimator.AddWitnessInput(
-			poolscript.MultiSigWitnessSize,
-		)
+	for _, accountVersion := range c.traderAccountVersion {
+		switch accountVersion {
+		case accountT.VersionTaprootEnabled:
+			weightEstimator.AddWitnessInput(
+				poolscript.TaprootMultiSigWitnessSize,
+			)
+
+		default:
+			weightEstimator.AddWitnessInput(
+				poolscript.MultiSigWitnessSize,
+			)
+		}
 	}
 
 	// Add an output to the estimate for each trader account that was
 	// non-dust.
 	for i := 0; i < numTraderOuts; i++ {
+		// The output size of a P2WSH and P2TR are the same, luckily.
 		weightEstimator.AddP2WSHOutput()
 	}
 
