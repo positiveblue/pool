@@ -1309,13 +1309,7 @@ func (s *rpcServer) sendToTrader(
 		return stream.Send(prepareMsg)
 
 	case *venue.SignBeginMsg:
-		return stream.Send(&auctioneerrpc.ServerAuctionMessage{
-			Msg: &auctioneerrpc.ServerAuctionMessage_Sign{
-				Sign: &auctioneerrpc.OrderMatchSignBegin{
-					BatchId: m.BatchID[:],
-				},
-			},
-		})
+		return stream.Send(marshallSignBeginMsg(m))
 
 	case *venue.FinalizeMsg:
 		return stream.Send(&auctioneerrpc.ServerAuctionMessage{
@@ -1460,6 +1454,37 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*auctioneerrpc.ServerAuctionMessag
 			},
 		},
 	}, nil
+}
+
+// marshallSignBeginMsg translates the venue's sign begin message struct into
+// the RPC representation.
+func marshallSignBeginMsg(
+	m *venue.SignBeginMsg) *auctioneerrpc.ServerAuctionMessage {
+
+	rpcPrevOutputs := make([]*auctioneerrpc.TxOut, len(m.PreviousOutputs))
+	for idx, txOut := range m.PreviousOutputs {
+		rpcPrevOutputs[idx] = &auctioneerrpc.TxOut{
+			Value:    uint64(txOut.Value),
+			PkScript: txOut.PkScript,
+		}
+	}
+
+	rpcServerNonces := make(map[string][]byte, len(m.AccountNonces))
+	for accountID, nonces := range m.AccountNonces {
+		key := hex.EncodeToString(accountID[:])
+		rpcServerNonces[key] = make([]byte, 66)
+		copy(rpcServerNonces[key], nonces[:])
+	}
+
+	return &auctioneerrpc.ServerAuctionMessage{
+		Msg: &auctioneerrpc.ServerAuctionMessage_Sign{
+			Sign: &auctioneerrpc.OrderMatchSignBegin{
+				BatchId:      m.BatchID[:],
+				PrevOutputs:  rpcPrevOutputs,
+				ServerNonces: rpcServerNonces,
+			},
+		},
+	}
 }
 
 // addStreamSubscription adds an account subscription to the stream that is

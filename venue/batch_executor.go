@@ -101,6 +101,14 @@ type SignBeginMsg struct {
 	// BatchID is the serialized compressed pubkey that comprises the batch
 	// ID.
 	BatchID orderT.BatchID
+
+	// PreviousOutputs is the list of UTXOs the batch transaction is
+	// spending.
+	PreviousOutputs []*wire.TxOut
+
+	// AccountNonces is a map of all public nonces of the server, keyed by
+	// the account key they were created for.
+	AccountNonces orderT.AccountNonces
 }
 
 // Batch returns the target batch ID this message refers to.
@@ -684,6 +692,16 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 				env.cancelTimerForTrader(m.Src())
 
+				// The trader is ready to sign, let's create a
+				// MuSig2 signing session now, so we can send
+				// our nonces in the next message to the trader.
+				err := env.prepareMuSig2SigningSession(
+					m.Src(), b.cfg.Signer,
+				)
+				if err != nil {
+					return 0, env, err
+				}
+
 			// We got a message that we don't expect at this time.
 			default:
 				log.Errorf("expected accept or reject msg, "+
@@ -1263,7 +1281,7 @@ func (b *BatchExecutor) executor() {
 						Err: err,
 					}
 
-					env.cancel()
+					env.cancel(b.cfg.Signer)
 					env = environment{}
 
 					// Error was encountered during batch
@@ -1314,7 +1332,7 @@ func (b *BatchExecutor) executor() {
 
 					env.resultChan <- env.result
 
-					env.cancel()
+					env.cancel(b.cfg.Signer)
 					env = environment{}
 
 					// Now that the batch was completed, we
@@ -1366,7 +1384,7 @@ func (b *BatchExecutor) executor() {
 			}()
 
 		case <-b.quit:
-			env.cancel()
+			env.cancel(b.cfg.Signer)
 
 			return
 		}

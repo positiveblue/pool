@@ -2,6 +2,7 @@ package venue
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sync/atomic"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/lightninglabs/aperture/lsat"
+	"github.com/lightninglabs/lndclient"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/chaninfo"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
@@ -18,6 +21,7 @@ import (
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/input"
 )
 
 // multiplexMessage is a helper struct that holds all data that is multi-plexed
@@ -101,6 +105,14 @@ type environment struct {
 	// NOTE: This will only be set after the BatchSigning state.
 	acctWitnesses map[int]wire.TxWitness
 
+	// acctMuSig2Sessions maps the account ID of a trader to the MuSig2
+	// signing session we created for it. A signing session represents an
+	// in-memory item in lnd that must be cleaned up if something fails. We
+	// therefore always attempt to remove all pending sessions if the
+	// execution fails. In the success case the session is always cleaned
+	// up automatically by producing a final, combined signature.
+	acctMuSig2Sessions map[matching.AccountID]*input.MuSig2SessionInfo
+
 	// matchingChanTrader tracks the first trader's information submitted
 	// for each to be created channel as part of the batch. This is used
 	// once the second trader submits their information in order to ensure
@@ -144,13 +156,16 @@ func newEnvironment(newBatch *executionReq,
 	stallTimers *msgTimers) environment {
 
 	env := environment{
-		exeCtx:             newBatch.exeCtx,
-		resultChan:         newBatch.Result,
-		traders:            make(map[matching.AccountID]*ActiveTrader),
-		sidecarTraders:     make(map[matching.AccountID]*ActiveTrader),
-		sidecarOrders:      make(map[orderT.Nonce]matching.AccountID),
-		traderToOrders:     make(map[matching.AccountID][]orderT.Nonce),
-		acctWitnesses:      make(map[int]wire.TxWitness),
+		exeCtx:         newBatch.exeCtx,
+		resultChan:     newBatch.Result,
+		traders:        make(map[matching.AccountID]*ActiveTrader),
+		sidecarTraders: make(map[matching.AccountID]*ActiveTrader),
+		sidecarOrders:  make(map[orderT.Nonce]matching.AccountID),
+		traderToOrders: make(map[matching.AccountID][]orderT.Nonce),
+		acctWitnesses:  make(map[int]wire.TxWitness),
+		acctMuSig2Sessions: make(
+			map[matching.AccountID]*input.MuSig2SessionInfo,
+		),
 		matchingChanTrader: make(map[wire.OutPoint]traderChannelInfo),
 		chanInfoComplete:   make(map[wire.OutPoint]struct{}),
 		rejectingTraders:   make(map[matching.AccountID]*OrderRejectMap),
@@ -161,7 +176,7 @@ func newEnvironment(newBatch *executionReq,
 }
 
 // cancel cancels all active goroutines in this environment.
-func (e *environment) cancel() {
+func (e *environment) cancel(signer lndclient.SignerClient) {
 	if e.quit == nil {
 		return
 	}
@@ -173,6 +188,8 @@ func (e *environment) cancel() {
 	close(e.quit)
 
 	e.msgTimers.resetAll()
+
+	e.cleanupMuSig2SigningSessions(signer)
 }
 
 // sendPrepareMsg send a prepare message to all active traders in the batch.
@@ -377,18 +394,34 @@ func (e *environment) sendSignBeginMsg() error {
 	// only be sent once per daemon/connection, otherwise the daemon will
 	// only sign for the latest message. To identify which accounts (venue
 	// "traders") belong together, we can use the LSAT ID.
-	msgs := make(map[lsat.TokenID]*DuplexLine)
+	recipients := make(map[lsat.TokenID]*DuplexLine)
+	allNonces := make(map[lsat.TokenID]orderT.AccountNonces)
 	for _, trader := range e.traders {
-		msgs[trader.TokenID] = trader.CommLine
+		recipients[trader.TokenID] = trader.CommLine
+
+		nonces, hasNonces := e.acctMuSig2Sessions[trader.AccountKey]
+		if !hasNonces {
+			continue
+		}
+
+		_, created := allNonces[trader.TokenID]
+		if !created {
+			allNonces[trader.TokenID] = make(orderT.AccountNonces)
+		}
+
+		allNonces[trader.TokenID][trader.AccountKey] = nonces.PublicNonce
 	}
 	for _, trader := range e.sidecarTraders {
-		msgs[trader.TokenID] = trader.CommLine
+		recipients[trader.TokenID] = trader.CommLine
 	}
 
-	for _, line := range msgs {
+	prevOutputs := e.exeCtx.PrevOutputs()
+	for recipient, line := range recipients {
 		select {
 		case line.Send <- &SignBeginMsg{
-			BatchID: e.exeCtx.BatchID,
+			BatchID:         e.exeCtx.BatchID,
+			AccountNonces:   allNonces[recipient],
+			PreviousOutputs: prevOutputs,
 		}:
 		case <-e.quit:
 			return fmt.Errorf("environment exiting")
@@ -543,4 +576,74 @@ func (e *environment) traderPartOfBatch(trader matching.AccountID) bool {
 	_, sidecarTrader := e.sidecarTraders[trader]
 
 	return normalTrader || sidecarTrader
+}
+
+// prepareMuSig2SigningSession creates a new MuSig2 signing session for creating
+// a combined signature of the auctioneer's and the trader's public keys in
+// order to spend a Taproot enabled account using the cooperative key spend
+// path.
+func (e *environment) prepareMuSig2SigningSession(acctID matching.AccountID,
+	signer lndclient.SignerClient) error {
+
+	ctx := context.Background()
+	auctioneerKey := e.exeCtx.MasterAcct.AuctioneerKey
+
+	// Find the account of the trader that sent the "accept" message. If it
+	// was a sidecar recipient, that trader doesn't have an account and we
+	// don't need to do anything.
+	trader, ok := e.traders[acctID]
+	if !ok {
+		return nil
+	}
+
+	// We only need to create a MuSig2 signing session for Taproot accounts.
+	if trader.AccountVersion < accountT.VersionTaprootEnabled {
+		return nil
+	}
+
+	log.Infof("Preparing MuSig2 signing sessions for Taproot account %x "+
+		"for batch=%x", acctID[:], e.exeCtx.BatchID[:])
+
+	acctTraderKey, err := btcec.ParsePubKey(acctID[:])
+	if err != nil {
+		return fmt.Errorf("error parsing trader key: %v", err)
+	}
+
+	acctBatchKey, err := btcec.ParsePubKey(trader.BatchKey[:])
+	if err != nil {
+		return fmt.Errorf("error parsing batch key: %v", err)
+	}
+
+	sessionInfo, _, err := poolscript.TaprootMuSig2SigningSession(
+		ctx, trader.AccountExpiry, acctTraderKey, acctBatchKey,
+		trader.VenueSecret, auctioneerKey.PubKey, signer,
+		&auctioneerKey.KeyLocator, nil,
+	)
+	if err != nil {
+		return fmt.Errorf("error creating signing session: %v", err)
+	}
+
+	e.acctMuSig2Sessions[acctID] = sessionInfo
+
+	return nil
+}
+
+// cleanupMuSig2SigningSessions attempts to clean up pending MuSig2 signing
+// sessions on a best-effort basis.
+func (e *environment) cleanupMuSig2SigningSessions(
+	signer lndclient.SignerClient) {
+
+	// Attempt to clean up pending sessions. This is best-effort only, not
+	// being able to remove a session isn't the end of the world. It's
+	// possible some of them were removed already by producing a valid
+	// signature.
+	ctx := context.Background()
+	for _, sessionInfo := range e.acctMuSig2Sessions {
+		err := signer.MuSig2Cleanup(ctx, sessionInfo.SessionID)
+		if err != nil {
+			log.Debugf("Unable to remove MuSig2 signing session "+
+				"%x on environment shutdown",
+				sessionInfo.SessionID[:])
+		}
+	}
 }
