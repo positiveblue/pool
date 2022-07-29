@@ -269,6 +269,7 @@ func (o *OrderBatch) Copy() OrderBatch {
 			RecreatedOutput: output,
 			AccountTally:    &tally,
 			NewExpiry:       accountDiff.NewExpiry,
+			NewVersion:      accountDiff.NewVersion,
 		}
 	}
 

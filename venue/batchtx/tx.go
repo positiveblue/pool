@@ -480,10 +480,18 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 				return err
 			}
 
-			// If the client supported account expiry height extension after
-			// participating in a batch, set the expiry to the new height.
+			// If the client supports account expiry height
+			// extension after participating in a batch, set the
+			// expiry to the new height.
 			if trader.NewExpiry != 0 {
 				acctParams.AccountExpiry = trader.NewExpiry
+			}
+
+			// If the client supports account upgrade during batch
+			// execution, signal that by setting the new account
+			// version.
+			if trader.NewVersion != 0 {
+				acctParams.AccountVersion = trader.NewVersion
 			}
 
 			accountScript, err := poolscript.AccountScript(
@@ -514,10 +522,12 @@ func (e *ExecutionContext) assembleBatchTx(orderBatch *matching.OrderBatch,
 			// calculation by the traders.
 			totalTraderFees += trader.EndingBalance
 
-			// Don't auto-renew accounts that are fully spent.
-			// Otherwise, the client is going to calculate the wrong
-			// pk script when looking for the spend on chain.
+			// Don't auto-renew or upgrade accounts that are fully
+			// spent. Otherwise, the client is going to calculate
+			// the wrong pk script when looking for the spend on
+			// chain.
 			trader.NewExpiry = 0
+			trader.NewVersion = 0
 		}
 
 		orderBatch.FeeReport.AccountDiffs[acctID] = trader
