@@ -32,11 +32,12 @@ const (
 	// to be interpreted carefully.
 	accountTxFeePaidBlock = "account_tx_fee_paid_block"
 
-	labelAccountState = "acct_state"
-	labelLsat         = "lsat"
-	labelUserAgent    = "user_agent"
-	labelAccountKey   = "acct_key"
-	labelBlock        = "block_height"
+	labelAccountState   = "acct_state"
+	labelAccountVersion = "acct_version"
+	labelLsat           = "lsat"
+	labelUserAgent      = "user_agent"
+	labelAccountKey     = "acct_key"
+	labelBlock          = "block_height"
 )
 
 // accountCollector is a collector that keeps track of our accounts.
@@ -50,7 +51,10 @@ type accountCollector struct {
 
 // newAccountCollector makes a new accountCollector instance.
 func newAccountCollector(cfg *PrometheusConfig) *accountCollector {
-	baseLabels := []string{labelAccountState, labelLsat, labelUserAgent}
+	baseLabels := []string{
+		labelAccountState, labelAccountVersion, labelLsat,
+		labelUserAgent,
+	}
 	g := make(gauges)
 	g.addGauge(
 		accountCount, "total number of accounts", baseLabels,
@@ -130,9 +134,10 @@ func (c *accountCollector) observeAccount(acct *account.Account) {
 	}
 
 	l := prometheus.Labels{
-		labelAccountState: acct.State.String(),
-		labelLsat:         acct.TokenID.String(),
-		labelUserAgent:    userAgent,
+		labelAccountState:   acct.State.String(),
+		labelAccountVersion: acct.Version.String(),
+		labelLsat:           acct.TokenID.String(),
+		labelUserAgent:      userAgent,
 	}
 	c.g[accountCount].With(l).Inc()
 	c.g[accountBalance].With(l).Add(float64(acct.Value))
@@ -149,11 +154,12 @@ func (c *accountCollector) observeAccount(acct *account.Account) {
 		return
 	}
 	c.g[accountTxFeePaidBlock].With(prometheus.Labels{
-		labelAccountState: acct.State.String(),
-		labelLsat:         acct.TokenID.String(),
-		labelUserAgent:    userAgent,
-		labelAccountKey:   hex.EncodeToString(acct.TraderKeyRaw[:]),
-		labelBlock:        strconv.Itoa(int(*details.BlockHeight)),
+		labelAccountState:   acct.State.String(),
+		labelAccountVersion: acct.Version.String(),
+		labelLsat:           acct.TokenID.String(),
+		labelUserAgent:      userAgent,
+		labelAccountKey:     hex.EncodeToString(acct.TraderKeyRaw[:]),
+		labelBlock:          strconv.Itoa(int(*details.BlockHeight)),
 	}).Add(float64(details.TxFee))
 }
 
@@ -165,9 +171,10 @@ func (c *accountCollector) resetGauges() {
 	// We need to add a baseline for all account states.
 	for i := account.StatePendingOpen; i <= account.StateExpiredPendingUpdate; i++ {
 		l := prometheus.Labels{
-			labelAccountState: i.String(),
-			labelLsat:         "",
-			labelUserAgent:    "<none>",
+			labelAccountState:   i.String(),
+			labelAccountVersion: "",
+			labelLsat:           "",
+			labelUserAgent:      "<none>",
 		}
 		c.g[accountCount].With(l).Set(0)
 		c.g[accountBalance].With(l).Set(0)
