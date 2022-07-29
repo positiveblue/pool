@@ -24,6 +24,7 @@ import (
 	"github.com/go-errors/errors"
 	"github.com/lightninglabs/aperture"
 	"github.com/lightninglabs/pool"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -83,6 +84,13 @@ const (
 	// defaultChannelType is the default type of channel that we want to
 	// open during the integration tests.
 	defaultChannelType = auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_PEER_DEPENDENT
+
+	// taprootMultiSigSpendSizeDelta is the number of vBytes we save by
+	// using a single MuSig2 signature vs. putting 2 signatures and the
+	// whole script on chain. This is (rounded):
+	//   (poolscript.MultiSigWitnessSize -
+	//       poolscript.TaprootMultiSigWitnessSize) / 4
+	taprootMultiSigSpendSizeDelta = 41
 )
 
 // testCase is a struct that holds a single test case.
@@ -572,6 +580,25 @@ func assertTraderAccount(t *harnessTest, trader *traderHarness,
 	)
 }
 
+// rpcVersion returns the RPC account version.
+func rpcVersion(version accountT.Version) poolrpc.AccountVersion {
+	// The version 0 means "auto-choose depending on lnd version",
+	// which we don't want. So we need to add one to pick a specific
+	// version.
+	return poolrpc.AccountVersion(version + 1)
+}
+
+func versionCheck(version accountT.Version) traderAccountCheck {
+	return func(acct *poolrpc.Account) error {
+		if acct.Version != rpcVersion(version) {
+			return fmt.Errorf("expected account version %d, but "+
+				"got %d", rpcVersion(version), acct.Version)
+		}
+
+		return nil
+	}
+}
+
 // assertTraderAccountState asserts that the account with the corresponding
 // trader key is found in the given state from the PoV of the trader.
 func assertTraderAccountState(t *testing.T, trader *traderHarness,
@@ -730,10 +757,14 @@ func assertAuctioneerOutputType(t *harnessTest, ver account.AuctioneerVersion) {
 
 	switch ver {
 	case account.VersionInitialNoVersion:
-		txscript.IsPayToWitnessScriptHash(output.PkScript)
+		require.True(
+			t.t, txscript.IsPayToWitnessScriptHash(output.PkScript),
+		)
 
 	case account.VersionTaprootEnabled:
-		txscript.IsPayToTaproot(output.PkScript)
+		require.True(
+			t.t, txscript.IsPayToTaproot(output.PkScript),
+		)
 	}
 }
 
@@ -1704,7 +1735,8 @@ func expectNoPossibleMarket(t *harnessTest) {
 
 func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 	accountKey []byte, startValue int64, withdrawValue uint64,
-	address string) (*chainhash.Hash, btcutil.Amount) {
+	address string, accountVersion accountT.Version) (*chainhash.Hash,
+	btcutil.Amount) {
 
 	t.t.Helper()
 
@@ -1746,7 +1778,12 @@ func withdrawAccountAndAssertMempool(t *harnessTest, trader *traderHarness,
 	}
 
 	// The caller cares about the account value.
-	const withdrawalFee = 184
+	withdrawalFee := btcutil.Amount(184)
+	if accountVersion == accountT.VersionTaprootEnabled {
+		// A Taproot/MuSig2 key spend is 41 vBytes smaller.
+		withdrawalFee -= taprootMultiSigSpendSizeDelta
+	}
+
 	valueAfterWithdrawal := btcutil.Amount(startValue) -
 		btcutil.Amount(withdrawValue) - withdrawalFee
 	assertTraderAccount(

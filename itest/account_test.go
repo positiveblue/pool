@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"strings"
+	"testing"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/lightninglabs/aperture/lsat"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -37,6 +38,25 @@ const (
 func testAccountCreation(t *harnessTest) {
 	ctx := context.Background()
 
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountCreationTest(
+			ctx, ht, accountT.VersionInitialNoVersion,
+		)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountCreationTest(
+			ctx, ht, accountT.VersionTaprootEnabled,
+		)
+	})
+}
+
+// runAccountCreationTest tests that the trader can successfully create an
+// account of the given version on-chain and close it.
+func runAccountCreationTest(ctx context.Context, t *harnessTest,
+	version accountT.Version) {
+
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
 	account := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
@@ -44,14 +64,13 @@ func testAccountCreation(t *harnessTest) {
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
+		Version: rpcVersion(version),
 	})
 
 	// Proceed to close it to a custom output where half of the account
 	// value goes towards it and the rest towards fees.
 	const outputValue = defaultAccountValue / 2
-	ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
-	defer cancel()
-	resp, err := t.trader.cfg.LndNode.NewAddress(ctxt, &lnrpc.NewAddressRequest{
+	resp, err := t.trader.cfg.LndNode.NewAddress(ctx, &lnrpc.NewAddressRequest{
 		Type: lnrpc.AddressType_WITNESS_PUBKEY_HASH,
 	})
 	require.NoError(t.t, err)
@@ -89,19 +108,33 @@ func testAccountCreation(t *harnessTest) {
 		},
 		Fees: &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
 	})
-	if err == nil {
-		t.Fatalf("expected error when exceeding account value limit")
-	}
-	if !strings.Contains(err.Error(), "maximum account value") {
-		t.Fatalf("unexpected error, got '%s' wanted '%s'", err.Error(),
-			"maximum account value allowed is 1 BTC")
-	}
+	require.Error(t.t, err)
+	require.Contains(t.t, err.Error(), "maximum account value")
 }
 
 // testAccountWithdrawal tests that the auctioneer is able to handle a trader's
 // request to withdraw funds from an account.
 func testAccountWithdrawal(t *harnessTest) {
 	ctx := context.Background()
+
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountWithdrawalTest(
+			ctx, ht, accountT.VersionInitialNoVersion,
+		)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountWithdrawalTest(
+			ctx, ht, accountT.VersionTaprootEnabled,
+		)
+	})
+}
+
+// runAccountWithdrawalTest tests that the auctioneer is able to handle a
+// trader's request to withdraw funds from an account of the given version.
+func runAccountWithdrawalTest(ctx context.Context, t *harnessTest,
+	version accountT.Version) {
 
 	// Create an account for 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
@@ -110,6 +143,7 @@ func testAccountWithdrawal(t *harnessTest) {
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
+		Version: rpcVersion(version),
 	})
 
 	// With the account open, we'll now attempt to withdraw half of the
@@ -131,7 +165,7 @@ func testAccountWithdrawal(t *harnessTest) {
 	// Now try a valid address.
 	withdrawTxid, valueAfterWithdrawal := withdrawAccountAndAssertMempool(
 		t, t.trader, account.TraderKey, int64(account.Value),
-		withdrawValue, validTestAddr,
+		withdrawValue, validTestAddr, version,
 	)
 
 	// We'll attempt to bump the fee rate of the withdrawal from 1 sat/vbyte
@@ -168,6 +202,25 @@ func testAccountWithdrawal(t *harnessTest) {
 func testAccountDeposit(t *harnessTest) {
 	ctx := context.Background()
 
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountDepositTest(
+			ctx, ht, accountT.VersionInitialNoVersion,
+		)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountDepositTest(
+			ctx, ht, accountT.VersionTaprootEnabled,
+		)
+	})
+}
+
+// runAccountDepositTest tests that the auctioneer is able to handle a trader's
+// request to deposit funds into an account of the given version.
+func runAccountDepositTest(ctx context.Context, t *harnessTest,
+	version accountT.Version) {
+
 	// Create an account for 500K sats that is valid for the next 1000
 	// blocks and validate its confirmation on-chain.
 	const initialAccountValue = 500_000
@@ -176,6 +229,7 @@ func testAccountDeposit(t *harnessTest) {
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
+		Version: rpcVersion(version),
 	})
 
 	// With the account open, we'll now attempt to deposit the same amount
@@ -312,6 +366,25 @@ func testAccountDeposit(t *harnessTest) {
 func testAccountRenewal(t *harnessTest) {
 	ctx := context.Background()
 
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountRenewalTest(
+			ctx, ht, accountT.VersionInitialNoVersion,
+		)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountRenewalTest(
+			ctx, ht, accountT.VersionTaprootEnabled,
+		)
+	})
+}
+
+// runAccountRenewalTest ensures that we can renew an account of the given
+// version in its confirmed state, and after it has expired.
+func runAccountRenewalTest(ctx context.Context, t *harnessTest,
+	version accountT.Version) {
+
 	// Create an account for 500K sats that is valid for the next 1000
 	// blocks and validate its confirmation on-chain.
 	const initialAccountValue = 500_000
@@ -320,6 +393,7 @@ func testAccountRenewal(t *harnessTest) {
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
+		Version: rpcVersion(version),
 	})
 
 	// For our first case, we'll renew our account such that it expires in
@@ -339,6 +413,7 @@ func testAccountRenewal(t *harnessTest) {
 			RelativeExpiry: newRelativeExpiry,
 		},
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+		NewVersion:      rpcVersion(version),
 	}
 	updateResp1, err := t.trader.RenewAccount(ctx, updateReq)
 	require.NoError(t.t, err)
@@ -350,7 +425,11 @@ func testAccountRenewal(t *harnessTest) {
 
 		// Assert that the account state is reflected correctly for both
 		// the trader and auctioneer while the update hasn't confirmed.
-		const multiSigUpdateFee = 153
+		multiSigUpdateFee := btcutil.Amount(153)
+		if version == accountT.VersionTaprootEnabled {
+			multiSigUpdateFee -= taprootMultiSigSpendSizeDelta
+		}
+
 		valueAfterMultiSigUpdate := valueBeforeUpdate - multiSigUpdateFee
 		assertTraderAccount(
 			t, t.trader, account.TraderKey, valueAfterMultiSigUpdate,
@@ -423,6 +502,20 @@ func testAccountRenewal(t *harnessTest) {
 // opening one and that the reconnection mechanism works if the server is
 // stopped for maintenance.
 func testAccountSubscription(t *harnessTest) {
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountSubscriptionTest(ht, accountT.VersionInitialNoVersion)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runAccountSubscriptionTest(ht, accountT.VersionTaprootEnabled)
+	})
+}
+
+// runAccountSubscriptionTest tests that a trader registers for an account of
+// the given version after opening one and that the reconnection mechanism works
+// if the server is stopped for maintenance.
+func runAccountSubscriptionTest(t *harnessTest, version accountT.Version) {
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// and validate its confirmation on-chain.
 	acct := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
@@ -430,6 +523,7 @@ func testAccountSubscription(t *harnessTest) {
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: 1_000,
 		},
+		Version: rpcVersion(version),
 	})
 	assertTraderSubscribed(t, t.trader, acct, 1)
 
@@ -450,33 +544,78 @@ func testAccountSubscription(t *harnessTest) {
 // directory. This assumes that the connected lnd instance still runs with the
 // same seed the accounts originally were created with.
 func testServerAssistedAccountRecovery(t *harnessTest) {
-	ctxb := context.Background()
+	ctx := context.Background()
+
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runServerAssistedAccountRecoveryTest(
+			ctx, ht, accountT.VersionInitialNoVersion,
+		)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runServerAssistedAccountRecoveryTest(
+			ctx, ht, accountT.VersionTaprootEnabled,
+		)
+	})
+}
+
+// runServerAssistedAccountRecoveryTest tests that a trader can recover all
+// accounts of the given version with the help of the auctioneer in case they
+// lose their local data directory. This assumes that the connected lnd instance
+// still runs with the same seed the accounts originally were created with.
+func runServerAssistedAccountRecoveryTest(ctx context.Context, t *harnessTest,
+	version accountT.Version) {
+
 	const defaultRelativeExpiration uint32 = 1_000
+
+	// We need a third lnd node, Charlie that is used for the account
+	// recover stuff, so we create a completely new trader for each run.
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
+	trader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, charlie, trader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
 	// We create three full accounts. One that is closed again, one
 	// that remains open and one that is pending open, waiting for on-chain
 	// confirmation.
-	closed := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
+	closed := openAccountAndAssert(t, trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultRelativeExpiration,
 		},
+		Version: rpcVersion(version),
 	})
-	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, trader, &poolrpc.CloseAccountRequest{
 		TraderKey: closed.TraderKey,
 	})
-	open := openAccountAndAssert(t, t.trader, &poolrpc.InitAccountRequest{
+	open := openAccountAndAssert(t, trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultRelativeExpiration,
 		},
+		Version: rpcVersion(version),
 	})
-	pending, err := t.trader.InitAccount(ctxb, &poolrpc.InitAccountRequest{
+
+	// We also create an open account of the base version, just to make sure
+	// we can have mixed versions in the recovery.
+	open2 := openAccountAndAssert(t, trader, &poolrpc.InitAccountRequest{
 		AccountValue: defaultAccountValue,
 		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 			RelativeHeight: defaultRelativeExpiration,
 		},
-		Fees: &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
+		Version: rpcVersion(accountT.VersionInitialNoVersion),
+	})
+	pending, err := trader.InitAccount(ctx, &poolrpc.InitAccountRequest{
+		AccountValue: defaultAccountValue,
+		AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+			RelativeHeight: defaultRelativeExpiration,
+		},
+		Fees:    &poolrpc.InitAccountRequest_ConfTarget{ConfTarget: 6},
+		Version: rpcVersion(version),
 	})
 	require.NoError(t.t, err)
 	_, err = waitForNTxsInMempool(
@@ -485,14 +624,14 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	require.NoError(t.t, err)
 
 	// Now that we've opened the account(s), we should also have an LSAT.
-	tokenID, err := t.trader.server.GetIdentity()
+	tokenID, err := trader.server.GetIdentity()
 	require.NoError(t.t, err)
 	idCtx := getTokenContext(tokenID)
 
 	// Also create an order for the open account so we can make sure it'll
 	// be canceled on recovery. We need to fetch the nonce of it so we can
 	// query it directly.
-	_, err = t.trader.SubmitOrder(ctxb, &poolrpc.SubmitOrderRequest{
+	_, err = trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
 			Ask: &poolrpc.Ask{
 				Details: &poolrpc.Order{
@@ -510,7 +649,7 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 		},
 	})
 	require.NoError(t.t, err)
-	list, err := t.trader.ListOrders(ctxb, &poolrpc.ListOrdersRequest{})
+	list, err := trader.ListOrders(ctx, &poolrpc.ListOrdersRequest{})
 	require.NoError(t.t, err)
 	require.Len(t.t, list.Asks, 1)
 	askNonce := list.Asks[0].Details.OrderNonce
@@ -525,28 +664,28 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	var randToken lsat.TokenID
 	_, _ = rand.Read(randToken[16:])
 	resRecoveryFailed := addReservation(
-		getTokenContext(&randToken), t, t.lndHarness.Bob,
+		getTokenContext(&randToken), t, charlie,
 		defaultAccountValue, uint32(minerHeight)+defaultRelativeExpiration,
-		false,
+		false, version,
 	)
 	resRecoveryOk := addReservation(
-		idCtx, t, t.lndHarness.Bob, defaultAccountValue,
-		uint32(minerHeight)+defaultRelativeExpiration, true,
+		idCtx, t, charlie, defaultAccountValue,
+		uint32(minerHeight)+defaultRelativeExpiration, true, version,
 	)
 
 	// Now we simulate data loss by shutting down the trader and removing
 	// its data directory completely.
-	err = t.trader.stop(true)
+	err = trader.stop(true)
 	require.NoError(t.t, err)
 
 	// Now we just create a new trader, connected to the same lnd instance.
-	t.trader = setupTraderHarness(
-		t.t, t.lndHarness.BackendCfg, t.lndHarness.Bob, t.auctioneer,
+	trader = setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
 	)
 
 	// Make sure the trader doesn't remember any accounts anymore.
-	accounts, err := t.trader.ListAccounts(
-		ctxb, &poolrpc.ListAccountsRequest{},
+	accounts, err := trader.ListAccounts(
+		ctx, &poolrpc.ListAccountsRequest{},
 	)
 	require.NoError(t.t, err)
 	require.Len(t.t, accounts.Accounts, 0)
@@ -555,57 +694,70 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 	// even though there were 5 accounts. One of them isn't counted because
 	// it should be in the database marked with the state of recovery
 	// failure.
-	recovery, err := t.trader.RecoverAccounts(
-		ctxb, &poolrpc.RecoverAccountsRequest{},
+	recovery, err := trader.RecoverAccounts(
+		ctx, &poolrpc.RecoverAccountsRequest{},
 	)
 	require.NoError(t.t, err)
-	require.Equal(t.t, uint32(4), recovery.NumRecoveredAccounts)
+	require.Equal(t.t, uint32(5), recovery.NumRecoveredAccounts)
 
 	// Now make sure the accounts are all in the correct state.
-	accounts, err = t.trader.ListAccounts(
-		ctxb, &poolrpc.ListAccountsRequest{},
+	accounts, err = trader.ListAccounts(
+		ctx, &poolrpc.ListAccountsRequest{},
 	)
 	require.NoError(t.t, err)
-	require.Len(t.t, accounts.Accounts, 5)
+	require.Len(t.t, accounts.Accounts, 6)
+
 	assertTraderAccountState(
-		t.t, t.trader, resRecoveryFailed,
-		poolrpc.AccountState_RECOVERY_FAILED,
+		t.t, trader, resRecoveryFailed,
+		poolrpc.AccountState_RECOVERY_FAILED, versionCheck(version),
 	)
 	assertTraderAccountState(
-		t.t, t.trader, resRecoveryOk, poolrpc.AccountState_PENDING_OPEN,
+		t.t, trader, resRecoveryOk, poolrpc.AccountState_PENDING_OPEN,
+		versionCheck(version),
 	)
 	assertTraderAccountState(
-		t.t, t.trader, closed.TraderKey, poolrpc.AccountState_CLOSED,
+		t.t, trader, closed.TraderKey, poolrpc.AccountState_CLOSED,
+		versionCheck(version),
 	)
 	assertTraderAccountState(
-		t.t, t.trader, closed.TraderKey, poolrpc.AccountState_CLOSED,
+		t.t, trader, closed.TraderKey, poolrpc.AccountState_CLOSED,
+		versionCheck(version),
 	)
 	assertTraderAccountState(
-		t.t, t.trader, open.TraderKey, poolrpc.AccountState_OPEN,
+		t.t, trader, open.TraderKey, poolrpc.AccountState_OPEN,
+		versionCheck(version),
 	)
 	assertTraderAccountState(
-		t.t, t.trader, pending.TraderKey,
+		t.t, trader, open2.TraderKey, poolrpc.AccountState_OPEN,
+		versionCheck(accountT.VersionInitialNoVersion),
+	)
+	assertTraderAccountState(
+		t.t, trader, pending.TraderKey,
 		poolrpc.AccountState_PENDING_OPEN,
+		versionCheck(version),
 	)
 
 	// Mine the rest of the blocks to make the pending accounts fully
 	// confirmed. Then check their state again.
 	_ = mineBlocks(t, t.lndHarness, 5, 0)
 	assertTraderAccountState(
-		t.t, t.trader, pending.TraderKey, poolrpc.AccountState_OPEN,
+		t.t, trader, pending.TraderKey, poolrpc.AccountState_OPEN,
 	)
 	assertTraderAccountState(
-		t.t, t.trader, resRecoveryOk, poolrpc.AccountState_OPEN,
+		t.t, trader, resRecoveryOk, poolrpc.AccountState_OPEN,
 	)
 
 	// Finally, make sure we can close out all open accounts.
-	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, trader, &poolrpc.CloseAccountRequest{
 		TraderKey: open.TraderKey,
 	})
-	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, trader, &poolrpc.CloseAccountRequest{
+		TraderKey: open2.TraderKey,
+	})
+	closeAccountAndAssert(t, trader, &poolrpc.CloseAccountRequest{
 		TraderKey: pending.TraderKey,
 	})
-	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
+	closeAccountAndAssert(t, trader, &poolrpc.CloseAccountRequest{
 		TraderKey: resRecoveryOk,
 	})
 
@@ -621,8 +773,8 @@ func testServerAssistedAccountRecovery(t *harnessTest) {
 }
 
 func addReservation(lsatCtx context.Context, t *harnessTest,
-	node *lntest.HarnessNode, value uint64, expiry uint32,
-	sendFunds bool) []byte {
+	node *lntest.HarnessNode, value uint64, expiry uint32, sendFunds bool,
+	accountVersion accountT.Version) []byte {
 
 	ctxb := context.Background()
 
@@ -642,6 +794,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 			AccountValue:  value,
 			TraderKey:     keyDesc.RawKeyBytes,
 			AccountExpiry: expiry,
+			Version:       uint32(accountVersion),
 		},
 	)
 	require.NoError(t.t, err)
@@ -664,7 +817,7 @@ func addReservation(lsatCtx context.Context, t *harnessTest,
 	var sharedKey [32]byte
 	copy(sharedKey[:], keyRes.SharedKey)
 	script, err := poolscript.AccountScript(
-		poolscript.VersionWitnessScript, expiry, traderKey,
+		accountVersion.ScriptVersion(), expiry, traderKey,
 		auctioneerKey, batchKey, sharedKey,
 	)
 	require.NoError(t.t, err)

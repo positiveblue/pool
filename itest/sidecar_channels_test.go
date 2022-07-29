@@ -24,7 +24,9 @@ import (
 
 // sidecarChannelsHappyPath tests that opening a sidecar channel through a bid
 // order is possible.
-func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
+func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool,
+	version accountT.Version) {
+
 	// We need a third and fourth lnd node for the additional participants.
 	// Charlie is the sidecar channel provider (has an account, submits the
 	// bid order) and Dave is the sidecar channel recipient (has no account
@@ -50,6 +52,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 5_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 	providerAccount := openAccountAndAssert(
@@ -58,6 +61,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 5_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -144,8 +148,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool) {
 		askAmt, defaultOrderDuration,
 	)
 	chainFees := orderT.EstimateTraderFee(
-		1, chainfee.SatPerKWeight(12_500),
-		accountT.VersionInitialNoVersion,
+		1, chainfee.SatPerKWeight(12_500), version,
 	)
 	makerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -
 		chainFees - askAmt + premium
@@ -238,7 +241,32 @@ func testSidecarChannelsHappyPath(t *harnessTest) {
 	// We'll ensure that the protocol works when we're using both automated
 	// and manual negotiation.
 	for _, auto := range []bool{true, false} {
-		sidecarChannelsHappyPath(ctx, t, auto)
+		t.t.Run(
+			fmt.Sprintf("version 0, auto=%v", auto),
+			func(tt *testing.T) {
+				ht := newHarnessTest(
+					tt, t.lndHarness, t.auctioneer,
+					t.trader,
+				)
+				sidecarChannelsHappyPath(
+					ctx, ht, auto,
+					accountT.VersionInitialNoVersion,
+				)
+			},
+		)
+		t.t.Run(
+			fmt.Sprintf("version 1, auto=%v", auto),
+			func(tt *testing.T) {
+				ht := newHarnessTest(
+					tt, t.lndHarness, t.auctioneer,
+					t.trader,
+				)
+				sidecarChannelsHappyPath(
+					ctx, ht, auto,
+					accountT.VersionTaprootEnabled,
+				)
+			},
+		)
 	}
 }
 
