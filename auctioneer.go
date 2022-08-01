@@ -251,6 +251,15 @@ type AuctioneerConfig struct {
 	// traders before we start match making.
 	TraderOnline matching.OrderFilter
 
+	// ChannelAnnouncement is an order matching predicate
+	// that filters order matches based on their channel announcebility
+	// constraints.
+	ChannelAnnouncement *matching.ChannelAnnouncementPredicate
+
+	// ZeroConfChannel is an order matching predicate that filters out
+	// order matches based on their channel block confirmation constraints.
+	ZeroConfChannel *matching.ZeroConfChannelPredicate
+
 	// RatingsAgency if non-nil, will be used as an extract matching
 	// predicate when doing match making.
 	RatingsAgency ratings.Agency
@@ -1541,7 +1550,8 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		)
 		predicateChain = append(
 			predicateChain, a.cfg.FundingConflicts,
-			a.cfg.TraderRejected,
+			a.cfg.TraderRejected, a.cfg.ChannelAnnouncement,
+			a.cfg.ZeroConfChannel,
 		)
 
 		batchKey, err := a.cfg.DB.BatchKey(context.Background())

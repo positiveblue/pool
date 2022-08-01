@@ -116,7 +116,7 @@ func MatchChannelType(ask *order.Ask, bid *order.Bid) bool {
 
 // AllowedNodeIDsPredicate is a matching predicate that makes sure the nodes
 // can match after checking the respective Allowed/Not Allowed node id
-// constrains for each order.
+// constraints for each order.
 func AllowedNodeIDsPredicate(ask *order.Ask, bid *order.Bid) bool {
 	// Check if the asker node matches the bid constraints.
 	if !orderT.IsNodeIDAValidMatch(ask.NodeKey, bid.AllowedNodeIDs,
@@ -350,7 +350,9 @@ func NewMinNodeRatingPredicate(agency ratings.Agency) *MinNodeRatingPredicate {
 // objection about two orders being matched. In this specific instance, we
 // require that the tier of the node backed by the ask is greater than or equal
 // to the specified min node tier.
-func (m *MinNodeRatingPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) bool {
+func (m *MinNodeRatingPredicate) IsMatchable(ask *order.Ask,
+	bid *order.Bid) bool {
+
 	askNode := ask.NodeKey
 	askNodeTier := m.agency.RateNode(askNode)
 
@@ -368,3 +370,82 @@ func (m *MinNodeRatingPredicate) IsMatchable(ask *order.Ask, bid *order.Bid) boo
 // A compile-time check to ensure that MinNodeRatingPredicate implements the
 // MatchPredicate interface.
 var _ MatchPredicate = (*MinNodeRatingPredicate)(nil)
+
+// ChannelAnnouncementPredicate is a filter that filters out matches based on
+// the channel announcement constraints.
+type ChannelAnnouncementPredicate struct {
+	traderBatchVersion func([33]byte) (orderT.BatchVersion, error)
+}
+
+// NewChannelAnnouncementPredicate returns a new ChannelAnnouncementPredicate
+// instance.
+func NewChannelAnnouncementPredicate(f func([33]byte) (orderT.BatchVersion,
+	error)) *ChannelAnnouncementPredicate {
+
+	return &ChannelAnnouncementPredicate{
+		traderBatchVersion: f,
+	}
+}
+
+// IsMatchable returns true if the ask/bid are interested in the same kind of
+// channel based on their announcebility.
+func (m *ChannelAnnouncementPredicate) IsMatchable(ask *order.Ask,
+	bid *order.Bid) bool {
+
+	askerVersion, err := m.traderBatchVersion(ask.AcctKey)
+	if err != nil {
+		return false
+	}
+
+	if !askerVersion.SupportsUnannouncedChannels() &&
+		bid.UnannouncedChannel {
+
+		return false
+	}
+
+	return orderT.MatchAnnouncementConstraints(
+		ask.AnnouncementConstraints, bid.UnannouncedChannel,
+	)
+}
+
+// A compile-time check to ensure that ChannelAnnouncementPredicate implements
+// the MatchPredicate interface.
+
+// ZeroConfChannelPredicate is a predicate that filters out matches based on
+// the channel confirmation constraints.
+type ZeroConfChannelPredicate struct {
+	traderBatchVersion func([33]byte) (orderT.BatchVersion, error)
+}
+
+// NewChannelAnnouncementPredicate returns a new ChannelAnnouncementPredicate
+// instance.
+func NewZeroConfChannelPredicate(f func([33]byte) (orderT.BatchVersion,
+	error)) *ZeroConfChannelPredicate {
+
+	return &ZeroConfChannelPredicate{
+		traderBatchVersion: f,
+	}
+}
+
+// IsMatchable returns true if the ask/bid are interested in the same kind of
+// channel based on their announcebility.
+func (m *ZeroConfChannelPredicate) IsMatchable(ask *order.Ask,
+	bid *order.Bid) bool {
+
+	askerVersion, err := m.traderBatchVersion(ask.AcctKey)
+	if err != nil {
+		return false
+	}
+
+	if !askerVersion.SupportsZeroConfChannels() && bid.ZeroConfChannel {
+		return false
+	}
+
+	return orderT.MatchZeroConfConstraints(
+		ask.ConfirmationConstraints, bid.ZeroConfChannel,
+	)
+}
+
+// A compile-time check to ensure that ChannelAnnouncementPredicate implements
+// the MatchPredicate interface.
+var _ MatchPredicate = (*ZeroConfChannelPredicate)(nil)
