@@ -1946,11 +1946,27 @@ func marshallMatchedAsk(ask *order.Ask,
 		return nil, err
 	}
 
+	announcement, err := order.MarshalAnnouncementConstraints(
+		ask.AnnouncementConstraints,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	confirmation, err := order.MarshalConfirmationConstraints(
+		ask.ConfirmationConstraints,
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	return &auctioneerrpc.MatchedAsk{
 		Ask: &auctioneerrpc.ServerAsk{
-			Details:             details,
-			LeaseDurationBlocks: ask.LeaseDuration(),
-			Version:             uint32(ask.Version),
+			Details:                 details,
+			LeaseDurationBlocks:     ask.LeaseDuration(),
+			Version:                 uint32(ask.Version),
+			AnnouncementConstraints: announcement,
+			ConfirmationConstraints: confirmation,
 		},
 		UnitsFilled: uint32(unitsFilled),
 	}, nil
@@ -1972,6 +1988,8 @@ func marshallMatchedBid(bid *order.Bid,
 			Version:             uint32(bid.Version),
 			SelfChanBalance:     uint64(bid.SelfChanBalance),
 			IsSidecarChannel:    bid.IsSidecar,
+			UnannouncedChannel:  bid.UnannouncedChannel,
+			ZeroConfChannel:     bid.ZeroConfChannel,
 		},
 		UnitsFilled: uint32(unitsFilled),
 	}, nil

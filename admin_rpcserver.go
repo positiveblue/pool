@@ -264,6 +264,19 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 
 		switch o := dbOrder.(type) {
 		case *order.Ask:
+			ann, err := order.MarshalAnnouncementConstraints(
+				o.AnnouncementConstraints,
+			)
+			if err != nil {
+				return nil, err
+			}
+			conf, err := order.MarshalConfirmationConstraints(
+				o.ConfirmationConstraints,
+			)
+			if err != nil {
+				return nil, err
+			}
+
 			rpcAsks = append(rpcAsks, &adminrpc.ServerAsk{
 				Details:             rpcDetails,
 				LeaseDurationBlocks: o.LeaseDuration(),
@@ -271,7 +284,9 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				State: auctioneerrpc.OrderState(
 					o.Details().State,
 				),
-				UserAgent: o.UserAgent,
+				UserAgent:               o.UserAgent,
+				AnnouncementConstraints: ann,
+				ConfirmationConstraints: conf,
 			})
 		case *order.Bid:
 			nodeTier, err := marshallNodeTier(o.MinNodeTier)
@@ -288,6 +303,8 @@ func (s *adminRPCServer) ListOrders(ctx context.Context,
 				UserAgent:           o.UserAgent,
 				SelfChanBalance:     uint64(o.SelfChanBalance),
 				IsSidecar:           o.IsSidecar,
+				UnannouncedChannel:  o.UnannouncedChannel,
+				ZeroConfChannel:     o.ZeroConfChannel,
 			})
 		}
 	}
