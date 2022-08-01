@@ -28,6 +28,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var (
+	scriptEnforcedType = auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_SCRIPT_ENFORCED
+
+	announceNoPreference = auctioneerrpc.ChannelAnnouncementConstraints_ANNOUNCEMENT_NO_PREFERENCE
+	onlyUnannounced      = auctioneerrpc.ChannelAnnouncementConstraints_ONLY_UNANNOUNCED
+
+	zcNoPreference        = auctioneerrpc.ChannelConfirmationConstraints_CONFIRMATION_NO_PREFERENCE
+	onlyConfirmedChannels = auctioneerrpc.ChannelConfirmationConstraints_ONLY_CONFIRMED
+	onlyZeroConfChannels  = auctioneerrpc.ChannelConfirmationConstraints_ONLY_ZEROCONF
+)
+
 // testBatchExecutionV0 is an end-to-end test of the entire system. In this test
 // we'll create two new traders and accounts for each trader. The traders will
 // then submit orders we know will match, causing us to trigger a manual batch
@@ -2465,7 +2476,8 @@ func testOrderNodeIDFilters(t *harnessTest) {
 	// Our second trader, connected to Charlie, wants to buy 8 units of
 	// liquidity. So let's submit an order for that.
 	bidAmt := btcutil.Amount(800_000)
-	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt,
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
 		func(ask *poolrpc.SubmitOrderRequest_Bid) {
 			allowed := [][]byte{t.trader.cfg.LndNode.PubKey[:]}
 			ask.Bid.Details.AllowedNodeIds = allowed
@@ -2507,4 +2519,411 @@ func testOrderNodeIDFilters(t *harnessTest) {
 	// Now that we're done here, we'll close these channels to ensure that
 	// all the created nodes have a clean state after this test execution.
 	closeAllChannels(context.Background(), t, charlie)
+}
+
+// testBatchUnannouncedChannels tests the matching conditions for orders based
+// on the resulting channel announcements.
+func testBatchUnannouncedChannels(t *harnessTest) {
+	ctx := context.Background()
+
+	// We need a third lnd node, Charlie that is used for the second trader
+	// who already updated his batch version to UnannouncedChannels.
+	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+		batchVersionOpt(orderT.UnannouncedChannelsBatchVersion),
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	// We need a fourth lnd node, Dave that is used as the third trader who
+	// did not update his batch version to UnannouncedChannels yet.
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
+	thirdTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+		batchVersionOpt(orderT.ExtendAccountBatchVersion),
+	)
+	defer shutdownAndAssert(t, dave, thirdTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for the traders.
+	account1 := openAccountAndAssert(
+		t, t.trader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account2 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account3 := openAccountAndAssert(
+		t, thirdTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from dave
+	// selling 1 unit (0.1M sats) of liquidity. This order is unable to
+	// match with the order created by account2 because the trader
+	// does not support opening unannounced channel.
+	askAmt := btcutil.Amount(100_000)
+	_, err := submitAskOrder(thirdTrader, account3.TraderKey, 100, askAmt)
+	require.NoError(t.t, err)
+
+	// Our second trader (Charlie) wants to buy 1 unit of liquidity for
+	// an unannounced channel.
+	bidAmt := btcutil.Amount(100_000)
+	bidNonce, err := submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.UnannouncedChannel = true
+		},
+	)
+	require.NoError(t.t, err)
+
+	// We now instruct the auctioneer to attempt to create a batch. The only
+	// match-invalidating criteria in this batch is the unannounced channel.
+	_, _ = executeBatch(t, 0)
+
+	// Cancel the order that did not match so we do not have to worry about
+	// it matching during the rest of the tests.
+	CancelOrder(t.t, secondTrader, bidNonce)
+
+	// If Charlie bids for an announced channel it should be a match.
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt)
+	require.NoError(t.t, err)
+
+	_, _ = executeBatch(t, 1)
+	assertPendingChannel(
+		t, thirdTrader.cfg.LndNode, askAmt, true, charlie.PubKey,
+		privateChannelCheck(false),
+	)
+
+	// Let's now mine to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Let's make the main trader the asker and provide liquidity only for
+	// unannounced channels.
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, 100, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			// Only match unannounced channels.
+			ask.Ask.AnnouncementConstraints = onlyUnannounced
+		},
+	)
+	require.NoError(t.t, err)
+
+	// This order won't match the liquidity of our main trader because
+	// bids for announced channels.
+	bidNonce, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
+	)
+	require.NoError(t.t, err)
+
+	_, _ = executeBatch(t, 0)
+
+	// Cancel the order that did not match so we do not have to worry about
+	// it matching during the rest of the tests.
+	CancelOrder(t.t, secondTrader, bidNonce)
+
+	// Bidding for unannounced should create a match.
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.UnannouncedChannel = true
+		},
+	)
+	require.NoError(t.t, err)
+
+	_, _ = executeBatch(t, 1)
+	assertPendingChannel(
+		t, t.trader.cfg.LndNode, askAmt, true,
+		charlie.PubKey, privateChannelCheck(true),
+	)
+
+	// Let's now mine to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Let's create an ask providing liquidity for announced and unannounced
+	// channels.
+	_, err = submitAskOrder(
+		t.trader, account1.TraderKey, 100, 2*askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			// No preference.
+			ask.Ask.AnnouncementConstraints = announceNoPreference
+		},
+	)
+	require.NoError(t.t, err)
+
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt)
+	require.NoError(t.t, err)
+
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.UnannouncedChannel = true
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Because the asker specified "no preference" the bidder should get
+	// two matches.
+	txs, _ := executeBatch(t, 1)
+
+	require.Len(t.t, txs, 1)
+
+	// Five new outputs:
+	// - Update auctioneer account
+	// - Update the two trader accounts
+	// - Open two channels one announced and one unannounced.
+	require.Len(t.t, txs[0].TxOut, 5)
+
+	// Let's now mine to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
+	closeAllChannels(ctx, t, dave)
+}
+
+// testBatchZeroConfChannels tests the matching conditions for orders based
+// on the number of confirmations that the resulting channel needs before
+// starting routing.
+func testBatchZeroConfChannels(t *harnessTest) {
+	ctx := context.Background()
+
+	extraArgs := []string{
+		"--protocol.option-scid-alias",
+		"--protocol.zero-conf",
+		"--protocol.anchors",
+		"--protocol.script-enforced-lease",
+	}
+
+	// We need a third lnd node, Charlie that is used for the second trader
+	// who already updated his batch version to ZeroConfChannels.
+	charlie := t.lndHarness.NewNode(t.t, "charlie", extraArgs)
+	secondTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+		batchVersionOpt(orderT.ZeroConfChannelsBatchVersion),
+	)
+	defer shutdownAndAssert(t, charlie, secondTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
+
+	// We need a fourth lnd node, Dave that is used as the third trader who
+	// did not update his batch version to ZeroConfChannels yet.
+	dave := t.lndHarness.NewNode(t.t, "dave", lndDefaultArgs)
+	thirdTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, dave, t.auctioneer,
+		batchVersionOpt(orderT.UnannouncedChannelsBatchVersion),
+	)
+	defer shutdownAndAssert(t, dave, thirdTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, dave)
+
+	// We need a fifth lnd node, Elle that is used for the fourth trader
+	// who already updated his batch version to ZeroConfChannels.
+	elle := t.lndHarness.NewNode(t.t, "elle", extraArgs)
+	fourthTrader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, elle, t.auctioneer,
+		batchVersionOpt(orderT.ZeroConfChannelsBatchVersion),
+	)
+	defer shutdownAndAssert(t, elle, fourthTrader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, elle)
+
+	// Create an account over 2M sats that is valid for the next 1000 blocks
+	// for the traders.
+	account2 := openAccountAndAssert(
+		t, secondTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account3 := openAccountAndAssert(
+		t, thirdTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+	account4 := openAccountAndAssert(
+		t, fourthTrader, &poolrpc.InitAccountRequest{
+			AccountValue: defaultAccountValue,
+			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
+				RelativeHeight: 1_000,
+			},
+		},
+	)
+
+	// Now that the accounts are confirmed, submit an ask order from dave
+	// selling 1 unit (0.1M sats) of liquidity. This order is unable to
+	// match with the order created by account1 because the trader
+	// does not support opening zero conf channels.
+	askAmt := btcutil.Amount(100_000)
+	_, err := submitAskOrder(thirdTrader, account3.TraderKey, 100, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			ask.Ask.ConfirmationConstraints = onlyConfirmedChannels
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Elle wants to buy 1 unit of liquidity for a zero conf channel.
+	bidAmt := btcutil.Amount(100_000)
+	bidNonce, err := submitBidOrder(
+		fourthTrader, account4.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.ZeroConfChannel = true
+			bid.Bid.Details.ChannelType = scriptEnforcedType
+		},
+	)
+	require.NoError(t.t, err)
+
+	// We now instruct the auctioneer to attempt to create a batch. The only
+	// match-invalidating criteria in this batch is the zero conf channel.
+	_, _ = executeBatch(t, 0)
+
+	// Cancel the order that did not match so we do not have to worry about
+	// it matching during the rest of the tests.
+	CancelOrder(t.t, fourthTrader, bidNonce)
+
+	// If Elle bids for a non zero conf channel it should be a match.
+	_, err = submitBidOrder(fourthTrader, account4.TraderKey, 100, bidAmt)
+	require.NoError(t.t, err)
+
+	txs, _ := executeBatch(t, 1)
+	assertPendingChannel(
+		t, thirdTrader.cfg.LndNode, askAmt, true,
+		fourthTrader.cfg.LndNode.PubKey,
+	)
+
+	// Let's now mine to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Close all active channels so we start fresh.
+	assertActiveChannel(
+		t, fourthTrader.cfg.LndNode, int64(bidAmt), txs[0].TxHash(),
+		dave.PubKey, defaultOrderDuration,
+	)
+	closeAllChannels(ctx, t, elle)
+
+	// Let's make the fourth trader the asker and provide liquidity only for
+	// ZeroConf channels.
+	_, err = submitAskOrder(
+		fourthTrader, account4.TraderKey, 100, askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			// Only match zero conf channels.
+			ask.Ask.ConfirmationConstraints = onlyZeroConfChannels
+
+			// Script enforced.
+			ask.Ask.Details.ChannelType = scriptEnforcedType
+		},
+	)
+	require.NoError(t.t, err)
+
+	// This order won't match the liquidity of our main trader because
+	// bids for non-zero conf channels.
+	bidNonce, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
+	)
+	require.NoError(t.t, err)
+
+	_, _ = executeBatch(t, 0)
+
+	// Cancel the order that did not match so we do not have to worry about
+	// it matching during the rest of the tests.
+	CancelOrder(t.t, secondTrader, bidNonce)
+
+	// Bidding for zero conf channels should create a match.
+	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.ZeroConfChannel = true
+			bid.Bid.Details.ChannelType = scriptEnforcedType
+		},
+	)
+	require.NoError(t.t, err)
+	_, _ = executeBatch(t, 1)
+
+	// Check that we are able to route before getting any confirmation.
+	resp, err := elle.ListChannels(ctx, &lnrpc.ListChannelsRequest{})
+	require.NoError(t.t, err)
+	require.Len(t.t, resp.Channels, 1)
+	require.True(t.t, resp.Channels[0].Active)
+	require.True(t.t, resp.Channels[0].ZeroConf)
+	require.NotEmpty(t.t, resp.Channels[0].AliasScids)
+
+	// Let's now mine to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	// Let's create an ask providing liquidity for a zero conf and a normal
+	// channel.
+	_, err = submitAskOrder(
+		fourthTrader, account4.TraderKey, 100, 2*askAmt,
+		func(ask *poolrpc.SubmitOrderRequest_Ask) {
+			// No preference.
+			ask.Ask.ConfirmationConstraints = zcNoPreference
+			// Script enforced.
+			ask.Ask.Details.ChannelType = scriptEnforcedType
+		},
+	)
+	require.NoError(t.t, err)
+
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.Details.ChannelType = scriptEnforcedType
+		},
+	)
+	require.NoError(t.t, err)
+
+	_, err = submitBidOrder(
+		secondTrader, account2.TraderKey, 100, bidAmt,
+		func(bid *poolrpc.SubmitOrderRequest_Bid) {
+			bid.Bid.ZeroConfChannel = true
+			bid.Bid.Details.ChannelType = scriptEnforcedType
+		},
+	)
+	require.NoError(t.t, err)
+
+	// Because the asker specified "no preference" the bidder should get
+	// two matches.
+	txs, _ = executeBatch(t, 1)
+
+	require.Len(t.t, txs, 1)
+
+	// Five new outputs:
+	// - Update auctioneer account
+	// - Update the two trader accounts
+	// - Open two channels one zero conf and one that needs confirmations.
+	require.Len(t.t, txs[0].TxOut, 5)
+
+	// Elle should have two zero conf channels and one pending one.
+	resp, err = elle.ListChannels(ctx, &lnrpc.ListChannelsRequest{})
+	require.NoError(t.t, err)
+	require.Len(t.t, resp.Channels, 2)
+	assertPendingChannel(
+		t, fourthTrader.cfg.LndNode, askAmt, true, charlie.PubKey,
+	)
+
+	// Let's now mine to clean up the mempool.
+	_ = mineBlocks(t, t.lndHarness, 3, 1)
+
+	assertNumPendingChannels(t, elle, 0)
+
+	// Now that we're done here, we'll close these channels to ensure that
+	// all the created nodes have a clean state after this test execution.
+	closeAllChannels(ctx, t, charlie)
+	closeAllChannels(ctx, t, dave)
+	closeAllChannels(ctx, t, elle)
 }

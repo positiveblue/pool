@@ -2,6 +2,7 @@ package itest
 
 import (
 	"context"
+	"testing"
 	"time"
 
 	"github.com/lightninglabs/pool/auctioneerrpc"
@@ -48,6 +49,7 @@ func testOrderSubmission(t *harnessTest) {
 
 	// Now try a correct one.
 	rpcAsk.LeaseDurationBlocks = 2016
+	rpcAsk.AnnouncementConstraints = auctioneerrpc.ChannelAnnouncementConstraints_ONLY_ANNOUNCED
 	ask, err := t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Ask{
 			Ask: rpcAsk,
@@ -68,6 +70,11 @@ func testOrderSubmission(t *harnessTest) {
 		t.t, auctioneerrpc.OrderState_ORDER_SUBMITTED,
 		list.Asks[0].Details.State,
 	)
+	require.Equal(
+		t.t,
+		auctioneerrpc.ChannelAnnouncementConstraints_ONLY_ANNOUNCED,
+		list.Asks[0].AnnouncementConstraints,
+	)
 
 	// Next, we'll submit a Bid as well to test the other code paths.
 	rpcBid := &poolrpc.Bid{
@@ -81,6 +88,7 @@ func testOrderSubmission(t *harnessTest) {
 		},
 		LeaseDurationBlocks: 2016,
 		Version:             uint32(orderT.VersionChannelType),
+		UnannouncedChannel:  true,
 	}
 	_, err = t.trader.SubmitOrder(ctx, &poolrpc.SubmitOrderRequest{
 		Details: &poolrpc.SubmitOrderRequest_Bid{
@@ -105,6 +113,8 @@ func testOrderSubmission(t *harnessTest) {
 		t.t, auctioneerrpc.NodeTier_TIER_1,
 		list.Bids[0].MinNodeTier,
 	)
+
+	require.True(t.t, list.Bids[0].UnannouncedChannel)
 
 	// We'll cancel this bid, then submit another one with an explicit node
 	// tier, this one should now match exactly.
@@ -174,4 +184,14 @@ func testOrderSubmission(t *harnessTest) {
 			ask.Details.State,
 		)
 	}
+}
+
+// CancelOrder cancels an active order for the provided trader.
+func CancelOrder(t *testing.T, trader *traderHarness, nonce orderT.Nonce) {
+	_, err := trader.CancelOrder(
+		context.Background(), &poolrpc.CancelOrderRequest{
+			OrderNonce: nonce[:],
+		},
+	)
+	require.NoError(t, err)
 }

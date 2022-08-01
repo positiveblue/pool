@@ -1623,7 +1623,7 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 
 		monitoring.ObserveBatchMatchAttempt(batchID[:], true)
 
-		// If IO has been requested we'll provide it the the execution
+		// If IO has been requested we'll provide it the execution
 		// context. Otherwise we'll just provide an empty IO struct.
 		io := &batchtx.BatchIO{}
 		if a.batchIOReq != nil {
