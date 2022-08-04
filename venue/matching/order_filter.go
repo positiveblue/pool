@@ -235,10 +235,34 @@ func NewTraderOnlineFilter(isOnline func([33]byte) bool) *TraderOnlineFilter {
 //
 // NOTE: This is part of the OrderFilter interface.
 func (p *TraderOnlineFilter) IsSuitable(o order.ServerOrder) bool {
-	if !p.isOnline(o.Details().AcctKey) {
+	var (
+		isSidecar   bool
+		multisigKey [33]byte
+	)
+
+	accKey := o.Details().AcctKey
+	if bid, ok := o.(*order.Bid); ok && bid.IsSidecar {
+		isSidecar = true
+		copy(multisigKey[:], bid.MultiSigKey[:])
+	}
+
+	switch {
+	case !isSidecar && !p.isOnline(accKey):
 		log.Debugf("Filtered out order %v with offline trader ("+
 			"node=%x, acct=%x)", o.Nonce(),
 			o.ServerDetails().NodeKey[:], o.Details().AcctKey[:])
+		return false
+
+	case isSidecar && !p.isOnline(accKey):
+		log.Debugf("Filtered out order %v with offline sidecar "+
+			"provider (acct=%x, multisig=%x)", o.Nonce(), accKey,
+			multisigKey)
+		return false
+
+	case isSidecar && !p.isOnline(multisigKey):
+		log.Debugf("Filtered out order %v with offline sidecar "+
+			"recipient (acct=%x, multisig=%x)", o.Nonce(), accKey,
+			multisigKey)
 		return false
 	}
 

@@ -35,6 +35,15 @@ var (
 			},
 		},
 	}
+	order4 = &order.Bid{
+		Bid: orderT.Bid{
+			Kit: orderT.Kit{
+				MaxBatchFeeRate: 345,
+				LeaseDuration:   2016,
+			},
+		},
+		IsSidecar: true,
+	}
 )
 
 func TestBatchFeeRateFilter(t *testing.T) {
@@ -84,6 +93,25 @@ func TestTraderOnlineFilter(t *testing.T) {
 	online = true
 	require.True(t, filter.IsSuitable(order1))
 	require.True(t, filter.IsSuitable(order2))
+
+	provider := true
+	sidecar := true
+	filter = NewTraderOnlineFilter(func(_ [33]byte) bool {
+		return provider && sidecar
+	})
+	require.True(t, filter.IsSuitable(order4))
+
+	provider = false
+	sidecar = true
+	require.False(t, filter.IsSuitable(order4))
+
+	provider = true
+	sidecar = false
+	require.False(t, filter.IsSuitable(order4))
+
+	provider = false
+	sidecar = false
+	require.False(t, filter.IsSuitable(order4))
 }
 
 func TestAccountPredicate(t *testing.T) {
