@@ -5,16 +5,16 @@ INSERT INTO orders(
         nonce, type, trader_key, version, state, fixed_rate, amount, units,
         units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration,
         channel_type, signature, multisig_key, node_key, token_id, user_agent,
-        archived) 
+        archived, created_at, archived_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19)
+        $17, $18, $19, $20, $21)
 ON CONFLICT (nonce)
 DO UPDATE SET
         type=$2, trader_key=$3, version=$4, state=$5, fixed_rate=$6, amount=$7,
         units=$8, units_unfulfilled=$9, min_units_match=$10, 
         max_batch_fee_rate=$11, lease_duration=$12, channel_type=$13, 
         signature=$14, multisig_key=$15, node_key=$16, token_id=$17, 
-        user_agent=$18, archived=$19;
+        user_agent=$18, archived=$19, created_at=$20, archived_at=$21;
 
 -- name: GetOrders :many
 SELECT * 
