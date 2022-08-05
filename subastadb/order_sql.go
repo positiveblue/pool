@@ -2,9 +2,11 @@ package subastadb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"net"
 	"strconv"
+	"time"
 
 	"github.com/btcsuite/btcd/btcutil"
 	orderT "github.com/lightninglabs/pool/order"
@@ -31,6 +33,11 @@ func (s *SQLStore) SubmitOrder(ctx context.Context,
 		case len(rows) != 0:
 			return ErrOrderExists
 		}
+
+		// Timestamp the order creation.
+		newOrder.ServerDetails().CreatedAt = time.Now().UTC().Truncate(
+			time.Microsecond,
+		)
 
 		// Create related row for the order in the orders table.
 		err = upsertOrderWithTx(ctx, txQueries, newOrder)
@@ -190,8 +197,10 @@ func upsertOrderWithTx(ctx context.Context, txQueries *postgres.Queries,
 		UserAgent:   serverDetails.UserAgent,
 
 		Archived: details.State.Archived(),
-	}
 
+		CreatedAt:  marshalSQLNullTime(serverDetails.CreatedAt),
+		ArchivedAt: marshalSQLNullTime(serverDetails.ArchivedAt),
+	}
 	return txQueries.UpsertOrder(ctx, params)
 }
 
@@ -478,6 +487,9 @@ func unmarshalOrder(row postgres.GetOrdersRow) (order.ServerOrder, error) {
 
 	serverKit.UserAgent = row.UserAgent
 
+	serverKit.CreatedAt = unmarshalSQLNullTime(row.CreatedAt)
+	serverKit.ArchivedAt = unmarshalSQLNullTime(row.ArchivedAt)
+
 	var serverOrder order.ServerOrder
 	switch {
 	case orderT.Type(row.Type) == orderT.TypeAsk:
@@ -536,5 +548,32 @@ func modifyOrderWithTx(ctx context.Context, txQueries *postgres.Queries,
 		modifier(dbOrder)
 	}
 
+	// If the order is getting archived record the current timestamp.
+	if !rows[0].Archived && dbOrder.Details().State.Archived() {
+		dbOrder.ServerDetails().ArchivedAt = time.Now().UTC().Truncate(
+			time.Microsecond,
+		)
+	}
+
 	return upsertOrderWithTx(ctx, txQueries, dbOrder)
+}
+
+// marshalSQLNullTime converts a time.Time to sql.NullTime. If the provided
+// time was the zero value, a null sql.NullType is returned.
+func marshalSQLNullTime(t time.Time) sql.NullTime {
+	var res sql.NullTime
+	if !t.IsZero() {
+		res.Time, res.Valid = t, true
+	}
+	return res
+}
+
+// unmarshalSQLNullTime converts a sql.NullTime to time.Time. If it was null,
+// the zero type for time.Time is returned.
+func unmarshalSQLNullTime(t sql.NullTime) time.Time {
+	var res time.Time
+	if t.Valid {
+		res = t.Time.UTC()
+	}
+	return res
 }

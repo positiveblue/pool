@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/json"
-	"errors"
 	"net"
 	"testing"
 
@@ -42,59 +41,41 @@ func TestSubmitOrder(t *testing.T) {
 	}
 	bid.AllowedNodeIDs = [][33]byte{{1, 2, 3}}
 	_, err := store.GetOrder(ctxb, bid.Nonce())
-	if !errors.Is(err, ErrNoOrder) {
-		t.Fatalf("unexpected error. got %v expected %v", err,
-			ErrNoOrder)
-	}
+	require.ErrorIs(t, err, ErrNoOrder)
 
 	// Store the dummy order now.
 	err = store.SubmitOrder(ctxb, bid)
-	if err != nil {
-		t.Fatalf("unable to store order: %v", err)
-	}
+	require.NoError(t, err)
+
 	storedOrder, err := store.GetOrder(ctxb, bid.Nonce())
-	if err != nil {
-		t.Fatalf("unable to retrieve order: %v", err)
-	}
+	require.NoError(t, err)
+
+	// Check that the order was timestamped.
+	require.False(t, storedOrder.ServerDetails().CreatedAt.IsZero())
 
 	assertEqualStoredOrder(t, bid, storedOrder)
 
 	// Check that we got the correct type back.
-	if storedOrder.Type() != orderT.TypeBid {
-		t.Fatalf("unexpected order type. got %d expected %d",
-			storedOrder.Type(), orderT.TypeBid)
-	}
+	require.Equal(t, orderT.TypeBid, storedOrder.Type())
 
 	// Get all orders and check that we get the same as when querying a
 	// specific one.
 	allOrders, err := store.GetOrders(ctxb)
-	if err != nil {
-		t.Fatalf("unable to get all orders: %v", err)
-	}
-	if len(allOrders) != 1 {
-		t.Fatalf("unexpected number of orders. got %d expected %d",
-			len(allOrders), 1)
-	}
+	require.NoError(t, err)
+	require.Len(t, allOrders, 1)
+
 	assertEqualStoredOrder(t, bid, allOrders[0])
 
-	if allOrders[0].Type() != orderT.TypeBid {
-		t.Fatalf("unexpected order type. got %d expected %d",
-			allOrders[0].Type(), orderT.TypeBid)
-	}
+	require.Equal(t, orderT.TypeBid, allOrders[0].Type())
 
 	// Finally, make sure we cannot submit the same order again.
 	err = store.SubmitOrder(ctxb, bid)
-	if !errors.Is(err, ErrOrderExists) {
-		t.Fatalf("unexpected error. got %v expected %v", err,
-			ErrOrderExists)
-	}
+	require.ErrorIs(t, err, ErrOrderExists)
 
 	// Check that the order that we get from the db (now in the cache)
 	// matches the expected values.
 	storedOrder, err = store.GetOrder(ctxb, bid.Nonce())
-	if err != nil {
-		t.Fatalf("unable to retrieve order: %v", err)
-	}
+	require.NoError(t, err)
 	assertEqualStoredOrder(t, bid, storedOrder)
 }
 
@@ -116,9 +97,8 @@ func TestUpdateOrders(t *testing.T) {
 		Kit: *dummyOrder(t),
 	}
 	err := store.SubmitOrder(ctxb, o1)
-	if err != nil {
-		t.Fatalf("unable to store order: %v", err)
-	}
+	require.NoError(t, err)
+
 	o2 := &order.Ask{
 		Ask: orderT.Ask{
 			Kit: *dummyClientOrder(t, 500000, 1337),
@@ -126,27 +106,18 @@ func TestUpdateOrders(t *testing.T) {
 		Kit: *dummyOrder(t),
 	}
 	err = store.SubmitOrder(ctxb, o2)
-	if err != nil {
-		t.Fatalf("unable to store order: %v", err)
-	}
+	require.NoError(t, err)
 
 	// Update the state of the first order and check that it is persisted.
 	err = store.UpdateOrder(
 		ctxb, o1.Nonce(),
 		order.StateModifier(orderT.StateCleared),
 	)
-	if err != nil {
-		t.Fatalf("unable to update order: %v", err)
-	}
+	require.NoError(t, err)
+
 	storedOrder, err := store.GetOrder(ctxb, o1.Nonce())
-	if err != nil {
-		t.Fatalf("unable to retrieve order: %v", err)
-	}
-	if storedOrder.Details().State != orderT.StateCleared {
-		t.Fatalf("unexpected order state. got %d expected %d",
-			storedOrder.Details().State,
-			orderT.StateCleared)
-	}
+	require.NoError(t, err)
+	require.Equal(t, orderT.StateCleared, storedOrder.Details().State)
 
 	// Bulk update the state of both orders and check that they are
 	// persisted correctly and moved out of the active bucket into the
@@ -154,46 +125,29 @@ func TestUpdateOrders(t *testing.T) {
 	stateModifier := order.StateModifier(orderT.StateExecuted)
 	for _, nonce := range []orderT.Nonce{o1.Nonce(), o2.Nonce()} {
 		err := store.UpdateOrder(ctxb, nonce, stateModifier)
-		if err != nil {
-			require.NoError(t, err)
-		}
+		require.NoError(t, err)
 	}
 
 	allOrders, err := store.GetOrders(ctxb)
-	if err != nil {
-		t.Fatalf("unable to get all orders: %v", err)
-	}
-	if len(allOrders) != 0 {
-		t.Fatalf("unexpected number of orders. got %d expected %d",
-			len(allOrders), 0)
-	}
+	require.NoError(t, err)
+	require.Len(t, allOrders, 0)
 
 	// Both orders should now be in the archived path.
 	allOrders, err = store.GetArchivedOrders(ctxb)
-	if err != nil {
-		t.Fatalf("unable to get all active orders: %v", err)
-	}
-	if len(allOrders) != 2 {
-		t.Fatalf("unexpected number of orders. got %d expected %d",
-			len(allOrders), 2)
-	}
+	require.NoError(t, err)
+	require.Len(t, allOrders, 2)
+
 	for _, o := range allOrders {
-		if o.Details().State != orderT.StateExecuted {
-			t.Fatalf("unexpected order state. got %d expected %d",
-				o.Details().State,
-				orderT.StateExecuted)
-		}
+		require.Equal(t, orderT.StateExecuted, o.Details().State)
+		// Check that orders get timestamped after being archived.
+		require.False(t, o.ServerDetails().ArchivedAt.IsZero())
 	}
 
 	// We should still be able to look up an order by its nonce, even if
 	// it's archived.
 	storedOrder, err = store.GetOrder(ctxb, o2.Nonce())
-	if err != nil {
-		t.Fatalf("unable to retrieve order: %v", err)
-	}
-	if !storedOrder.Details().State.Archived() {
-		t.Fatalf("expected stored order to be archived but was not")
-	}
+	require.NoError(t, err)
+	require.True(t, storedOrder.Details().State.Archived())
 
 	// Finally make sure we can't update an order that does not exist.
 	o3 := &order.Bid{
@@ -206,9 +160,7 @@ func TestUpdateOrders(t *testing.T) {
 	err = store.UpdateOrder(
 		ctxb, o3.Nonce(), order.StateModifier(orderT.StateExecuted),
 	)
-	if !errors.Is(err, ErrNoOrder) {
-		t.Fatalf("unexpected error. got %v wanted %v", err, ErrNoOrder)
-	}
+	require.ErrorIs(t, err, ErrNoOrder)
 }
 
 // assertEqualStoredOrder asserts that two server orders are equal removing

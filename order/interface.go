@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"time"
 
 	"github.com/lightninglabs/aperture/lsat"
 	orderT "github.com/lightninglabs/pool/order"
@@ -53,6 +54,14 @@ type Kit struct {
 	// UserAgent is the string that identifies the software running on the
 	// user's side that was used to initially submit this order.
 	UserAgent string
+
+	// CreatedAt is the timestamp set by the server to know when an order
+	// was submited.
+	CreatedAt time.Time
+
+	// ArchivedAt is the timestamp set by the server to know when an order
+	// changed from an active state to an archived one.
+	ArchivedAt time.Time
 }
 
 // ServerDetails returns the Kit of the server order.
