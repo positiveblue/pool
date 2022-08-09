@@ -76,6 +76,9 @@ type Reservation struct {
 	// that case they can still recover, if the transaction is ever
 	// confirmed.
 	TraderKeyRaw [33]byte
+
+	// Version is the version of the account to reserve.
+	Version accountT.Version
 }
 
 // State describes the different possible states of an account.
@@ -178,6 +181,9 @@ type Parameters struct {
 	// UserAgent is the string that identifies the software running on the
 	// user's side that was used to initially initialize this account.
 	UserAgent string
+
+	// Version is the version of the account.
+	Version accountT.Version
 }
 
 // Account encapsulates all of the details of a CLM account on-chain from the
@@ -248,6 +254,9 @@ type Account struct {
 	// UserAgent is the string that identifies the software running on the
 	// user's side that was used to initially initialize this account.
 	UserAgent string
+
+	// Version is the version of the account.
+	Version accountT.Version
 }
 
 // Output returns the current on-chain output associated with the account.
@@ -258,8 +267,8 @@ func (a *Account) Output() (*wire.TxOut, error) {
 	}
 
 	script, err := poolscript.AccountScript(
-		a.Expiry, traderKey, a.AuctioneerKey.PubKey, a.BatchKey,
-		a.Secret,
+		a.Version.ScriptVersion(), a.Expiry, traderKey,
+		a.AuctioneerKey.PubKey, a.BatchKey, a.Secret,
 	)
 	if err != nil {
 		return nil, err
@@ -292,8 +301,8 @@ func (a *Account) NextOutputScript() ([]byte, error) {
 
 	nextBatchKey := poolscript.IncrementKey(a.BatchKey)
 	return poolscript.AccountScript(
-		a.Expiry, traderKey, a.AuctioneerKey.PubKey, nextBatchKey,
-		a.Secret,
+		a.Version.ScriptVersion(), a.Expiry, traderKey,
+		a.AuctioneerKey.PubKey, nextBatchKey, a.Secret,
 	)
 }
 
@@ -314,6 +323,7 @@ func (a *Account) Copy(modifiers ...Modifier) *Account {
 		HeightHint: a.HeightHint,
 		OutPoint:   a.OutPoint,
 		UserAgent:  a.UserAgent,
+		Version:    a.Version,
 	}
 
 	if a.State != StatePendingOpen {
@@ -380,6 +390,14 @@ func OutPointModifier(outPoint wire.OutPoint) Modifier {
 func LatestTxModifier(tx *wire.MsgTx) Modifier {
 	return func(account *Account) {
 		account.LatestTx = tx
+	}
+}
+
+// VersionModifier is a functional option that modifies the version of an
+// account.
+func VersionModifier(version accountT.Version) Modifier {
+	return func(account *Account) {
+		account.Version = version
 	}
 }
 

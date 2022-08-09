@@ -12,6 +12,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/jackc/pgx/v4"
 	"github.com/lightninglabs/aperture/lsat"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/subastadb/postgres"
 )
@@ -94,6 +95,7 @@ func (s *SQLStore) ReserveAccount(ctx context.Context, tokenID lsat.TokenID,
 		Expiry:              int64(reservation.Expiry),
 		HeightHint:          int64(reservation.HeightHint),
 		TokenID:             tokenID[:],
+		Version:             int16(reservation.Version),
 	}
 	err := s.queries.CreateAccountReservation(ctx, params)
 	if err != nil {
@@ -603,6 +605,7 @@ func upsertAccountWithTx(ctx context.Context, txQueries *postgres.Queries,
 		OutPointHash:        outPointHash,
 		OutPointIndex:       outPointIndex,
 		UserAgent:           acc.UserAgent,
+		Version:             int16(acc.Version),
 	}
 
 	if acc.LatestTx != nil {
@@ -653,6 +656,7 @@ func createAccountDiffWithTx(ctx context.Context, txQueries *postgres.Queries,
 		OutPointIndex:       outPointIndex,
 		LatestTx:            latestTx.Bytes(),
 		UserAgent:           acc.UserAgent,
+		Version:             int16(acc.Version),
 	}
 	return txQueries.CreateAccountDiff(ctx, params)
 }
@@ -695,6 +699,7 @@ func updateAccountDiffWithTx(ctx context.Context, txQueries *postgres.Queries,
 		OutPointIndex:       outPointIndex,
 		LatestTx:            latestTx.Bytes(),
 		UserAgent:           acc.UserAgent,
+		Version:             int16(acc.Version),
 	}
 	return txQueries.UpdateAccountDiff(ctx, params)
 }
@@ -779,6 +784,7 @@ func unmarshalReservation(
 		Expiry:          uint32(row.Expiry),
 		HeightHint:      uint32(row.HeightHint),
 		TraderKeyRaw:    traderKeyRaw,
+		Version:         accountT.Version(row.Version),
 	}, nil
 }
 
@@ -838,6 +844,7 @@ func unmarshalAccount(row postgres.Account) (*account.Account, error) {
 		OutPoint:      *outpoint,
 		LatestTx:      latestTx,
 		UserAgent:     row.UserAgent,
+		Version:       accountT.Version(row.Version),
 	}, nil
 }
 
@@ -894,5 +901,6 @@ func unmarshalAccountDiff(row postgres.AccountDiff) (*account.Account, error) {
 		OutPoint:      *outpoint,
 		LatestTx:      latestTx,
 		UserAgent:     row.UserAgent,
+		Version:       accountT.Version(row.Version),
 	}, nil
 }

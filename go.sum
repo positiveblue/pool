@@ -720,8 +720,8 @@ github.com/lightninglabs/lndclient v0.15.0-10/go.mod h1:x5ZVWYON0qnlUIeQL/da8vk3
 github.com/lightninglabs/neutrino v0.13.2/go.mod h1:Cv/v8oHiPhuGiGvGgO+rIMhwCwEdsQFu6as840i2afw=
 github.com/lightninglabs/neutrino v0.14.2 h1:yrnZUCYMZ5ECtXhgDrzqPq2oX8awoAN2D/cgCewJcCo=
 github.com/lightninglabs/neutrino v0.14.2/go.mod h1:OICUeTCn+4Tu27YRJIpWvvqySxx4oH4vgdP33Sw9RDc=
-github.com/lightninglabs/pool v0.5.7-alpha.0.20220704095031-b6da8dd40125 h1:AoHd56FdOmh8mdJivfv/bIb5pRvdFRm1jl3JXjdGSuw=
-github.com/lightninglabs/pool v0.5.7-alpha.0.20220704095031-b6da8dd40125/go.mod h1:b/eROVgu2tjbZMkzObgltoexzcTRa8gG6NKQweuGFPI=
+github.com/lightninglabs/pool v0.5.7-alpha.0.20220805122546-536c50028382 h1:7gR/ZPK6dKKE2Bazfi6LZ4I2EFNg8diRONEnL5SVpsM=
+github.com/lightninglabs/pool v0.5.7-alpha.0.20220805122546-536c50028382/go.mod h1:0DMGQcDuAPheqzWZEv8ZE0Qptdpl1KPwM4ERGjybIX8=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display h1:RZJ8H4ueU/aQ9pFtx5wqsuD3B/DezrewJeVwDKKYY8E=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display/go.mod h1:2oKOBU042GKFHrdbgGiKax4xVrFiZu51lhacUZQ9MnE=
 github.com/lightningnetwork/lightning-onion v1.0.2-0.20220211021909-bb84a1ccb0c5 h1:TkKwqFcQTGYoI+VEqyxA8rxpCin8qDaYX0AfVRinT3k=
@@ -980,8 +980,9 @@ github.com/vishvananda/netns v0.0.0-20191106174202-0a2b9b5464df/go.mod h1:JP3t17
 github.com/xanzy/go-gitlab v0.15.0/go.mod h1:8zdQa/ri1dfn8eS3Ir1SyfvOKlw7WBJ8DVThkpGiXrs=
 github.com/xdg-go/pbkdf2 v1.0.0/go.mod h1:jrpuAogTd400dnrH08LKmI/xc1MbPOebTwRqcT5RDeI=
 github.com/xdg-go/scram v1.0.2/go.mod h1:1WAq6h33pAW+iRreB34OORO2Nf7qel3VV3fjBj+hCSs=
-github.com/xdg-go/stringprep v1.0.2 h1:6iq84/ryjjeRmMJwxutI51F2GIPlP5BfTvXHeYjyhBc=
 github.com/xdg-go/stringprep v1.0.2/go.mod h1:8F9zXuvzgwmyT5DUm4GUfZGDdT3W+LCvS6+da4O5kxM=
+github.com/xdg-go/stringprep v1.0.3 h1:kdwGpVNwPFtjs98xCGkHjQtGKh86rDcRZN17QEMCOIs=
+github.com/xdg-go/stringprep v1.0.3/go.mod h1:W3f5j4i+9rC0kuIEJL0ky1VpHXQU3ocBgklLGvcBnW8=
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f h1:J9EGpcZtP0E/raorCMxlFGSTBrsSlaDGf3jU/qvAE2c=
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f/go.mod h1:N2zxlSyiKSe5eX1tZViRH5QA0qijqEDrYZiPEAiq3wU=
 github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415 h1:EzJWgHovont7NscjpAxXsDA8S8BMYve8Y5+7cuRE7R0=

@@ -1,18 +1,19 @@
 package itest
 
 import (
-	"bytes"
 	"context"
 	"encoding/hex"
 	"fmt"
 	"strconv"
 	"strings"
+	"testing"
 	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/davecgh/go-spew/spew"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/auctioneerrpc"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
@@ -27,19 +28,79 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testBatchExecution is an end-to-end test of the entire system. In this test,
+// testBatchExecutionV0 is an end-to-end test of the entire system. In this test
 // we'll create two new traders and accounts for each trader. The traders will
 // then submit orders we know will match, causing us to trigger a manual batch
 // tick. From there the batch should proceed all the way to broadcasting the
 // batch execution transaction. From there, all channels created should be
-// operational and usable.
-func testBatchExecution(t *harnessTest) {
+// operational and usable. We test batch execution with all trader accounts
+// using v0 scripts. This test needs to be individual test cases (and not just
+// subtests) so we can start with a fresh auctioneer master account.
+func testBatchExecutionV0(t *harnessTest) {
 	ctx := context.Background()
+	runBatchExecutionTest(ctx, t, accountT.VersionInitialNoVersion, false)
+}
+
+// testBatchExecutionV1 is an end-to-end test of the entire system. In this test
+// we'll create two new traders and accounts for each trader. The traders will
+// then submit orders we know will match, causing us to trigger a manual batch
+// tick. From there the batch should proceed all the way to broadcasting the
+// batch execution transaction. From there, all channels created should be
+// operational and usable. We test batch execution with all trader accounts
+// using v1 scripts. This test needs to be individual test cases (and not just
+// subtests) so we can start with a fresh auctioneer master account.
+func testBatchExecutionV1(t *harnessTest) {
+	ctx := context.Background()
+	runBatchExecutionTest(ctx, t, accountT.VersionTaprootEnabled, false)
+}
+
+// testBatchExecutionV0ToV1 is an end-to-end test of the entire system. In this
+// test we'll create two new traders and accounts for each trader. The traders
+// will then submit orders we know will match, causing us to trigger a manual
+// batch tick. From there the batch should proceed all the way to broadcasting
+// the batch execution transaction. From there, all channels created should be
+// operational and usable. We test batch execution with all trader accounts
+// using v0 scripts at the beginning and then upgrading to v1 during a batch.
+// This test needs to be individual test cases (and not just subtests) so we can
+// start with a fresh auctioneer master account.
+func testBatchExecutionV0ToV1(t *harnessTest) {
+	ctx := context.Background()
+	runBatchExecutionTest(ctx, t, accountT.VersionTaprootEnabled, true)
+}
+
+// runBatchExecutionTest ensures that we can renew an account of the given
+// version in its confirmed state, and after it has expired.
+func runBatchExecutionTest(ctx context.Context, t *harnessTest,
+	version accountT.Version, allowAccountUpgrade bool) {
+
+	// We allow the second trader to upgrade its account.
+	var (
+		traderOpt         []traderCfgOpt
+		versionAfterBatch = version
+	)
+	if allowAccountUpgrade {
+		traderOpt = append(traderOpt, batchVersionOpt(
+			orderT.UpgradeAccountTaprootBatchVersion,
+		))
+		versionAfterBatch = accountT.VersionTaprootEnabled
+	}
+
+	// We run the same subtest multiple times, so we don't want to use the
+	// same trader. Let's replace the already existing Bob with a custom
+	// one.
+	// We need a third lnd node, Charlie that is used for the second trader.
+	bob := t.lndHarness.NewNode(t.t, "bob", lndDefaultArgs)
+	trader := setupTraderHarness(
+		t.t, t.lndHarness.BackendCfg, bob, t.auctioneer,
+	)
+	defer shutdownAndAssert(t, bob, trader)
+	t.lndHarness.SendCoins(t.t, 5_000_000, bob)
 
 	// We need a third lnd node, Charlie that is used for the second trader.
 	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
 		t.t, t.lndHarness.BackendCfg, charlie, t.auctioneer,
+		traderOpt...,
 	)
 	defer shutdownAndAssert(t, charlie, secondTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
@@ -48,11 +109,12 @@ func testBatchExecution(t *harnessTest) {
 	// for both traders. To test the message multi-plexing between token IDs
 	// and accounts, we add a secondary account to the second trader.
 	account1 := openAccountAndAssert(
-		t, t.trader, &poolrpc.InitAccountRequest{
+		t, trader, &poolrpc.InitAccountRequest{
 			AccountValue: defaultAccountValue,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 	account2 := openAccountAndAssert(
@@ -61,6 +123,7 @@ func testBatchExecution(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 	account3 := openAccountAndAssert(
@@ -69,6 +132,7 @@ func testBatchExecution(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -87,6 +151,7 @@ func testBatchExecution(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -99,7 +164,7 @@ func testBatchExecution(t *harnessTest) {
 
 	t.auctioneer.serverCfg.DefaultAuctioneerVersion = account.VersionTaprootEnabled
 	t.restartServer()
-	assertTraderSubscribed(t, t.trader, account1, 3)
+	assertTraderSubscribed(t, trader, account1, 3)
 	assertTraderSubscribed(t, secondTrader, account2, 3)
 	assertTraderSubscribed(t, secondTrader, account3, 3)
 
@@ -108,11 +173,9 @@ func testBatchExecution(t *harnessTest) {
 	const orderFixedRate = 100
 	askAmt := btcutil.Amount(1_500_000)
 	ask1Nonce, err := submitAskOrder(
-		t.trader, account1.TraderKey, orderFixedRate, askAmt,
+		trader, account1.TraderKey, orderFixedRate, askAmt,
 	)
-	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
-	}
+	require.NoError(t.t, err)
 	ask1Created := time.Now()
 
 	// Our second trader, connected to Charlie, wants to buy 8 units of
@@ -121,9 +184,7 @@ func testBatchExecution(t *harnessTest) {
 	bid1Nonce, err := submitBidOrder(
 		secondTrader, account2.TraderKey, orderFixedRate, bidAmt,
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 	bid1Created := time.Now()
 
 	// From the secondary account of the second trader, we also create an
@@ -134,9 +195,7 @@ func testBatchExecution(t *harnessTest) {
 	bid2Nonce, err := submitBidOrder(
 		secondTrader, account3.TraderKey, orderFixedRate, bidAmt2,
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 	bid2Created := time.Now()
 
 	// Make the third account submit a bid that will get matched, but shut
@@ -144,9 +203,7 @@ func testBatchExecution(t *harnessTest) {
 	_, err = submitBidOrder(
 		thirdTrader, account4.TraderKey, orderFixedRate, bidAmt2,
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	if err := thirdTrader.stop(false); err != nil {
 		t.Fatalf("unable to stop trader %v", err)
@@ -154,27 +211,23 @@ func testBatchExecution(t *harnessTest) {
 
 	// To ensure the venue is aware of account deposits/withdrawals, we'll
 	// process a deposit for the account behind the ask.
-	depositResp, err := t.trader.DepositAccount(ctx, &poolrpc.DepositAccountRequest{
-		TraderKey:       account1.TraderKey,
-		AmountSat:       100_000,
-		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
-	})
-	if err != nil {
-		t.Fatalf("could not deposit into account: %v", err)
-	}
+	depositResp, err := trader.DepositAccount(
+		ctx, &poolrpc.DepositAccountRequest{
+			TraderKey:       account1.TraderKey,
+			AmountSat:       100_000,
+			FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
+			NewVersion:      rpcVersion(version),
+		},
+	)
+	require.NoError(t.t, err)
 
 	// We should expect to see the transaction causing the deposit.
 	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
 	txids, err := waitForNTxsInMempool(
 		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
 	)
-	if err != nil {
-		t.Fatalf("deposit transaction not found in mempool: %v", err)
-	}
-	if !txids[0].IsEqual(depositTxid) {
-		t.Fatalf("found mempool transaction %v instead of %v",
-			txids[0], depositTxid)
-	}
+	require.NoError(t.t, err)
+	require.Equal(t.t, depositTxid, txids[0])
 
 	// Let's go ahead and confirm it. The account should remain in
 	// PendingUpdate as it hasn't met all of the required confirmations.
@@ -215,13 +268,13 @@ func testBatchExecution(t *harnessTest) {
 	// In our case, Bob is the maker so he should be marked as the
 	// initiator of the channel.
 	assertPendingChannel(
-		t, t.trader.cfg.LndNode, bidAmt, true, charlie.PubKey,
+		t, trader.cfg.LndNode, bidAmt, true, charlie.PubKey,
 	)
 	assertPendingChannel(
-		t, charlie, bidAmt, false, t.trader.cfg.LndNode.PubKey,
+		t, charlie, bidAmt, false, trader.cfg.LndNode.PubKey,
 	)
 	assertPendingChannel(
-		t, charlie, bidAmt2, false, t.trader.cfg.LndNode.PubKey,
+		t, charlie, bidAmt2, false, trader.cfg.LndNode.PubKey,
 	)
 
 	// We'll also make sure that the account now is in the special state
@@ -229,6 +282,25 @@ func testBatchExecution(t *harnessTest) {
 	// confirmation.
 	assertAuctioneerAccountState(
 		t, account1.TraderKey, account.StatePendingBatch,
+	)
+
+	// We now check that all accounts have the correct version we expect.
+	// This is still the same version as in the beginning, except for the
+	// accounts of the second trader (Charlie), which we allowed to upgrade
+	// the account during batches.
+	assertTraderAccountState(
+		t.t, trader, account1.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH, versionCheck(version),
+	)
+	assertTraderAccountState(
+		t.t, secondTrader, account2.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH,
+		versionCheck(versionAfterBatch),
+	)
+	assertTraderAccountState(
+		t.t, secondTrader, account3.TraderKey,
+		poolrpc.AccountState_PENDING_BATCH,
+		versionCheck(versionAfterBatch),
 	)
 
 	// We'll now mine a block to confirm the channel. We should find the
@@ -246,14 +318,9 @@ func testBatchExecution(t *harnessTest) {
 	masterAcct, err := t.auctioneer.AuctionAdminClient.MasterAccount(
 		ctxb, &adminrpc.EmptyRequest{},
 	)
-	if err != nil {
-		t.Fatalf("unable to read master acct: %v", err)
-	}
+	require.NoError(t.t, err)
 	acctOutPoint := masterAcct.Outpoint
-	if !bytes.Equal(acctOutPoint.Txid, firstBatchTXID[:]) {
-		t.Fatalf("master account mismatch: expected %v, got %x",
-			firstBatchTXID, acctOutPoint.Txid)
-	}
+	require.Equal(t.t, firstBatchTXID[:], acctOutPoint.Txid)
 
 	// We'll now mine another 3 blocks to ensure the channel itself is
 	// fully confirmed.
@@ -263,26 +330,26 @@ func testBatchExecution(t *harnessTest) {
 	// we should be able to make a payment between this new channel
 	// established.
 	assertActiveChannel(
-		t, t.trader.cfg.LndNode, int64(bidAmt), *firstBatchTXID,
+		t, trader.cfg.LndNode, int64(bidAmt), *firstBatchTXID,
 		charlie.PubKey, defaultOrderDuration,
 	)
 	assertActiveChannel(
-		t, t.trader.cfg.LndNode, int64(bidAmt2), *firstBatchTXID,
+		t, trader.cfg.LndNode, int64(bidAmt2), *firstBatchTXID,
 		charlie.PubKey, defaultOrderDuration,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt), *firstBatchTXID,
-		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
+		trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 	assertActiveChannel(
 		t, charlie, int64(bidAmt2), *firstBatchTXID,
-		t.trader.cfg.LndNode.PubKey, defaultOrderDuration,
+		trader.cfg.LndNode.PubKey, defaultOrderDuration,
 	)
 
 	// All executed orders should now have several events recorded. The ask
 	// was matched twice so it should have two sets of prepare->accepted->
 	// signed->finalized events plus one DB update.
-	assertOrderEvents(t, t.trader, ask1Nonce[:], ask1Created, 1, 8)
+	assertOrderEvents(t, trader, ask1Nonce[:], ask1Created, 1, 8)
 	assertOrderEvents(t, secondTrader, bid1Nonce[:], bid1Created, 1, 4)
 	assertOrderEvents(t, secondTrader, bid2Nonce[:], bid2Created, 1, 4)
 
@@ -296,18 +363,14 @@ func testBatchExecution(t *harnessTest) {
 	ctxt, cancel := context.WithTimeout(ctxb, defaultWaitTimeout)
 	defer cancel()
 	resp, err := charlie.AddInvoice(ctxt, invoice)
-	if err != nil {
-		t.Fatalf("unable to add invoice: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	ctxt, cancel = context.WithTimeout(ctxb, defaultWaitTimeout)
 	defer cancel()
 	err = completePaymentRequests(
-		ctxt, t.trader.cfg.LndNode, []string{resp.PaymentRequest}, true,
+		ctxt, trader.cfg.LndNode, []string{resp.PaymentRequest}, true,
 	)
-	if err != nil {
-		t.Fatalf("unable to send payments: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Now that the batch has been fully executed, we'll ensure that all
 	// the expected state has been updated from the client's PoV.
@@ -318,7 +381,7 @@ func testBatchExecution(t *harnessTest) {
 
 	// The party with the sell orders open should still have a single open
 	// ask order with 300k unfilled (3 units).
-	assertAskOrderState(t, t.trader, 3, ask1Nonce)
+	assertAskOrderState(t, trader, 3, ask1Nonce)
 
 	// We should now be able to find this snapshot. As this is the only
 	// batch created atm, we pass a nil batch ID so it'll look up the prior
@@ -330,7 +393,7 @@ func testBatchExecution(t *harnessTest) {
 			defaultOrderDuration: orderFixedRate,
 		},
 	)
-	assertTraderAssets(t, t.trader, 2, []*chainhash.Hash{firstBatchTXID})
+	assertTraderAssets(t, trader, 2, []*chainhash.Hash{firstBatchTXID})
 	assertTraderAssets(t, secondTrader, 2, []*chainhash.Hash{firstBatchTXID})
 
 	// We'll now do an additional round to ensure that we're able to
@@ -339,9 +402,7 @@ func testBatchExecution(t *harnessTest) {
 	// remaining Ask order that should now have zero units remaining.
 	bidAmt3 := btcutil.Amount(300_000)
 	_, err = submitBidOrder(secondTrader, account2.TraderKey, 100, bidAmt3)
-	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// We'll now tick off another batch, which should trigger a clearing of
 	// the market, to produce another channel which Charlie has just
@@ -351,10 +412,10 @@ func testBatchExecution(t *harnessTest) {
 
 	// Both parties should once again have a pending channel.
 	assertPendingChannel(
-		t, t.trader.cfg.LndNode, bidAmt3, true, charlie.PubKey,
+		t, trader.cfg.LndNode, bidAmt3, true, charlie.PubKey,
 	)
 	assertPendingChannel(
-		t, charlie, bidAmt3, false, t.trader.cfg.LndNode.PubKey,
+		t, charlie, bidAmt3, false, trader.cfg.LndNode.PubKey,
 	)
 	blocks = mineBlocks(t, t.lndHarness, 1, 1)
 	assertTxInBlock(t, blocks[0], secondBatchTXID)
@@ -366,15 +427,13 @@ func testBatchExecution(t *harnessTest) {
 	// At this point, both traders should have no outstanding orders as
 	// they've all be bundled up into a batch.
 	assertNoOrders(t, secondTrader)
-	assertNoOrders(t, t.trader)
+	assertNoOrders(t, trader)
 
 	// We should also be able to find this batch as well, with only 2
 	// orders being included in the batch. This time, we'll query with the
 	// exact batch ID we expect.
 	firstBatchKey, err := btcec.ParsePubKey(firstBatchID[:])
-	if err != nil {
-		t.Fatalf("unable to decode first batch key: %v", err)
-	}
+	require.NoError(t.t, err)
 	secondBatchKey := poolscript.IncrementKey(firstBatchKey)
 	secondBatchID := secondBatchKey.SerializeCompressed()
 	assertBatchSnapshot(
@@ -386,7 +445,7 @@ func testBatchExecution(t *harnessTest) {
 	)
 	assertNumFinalBatches(t, 2)
 	batchTXIDs = []*chainhash.Hash{firstBatchTXID, secondBatchTXID}
-	assertTraderAssets(t, t.trader, 3, batchTXIDs)
+	assertTraderAssets(t, trader, 3, batchTXIDs)
 	assertTraderAssets(t, secondTrader, 3, batchTXIDs)
 
 	// Now that we're done here, we'll close these channels to ensure that
@@ -400,20 +459,14 @@ func closeAllChannels(ctx context.Context, t *harnessTest,
 
 	chanReq := &lnrpc.ListChannelsRequest{}
 	openChans, err := node.ListChannels(context.Background(), chanReq)
-	if err != nil {
-		t.Fatalf("unable to list charlie's channels: %v", err)
-	}
+	require.NoError(t.t, err)
 	for _, openChan := range openChans.Channels {
 		chanPointStr := openChan.ChannelPoint
 		chanPointParts := strings.Split(chanPointStr, ":")
 		txid, err := chainhash.NewHashFromStr(chanPointParts[0])
-		if err != nil {
-			t.Fatalf("unable txid to convert to hash: %v", err)
-		}
+		require.NoError(t.t, err)
 		index, err := strconv.Atoi(chanPointParts[1])
-		if err != nil {
-			t.Fatalf("unable to convert string to int: %v", err)
-		}
+		require.NoError(t.t, err)
 
 		chanPoint := &lnrpc.ChannelPoint{
 			FundingTxid: &lnrpc.ChannelPoint_FundingTxidBytes{
@@ -424,9 +477,7 @@ func closeAllChannels(ctx context.Context, t *harnessTest,
 		closeUpdates, _, err := t.lndHarness.CloseChannel(
 			node, chanPoint, false,
 		)
-		if err != nil {
-			t.Fatalf("unable to close channel: %v", err)
-		}
+		require.NoError(t.t, err)
 
 		assertChannelClosed(
 			ctx, t, t.lndHarness, node, chanPoint, closeUpdates,
@@ -977,6 +1028,28 @@ func testScriptLevelEnforcement(t *harnessTest) {
 // the remaining balance is below the dust limit.
 func testBatchExecutionDustOutputs(t *harnessTest) {
 	ctx := context.Background()
+	ctxt, cancel := context.WithTimeout(ctx, defaultWaitTimeout)
+	defer cancel()
+
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runBatchExecutionDustOutputsTest(
+			ctxt, ht, accountT.VersionInitialNoVersion,
+		)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runBatchExecutionDustOutputsTest(
+			ctxt, ht, accountT.VersionTaprootEnabled,
+		)
+	})
+}
+
+// runBatchExecutionDustOutputsTest checks that an account is considered closed
+// if the remaining balance is below the dust limit for an account of the given
+// version.
+func runBatchExecutionDustOutputsTest(ctx context.Context, t *harnessTest,
+	version accountT.Version) {
 
 	// We need a third lnd node, Charlie that is used for the second trader.
 	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
@@ -993,6 +1066,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -1004,6 +1078,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -1018,19 +1093,24 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 	// The execution fee is 101 sats, chain fee 8162 sats (at the static
 	// fee rate of 12500 s/kw), so what is left will be dust (< 678 sats).
 	const orderSize = 100_000
-	const matchRate = 453_500
+	matchRate := uint32(453_500)
 	const durationBlocks = 2016
 
-	// Submit an ask an bid which will match exactly.
+	// Taproot accounts use 41 fewer vBytes on chain. With the fee rate of
+	// 12500 s/kw, which is 50 sat/vByte, we pay 2025 sats less. So we need
+	// to bump the match rate to 453_500 which is 93_744 sats.
+	if version == accountT.VersionTaprootEnabled {
+		matchRate = 464_000
+	}
+
+	// Submit an ask and bid which will match exactly.
 	_, err := submitAskOrder(
 		t.trader, account1.TraderKey, matchRate, orderSize,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.LeaseDurationBlocks = durationBlocks
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not submit ask order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	_, err = submitBidOrder(
 		secondTrader, account2.TraderKey, matchRate, orderSize,
@@ -1038,9 +1118,7 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 			bid.Bid.LeaseDurationBlocks = durationBlocks
 		},
 	)
-	if err != nil {
-		t.Fatalf("could not submit bid order: %v", err)
-	}
+	require.NoError(t.t, err)
 
 	// Let's kick the auctioneer now to try and create a batch.
 	_, batchTXIDs := executeBatch(t, 1)
@@ -1056,16 +1134,12 @@ func testBatchExecutionDustOutputs(t *harnessTest) {
 
 	// The batch tx should have 3 inputs: the master account and the two
 	// traders.
-	if len(batchTx.TxIn) != 3 {
-		t.Fatalf("expected 3 inputs, found %d", len(batchTx.TxIn))
-	}
+	require.Len(t.t, batchTx.TxIn, 3)
 
 	// There should be 3 outputs: master account, the new channel, and the
 	// first trader. The second trader's output is dust and does not
 	// materialize.
-	if len(batchTx.TxOut) != 3 {
-		t.Fatalf("expected 3 outputs, found %d", len(batchTx.TxOut))
-	}
+	require.Len(t.t, batchTx.TxOut, 3)
 
 	// We'll conclude by mining enough blocks to have the channels be
 	// confirmed.
@@ -1102,6 +1176,10 @@ func testConsecutiveBatches(t *harnessTest) {
 	defer shutdownAndAssert(t, charlie, secondTrader)
 	t.lndHarness.SendCoins(t.t, 5_000_000, charlie)
 
+	// We start with the default version for all accounts and then attempt
+	// to bump it during the batches.
+	version := accountT.VersionInitialNoVersion
+
 	// Create an account for the maker with plenty of sats.
 	askAccount := openAccountAndAssert(
 		t, t.trader, &poolrpc.InitAccountRequest{
@@ -1109,6 +1187,7 @@ func testConsecutiveBatches(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -1119,6 +1198,7 @@ func testConsecutiveBatches(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -1197,7 +1277,7 @@ func testConsecutiveBatches(t *harnessTest) {
 	// again. This time no batch should be possible.
 	_, _ = withdrawAccountAndAssertMempool(
 		t, secondTrader, bidAccount.TraderKey, -1, bidAccount.Value/2,
-		validTestAddr,
+		validTestAddr, version,
 	)
 	_, err = submitBidOrder(
 		secondTrader, bidAccount.TraderKey, askRate, bid3Size,

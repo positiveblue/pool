@@ -271,6 +271,7 @@ func (m *Manager) ReserveAccount(ctx context.Context, params *Parameters,
 		Expiry:          params.Expiry,
 		TraderKeyRaw:    traderKeyRaw,
 		HeightHint:      uint32(heightHint),
+		Version:         params.Version,
 	}
 	err = m.cfg.Store.ReserveAccount(ctx, tokenID, reservation)
 	if err != nil {
@@ -337,6 +338,9 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 	if reservation.Expiry != params.Expiry {
 		return fmt.Errorf("expiry does not match reservation")
 	}
+	if reservation.Version != params.Version {
+		return fmt.Errorf("version does not match reservation")
+	}
 
 	// With the reservation obtained, we'll need to derive the shared secret
 	// of the account based on the trader's and our key. This secret, along
@@ -351,7 +355,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 		return err
 	}
 	derivedScript, err := poolscript.AccountScript(
-		params.Expiry, params.TraderKey,
+		params.Version.ScriptVersion(), params.Expiry, params.TraderKey,
 		reservation.AuctioneerKey.PubKey, reservation.InitialBatchKey,
 		secret,
 	)
@@ -381,6 +385,7 @@ func (m *Manager) InitAccount(ctx context.Context, currentID lsat.TokenID,
 		HeightHint:    reservation.HeightHint,
 		OutPoint:      params.OutPoint,
 		UserAgent:     params.UserAgent,
+		Version:       params.Version,
 	}
 	copy(account.TraderKeyRaw[:], params.TraderKey.SerializeCompressed())
 	if err := m.cfg.Store.CompleteReservation(ctx, account); err != nil {
@@ -602,14 +607,18 @@ func (m *Manager) HandleAccountSpend(traderKey *btcec.PublicKey,
 	// If the witness is for a spend of the account expiration path, then
 	// we'll mark the account as closed as the account has expired and all
 	// the funds have been withdrawn.
-	case poolscript.IsExpirySpend(spendWitness):
+	case poolscript.IsExpirySpend(spendWitness) ||
+		poolscript.IsTaprootExpirySpend(spendWitness):
+
 		break
 
 	// If the witness is for a multi-sig spend, then either an order by the
 	// trader was matched, the trader has made an account modification, or
 	// the account was closed. If it was closed, then the account output
 	// shouldn't have been recreated.
-	case poolscript.IsMultiSigSpend(spendWitness):
+	case poolscript.IsMultiSigSpend(spendWitness) ||
+		poolscript.IsTaprootMultiSigSpend(spendWitness):
+
 		// An account cannot be spent without our knowledge, so we'll
 		// assume we always persist account updates before a broadcast
 		// of the spending transaction. Therefore, since we should
@@ -756,10 +765,14 @@ func (m *Manager) HandleAccountExpiry(traderKey *btcec.PublicKey,
 //
 // The lockedValue should be set to the value locked up in orders, including
 // fees that must be reserved in case the orders match.
+//
+// This method returns the server's signature, and, if it is a MuSig2 key spend,
+// the server's nonces.
 func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	lockedValue btcutil.Amount, newInputs []*wire.TxIn,
-	newOutputs []*wire.TxOut, modifiers []Modifier,
-	bestHeight uint32) ([]byte, error) {
+	newOutputs []*wire.TxOut, modifiers []Modifier, bestHeight uint32,
+	previousOutputs []*wire.TxOut, traderNonces []byte) ([]byte, []byte,
+	error) {
 
 	// Obtain the account's modification lock to ensure there are no other
 	// concurrent instances attempting to modify it as well.
@@ -780,7 +793,27 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	// Retrieve the details of the asked account.
 	account, err := m.cfg.Store.Account(ctx, traderKey, true)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
+	}
+
+	// If we're spending a Taproot account output, then we need to know the
+	// full UTXO information of each input that's being spent. We'll always
+	// spend the previous account output, so there's always one input and
+	// potentially some more specified by the trader.
+	if account.Version >= accountT.VersionTaprootEnabled &&
+		len(previousOutputs) != len(newInputs)+1 {
+
+		return nil, nil, fmt.Errorf("invalid number of previous "+
+			"outputs, got %d wanted %d", len(previousOutputs),
+			len(newInputs)+1)
+	}
+
+	// Make sure we're not downgrading the account.
+	afterModifications := account.Copy(modifiers...)
+	if account.Version > afterModifications.Version {
+		return nil, nil, fmt.Errorf("cannot downgrade account version "+
+			"from %d to %d", account.Version,
+			afterModifications.Version)
 	}
 
 	// Is the account banned? Don't allow modifications.
@@ -788,10 +821,10 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 		traderKey, bestHeight,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if isBanned {
-		return nil, NewErrBannedAccount(expiration)
+		return nil, nil, NewErrBannedAccount(expiration)
 	}
 
 	// If there aren't new account parameters to update, then we'll
@@ -801,23 +834,24 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	// since we're giving them a valid signature?
 	if len(modifiers) == 0 {
 		if account.State == StateClosed {
-			return nil, errors.New("account has already been closed")
+			return nil, nil, errors.New("account has already been " +
+				"closed")
 		}
 
 		// Accounts with a non-zero locked value cannot be closed.
 		if lockedValue > 0 {
-			return nil, newErrAccountLockedValue(lockedValue)
+			return nil, nil, newErrAccountLockedValue(lockedValue)
 		}
 
-		sig, _, _, err := m.signAccountSpend(
+		sig, serverNonces, _, _, err := m.signAccountSpend(
 			ctx, account, lockedValue, newInputs, newOutputs, nil,
-			bestHeight,
+			bestHeight, traderNonces, previousOutputs,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
-		return sig, nil
+		return sig, serverNonces, nil
 	}
 
 	// Otherwise, the trader wishes to modify their account. It can only be
@@ -826,19 +860,22 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	switch account.State {
 	case StateOpen, StatePendingBatch, StateExpired:
 	default:
-		return nil, fmt.Errorf("account must be in %v to be modified",
-			[]State{StateOpen, StatePendingBatch, StateExpired})
+		allowedStates := []State{
+			StateOpen, StatePendingBatch, StateExpired,
+		}
+		return nil, nil, fmt.Errorf("account must be in %v to be "+
+			"modified", allowedStates)
 	}
 
 	// Create the spending transaction for the account including any
 	// additional inputs and outputs provided by the trader, along with any
 	// account modifications.
-	sig, tx, newAccountPoint, err := m.signAccountSpend(
+	sig, serverNonces, tx, newAccountPoint, err := m.signAccountSpend(
 		ctx, account, lockedValue, newInputs, newOutputs, modifiers,
-		bestHeight,
+		bestHeight, traderNonces, previousOutputs,
 	)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// With the transaction crafted, store a pending diff of the account and
@@ -851,10 +888,10 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 	modifiers = append(modifiers, LatestTxModifier(tx))
 	err = m.cfg.Store.StoreAccountDiff(ctx, traderKey, modifiers)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	return sig, nil
+	return sig, serverNonces, nil
 }
 
 // signAccountSpend signs the spending transaction of an account that includes
@@ -862,7 +899,8 @@ func (m *Manager) ModifyAccount(ctx context.Context, traderKey *btcec.PublicKey,
 // a newly created account output if newAccountValue is not zero.
 func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	lockedValue btcutil.Amount, inputs []*wire.TxIn, outputs []*wire.TxOut,
-	modifiers []Modifier, bestHeight uint32) ([]byte, *wire.MsgTx,
+	modifiers []Modifier, bestHeight uint32, traderNonces []byte,
+	previousOutputs []*wire.TxOut) ([]byte, []byte, *wire.MsgTx,
 	*wire.OutPoint, error) {
 
 	// Construct the spending transaction that we'll sign.
@@ -888,7 +926,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		switch account.State {
 		case StatePendingBatch, StateExpired:
 			if account.Expiry == modifiedAccount.Expiry {
-				return nil, nil, nil, fmt.Errorf("cannot " +
+				return nil, nil, nil, nil, fmt.Errorf("cannot " +
 					"process update for expired account " +
 					"without new expiry")
 			}
@@ -902,7 +940,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 				modifiedAccount.Expiry, bestHeight,
 			)
 			if err != nil {
-				return nil, nil, nil, err
+				return nil, nil, nil, nil, err
 			}
 		}
 
@@ -911,13 +949,13 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		// equal to the locked value.
 		isWithdrawal := account.Value > modifiedAccount.Value
 		if isWithdrawal && modifiedAccount.Value < lockedValue {
-			return nil, nil, nil,
+			return nil, nil, nil, nil,
 				newErrAccountLockedValue(lockedValue)
 		}
 
 		nextAccountScript, err := modifiedAccount.NextOutputScript()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		tx.AddTxOut(&wire.TxOut{
 			Value:    int64(modifiedAccount.Value),
@@ -932,7 +970,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	// Ensure the crafted transaction passes some basic sanity checks.
 	err := blockchain.CheckTransactionSanity(btcutil.NewTx(tx))
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// Locate the outpoint of the new account output if it was recreated.
@@ -940,13 +978,14 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	if modifiedAccount != nil {
 		nextAccountScript, err := modifiedAccount.NextOutputScript()
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 		outputIndex, ok := poolscript.LocateOutputScript(
 			tx, nextAccountScript,
 		)
 		if !ok {
-			return nil, nil, nil, errors.New("account output not found")
+			return nil, nil, nil, nil, errors.New("account output " +
+				"not found")
 		}
 
 		// Verify that the new account value is sane.
@@ -954,7 +993,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 			btcutil.Amount(tx.TxOut[outputIndex].Value),
 		)
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, nil, nil, err
 		}
 
 		newAccountPoint = &wire.OutPoint{
@@ -967,7 +1006,7 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 	// the auctioneer's point-of-view and sign it.
 	traderKey, err := account.TraderKey()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	auctioneerKeyTweak := poolscript.AuctioneerKeyTweak(
 		traderKey, account.AuctioneerKey.PubKey,
@@ -979,12 +1018,12 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		account.BatchKey, account.Secret,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	accountOutput, err := account.Output()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	prevOutputs := make([]*wire.TxOut, len(tx.TxIn))
@@ -994,22 +1033,56 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 			accountInputIdx = i
 			prevOutputs[i] = accountOutput
 		} else {
-			// For compatibility with lnd 0.15, we need to send a
-			// previous output, even if we're not signing for that
-			// specific input. Otherwise, this call will fail in a
-			// remote signing setup of subasta. This will be
-			// properly addressed by the taproot upgrade where the
-			// trader always sends all previous outputs.
-			//
-			// TODO (guggero): Fix in Taproot account upgrade PR.
-			prevOutputs[i] = &wire.TxOut{
-				Value:    1,
-				PkScript: []byte("dummy"),
+			// Old clients might still not send the previous outputs
+			// here. But we need to make sure it's non-nil,
+			// otherwise lnd will panic in the remote signing setup.
+			prevOutputs[i] = &wire.TxOut{}
+
+			if len(previousOutputs) > i {
+				prevOutputs[i] = previousOutputs[i]
 			}
 		}
 	}
 	if accountInputIdx == -1 {
-		return nil, nil, nil, errors.New("account input not found")
+		return nil, nil, nil, nil, errors.New("account input not found")
+	}
+
+	if len(modifiers) == 0 {
+		log.Infof("Signing closing transaction %v for account %x",
+			tx.TxHash(), account.TraderKeyRaw)
+	} else {
+		tmpAccount := account.Copy(modifiers...)
+		valueDiff := tmpAccount.Value - account.Value
+
+		action := fmt.Sprintf("%v deposit into", valueDiff)
+		if valueDiff < 0 {
+			action = fmt.Sprintf("%v withdrawal from", -valueDiff)
+		}
+
+		log.Infof("Signing transaction %v for a %v account %x",
+			tx.TxHash(), action, account.TraderKeyRaw)
+	}
+
+	// If this is a Taproot enabled account, we now need to create a MuSig2
+	// partial signature.
+	if account.Version >= accountT.VersionTaprootEnabled {
+		var parsedNonces poolscript.MuSig2Nonces
+		if len(traderNonces) != len(parsedNonces) {
+			return nil, nil, nil, nil, fmt.Errorf("missing " +
+				"trader nonces for MuSig2 signature")
+		}
+
+		copy(parsedNonces[:], traderNonces)
+		partialSig, auctioneerNonces, err := m.signAccountMuSig2(
+			ctx, account, traderKey, parsedNonces, previousOutputs,
+			tx, accountInputIdx,
+		)
+		if err != nil {
+			return nil, nil, nil, nil, fmt.Errorf("error creating "+
+				"partial MuSig2 signature: %v", err)
+		}
+
+		return partialSig, auctioneerNonces, tx, newAccountPoint, nil
 	}
 
 	signDesc := &lndclient.SignDescriptor{
@@ -1025,32 +1098,46 @@ func (m *Manager) signAccountSpend(ctx context.Context, account *Account,
 		InputIndex:    accountInputIdx,
 	}
 
-	if len(modifiers) == 0 {
-		log.Infof("Signing closing transaction %v for account %x",
-			tx.TxHash(), account.TraderKeyRaw)
-	} else {
-		modifiedAccount := account.Copy(modifiers...)
-		valueDiff := modifiedAccount.Value - account.Value
-
-		action := fmt.Sprintf("%v deposit into", valueDiff)
-		if valueDiff < 0 {
-			action = fmt.Sprintf("%v withdrawal from", -valueDiff)
-		}
-
-		log.Infof("Signing transaction %v for a %v account %x",
-			tx.TxHash(), action, account.TraderKeyRaw)
-	}
-
 	sigs, err := m.cfg.Signer.SignOutputRaw(
 		ctx, tx, []*lndclient.SignDescriptor{signDesc}, prevOutputs,
 	)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	// We'll need to re-append the sighash flag since SignOutputRaw strips
 	// it.
-	return append(sigs[0], byte(signDesc.HashType)), tx, newAccountPoint, nil
+	return append(sigs[0], byte(signDesc.HashType)), nil, tx,
+		newAccountPoint, nil
+}
+
+// signAccountMuSig2 creates a partial MuSig2 signature for spending a Taproot
+// enabled account through the collaborative key spend path.
+func (m *Manager) signAccountMuSig2(ctx context.Context, account *Account,
+	traderKey *btcec.PublicKey, traderNonces poolscript.MuSig2Nonces,
+	previousOutputs []*wire.TxOut, tx *wire.MsgTx,
+	accountInputIdx int) ([]byte, []byte, error) {
+
+	sessionInfo, cleanup, err := poolscript.TaprootMuSig2SigningSession(
+		ctx, account.Expiry, traderKey, account.BatchKey, account.Secret,
+		account.AuctioneerKey.PubKey, m.cfg.Signer,
+		&account.AuctioneerKey.KeyLocator, &traderNonces,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("error creating MuSig2 session: %v",
+			err)
+	}
+
+	partialSig, err := poolscript.TaprootMuSig2Sign(
+		ctx, accountInputIdx, sessionInfo, m.cfg.Signer, tx,
+		previousOutputs, nil, nil,
+	)
+	if err != nil {
+		cleanup()
+		return nil, nil, fmt.Errorf("error signing batch TX: %v", err)
+	}
+
+	return partialSig, sessionInfo.PublicNonce[:], nil
 }
 
 // validateAccountValue ensures that a trader has requested a valid account
@@ -1111,7 +1198,11 @@ func (m *Manager) validateAccountParams(params *Parameters,
 	if err := m.validateAccountValue(params.Value); err != nil {
 		return err
 	}
-	return validateAccountExpiry(params.Expiry, bestHeight)
+	if err := validateAccountExpiry(params.Expiry, bestHeight); err != nil {
+		return err
+	}
+
+	return accountT.ValidateVersion(params.Version)
 }
 
 // numConfsForValue chooses an appropriate number of confirmations to wait for

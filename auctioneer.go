@@ -16,6 +16,7 @@ import (
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
@@ -1633,6 +1634,11 @@ func (a *Auctioneer) stateStep(currentState AuctionState, // nolint:gocyclo
 		// set the new account expiry height to the AccountDiff.
 		a.CalculateAccountExtensions(orderBatch)
 
+		// Check if any of the traders' accounts can be upgraded to
+		// Taproot accounts. If they can, we set the NewVersion field
+		// to the Taproot enabled version.
+		a.PerformAccountTaprootUpgrade(orderBatch)
+
 		exeCtx, err := batchtx.NewExecutionContext(
 			batchKey, orderBatch, masterAcct, io, s.batchFeeRate,
 			a.BestHeight(), a.cfg.FeeScheduler,
@@ -2114,6 +2120,9 @@ func (a *Auctioneer) CalculateAccountExtensions(orderBatch *matching.OrderBatch)
 		// This should never happen. If we have the account diff of a
 		// user in the FeeReport, that user should be active.
 		if at == nil {
+			log.Warnf("Trader not found in account diffs for " +
+				"auto account extension")
+
 			continue
 		}
 
@@ -2130,5 +2139,41 @@ func (a *Auctioneer) CalculateAccountExtensions(orderBatch *matching.OrderBatch)
 		}
 
 		diff.NewExpiry = newExpiry
+	}
+}
+
+// PerformAccountTaprootUpgrade upgrades an account's version to Taproot if the
+// trader signals compatibility for it.
+func (a *Auctioneer) PerformAccountTaprootUpgrade(
+	orderBatch *matching.OrderBatch) {
+
+	for _, diff := range orderBatch.FeeReport.AccountDiffs {
+		trader := a.cfg.GetActiveTrader(diff.StartingState.AccountKey)
+
+		// This should never happen. If we have the account diff of a
+		// user in the FeeReport, that user should be active.
+		if trader == nil {
+			log.Warnf("Trader not found in account diffs for " +
+				"taproot account upgrade")
+
+			continue
+		}
+
+		// If the account does not support account upgrade we do
+		// not have to change anything.
+		if !trader.BatchVersion.SupportsAccountTaprootUpgrade() {
+			continue
+		}
+
+		// If the account is already a taproot account, we also don't
+		// have to do anything.
+		if trader.AccountVersion >= accountT.VersionTaprootEnabled {
+			continue
+		}
+
+		log.Infof("Auto upgrading trader account %x to taproot in "+
+			"pending batch", diff.StartingState.AccountKey[:])
+
+		diff.NewVersion = accountT.VersionTaprootEnabled
 	}
 }

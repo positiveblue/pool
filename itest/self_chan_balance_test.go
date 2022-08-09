@@ -1,9 +1,12 @@
 package itest
 
 import (
+	"context"
 	"fmt"
+	"testing"
 
 	"github.com/btcsuite/btcd/btcutil"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolrpc"
 	"github.com/lightningnetwork/lnd/lnrpc"
@@ -14,6 +17,19 @@ import (
 // testSelfChanBalance tests that opening a channel with a self channel balance
 // through a bid order is possible.
 func testSelfChanBalance(t *harnessTest) {
+	t.t.Run("version 0", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runSelfChanBalanceTest(ht, accountT.VersionInitialNoVersion)
+	})
+	t.t.Run("version 1", func(tt *testing.T) {
+		ht := newHarnessTest(tt, t.lndHarness, t.auctioneer, t.trader)
+		runSelfChanBalanceTest(ht, accountT.VersionTaprootEnabled)
+	})
+}
+
+// runSelfChanBalanceTest tests that opening a channel with a self channel
+// balance through a bid order is possible.
+func runSelfChanBalanceTest(t *harnessTest, version accountT.Version) {
 	// We need a third lnd node, Charlie that is used for the second trader.
 	charlie := t.lndHarness.NewNode(t.t, "charlie", lndDefaultArgs)
 	secondTrader := setupTraderHarness(
@@ -30,6 +46,7 @@ func testSelfChanBalance(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 5_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 	takerAccount := openAccountAndAssert(
@@ -38,6 +55,7 @@ func testSelfChanBalance(t *harnessTest) {
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 5_000,
 			},
+			Version: rpcVersion(version),
 		},
 	)
 
@@ -47,7 +65,7 @@ func testSelfChanBalance(t *harnessTest) {
 	// balance bid.
 	const orderFixedRate = 100
 	ask1Amt := btcutil.Amount(200_000)
-	_, err := submitAskOrder(
+	ask1, err := submitAskOrder(
 		t.trader, makerAccount.TraderKey, orderFixedRate, ask1Amt,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.Version = uint32(orderT.VersionLeaseDurationBuckets)
@@ -77,7 +95,7 @@ func testSelfChanBalance(t *harnessTest) {
 	// Let's add a second ask with the correct version now so it can be
 	// matched against the bid.
 	ask2Amt := btcutil.Amount(300_000)
-	_, err = submitAskOrder(
+	ask2, err := submitAskOrder(
 		t.trader, makerAccount.TraderKey, orderFixedRate, ask2Amt,
 		func(ask *poolrpc.SubmitOrderRequest_Ask) {
 			ask.Ask.Version = uint32(orderT.VersionSelfChanBalance)
@@ -171,7 +189,9 @@ func testSelfChanBalance(t *harnessTest) {
 	premium := orderT.FixedRatePremium(orderFixedRate).LumpSumPremium(
 		bidAmt, defaultOrderDuration,
 	)
-	chainFees := orderT.EstimateTraderFee(1, chainfee.SatPerKWeight(12_500))
+	chainFees := orderT.EstimateTraderFee(
+		1, chainfee.SatPerKWeight(12_500), version,
+	)
 	makerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -
 		chainFees - bidAmt + premium
 	takerBalance := btcutil.Amount(defaultAccountValue) - submissionFee -
@@ -184,4 +204,21 @@ func testSelfChanBalance(t *harnessTest) {
 		t, secondTrader, takerAccount.TraderKey, takerBalance,
 		takerAccount.ExpirationHeight, poolrpc.AccountState_OPEN,
 	)
+
+	// Make sure we can run the same subtest again with the same node, so
+	// let's clean up.
+	ctx := context.Background()
+	closeAllChannels(ctx, t, charlie)
+	_, _ = t.trader.CancelOrder(ctx, &poolrpc.CancelOrderRequest{
+		OrderNonce: ask1[:],
+	})
+	_, _ = t.trader.CancelOrder(ctx, &poolrpc.CancelOrderRequest{
+		OrderNonce: ask2[:],
+	})
+	closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
+		TraderKey: makerAccount.TraderKey,
+	})
+	closeAccountAndAssert(t, secondTrader, &poolrpc.CloseAccountRequest{
+		TraderKey: takerAccount.TraderKey,
+	})
 }

@@ -6,6 +6,7 @@ import (
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/poolscript"
 	"github.com/lightninglabs/subasta/account"
 )
@@ -58,6 +59,9 @@ type Trader struct {
 	// AccountBalance is the current account balance of this trader. All
 	// trading fees and chain fees will be extracted from this value.
 	AccountBalance btcutil.Amount
+
+	// AccountVersion is the current version of the account.
+	AccountVersion accountT.Version
 }
 
 // NewTraderFromAccount creates a new trader instance from a given account.
@@ -68,6 +72,7 @@ func NewTraderFromAccount(acct *account.Account) Trader {
 		AccountOutPoint: acct.OutPoint,
 		AccountBalance:  acct.Value,
 		VenueSecret:     acct.Secret,
+		AccountVersion:  acct.Version,
 	}
 
 	if acct.BatchKey != nil {

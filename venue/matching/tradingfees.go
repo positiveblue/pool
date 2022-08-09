@@ -3,6 +3,7 @@ package matching
 import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/wire"
+	accountT "github.com/lightninglabs/pool/account"
 	orderT "github.com/lightninglabs/pool/order"
 )
 
@@ -23,6 +24,10 @@ type AccountDiff struct {
 	// NewExpiry is the new expiry height for this account. This field
 	// can be safely ignored if its value is 0.
 	NewExpiry uint32
+
+	// NewVersion is the new version for this account. This field can be
+	// safely ignored if its value is 0.
+	NewVersion accountT.Version
 }
 
 // TradingFeeReport is the breakdown of the balance fluctuations to a trade's

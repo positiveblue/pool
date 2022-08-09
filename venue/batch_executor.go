@@ -11,12 +11,14 @@ import (
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
+	"github.com/btcsuite/btcd/btcec/v2/schnorr/musig2"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
 	"github.com/btcsuite/btcd/wire"
 	"github.com/davecgh/go-spew/spew"
 	"github.com/lightninglabs/lndclient"
+	accountT "github.com/lightninglabs/pool/account"
 	"github.com/lightninglabs/pool/chaninfo"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/poolscript"
@@ -27,6 +29,7 @@ import (
 	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/batchtx"
 	"github.com/lightninglabs/subasta/venue/matching"
+	"github.com/lightningnetwork/lnd/input"
 	"github.com/lightningnetwork/lnd/keychain"
 	"github.com/lightningnetwork/lnd/lnwallet"
 	"github.com/lightningnetwork/lnd/lnwallet/chainfee"
@@ -101,6 +104,14 @@ type SignBeginMsg struct {
 	// BatchID is the serialized compressed pubkey that comprises the batch
 	// ID.
 	BatchID orderT.BatchID
+
+	// PreviousOutputs is the list of UTXOs the batch transaction is
+	// spending.
+	PreviousOutputs []*wire.TxOut
+
+	// AccountNonces is a map of all public nonces of the server, keyed by
+	// the account key they were created for.
+	AccountNonces orderT.AccountNonces
 }
 
 // Batch returns the target batch ID this message refers to.
@@ -216,7 +227,12 @@ type TraderSignMsg struct {
 	// Sigs is the set of account input signatures for each account the
 	// trader has in this batch. This maps the trader's account ID to the
 	// set of valid witnesses.
-	Sigs map[string]*ecdsa.Signature
+	Sigs map[string][]byte
+
+	// TraderNonces is the set of MuSig2 signing session public nonces for
+	// each of the Taproot enabled accounts of the trader. This is keyed by
+	// the trader's account ID.
+	TraderNonces map[string][]byte
 
 	// ChannelInfos tracks each channel's information relevant to the trader
 	// that must be submitted to the auctioneer in order to enforce the
@@ -518,6 +534,54 @@ func (b *BatchExecutor) signAcctInput(masterAcct *account.Auctioneer,
 	return sig, witnessScript, nil
 }
 
+// signAcctInputTaproot attempts to produce a valid Schnorr signatures which
+// is needed to spend a trader's account input. The final signature is assembled
+// through MuSig2 where each participant creates a partial signature. We already
+// have the trader's partial signature, now we just need to add the
+// auctioneer's and combine the two parts.
+func (b *BatchExecutor) signAcctInputTaproot(env *environment,
+	trader *ActiveTrader, traderAcctInput *batchtx.BatchInput,
+	rawTraderSig []byte, rawTraderNonces []byte) ([]byte, error) {
+
+	ctx := context.Background()
+	batchTx := env.exeCtx.ExeTx
+
+	log.Debugf("Signing taproot account input for trader=%x",
+		trader.AccountKey[:])
+
+	// First, we make sure the trader's nonces are correct.
+	if len(rawTraderNonces) != musig2.PubNonceSize {
+		return nil, fmt.Errorf("invalid trader nonce sice %d, wanted "+
+			"%d", len(rawTraderNonces), musig2.PubNonceSize)
+	}
+
+	var (
+		remoteNonces     poolscript.MuSig2Nonces
+		remotePartialSig [input.MuSig2PartialSigSize]byte
+	)
+	copy(remoteNonces[:], rawTraderNonces)
+	copy(remotePartialSig[:], rawTraderSig)
+
+	// We already have a signing session in the environment that we used to
+	// prepare our own nonces.
+	sessionInfo, ok := env.acctMuSig2Sessions[trader.AccountKey]
+	if !ok {
+		return nil, fmt.Errorf("no active MuSig2 signing sessino for "+
+			"account %x", trader.AccountKey[:])
+	}
+
+	finalSig, err := poolscript.TaprootMuSig2Sign(
+		ctx, int(traderAcctInput.InputIndex), sessionInfo, b.cfg.Signer,
+		batchTx, env.exeCtx.PrevOutputs(), &remoteNonces,
+		&remotePartialSig,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error signing batch TX: %v", err)
+	}
+
+	return finalSig, nil
+}
+
 // stateStep takes the current state, environment and a trigger and attempts to
 // advance the state machine to produce a new modified environment, and the
 // next state we' should transition to.
@@ -683,6 +747,16 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 					"trader=%x", m.Src())
 
 				env.cancelTimerForTrader(m.Src())
+
+				// The trader is ready to sign, let's create a
+				// MuSig2 signing session now, so we can send
+				// our nonces in the next message to the trader.
+				err := env.prepareMuSig2SigningSession(
+					m.Src(), b.cfg.Signer,
+				)
+				if err != nil {
+					return 0, env, err
+				}
 
 			// We got a message that we don't expect at this time.
 			default:
@@ -984,13 +1058,16 @@ func (b *BatchExecutor) handleSignMsg(signMsg *TraderSignMsg,
 	// that sent the message is a sidecar channel recipient?
 	_, isSidecarRecipient := env.sidecarTraders[src]
 
+	log.Tracef("Received sign msg=%s", spew.Sdump(signMsg))
+
 	// Sidecar recipients are the only traders that don't send signatures.
 	// Everyone else must always send signatures in this step.
 	if !isSidecarRecipient {
-		acctSig, ok := signMsg.Sigs[hex.EncodeToString(src[:])]
+		rpcAcctKey := hex.EncodeToString(src[:])
+		rawAcctSig, ok := signMsg.Sigs[rpcAcctKey]
 		if !ok {
-			return 0, fmt.Errorf("account witness for %x not "+
-				"found", src)
+			return 0, fmt.Errorf("account witness for %s not "+
+				"found", rpcAcctKey)
 		}
 
 		// As we want to fully validate the witness, we'll generate our
@@ -1004,28 +1081,78 @@ func (b *BatchExecutor) handleSignMsg(signMsg *TraderSignMsg,
 			return 0, fmt.Errorf("unable to find input for trader "+
 				"%x", trader.AccountKey[:])
 		}
-		auctioneerSig, witnessScript, err := b.signAcctInput(
-			env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
-			traderAcctInput, env.exeCtx.PrevOutputs(),
-		)
-		if err != nil {
-			return 0, fmt.Errorf("unable to generate auctioneer "+
-				"sig: %v", err)
-		}
 
-		// We'll now full validate the witness to ensure we'll be able
-		// to broadcast the funding transaction. If the trader gives us
-		// an invalid witness, then we'll return an error identifying
-		// them as rogue.
-		err = env.validateAccountWitness(
-			witnessScript, traderAcctInput, acctSig, auctioneerSig,
-		)
-		if err != nil {
+		var validateErr error
+		switch trader.AccountVersion {
+		case accountT.VersionTaprootEnabled:
+			log.Tracef("Creating MuSig2 combined signature for "+
+				"account %x", trader.AccountKey[:])
+
+			rawTraderNonces, ok := signMsg.TraderNonces[rpcAcctKey]
+			if !ok {
+				validateErr = fmt.Errorf("trader nonces for "+
+					"taproot account %s not found",
+					rpcAcctKey)
+				break
+			}
+
+			fullSig, err := b.signAcctInputTaproot(
+				env, trader, traderAcctInput, rawAcctSig,
+				rawTraderNonces,
+			)
+			if err != nil {
+				return 0, fmt.Errorf("unable to generate "+
+					"MuSig2 full sig: %v", err)
+			}
+
+			// We'll now full validate the witness to ensure we'll
+			// be able to broadcast the funding transaction. If the
+			// trader gives us an invalid witness, then we'll return
+			// an error identifying them as rogue.
+			validateErr = env.validateAccountWitnessTaproot(
+				traderAcctInput, fullSig,
+			)
+		default:
+			log.Tracef("Creating auctioneer signature for "+
+				"account %x", trader.AccountKey[:])
+
+			// We weren't able to formally validate the trader's
+			// signature before because we weren't sure if it is
+			// supposed to be a DER encoded ECDSA signature or a
+			// MuSig2 partial signature. Now we know, so let's make
+			// sure the format is correct before even attempting to
+			// run the script.
+			traderSig, err := ecdsa.ParseDERSignature(rawAcctSig)
+			if err != nil {
+				validateErr = fmt.Errorf("unable to parse "+
+					"account %x sig: %v", rpcAcctKey, err)
+				break
+			}
+
+			auctioneerSig, witnessScript, err := b.signAcctInput(
+				env.exeCtx.MasterAcct, trader, env.exeCtx.ExeTx,
+				traderAcctInput, env.exeCtx.PrevOutputs(),
+			)
+			if err != nil {
+				return 0, fmt.Errorf("unable to generate "+
+					"auctioneer sig: %v", err)
+			}
+
+			// We'll now full validate the witness to ensure we'll
+			// be able to broadcast the funding transaction. If the
+			// trader gives us an invalid witness, then we'll return
+			// an error identifying them as rogue.
+			validateErr = env.validateAccountWitness(
+				witnessScript, traderAcctInput, traderSig,
+				auctioneerSig,
+			)
+		}
+		if validateErr != nil {
 			log.Warnf("trader=%x sent invalid signature: %v",
-				src[:], err)
+				src[:], validateErr)
 
 			env.tempErr = &ErrInvalidWitness{
-				VerifyErr:   err,
+				VerifyErr:   validateErr,
 				Trader:      src,
 				OrderNonces: env.traderToOrders[src],
 			}
@@ -1246,7 +1373,7 @@ func (b *BatchExecutor) executor() {
 						Err: err,
 					}
 
-					env.cancel()
+					env.cancel(b.cfg.Signer)
 					env = environment{}
 
 					// Error was encountered during batch
@@ -1297,7 +1424,7 @@ func (b *BatchExecutor) executor() {
 
 					env.resultChan <- env.result
 
-					env.cancel()
+					env.cancel(b.cfg.Signer)
 					env = environment{}
 
 					// Now that the batch was completed, we
@@ -1349,7 +1476,7 @@ func (b *BatchExecutor) executor() {
 			}()
 
 		case <-b.quit:
-			env.cancel()
+			env.cancel(b.cfg.Signer)
 
 			return
 		}

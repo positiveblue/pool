@@ -39,9 +39,22 @@ var testCases = []*testCase{
 		name: "submit order",
 		test: testOrderSubmission,
 	},
+	// The following three tests need to be individual test cases (and not
+	// just subtests) so we can start with a fresh auctioneer master
+	// account.
 	{
-		name:            "batch execution",
-		test:            testBatchExecution,
+		name:            "batch execution account v0",
+		test:            testBatchExecutionV0,
+		useV0MasterAcct: true,
+	},
+	{
+		name:            "batch execution account v1",
+		test:            testBatchExecutionV1,
+		useV0MasterAcct: true,
+	},
+	{
+		name:            "batch execution account v0 upgrade to v1",
+		test:            testBatchExecutionV0ToV1,
 		useV0MasterAcct: true,
 	},
 	{

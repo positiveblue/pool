@@ -325,54 +325,39 @@ func TestAccountDiffs(t *testing.T) {
 	a := testAccount
 	reservation := testReservation
 	err := store.ReserveAccount(ctx, testTokenID, &reservation)
-	if err != nil {
-		t.Fatalf("unable to reserve account: %v", err)
-	}
-	if err := store.CompleteReservation(ctx, &a); err != nil {
-		t.Fatalf("unable to complete reservation: %v", err)
-	}
+	require.NoError(t, err)
+	require.NoError(t, store.CompleteReservation(ctx, &a))
 
 	traderKey, err := a.TraderKey()
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	// ErrNoDiff should be returned if we call CommitAccountDiff without a
 	// diff being present.
 	err = store.CommitAccountDiff(ctx, traderKey)
-	if !errors.Is(err, account.ErrNoDiff) {
-		t.Fatalf("expected error %q, got %q", account.ErrNoDiff, err)
-	}
+	require.ErrorIs(t, err, account.ErrNoDiff)
+
+	// Make sure the account was stored correctly from the reservation.
+	acctStored, err := store.Account(ctx, traderKey, false)
+	require.NoError(t, err)
+	require.Equal(t, &a, acctStored)
 
 	// Proceed to store a pending diff.
 	mods := []account.Modifier{
 		account.StateModifier(account.StatePendingUpdate),
 	}
-	if err := store.StoreAccountDiff(ctx, traderKey, mods); err != nil {
-		t.Fatalf("unable to store account diff: %v", err)
-	}
+	require.NoError(t, store.StoreAccountDiff(ctx, traderKey, mods))
 
 	// Requesting the account without the diff should return what we expect.
 	accountWithoutDiff, err := store.Account(ctx, traderKey, false)
-	if err != nil {
-		t.Fatalf("unable to retrieve account: %v", err)
-	}
-	if !reflect.DeepEqual(accountWithoutDiff, &a) {
-		t.Fatal("stored account does not match expected")
-	}
+	require.NoError(t, err)
+	require.Equal(t, &a, accountWithoutDiff)
 
 	// Similarly, requesting the account with the diff should return the
 	// account with the diff applied.
 	accountWithDiff, err := store.Account(ctx, traderKey, true)
-	if err != nil {
-		t.Fatalf("unable to retrieve account diff: %v", err)
-	}
+	require.NoError(t, err)
 	aDiff := a.Copy(mods...)
-	if !reflect.DeepEqual(accountWithDiff, aDiff) {
-		t.Fatalf("expected account diff: %v\ngot: %v",
-			spew.Sdump(aDiff),
-			spew.Sdump(accountWithDiff))
-	}
+	require.Equal(t, accountWithDiff, aDiff)
 
 	// Querying all accounts while one of them has a diff should also not
 	// result in an error and we also should only get one even though we
@@ -384,64 +369,38 @@ func TestAccountDiffs(t *testing.T) {
 	// Storing a diff while we already have one should result in
 	// ErrAccountDiffAlreadyExists.
 	err = store.StoreAccountDiff(ctx, traderKey, mods)
-	if !errors.Is(err, ErrAccountDiffAlreadyExists) {
-		t.Fatalf("expected error %q, got %q",
-			ErrAccountDiffAlreadyExists, err)
-	}
+	require.ErrorIs(t, err, ErrAccountDiffAlreadyExists)
 
 	// Commit the diff. We should expect to see the diff applied
 	// when requesting the account without its diff.
-	if err := store.CommitAccountDiff(ctx, traderKey); err != nil {
-		t.Fatalf("unable to commit account diff: %v", err)
-	}
+	require.NoError(t, store.CommitAccountDiff(ctx, traderKey))
 	committedAccount, err := store.Account(ctx, traderKey, false)
-	if err != nil {
-		t.Fatalf("unable to retrieve account: %v", err)
-	}
-	if !reflect.DeepEqual(committedAccount, aDiff) {
-		t.Fatalf("expected committed account: %v\ngot: %v",
-			spew.Sdump(aDiff),
-			spew.Sdump(committedAccount))
-	}
+	require.NoError(t, err)
+
+	require.Equal(t, aDiff, committedAccount)
 
 	// Attempt to store another diff, to ensure the previous one was
 	// cleared.
-	if err := store.StoreAccountDiff(ctx, traderKey, mods); err != nil {
-		t.Fatalf("unable to store account diff: %v", err)
-	}
+	require.NoError(t, store.StoreAccountDiff(ctx, traderKey, mods))
 
 	// Update the account diff and ensure it was updated correctly.
 	diffMods := []account.Modifier{
 		account.ValueModifier(btcutil.SatoshiPerBitcoin),
 	}
-	if err := store.UpdateAccountDiff(ctx, traderKey, diffMods); err != nil {
-		t.Fatalf("unable to update account diff: %v", err)
-	}
+	require.NoError(t, store.UpdateAccountDiff(ctx, traderKey, diffMods))
 	accountWithUpdatedDiff, err := store.Account(ctx, traderKey, true)
-	if err != nil {
-		t.Fatalf("unable to retrieve account diff: %v", err)
-	}
+	require.NoError(t, err)
 	aWithUpdatedDiff := a.Copy(append(mods, diffMods...)...)
-	if !reflect.DeepEqual(accountWithUpdatedDiff, aWithUpdatedDiff) {
-		t.Fatal("stored account diff does not match expected")
-	}
+	require.Equal(t, accountWithUpdatedDiff, aWithUpdatedDiff)
 
 	// Finally, delete the diff and ensure it wasn't applied.
-	if err := store.DeleteAccountDiff(ctx, traderKey); err != nil {
-		t.Fatalf("unable to delete account diff: %v", err)
-	}
+	require.NoError(t, store.DeleteAccountDiff(ctx, traderKey))
 	finalAccount, err := store.Account(ctx, traderKey, true)
-	if err != nil {
-		t.Fatalf("unable to retrieve account: %v", err)
-	}
-	if !reflect.DeepEqual(finalAccount, committedAccount) {
-		t.Fatal("expected account to not have deleted diff applied")
-	}
+	require.NoError(t, err)
+	require.Equal(t, committedAccount, finalAccount)
 
 	// We shouldn't be able to update an account diff after it no longer
 	// exists.
 	err = store.UpdateAccountDiff(ctx, traderKey, diffMods)
-	if !errors.Is(err, account.ErrNoDiff) {
-		t.Fatalf("expteced ErrNoDiff, got %v", err)
-	}
+	require.ErrorIs(t, err, account.ErrNoDiff)
 }

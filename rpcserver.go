@@ -19,7 +19,6 @@ import (
 
 	"github.com/btcsuite/btcd/blockchain"
 	"github.com/btcsuite/btcd/btcec/v2"
-	"github.com/btcsuite/btcd/btcec/v2/ecdsa"
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/btcsuite/btcd/chaincfg/chainhash"
 	"github.com/btcsuite/btcd/txscript"
@@ -375,6 +374,7 @@ func (s *rpcServer) ReserveAccount(ctx context.Context,
 		Value:     btcutil.Amount(req.AccountValue),
 		Expiry:    req.AccountExpiry,
 		TraderKey: traderKey,
+		Version:   accountT.Version(req.Version),
 	}
 	reservation, err := s.accountManager.ReserveAccount(
 		ctx, params, tokenID, s.bestHeight(),
@@ -426,6 +426,7 @@ func parseRPCAccountParams(
 		Expiry:    req.AccountExpiry,
 		TraderKey: traderKey,
 		UserAgent: userAgent,
+		Version:   accountT.Version((req.Version)),
 	}, nil
 }
 
@@ -508,10 +509,26 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 			m := account.ExpiryModifier(req.NewParams.Expiry)
 			modifiers = append(modifiers, m)
 		}
+		if req.NewParams.Version != 0 {
+			version := accountT.Version(req.NewParams.Version)
+			m := account.VersionModifier(version)
+			modifiers = append(modifiers, m)
+		}
 	}
 
-	var rawTraderKey [33]byte
-	copy(rawTraderKey[:], traderKey.SerializeCompressed())
+	previousOutputs := make([]*wire.TxOut, len(req.PrevOutputs))
+	for idx, utxo := range req.PrevOutputs {
+		if utxo.Value == 0 {
+			return nil, fmt.Errorf("invalid previous output amount")
+		}
+		if len(utxo.PkScript) == 0 {
+			return nil, fmt.Errorf("invalid previous output script")
+		}
+		previousOutputs[idx] = &wire.TxOut{
+			Value:    int64(utxo.Value),
+			PkScript: utxo.PkScript,
+		}
+	}
 
 	// Consult with the auctioneer whether an account update should be
 	// allowed at the moment as it may interfere with an ongoing batch.
@@ -521,23 +538,28 @@ func (s *rpcServer) ModifyAccount(ctx context.Context,
 	}
 
 	// Get the value locked up in orders for this account.
+	acct, err := s.store.Account(ctx, traderKey, true)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching account: %v", err)
+	}
 	lockedValue, err := s.orderBook.LockedValue(
-		ctx, rawTraderKey, s.terms.FeeSchedule(),
+		ctx, acct, s.terms.FeeSchedule(),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	accountSig, err := s.accountManager.ModifyAccount(
+	accountSig, serverNonces, err := s.accountManager.ModifyAccount(
 		ctx, traderKey, lockedValue, newInputs, newOutputs, modifiers,
-		s.bestHeight(),
+		s.bestHeight(), previousOutputs, req.TraderNonces,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	return &auctioneerrpc.ServerModifyAccountResponse{
-		AccountSig: accountSig,
+		AccountSig:   accountSig,
+		ServerNonces: serverNonces,
 	}, nil
 }
 
@@ -795,6 +817,7 @@ func (s *rpcServer) handleTraderStream(trader *TraderStream,
 					BatchKey:      e2.InitialBatchKey[:],
 					Expiry:        e2.Expiry,
 					HeightHint:    e2.HeightHint,
+					Version:       e2.Version,
 				}
 				errMsg := &auctioneerrpc.SubscribeError{
 					Error:              err.Error(),
@@ -1148,18 +1171,6 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 		sign := msg.Sign
 		trader.log.Tracef("Got sign msg: %s", poolrpc.PrintMsg(sign))
 
-		sigs := make(map[string]*ecdsa.Signature)
-		for acctString, sigBytes := range sign.AccountSigs {
-			sig, err := ecdsa.ParseDERSignature(sigBytes)
-			if err != nil {
-				comms.sendErr(fmt.Errorf("unable to parse "+
-					"account sig: %v", err))
-				return
-			}
-
-			sigs[acctString] = sig
-		}
-
 		chanInfos, err := parseRPCChannelInfo(sign.ChannelInfos)
 		if err != nil {
 			comms.sendErr(err)
@@ -1178,7 +1189,7 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			// which itself doesn't send signatures. There the
 			// auctioneer will handle the case correctly.
 			key := hex.EncodeToString(subscribedTrader.AccountKey[:])
-			_, ok := sigs[key]
+			_, ok := sign.AccountSigs[key]
 			if !ok && !trader.IsSidecar {
 				continue
 			}
@@ -1186,7 +1197,8 @@ func (s *rpcServer) handleIncomingMessage( // nolint:gocyclo
 			traderMsg := &venue.TraderSignMsg{
 				BatchID:      sign.BatchId,
 				Trader:       subscribedTrader,
-				Sigs:         sigs,
+				Sigs:         sign.AccountSigs,
+				TraderNonces: sign.TraderNonces,
 				ChannelInfos: chanInfos,
 			}
 			comms.toServer <- traderMsg
@@ -1298,13 +1310,7 @@ func (s *rpcServer) sendToTrader(
 		return stream.Send(prepareMsg)
 
 	case *venue.SignBeginMsg:
-		return stream.Send(&auctioneerrpc.ServerAuctionMessage{
-			Msg: &auctioneerrpc.ServerAuctionMessage_Sign{
-				Sign: &auctioneerrpc.OrderMatchSignBegin{
-					BatchId: m.BatchID[:],
-				},
-			},
-		})
+		return stream.Send(marshallSignBeginMsg(m))
 
 	case *venue.FinalizeMsg:
 		return stream.Send(&auctioneerrpc.ServerAuctionMessage{
@@ -1449,6 +1455,37 @@ func marshallPrepareMsg(m *venue.PrepareMsg) (*auctioneerrpc.ServerAuctionMessag
 			},
 		},
 	}, nil
+}
+
+// marshallSignBeginMsg translates the venue's sign begin message struct into
+// the RPC representation.
+func marshallSignBeginMsg(
+	m *venue.SignBeginMsg) *auctioneerrpc.ServerAuctionMessage {
+
+	rpcPrevOutputs := make([]*auctioneerrpc.TxOut, len(m.PreviousOutputs))
+	for idx, txOut := range m.PreviousOutputs {
+		rpcPrevOutputs[idx] = &auctioneerrpc.TxOut{
+			Value:    uint64(txOut.Value),
+			PkScript: txOut.PkScript,
+		}
+	}
+
+	rpcServerNonces := make(map[string][]byte, len(m.AccountNonces))
+	for accountID, nonces := range m.AccountNonces {
+		key := hex.EncodeToString(accountID[:])
+		rpcServerNonces[key] = make([]byte, 66)
+		copy(rpcServerNonces[key], nonces[:])
+	}
+
+	return &auctioneerrpc.ServerAuctionMessage{
+		Msg: &auctioneerrpc.ServerAuctionMessage_Sign{
+			Sign: &auctioneerrpc.OrderMatchSignBegin{
+				BatchId:      m.BatchID[:],
+				PrevOutputs:  rpcPrevOutputs,
+				ServerNonces: rpcServerNonces,
+			},
+		},
+	}
 }
 
 // addStreamSubscription adds an account subscription to the stream that is
@@ -1863,6 +1900,7 @@ func marshallAccountDiff(diff *matching.AccountDiff,
 		OutpointIndex: opIdx,
 		TraderKey:     diff.StartingState.AccountKey[:],
 		NewExpiry:     diff.NewExpiry,
+		NewVersion:    uint32(diff.NewVersion),
 	}, nil
 }
 
@@ -1884,7 +1922,8 @@ func marshallServerAccount(acct *account.Account) (*auctioneerrpc.AuctionAccount
 			Txid:        acct.OutPoint.Hash[:],
 			OutputIndex: acct.OutPoint.Index,
 		},
-		State: rpcState,
+		State:   rpcState,
+		Version: uint32(acct.Version),
 	}
 
 	if acct.LatestTx != nil {
@@ -2148,6 +2187,7 @@ func newAcctResNotCompletedError(
 		AcctKey:    res.TraderKeyRaw,
 		Expiry:     res.Expiry,
 		HeightHint: res.HeightHint,
+		Version:    uint32(res.Version),
 	}
 	copy(
 		result.AuctioneerKey[:],
