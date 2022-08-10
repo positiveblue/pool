@@ -195,6 +195,8 @@ type Order struct {
 	TokenID          []byte
 	UserAgent        string
 	Archived         bool
+	CreatedAt        sql.NullTime
+	ArchivedAt       sql.NullTime
 }
 
 type OrderAllowedNodeID struct {

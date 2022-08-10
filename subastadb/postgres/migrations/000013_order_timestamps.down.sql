@@ -1,0 +1,2 @@
+ALTER TABLE orders DROP COLUMN IF EXISTS created_at;
+ALTER TABLE orders DROP COLUMN IF EXISTS archived_at;
