@@ -69,10 +69,7 @@ jobs:
 
       - name: docker image cache
         uses: satackey/action-docker-layer-caching@v0.0.11
-
-      - name: Generate sql models
-        run: make sqlc
-
+        
       - name: run sqlc-check
         run: make sqlc-check
 
