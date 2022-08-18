@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 
 set -e
 
@@ -16,4 +16,4 @@ docker run \
   -e UID=$UID \
   -v "$DIR/../:/build" \
   -w /build \
-  kjconroy/sqlc:1.13.0 generate
+  kjconroy/sqlc:1.15.0 generate
