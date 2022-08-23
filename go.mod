@@ -2,9 +2,9 @@ module github.com/lightninglabs/subasta
 
 require (
 	github.com/btcsuite/btcd v0.23.1
-	github.com/btcsuite/btcd/btcec/v2 v2.2.0
-	github.com/btcsuite/btcd/btcutil v1.1.1
-	github.com/btcsuite/btcd/btcutil/psbt v1.1.4
+	github.com/btcsuite/btcd/btcec/v2 v2.2.1
+	github.com/btcsuite/btcd/btcutil v1.1.2
+	github.com/btcsuite/btcd/btcutil/psbt v1.1.5
 	github.com/btcsuite/btcd/chaincfg/chainhash v1.0.1
 	github.com/btcsuite/btclog v0.0.0-20170628155309-84c8d2346e9f
 	github.com/btcsuite/btcutil v0.0.0-20190425235716-9e5f4b9a998d
@@ -23,11 +23,11 @@ require (
 	github.com/lib/pq v1.10.3
 	github.com/lightninglabs/aperture v0.1.18-beta
 	github.com/lightninglabs/faraday v0.2.7-alpha.0.20220328064033-d602082a718a
-	github.com/lightninglabs/lndclient v0.15.0-10
-	github.com/lightninglabs/pool v0.5.7-alpha.0.20220805122546-536c50028382
+	github.com/lightninglabs/lndclient v0.15.1-1
+	github.com/lightninglabs/pool v0.5.7-alpha.0.20220823071229-be2b1a8caec6
 	github.com/lightninglabs/pool/auctioneerrpc v1.0.8
 	github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display
-	github.com/lightningnetwork/lnd v0.15.0-beta
+	github.com/lightningnetwork/lnd v0.15.1-beta.rc1
 	github.com/lightningnetwork/lnd/cert v1.1.1
 	github.com/lightningnetwork/lnd/kvdb v1.3.1
 	github.com/lightningnetwork/lnd/ticker v1.1.0
@@ -141,6 +141,7 @@ require (
 	github.com/sirupsen/logrus v1.8.1 // indirect
 	github.com/soheilhy/cmux v0.1.5 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
+	github.com/stretchr/objx v0.2.0 // indirect
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7 // indirect
 	github.com/tmc/grpc-websocket-proxy v0.0.0-20201229170055-e5319fda7802 // indirect
 	github.com/tv42/zbase32 v0.0.0-20160707012821-501572607d02 // indirect
