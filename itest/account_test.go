@@ -232,128 +232,89 @@ func runAccountDepositTest(ctx context.Context, t *harnessTest,
 		Version: rpcVersion(version),
 	})
 
-	// With the account open, we'll now attempt to deposit the same amount
-	// we initially funded the account with. The new value of the account
-	// should therefore be twice that its initial value.
-	const valueAfterDeposit = initialAccountValue * 2
+	depositAmount := btcutil.Amount(100_000)
 	depositReq := &poolrpc.DepositAccountRequest{
 		TraderKey:       account.TraderKey,
-		AmountSat:       initialAccountValue,
+		AmountSat:       uint64(depositAmount),
 		FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 	}
-	depositResp, err := t.trader.DepositAccount(ctx, depositReq)
-	require.NoError(t.t, err)
 
-	// We should expect to see the transaction causing the deposit.
-	depositTxid, _ := chainhash.NewHash(depositResp.Account.Outpoint.Txid)
-	txids, err := waitForNTxsInMempool(
-		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
-	)
-	require.NoError(t.t, err)
-	require.Equal(t.t, depositTxid, txids[0])
-
-	// Assert that the account state is reflected correctly for both the
-	// trader and auctioneer while the deposit hasn't confirmed.
-	assertTraderAccount(
-		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
-		account.ExpirationHeight, poolrpc.AccountState_PENDING_UPDATE,
-	)
-	assertAuctioneerAccount(
-		t, depositResp.Account.TraderKey, valueAfterDeposit,
-		auctioneerAccount.StatePendingUpdate,
-	)
-
-	// We'll assume the fee rate wasn't enough for the deposit to confirm,
-	// so we'll attempt to bump it from 1 sat/vbyte to 10 sat/vbyte. We
-	// should then see two transactions in the mempool.
-	_, err = t.trader.BumpAccountFee(ctx, &poolrpc.BumpAccountFeeRequest{
-		TraderKey:       account.TraderKey,
-		FeeRateSatPerKw: depositReq.FeeRateSatPerKw * 250 * 10,
-	})
-	require.NoError(t.t, err)
-	_, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Client, 2, minerMempoolTimeout,
-	)
-	require.NoError(t.t, err)
-
-	// Confirm the deposit, and once again assert that the account state
-	// is reflected correctly.
-	block := mineBlocks(t, t.lndHarness, 6, 2)[0]
-	_ = assertTxInBlock(t, block, depositTxid)
-	assertTraderAccount(
-		t, t.trader, depositResp.Account.TraderKey, valueAfterDeposit,
-		account.ExpirationHeight, poolrpc.AccountState_OPEN,
-	)
-	assertAuctioneerAccount(
-		t, depositResp.Account.TraderKey, valueAfterDeposit,
-		auctioneerAccount.StateOpen,
-	)
-
-	// We'll then attempt a deposit using a NP2WKH input. To do so, we'll
-	// need a NP2WKH available to spend. We send over 4 BTC and will attempt
-	// a 3 BTC deposit to ensure the NP2WKH input is chosen.
-	sendAllCoinsToAddrType(
-		ctx, t, t.lndHarness, t.trader.cfg.LndNode,
+	addressTypes := []lnrpc.AddressType{
+		lnrpc.AddressType_WITNESS_PUBKEY_HASH,
 		lnrpc.AddressType_NESTED_PUBKEY_HASH,
-	)
-	depositReq.AmountSat = 100000
-	_, err = t.trader.DepositAccount(ctx, depositReq)
-	require.Error(t.t, err)
-	require.Contains(
-		t.t, err.Error(), "depositing from np2wkh inputs is not "+
-			"possible",
-	)
-
-	// TODO(guggero): Make sure NP2WKH deposits work correctly after tagging
-	// and using lnd 0.15.1-beta.
-
-	// We'll next attempt a deposit using a P2TR input. To do so, we'll
-	// need a P2TR available to spend. We send over 4 BTC and will attempt
-	// a 3 BTC deposit to ensure the P2TR input is chosen.
-	sendAllCoinsToAddrType(
-		ctx, t, t.lndHarness, t.trader.cfg.LndNode,
 		lnrpc.AddressType_TAPROOT_PUBKEY,
-	)
-	valueAfterSecondDeposit := btcutil.Amount(
-		depositResp.Account.Value + depositReq.AmountSat,
-	)
-	depositResp, err = t.trader.DepositAccount(ctx, depositReq)
-	require.NoError(t.t, err)
-
-	// We should expect to see the transaction causing the deposit.
-	depositTxid, _ = chainhash.NewHash(depositResp.Account.Outpoint.Txid)
-	txids, err = waitForNTxsInMempool(
-		t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
-	)
-	require.NoError(t.t, err)
-	require.Equal(t.t, depositTxid, txids[0])
-
-	// The deposit transaction should contain at least one P2TR input.
-	depositTx, err := t.lndHarness.Miner.Client.GetRawTransaction(
-		depositTxid,
-	)
-	require.NoError(t.t, err)
-	foundP2TRInput := false
-	for _, input := range depositTx.MsgTx().TxIn {
-		if len(input.Witness) == 1 && len(input.Witness[0]) == 64 {
-			foundP2TRInput = true
-		}
 	}
-	require.True(t.t, foundP2TRInput, "P2TR input in deposit")
 
-	// Confirm the deposit, and once again assert that the account state
-	// is reflected correctly.
-	block = mineBlocks(t, t.lndHarness, 6, 1)[0]
-	_ = assertTxInBlock(t, block, depositTxid)
-	assertTraderAccount(
-		t, t.trader, depositResp.Account.TraderKey,
-		valueAfterSecondDeposit, account.ExpirationHeight,
-		poolrpc.AccountState_OPEN,
-	)
-	assertAuctioneerAccount(
-		t, depositResp.Account.TraderKey, valueAfterSecondDeposit,
-		auctioneerAccount.StateOpen,
-	)
+	valueBeforeDeposit := btcutil.Amount(initialAccountValue)
+	for _, addrType := range addressTypes {
+		valueAfterDeposit := valueBeforeDeposit + depositAmount
+
+		// Send all the coins to an address of the type that we want
+		// to test.
+		sendAllCoinsToAddrType(
+			ctx, t, t.lndHarness, t.trader.cfg.LndNode, addrType,
+		)
+
+		depositResp, err := t.trader.DepositAccount(ctx, depositReq)
+		require.NoError(t.t, err)
+
+		// We should expect to see the transaction causing the deposit.
+		depositTxid, _ := chainhash.NewHash(
+			depositResp.Account.Outpoint.Txid,
+		)
+		txids, err := waitForNTxsInMempool(
+			t.lndHarness.Miner.Client, 1, minerMempoolTimeout,
+		)
+		require.NoError(t.t, err)
+		require.Len(t.t, txids, 1)
+
+		// Assert that the account state is reflected correctly for both
+		// the trader and auctioneer while the deposit hasn't confirmed.
+		assertTraderAccount(
+			t, t.trader, depositResp.Account.TraderKey,
+			valueAfterDeposit, account.ExpirationHeight,
+			poolrpc.AccountState_PENDING_UPDATE,
+		)
+		assertAuctioneerAccount(
+			t, depositResp.Account.TraderKey, valueAfterDeposit,
+			auctioneerAccount.StatePendingUpdate,
+		)
+
+		// We'll assume the fee rate wasn't enough for the deposit to
+		// confirm, so we'll attempt to bump it from 1 sat/vbyte to
+		// 10 sat/vbyte. We should then see two transactions in the
+		// mempool.
+		feeRate := depositReq.FeeRateSatPerKw * 250 * 10
+		_, err = t.trader.BumpAccountFee(
+			ctx, &poolrpc.BumpAccountFeeRequest{
+				TraderKey:       account.TraderKey,
+				FeeRateSatPerKw: feeRate,
+			},
+		)
+		require.NoError(t.t, err)
+
+		_, err = waitForNTxsInMempool(
+			t.lndHarness.Miner.Client, 2, minerMempoolTimeout,
+		)
+		require.NoError(t.t, err)
+
+		// Confirm the deposit, and once again assert that the account
+		// state is reflected correctly.
+		block := mineBlocks(t, t.lndHarness, 6, 2)[0]
+		_ = assertTxInBlock(t, block, depositTxid)
+
+		assertTraderAccount(
+			t, t.trader, depositResp.Account.TraderKey,
+			valueAfterDeposit, account.ExpirationHeight,
+			poolrpc.AccountState_OPEN,
+		)
+		assertAuctioneerAccount(
+			t, depositResp.Account.TraderKey,
+			valueAfterDeposit, auctioneerAccount.StateOpen,
+		)
+
+		valueBeforeDeposit = valueAfterDeposit
+	}
 
 	// Finally, end the test by closing the account.
 	_ = closeAccountAndAssert(t, t.trader, &poolrpc.CloseAccountRequest{
