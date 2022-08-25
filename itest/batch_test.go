@@ -33,7 +33,7 @@ import (
 // then submit orders we know will match, causing us to trigger a manual batch
 // tick. From there the batch should proceed all the way to broadcasting the
 // batch execution transaction. From there, all channels created should be
-// operational and usable. We test batch execution with all trader accounts
+// operational and usable. We test batch execution with the two trader accounts
 // using v0 scripts. This test needs to be individual test cases (and not just
 // subtests) so we can start with a fresh auctioneer master account.
 func testBatchExecutionV0(t *harnessTest) {
@@ -59,30 +59,40 @@ func testBatchExecutionV1(t *harnessTest) {
 // will then submit orders we know will match, causing us to trigger a manual
 // batch tick. From there the batch should proceed all the way to broadcasting
 // the batch execution transaction. From there, all channels created should be
-// operational and usable. We test batch execution with all trader accounts
+// operational and usable. We test batch execution with the two trader accounts
 // using v0 scripts at the beginning and then upgrading to v1 during a batch.
 // This test needs to be individual test cases (and not just subtests) so we can
 // start with a fresh auctioneer master account.
 func testBatchExecutionV0ToV1(t *harnessTest) {
 	ctx := context.Background()
-	runBatchExecutionTest(ctx, t, accountT.VersionTaprootEnabled, true)
+	runBatchExecutionTest(ctx, t, accountT.VersionInitialNoVersion, true)
 }
 
 // runBatchExecutionTest ensures that we can renew an account of the given
 // version in its confirmed state, and after it has expired.
 func runBatchExecutionTest(ctx context.Context, t *harnessTest,
-	version accountT.Version, allowAccountUpgrade bool) {
+	initialVersion accountT.Version, allowAccountUpgrade bool) {
 
-	// We allow the second trader to upgrade its account.
 	var (
 		traderOpt         []traderCfgOpt
-		versionAfterBatch = version
+		versionAfterBatch = initialVersion
 	)
-	if allowAccountUpgrade {
-		traderOpt = append(traderOpt, batchVersionOpt(
-			orderT.UpgradeAccountTaprootBatchVersion,
-		))
-		versionAfterBatch = accountT.VersionTaprootEnabled
+
+	isV0 := initialVersion == accountT.VersionInitialNoVersion
+
+	// We can only upgrade accounts from V0.
+	require.False(t.t, allowAccountUpgrade && !isV0)
+
+	if isV0 {
+		if allowAccountUpgrade {
+			versionAfterBatch = accountT.VersionTaprootEnabled
+		} else {
+			// Use a batch version previous to
+			// UpgradeAccountTaprootBatchVersion.
+			traderOpt = append(traderOpt, batchVersionOpt(
+				orderT.UnannouncedChannelsBatchVersion,
+			))
+		}
 	}
 
 	// We run the same subtest multiple times, so we don't want to use the
@@ -114,7 +124,7 @@ func runBatchExecutionTest(ctx context.Context, t *harnessTest,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
-			Version: rpcVersion(version),
+			Version: rpcVersion(accountT.VersionTaprootEnabled),
 		},
 	)
 	account2 := openAccountAndAssert(
@@ -123,7 +133,7 @@ func runBatchExecutionTest(ctx context.Context, t *harnessTest,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
-			Version: rpcVersion(version),
+			Version: rpcVersion(initialVersion),
 		},
 	)
 	account3 := openAccountAndAssert(
@@ -132,7 +142,7 @@ func runBatchExecutionTest(ctx context.Context, t *harnessTest,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
-			Version: rpcVersion(version),
+			Version: rpcVersion(initialVersion),
 		},
 	)
 
@@ -151,7 +161,7 @@ func runBatchExecutionTest(ctx context.Context, t *harnessTest,
 			AccountExpiry: &poolrpc.InitAccountRequest_RelativeHeight{
 				RelativeHeight: 1_000,
 			},
-			Version: rpcVersion(version),
+			Version: rpcVersion(initialVersion),
 		},
 	)
 
@@ -216,7 +226,9 @@ func runBatchExecutionTest(ctx context.Context, t *harnessTest,
 			TraderKey:       account1.TraderKey,
 			AmountSat:       100_000,
 			FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
-			NewVersion:      rpcVersion(version),
+			NewVersion: rpcVersion(
+				accountT.VersionTaprootEnabled,
+			),
 		},
 	)
 	require.NoError(t.t, err)
@@ -290,7 +302,8 @@ func runBatchExecutionTest(ctx context.Context, t *harnessTest,
 	// the account during batches.
 	assertTraderAccountState(
 		t.t, trader, account1.TraderKey,
-		poolrpc.AccountState_PENDING_BATCH, versionCheck(version),
+		poolrpc.AccountState_PENDING_BATCH,
+		versionCheck(accountT.VersionTaprootEnabled),
 	)
 	assertTraderAccountState(
 		t.t, secondTrader, account2.TraderKey,

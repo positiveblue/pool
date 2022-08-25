@@ -141,7 +141,6 @@ var testCases = []*testCase{
 		name: "batch account auto-renewal",
 		test: testBatchAccountAutoRenewal,
 	},
-
 	{
 		name: "hashmail server",
 		test: testHashMailServer,
