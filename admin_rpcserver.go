@@ -1247,28 +1247,17 @@ func (s *adminRPCServer) FinancialReport(ctx context.Context,
 	}
 
 	cfg := &accounting.Config{
-		Start:           startDate,
-		End:             endDate,
-		LightningClient: s.lightningClient,
-		GetBatches:      getBatches,
-		GetPrice:        getPrice,
+		Start:                startDate,
+		End:                  endDate,
+		LightningClient:      s.lightningClient,
+		GetBatches:           getBatches,
+		GetAuctioneerBalance: s.store.GetAuctioneerBalance,
+		GetPrice:             getPrice,
 	}
 
 	report, err := accounting.CreateReport(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("unable to create report: %v", err)
-	}
-
-	masterAcct, err := s.store.FetchAuctioneerAccount(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("unable to fetch master account: %v",
-			err)
-	}
-
-	err = report.PopulateCurrentBalance(masterAcct.Balance)
-	if err != nil {
-		return nil, fmt.Errorf("unable to populate current balance: %v",
-			err)
 	}
 
 	batchEntries := make(
