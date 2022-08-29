@@ -116,18 +116,6 @@ func (s *SQLStore) PersistBatchResult(ctx context.Context,
 			}
 		}
 
-		copy(
-			masterAccount.BatchKey[:],
-			newBatchKey.SerializeCompressed(),
-		)
-		// Update the master account output.
-		err = upsertAuctioneerAccountWithTx(
-			ctx, txQueries, masterAccount,
-		)
-		if err != nil {
-			return err
-		}
-
 		// Store the lifetime packages of each channel created as part
 		// of the batch.
 		for _, lifetimePkg := range lifetimePkgs {
@@ -139,6 +127,28 @@ func (s *SQLStore) PersistBatchResult(ctx context.Context,
 		}
 
 		err = storeBatchWithTx(ctx, txQueries, batchID, batchSnapshot)
+		if err != nil {
+			return err
+		}
+
+		// Store the auctioneer snapshot BEFORE setting the key for the
+		// next batch.
+		err = createAuctioneerSnapshotWithTx(
+			ctx, txQueries, masterAccount,
+		)
+		if err != nil {
+			return err
+		}
+
+		copy(
+			masterAccount.BatchKey[:],
+			newBatchKey.SerializeCompressed(),
+		)
+
+		// Update the master account output.
+		err = upsertAuctioneerAccountWithTx(
+			ctx, txQueries, masterAccount,
+		)
 		if err != nil {
 			return err
 		}

@@ -7,8 +7,10 @@ package subastadb
 import (
 	context "context"
 	reflect "reflect"
+	time "time"
 
 	v2 "github.com/btcsuite/btcd/btcec/v2"
+	btcutil "github.com/btcsuite/btcd/btcutil"
 	gomock "github.com/golang/mock/gomock"
 	lsat "github.com/lightninglabs/aperture/lsat"
 	order "github.com/lightninglabs/pool/order"
@@ -996,6 +998,21 @@ func (m *MockAdminStore) GetArchivedOrders(arg0 context.Context) ([]order0.Serve
 func (mr *MockAdminStoreMockRecorder) GetArchivedOrders(arg0 interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetArchivedOrders", reflect.TypeOf((*MockAdminStore)(nil).GetArchivedOrders), arg0)
+}
+
+// GetAuctioneerBalance mocks base method.
+func (m *MockAdminStore) GetAuctioneerBalance(ctx context.Context, date time.Time) (btcutil.Amount, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "GetAuctioneerBalance", ctx, date)
+	ret0, _ := ret[0].(btcutil.Amount)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// GetAuctioneerBalance indicates an expected call of GetAuctioneerBalance.
+func (mr *MockAdminStoreMockRecorder) GetAuctioneerBalance(ctx, date interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "GetAuctioneerBalance", reflect.TypeOf((*MockAdminStore)(nil).GetAuctioneerBalance), ctx, date)
 }
 
 // GetBatchSnapshot mocks base method.

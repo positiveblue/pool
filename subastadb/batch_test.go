@@ -106,7 +106,7 @@ func TestPersistBatchResult(t *testing.T) {
 		Balance:       1_000_000,
 		AuctioneerKey: testAuctioneerKeyDesc,
 	}
-	copy(ma1.BatchKey[:], InitialBatchKey.SerializeCompressed())
+	copy(ma1.BatchKey[:], batchID[:])
 	err = store.UpdateAuctioneerAccount(ctx, ma1)
 	if err != nil {
 		t.Fatalf("unable to update auctioneer account: %v", err)
@@ -588,6 +588,7 @@ func assertBatchSerialization(t *testing.T, store AdminStore,
 		AuctioneerKey: testAuctioneerKeyDesc,
 	}
 	copy(ma1.BatchKey[:], nextBatchKey.SerializeCompressed())
+	copy(batchID[:], ma1.BatchKey[:])
 
 	// Store the batch and then read the snapshot back again immediately.
 	err := store.PersistBatchResult(
