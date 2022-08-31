@@ -1,0 +1,7 @@
+/auctioncli
+/auctioncli-regtest
+/auctionserver
+/auctionserver-regtest
+/dev-*
+/.github
+/itest
