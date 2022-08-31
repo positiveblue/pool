@@ -1091,16 +1091,17 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 		// correct weight estimation closure. We do it here instead of
 		// when we actually go to create the batch transaction, such
 		// that we can be sure the input is actually supported. We only
-		// support P2WKH and nested-P2WKH.
+		// support P2WKH and TaprootPubKeySpend.
 		var weightEstimate func(*input.TxWeightEstimator) error
 
+		// TODO (positiveblue): support P2WSH?
 		scriptClass := txscript.GetScriptClass(pkScript)
 		switch scriptClass {
 		case txscript.WitnessV0PubKeyHashTy:
 			weightEstimate = input.WitnessKeyHash.AddWeightEstimation
 
-		case txscript.ScriptHashTy:
-			weightEstimate = input.NestedWitnessKeyHash.AddWeightEstimation
+		case txscript.WitnessV1TaprootTy:
+			weightEstimate = input.TaprootPubKeySpend.AddWeightEstimation
 
 		default:
 			return nil, fmt.Errorf("unsupported script type: %v",
@@ -1130,11 +1131,11 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 		}
 
 		// Similar to what we did for inputs, we parse the output
-		// script to make sure it is among or supported types (P2WKH,
-		// P2WSH, and nested-P2WKH aka P2SH) and set the correct weight
-		// estimation closure.
+		// script to make sure it is among or supported types (P2WKH
+		// and P2TR) and set the correct weight estimation closure.
 		var weightEstimate func(*input.TxWeightEstimator) error
 
+		// TODO (positiveblue): support P2WSH?
 		scriptClass := txscript.GetScriptClass(pkScript)
 		switch scriptClass {
 		case txscript.WitnessV0PubKeyHashTy:
@@ -1143,15 +1144,9 @@ func (s *adminRPCServer) MoveFunds(ctx context.Context,
 				return nil
 			}
 
-		case txscript.WitnessV0ScriptHashTy:
+		case txscript.WitnessV1TaprootTy:
 			weightEstimate = func(w *input.TxWeightEstimator) error {
-				w.AddP2WSHOutput()
-				return nil
-			}
-
-		case txscript.ScriptHashTy:
-			weightEstimate = func(w *input.TxWeightEstimator) error {
-				w.AddP2SHOutput()
+				w.AddP2TROutput()
 				return nil
 			}
 

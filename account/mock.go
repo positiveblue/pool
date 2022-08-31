@@ -361,7 +361,8 @@ func (m *MockSigner) SignOutputRaw(ctx context.Context, tx *wire.MsgTx,
 }
 
 func (m *MockSigner) ComputeInputScript(ctx context.Context, tx *wire.MsgTx,
-	signDescriptors []*lndclient.SignDescriptor) ([]*input.Script, error) {
+	signDescriptors []*lndclient.SignDescriptor,
+	prevOutputs []*wire.TxOut) ([]*input.Script, error) {
 
 	s := input.MockSigner{
 		Privkeys:  m.PrivKeys,

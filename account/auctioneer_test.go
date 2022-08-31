@@ -92,6 +92,7 @@ func TestAuctioneerInputWitness(t *testing.T) {
 	// Create inputs from simple P2WKHs derived from private keys.
 	const numInputs = 3
 	inputs := make(map[int]*lnwallet.Utxo)
+	prevInputs := make([]*wire.TxOut, 0, numInputs)
 
 	for i := 0; i < numInputs; i++ {
 		privKey, err := btcec.NewPrivateKey()
@@ -115,10 +116,11 @@ func TestAuctioneerInputWitness(t *testing.T) {
 			PkScript: p2wkhScript,
 		}
 		spendTx.AddTxIn(&wire.TxIn{})
+		prevInputs = append(prevInputs, &wire.TxOut{})
 	}
 
 	// Now we'll construct the witnesses to simulate a spend of inputs.
-	witnesses, err := InputWitnesses(signer, spendTx, inputs)
+	witnesses, err := InputWitnesses(signer, spendTx, inputs, prevInputs)
 	require.NoError(t, err)
 
 	for i, w := range witnesses {
