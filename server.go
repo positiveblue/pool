@@ -65,8 +65,8 @@ var (
 	// required in lnd to run subasta.
 	minimalCompatibleVersion = &verrpc.Version{
 		AppMajor: 0,
-		AppMinor: 13,
-		AppPatch: 0,
+		AppMinor: 15,
+		AppPatch: 1,
 
 		// We don't actually require the invoicesrpc calls. But if we
 		// try to use lndclient on an lnd that doesn't have it enabled,
