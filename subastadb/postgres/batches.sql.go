@@ -274,7 +274,7 @@ func (q *Queries) GetBatchClearingPricesMatchingBatchIDs(ctx context.Context, do
 const getBatchKeys = `-- name: GetBatchKeys :many
 SELECT batch_key 
 FROM batches 
-ORDER BY id
+ORDER BY created_at ASC
 LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 
@@ -306,17 +306,17 @@ func (q *Queries) GetBatchKeys(ctx context.Context, arg GetBatchKeysParams) ([][
 const getBatches = `-- name: GetBatches :many
 SELECT batch_key, batch_tx, batch_tx_fee, version, auctioneer_fees_accrued, confirmed, created_at
 FROM batches
-ORDER BY id
-LIMIT $1 OFFSET $2
+ORDER BY created_at ASC
+LIMIT NULLIF($2::int, 0) OFFSET $1
 `
 
 type GetBatchesParams struct {
-	Limit  int32
-	Offset int32
+	OffsetParam int32
+	LimitParam  int32
 }
 
 func (q *Queries) GetBatches(ctx context.Context, arg GetBatchesParams) ([]Batch, error) {
-	rows, err := q.db.Query(ctx, getBatches, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, getBatches, arg.OffsetParam, arg.LimitParam)
 	if err != nil {
 		return nil, err
 	}
