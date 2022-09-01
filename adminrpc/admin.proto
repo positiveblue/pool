@@ -313,6 +313,11 @@ message Account {
     The user agent string this order was submitted with.
     */
     string user_agent = 10;
+
+    /*
+    The account version.
+    */
+    uint32 version = 11;
 }
 
 message AuctionStatusResponse {

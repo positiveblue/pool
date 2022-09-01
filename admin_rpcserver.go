@@ -1398,6 +1398,7 @@ func marshallAdminAccount(acct *account.Account) (*adminrpc.Account, error) {
 		HeightHint:    acct.HeightHint,
 		Outpoint:      acct.OutPoint.String(),
 		UserAgent:     acct.UserAgent,
+		Version:       uint32(acct.Version),
 		State:         rpcState,
 	}
 
