@@ -18,6 +18,18 @@ DELETE FROM auctioneer_account
 WHERE auctioneer_public_key=$1 AND auctioneer_key_family=$2;
 
 
+-- name: CreateAuctioneerSnapshot :exec
+INSERT INTO auctioneer_snapshots(
+        batch_key, balance, out_point_hash, out_point_index, version)
+VALUES ($1, $2, $3, $4, $5);
+
+-- name: GetAuctioneerSnapshotByDate :one
+SELECT a.*
+FROM auctioneer_snapshots a JOIN batches b ON a.batch_key = b.batch_key
+WHERE b.created_at <= $1
+ORDER BY b.created_at DESC
+LIMIT 1;
+
 --- AccountReservation Queries ---
 
 -- name: CreateAccountReservation :exec

@@ -3,6 +3,7 @@ package subastadb
 import (
 	"context"
 	"encoding/hex"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -118,6 +119,11 @@ type AdminStore interface {
 
 	// Batches retrieves all existing batches.
 	Batches(ctx context.Context) (map[orderT.BatchID]*BatchSnapshot, error)
+
+	// GetAuctioneerBalance returns the balance of the auctioneer account
+	// at the given point in time.
+	GetAuctioneerBalance(ctx context.Context,
+		date time.Time) (btcutil.Amount, error)
 
 	// NodeRatingsDatabase is a logical ratings database. Before usage the
 	// IndexRatings() MUST be called.

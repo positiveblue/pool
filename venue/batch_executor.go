@@ -974,6 +974,7 @@ func (b *BatchExecutor) stateStep(currentState ExecutionState, // nolint:gocyclo
 
 		witnesses, err := account.InputWitnesses(
 			b.cfg.Signer, batchTx, extraInputs,
+			env.exeCtx.PrevOutputs(),
 		)
 		if err != nil {
 			return 0, env, err

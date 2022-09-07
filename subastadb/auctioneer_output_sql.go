@@ -2,7 +2,9 @@ package subastadb
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
+	"time"
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
@@ -54,6 +56,56 @@ func (s *SQLStore) UpdateAuctioneerAccount(ctx context.Context,
 			"account(%x): %v", pubKey, err)
 	}
 	return nil
+}
+
+// CreateAuctioneerSnapshot stores a snapshot of the auctioneer data.
+//
+// NOTE: the auctioneer.BatchKey needs to be link to the batches table,
+// which means that we are able to store snapshots only after the batch
+// has been created and stored.
+func (s *SQLStore) CreateAuctioneerSnapshot(ctx context.Context,
+	auctioneer *account.Auctioneer) error {
+
+	txBody := func(txQueries *postgres.Queries) error {
+		return createAuctioneerSnapshotWithTx(
+			ctx, txQueries, auctioneer,
+		)
+	}
+
+	return s.ExecTx(ctx, txBody)
+}
+
+// createAuctioneerSnapshotWithTx creates a new auctioneer snapshot using
+// the provided queries struct.
+func createAuctioneerSnapshotWithTx(ctx context.Context,
+	txQueries *postgres.Queries, auctioneer *account.Auctioneer) error {
+
+	params := postgres.CreateAuctioneerSnapshotParams{
+		BatchKey:      auctioneer.BatchKey[:],
+		Balance:       int64(auctioneer.Balance),
+		OutPointHash:  auctioneer.OutPoint.Hash[:],
+		OutPointIndex: int64(auctioneer.OutPoint.Index),
+		Version:       int16(auctioneer.Version),
+	}
+	return txQueries.CreateAuctioneerSnapshot(ctx, params)
+}
+
+// GetAuctioneerBalance returns the balance of the auctioneer account at the
+// given point in time.
+func (s *SQLStore) GetAuctioneerBalance(ctx context.Context,
+	date time.Time) (btcutil.Amount, error) {
+
+	params := sql.NullTime{
+		Time:  date,
+		Valid: true,
+	}
+
+	diff, err := s.queries.GetAuctioneerSnapshotByDate(ctx, params)
+	if err != nil {
+		return 0, err
+	}
+
+	return btcutil.Amount(diff.Balance), nil
 }
 
 // upsertAuctioneerAccountWithTx inserts/updates the auctioneer account using

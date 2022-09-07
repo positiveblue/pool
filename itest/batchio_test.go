@@ -30,12 +30,11 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	// Send some extra coins to the auctioneers LND node that we can use
 	// for batch IO.
 	const numInputs = 3
-	for i := 0; i < numInputs; i++ {
-		t.lndHarness.SendCoins(
-			t.t, 1*btcutil.SatoshiPerBitcoin,
-			t.auctioneer.cfg.LndNode,
-		)
-	}
+	oneBTC := btcutil.Amount(btcutil.SatoshiPerBitcoin)
+
+	t.lndHarness.SendCoins(t.t, oneBTC, t.auctioneer.cfg.LndNode)
+	t.lndHarness.SendCoinsP2TR(t.t, oneBTC, t.auctioneer.cfg.LndNode)
+	t.lndHarness.SendCoins(t.t, oneBTC, t.auctioneer.cfg.LndNode)
 
 	// Create an account over 2M sats that is valid for the next 1000 blocks
 	// for both traders.
@@ -118,7 +117,7 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 		utxo := unspents.Utxos[i]
 
 		// Skip small UTXOs.
-		if utxo.AmountSat < btcutil.SatoshiPerBitcoin {
+		if utxo.AmountSat < int64(oneBTC) {
 			continue
 		}
 
@@ -151,7 +150,7 @@ func testBatchIO(t *harnessTest) { // nolint:gocyclo
 	// add.
 	newAddrResp, err := t.auctioneer.cfg.LndNode.NewAddress(
 		ctx, &lnrpc.NewAddressRequest{
-			Type: lnrpc.AddressType_UNUSED_WITNESS_PUBKEY_HASH,
+			Type: lnrpc.AddressType_UNUSED_TAPROOT_PUBKEY,
 		},
 	)
 	if err != nil {

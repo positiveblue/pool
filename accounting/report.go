@@ -125,6 +125,12 @@ func CreateReport(cfg *Config) (*Report, error) {
 	// Populate summary data.
 	report.CalculateNetRevenue()
 
+	// Populate closing balance at endDate.
+	err = report.PopulateClosingBalance(cfg)
+	if err != nil {
+		return nil, err
+	}
+
 	return report, nil
 }
 
@@ -202,15 +208,16 @@ func (r *Report) CalculateNetRevenue() {
 
 // PopulateCurrentBalance sets the current auctioneer balance and its value
 // in USD in the report.
-func (r *Report) PopulateCurrentBalance(balance btcutil.Amount) error {
-	getPrice, err := GetPriceFunc(
-		r.Summary.CreationTime, time.Now().UTC(),
-	)
+func (r *Report) PopulateClosingBalance(cfg *Config) error {
+	ctx := context.Background()
+
+	balance, err := cfg.GetAuctioneerBalance(ctx, r.Summary.End)
 	if err != nil {
-		return fmt.Errorf("unable to get price function: %v", err)
+		return fmt.Errorf("unable to get auctioneer diff for date %v: "+
+			"%v", r.Summary.End, err)
 	}
 
-	btcPrice, err := getPrice(r.Summary.CreationTime)
+	btcPrice, err := cfg.GetPrice(r.Summary.End)
 	if err != nil {
 		return fmt.Errorf("unable to get price: %v", err)
 	}

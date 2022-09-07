@@ -30,7 +30,7 @@ WHERE batch_key = $1;
 -- name: GetBatchKeys :many
 SELECT batch_key 
 FROM batches 
-ORDER BY id
+ORDER BY created_at ASC
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 -- name: ConfirmBatch :execrows
@@ -50,8 +50,8 @@ FROM batches;
 -- name: GetBatches :many
 SELECT *
 FROM batches
-ORDER BY id
-LIMIT $1 OFFSET $2;
+ORDER BY created_at ASC
+LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
 
 
 --- Matched Order Queries ---

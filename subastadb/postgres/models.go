@@ -81,6 +81,14 @@ type AuctioneerAccount struct {
 	Version             int16
 }
 
+type AuctioneerSnapshot struct {
+	BatchKey      []byte
+	Balance       int64
+	OutPointHash  []byte
+	OutPointIndex int64
+	Version       int16
+}
+
 type Batch struct {
 	BatchKey              []byte
 	BatchTx               []byte

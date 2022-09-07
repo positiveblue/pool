@@ -7,6 +7,7 @@ package postgres
 
 import (
 	"context"
+	"database/sql"
 )
 
 const confirmAccountDiff = `-- name: ConfirmAccountDiff :execrows
@@ -112,6 +113,31 @@ func (q *Queries) CreateAccountReservation(ctx context.Context, arg CreateAccoun
 		arg.Expiry,
 		arg.HeightHint,
 		arg.TokenID,
+		arg.Version,
+	)
+	return err
+}
+
+const createAuctioneerSnapshot = `-- name: CreateAuctioneerSnapshot :exec
+INSERT INTO auctioneer_snapshots(
+        batch_key, balance, out_point_hash, out_point_index, version)
+VALUES ($1, $2, $3, $4, $5)
+`
+
+type CreateAuctioneerSnapshotParams struct {
+	BatchKey      []byte
+	Balance       int64
+	OutPointHash  []byte
+	OutPointIndex int64
+	Version       int16
+}
+
+func (q *Queries) CreateAuctioneerSnapshot(ctx context.Context, arg CreateAuctioneerSnapshotParams) error {
+	_, err := q.db.Exec(ctx, createAuctioneerSnapshot,
+		arg.BatchKey,
+		arg.Balance,
+		arg.OutPointHash,
+		arg.OutPointIndex,
 		arg.Version,
 	)
 	return err
@@ -501,6 +527,27 @@ func (q *Queries) GetAuctioneerAccount(ctx context.Context) (AuctioneerAccount, 
 		&i.AuctioneerKeyFamily,
 		&i.AuctioneerKeyIndex,
 		&i.AuctioneerPublicKey,
+		&i.OutPointHash,
+		&i.OutPointIndex,
+		&i.Version,
+	)
+	return i, err
+}
+
+const getAuctioneerSnapshotByDate = `-- name: GetAuctioneerSnapshotByDate :one
+SELECT a.batch_key, a.balance, a.out_point_hash, a.out_point_index, a.version
+FROM auctioneer_snapshots a JOIN batches b ON a.batch_key = b.batch_key
+WHERE b.created_at <= $1
+ORDER BY b.created_at DESC
+LIMIT 1
+`
+
+func (q *Queries) GetAuctioneerSnapshotByDate(ctx context.Context, createdAt sql.NullTime) (AuctioneerSnapshot, error) {
+	row := q.db.QueryRow(ctx, getAuctioneerSnapshotByDate, createdAt)
+	var i AuctioneerSnapshot
+	err := row.Scan(
+		&i.BatchKey,
+		&i.Balance,
 		&i.OutPointHash,
 		&i.OutPointIndex,
 		&i.Version,

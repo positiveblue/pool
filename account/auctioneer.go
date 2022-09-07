@@ -199,20 +199,34 @@ func (a *Auctioneer) AccountWitness(signer lndclient.SignerClient,
 // InputWitnesses attempts to construct fully valid witnesses which can be used
 // to spend the given UTXOs in the batch execution transaction. It is assumed
 // that all given inputs are managed by the signer.
-func InputWitnesses(signer lndclient.SignerClient,
-	tx *wire.MsgTx, inputs map[int]*lnwallet.Utxo) (
-	map[int]*input.Script, error) {
+func InputWitnesses(signer lndclient.SignerClient, tx *wire.MsgTx,
+	inputs map[int]*lnwallet.Utxo,
+	prevOutputs []*wire.TxOut) (map[int]*input.Script, error) {
 
 	// For each input, create a signdescriptor.
 	signDescs := make([]*lndclient.SignDescriptor, 0, len(inputs))
-	for i, utxo := range inputs {
+	for idx, utxo := range inputs {
 		signDesc := &lndclient.SignDescriptor{
 			Output: &wire.TxOut{
 				Value:    int64(utxo.Value),
 				PkScript: utxo.PkScript,
 			},
-			HashType:   txscript.SigHashAll,
-			InputIndex: i,
+			InputIndex: idx,
+		}
+
+		scriptTy := txscript.GetScriptClass(utxo.PkScript)
+		switch scriptTy {
+		case txscript.WitnessV0PubKeyHashTy:
+			signDesc.HashType = txscript.SigHashAll
+
+		case txscript.WitnessV1TaprootTy:
+			// We only support BIP0086 keyspend path.
+			signDesc.HashType = txscript.SigHashDefault
+			signDesc.SignMethod = input.TaprootKeySpendBIP0086SignMethod
+
+		default:
+			return nil, fmt.Errorf("unsupported script type: %v",
+				scriptTy)
 		}
 
 		signDescs = append(signDescs, signDesc)
@@ -222,7 +236,9 @@ func InputWitnesses(signer lndclient.SignerClient,
 	witnesses := make(map[int]*input.Script)
 	if len(signDescs) > 0 {
 		ctx := context.Background()
-		scripts, err := signer.ComputeInputScript(ctx, tx, signDescs)
+		scripts, err := signer.ComputeInputScript(
+			ctx, tx, signDescs, prevOutputs,
+		)
 		if err != nil {
 			return nil, err
 		}
@@ -241,13 +257,17 @@ func InputWitnesses(signer lndclient.SignerClient,
 
 	// As a final step, we'll ensure the signatures we just generated above
 	// is valid.
+	prevOutputFetcher := txscript.NewMultiPrevOutFetcher(nil)
+	for idx := range prevOutputs {
+		prevOutputFetcher.AddPrevOut(
+			txCopy.TxIn[idx].PreviousOutPoint, prevOutputs[idx],
+		)
+	}
+	sigHashes := txscript.NewTxSigHashes(txCopy, prevOutputFetcher)
 	for i, utxo := range inputs {
 		vm, err := txscript.NewEngine(
 			utxo.PkScript, txCopy, i, txscript.StandardVerifyFlags,
-			nil, nil, int64(utxo.Value),
-			txscript.NewCannedPrevOutputFetcher(
-				utxo.PkScript, int64(utxo.Value),
-			),
+			nil, sigHashes, int64(utxo.Value), prevOutputFetcher,
 		)
 		if err != nil {
 			return nil, err
