@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"net"
 	"regexp"
 	"sync"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/btcsuite/btcd/btcec/v2"
 	"github.com/btcsuite/btcd/btcutil"
+	embeddedpostgres "github.com/fergusstrange/embedded-postgres"
 	grpc_prometheus "github.com/grpc-ecosystem/go-grpc-prometheus"
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
@@ -368,6 +370,8 @@ type Server struct {
 
 	store subastadb.Store
 
+	embeddedPostgres *embeddedpostgres.EmbeddedPostgres
+
 	accountManager *account.Manager
 
 	orderBook *order.Book
@@ -442,6 +446,24 @@ func NewServer(cfg *Config, // nolint:gocyclo
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	// If we're in regtest only mode, spin up an embedded etcd server.
+	var embeddedPostgres *embeddedpostgres.EmbeddedPostgres
+	if cfg.Network == networkRegtest && cfg.SQL.User == userEmbedded {
+		dbCfg := embeddedpostgres.DefaultConfig().
+			Port(uint32(cfg.SQL.Port)).
+			Username(cfg.SQL.User).
+			Password(cfg.SQL.Password).
+			Database(cfg.SQL.DBName).
+			RuntimePath("/home/auctionserver/.postgres").
+			BinariesPath("/usr/local").
+			Logger(io.Discard)
+		embeddedPostgres = embeddedpostgres.NewDatabase(dbCfg)
+		err := embeddedPostgres.Start()
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Next, we'll open our primary connection to the main backing
@@ -563,15 +585,16 @@ func NewServer(cfg *Config, // nolint:gocyclo
 	ratingsAgency := ratings.NewNodeTierAgency(ratingsDB)
 
 	server := &Server{
-		cfg:            cfg,
-		lnd:            lnd,
-		store:          store,
-		statusReporter: statusReporter,
-		leaderElector:  leaderElector,
-		accountManager: accountManager,
-		orderBook:      orderBook,
-		batchExecutor:  batchExecutor,
-		activeTraders:  activeTraders,
+		cfg:              cfg,
+		lnd:              lnd,
+		store:            store,
+		embeddedPostgres: embeddedPostgres,
+		statusReporter:   statusReporter,
+		leaderElector:    leaderElector,
+		accountManager:   accountManager,
+		orderBook:        orderBook,
+		batchExecutor:    batchExecutor,
+		activeTraders:    activeTraders,
 		auctioneer: NewAuctioneer(AuctioneerConfig{
 			BanManager:    banManager,
 			DB:            newAuctioneerStore(store),
@@ -983,6 +1006,15 @@ func (s *Server) Stop() error {
 			stopErr = fmt.Errorf("unable to stop status service: %w",
 				err)
 			return
+		}
+
+		if s.embeddedPostgres != nil {
+			err := s.embeddedPostgres.Stop()
+			if err != nil {
+				stopErr = fmt.Errorf("unable to stop embedded "+
+					"postgres: %w", err)
+				return
+			}
 		}
 	})
 

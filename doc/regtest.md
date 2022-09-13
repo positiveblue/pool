@@ -25,6 +25,13 @@ by `REPOSITORY/auctionserver:v0.10.13-alpha-regtest-only`.
   in order to work without `aperture`.
 - Pool trader clients must have access to the self-signed TLS certificate of the
   auction server.
+- The local data directory used for the auction server (`/data/auctionserver` in
+  the example below) **MUST** belong to the user `100` and group `101`. So make
+  sure to run:
+  `mkdir /data/auctionserver && chown -R 100:101 /data/auctionserver`
+- The `admin.macaroon` and `tls.cert` files in the mounted `lnd` directory (
+  `/data/lnd-auctionserver` in the example below) **MUST** be readable by any
+  user or `100:101` specifically!
 
 ## Auction server setup
 
@@ -39,14 +46,14 @@ $ docker run -d \
   --restart unless-stopped \
   -p 12009:12009 \
   -p 12080:12080 \
-  -v /data/lnd-auctionserver:/root/.lnd \
-  -v /data/auctionserver:/root/.auctionserver \
+  -v /data/lnd-auctionserver:/home/auctionserver/.lnd \
+  -v /data/auctionserver:/home/auctionserver/.auctionserver \
   auctionserver:v0.10.13-alpha-regtest-only \
     daemon \
     --tlsextradomain="auctionserver" \
     --lnd.host=lnd-auctionserver:10009 \
-    --lnd.macaroondir=/root/.lnd/data/chain/bitcoin/regtest \
-    --lnd.tlspath=/root/.lnd/tls.cert
+    --lnd.macaroondir=/home/auctionserver/.lnd/data/chain/bitcoin/regtest \
+    --lnd.tlspath=/home/auctionserver/.lnd/tls.cert
 ```
 
 ## Issue auction server admin commands

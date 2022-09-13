@@ -17,11 +17,6 @@ import (
 	"github.com/lightningnetwork/lnd/lncfg"
 )
 
-const (
-	networkRegtest   = "regtest"
-	etcdUserEmbedded = "embedded"
-)
-
 var (
 	dockerAuctioneerAddr = fmt.Sprintf("0.0.0.0:%d", defaultAuctioneerRPCPort)
 	dockerRestAddr       = fmt.Sprintf("0.0.0.0:%d", defaultAuctioneerRESTPort)
@@ -126,13 +121,20 @@ func DefaultConfig() *Config {
 			// with a real etcd server that might be running on the
 			// same (dev) machine.
 			Host:     "localhost:2479",
-			User:     etcdUserEmbedded,
-			Password: etcdUserEmbedded,
+			User:     userEmbedded,
+			Password: userEmbedded,
 		},
-		Cluster:                      lncfg.DefaultCluster(),
-		Prometheus:                   &monitoring.PrometheusConfig{},
-		Bitcoin:                      &chain.BitcoinConfig{},
-		SQL:                          &subastadb.SQLConfig{},
+		Cluster:    lncfg.DefaultCluster(),
+		Prometheus: &monitoring.PrometheusConfig{},
+		Bitcoin:    &chain.BitcoinConfig{},
+		SQL: &subastadb.SQLConfig{
+			Host:               "localhost",
+			User:               userEmbedded,
+			DBName:             userEmbedded,
+			Password:           userEmbedded,
+			MaxOpenConnections: 5,
+			Port:               5432,
+		},
 		Status:                       status.DefaultConfig(),
 		TLSCertPath:                  defaultTLSCertPath,
 		TLSKeyPath:                   defaultTLSKeyPath,

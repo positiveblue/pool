@@ -22,7 +22,7 @@ RUN apk add --no-cache --update alpine-sdk \
 &&  make regtest-build
 
 # Start a new, final image to reduce size.
-FROM alpine as final
+FROM postgres:14-alpine as final
 
 # Expose the port needed for the admin RPC server, as well as the public gRPC
 # service that runs the entire system.
@@ -37,6 +37,13 @@ COPY --from=builder /go/src/github.com/lightninglabs/subasta/auctioncli-regtest 
 RUN apk add --no-cache \
     bash \
     ca-certificates
+
+RUN addgroup -S auctionserver \
+    && adduser -S auctionserver -G auctionserver \
+    && mkdir -p /home/auctionserver/.auctionserver \
+    && chown -R auctionserver:auctionserver /home/auctionserver
+
+USER auctionserver
 
 # Specify the start command and entrypoint as the subasta daemon.
 ENTRYPOINT ["auctionserver", "daemon"]
