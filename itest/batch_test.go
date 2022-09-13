@@ -2262,14 +2262,14 @@ func testBatchAccountAutoRenewal(t *harnessTest) {
 
 	// To ensure the venue is aware of account deposits/withdrawals, we'll
 	// process a deposit for the account behind the ask. We also use this
-	// to renew the account by a day.
+	// to renew the account.
 	depositResp, err := t.trader.DepositAccount(
 		ctx, &poolrpc.DepositAccountRequest{
 			TraderKey:       account1.TraderKey,
 			AmountSat:       100_000,
 			FeeRateSatPerKw: uint64(chainfee.FeePerKwFloor),
 			AccountExpiry: &poolrpc.DepositAccountRequest_RelativeExpiry{
-				RelativeExpiry: 144,
+				RelativeExpiry: 432,
 			},
 		},
 	)

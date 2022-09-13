@@ -91,13 +91,16 @@ const (
 	// the current bestHeight.
 	defaultAccountExpiryExtension = 3024
 
-	// defaultAccountExpiryOffset is a value expressed in blocks that subtracted
-	// from the expiry of an account in order to determine if it expires
-	// "too soon". This value should essentially represent an upper bound
-	// on worst-case block confirmation. If a batch takes longer than this
-	// to confirm, then a race condition can happen if the account was
-	// involved in a prior batch.
-	defaultAccountExpiryOffset = 144
+	// defaultAccountExpiryOffset is a value expressed in blocks that
+	// subtracted from the expiry of an account in order to determine if it
+	// expires "too soon". This value should essentially represent an upper
+	// bound on worst-case block confirmation.
+	//
+	// NOTE: If a batch takes longer than this to confirm, then a race
+	// condition can happen if the account was involved in a prior batch.
+	// On top of that, users with matched zero conf orders which have not
+	// been confirmed yet could potentially lose routed funds.
+	defaultAccountExpiryOffset = 432
 
 	// defaultNodeRatingsRefreshInterval is the interval that we'll use to
 	// continually refresh the node ratings to cache locally so we don't

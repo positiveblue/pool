@@ -358,8 +358,8 @@ func runAccountRenewalTest(ctx context.Context, t *harnessTest,
 	})
 
 	// For our first case, we'll renew our account such that it expires in
-	// 144 blocks from now.
-	const newRelativeExpiry = 144
+	// 432 blocks from now.
+	const newRelativeExpiry = 432
 	_, bestHeight, err := t.lndHarness.Miner.Client.GetBestBlock()
 	require.NoError(t.t, err)
 	absoluteExpiry := uint32(bestHeight) + newRelativeExpiry
@@ -433,7 +433,7 @@ func runAccountRenewalTest(ctx context.Context, t *harnessTest,
 	assertAccountState(initialAccountValue)
 
 	// We'll then process another renewal request, this time specifying the
-	// expiration (144 blocks) as an absolute height.
+	// expiration (432 blocks) as an absolute height.
 	_, bestHeight, err = t.lndHarness.Miner.Client.GetBestBlock()
 	require.NoError(t.t, err)
 	absoluteExpiry = uint32(bestHeight) + newRelativeExpiry
