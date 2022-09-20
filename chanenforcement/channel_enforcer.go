@@ -344,10 +344,11 @@ func (e *ChannelEnforcer) enforceOnPrematureSpend(pkg *LifetimePackage,
 	// TODO(wilmer): With anchors, nodes can broadcast their commitment and
 	// not bump its fees until the maturity height is reached. How should we
 	// handle this?
+	//
+	// TODO(positiveblue): make maturity height consistent with the rest of
+	// the code and have the absoulute value when channle type is script
+	// enforced.
 	absoluteMaturityHeight := confHeight + pkg.MaturityHeight
-	if pkg.Version == chanbackup.ScriptEnforcedLeaseVersion {
-		absoluteMaturityHeight = pkg.MaturityHeight
-	}
 	select {
 	case spend := <-spendChan:
 		if uint32(spend.SpendingHeight) >= absoluteMaturityHeight {
