@@ -6,7 +6,7 @@ auction server into their own environment.
 To run the auction server, you need access to the `auctionserver` docker image.
 Because it is not yet clear whether this image will be available publicly or
 only given to selected partners, we will reference the image in this example
-by `REPOSITORY/auctionserver:v0.10.13-alpha-regtest-only`.
+by `REPOSITORY/auctionserver:v0.11.4-alpha-regtest-only`.
 
 ## Prerequisites
 
@@ -39,7 +39,7 @@ To start the auction server docker container, run the following commands (after
 replacing the placeholders and adjusting the example paths to your environment):
 
 ```shell
-$ docker pull REPOSITORY/auctionserver:v0.10.13-alpha-regtest-only
+$ docker pull REPOSITORY/auctionserver:v0.11.4-alpha-regtest-only
 $ docker run -d \
   --name "auctionserver" \
   --hostname "auctionserver" \
@@ -48,7 +48,7 @@ $ docker run -d \
   -p 12080:12080 \
   -v /data/lnd-auctionserver:/home/auctionserver/.lnd \
   -v /data/auctionserver:/home/auctionserver/.auctionserver \
-  auctionserver:v0.10.13-alpha-regtest-only \
+  auctionserver:v0.11.4-alpha-regtest-only \
     daemon \
     --tlsextradomain="auctionserver" \
     --lnd.host=lnd-auctionserver:10009 \
@@ -77,7 +77,7 @@ USAGE:
    auctioncli [global options] command [command options] [arguments...]
 
 VERSION:
-   0.10.13-alpha commit=regtest
+   0.11.4-alpha commit=regtest
 
 COMMANDS:
    help, h  Shows a list of commands or help for one command
