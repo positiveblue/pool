@@ -721,8 +721,8 @@ github.com/lightninglabs/lndclient v0.15.1-5/go.mod h1:6pymu+B4mYQDWQH1Beu51Pnrj
 github.com/lightninglabs/neutrino v0.13.2/go.mod h1:Cv/v8oHiPhuGiGvGgO+rIMhwCwEdsQFu6as840i2afw=
 github.com/lightninglabs/neutrino v0.14.2 h1:yrnZUCYMZ5ECtXhgDrzqPq2oX8awoAN2D/cgCewJcCo=
 github.com/lightninglabs/neutrino v0.14.2/go.mod h1:OICUeTCn+4Tu27YRJIpWvvqySxx4oH4vgdP33Sw9RDc=
-github.com/lightninglabs/pool v0.5.7-alpha.0.20220929131759-7b797c34dc2f h1:fN6PakrUsr+8w8zb8tSgdRBFZx3yn3pzGUxHkew1XoU=
-github.com/lightninglabs/pool v0.5.7-alpha.0.20220929131759-7b797c34dc2f/go.mod h1:ffBDpOYrvoo87+wfT9MGB2bd8DiVZdSBwd9ls7q6kQ8=
+github.com/lightninglabs/pool v0.5.7-alpha.0.20220929144814-8292329ec1eb h1:jo/Aj+jQvYAhBAL1x2McLm4ect8jHY832NvXHYwQaQM=
+github.com/lightninglabs/pool v0.5.7-alpha.0.20220929144814-8292329ec1eb/go.mod h1:ffBDpOYrvoo87+wfT9MGB2bd8DiVZdSBwd9ls7q6kQ8=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display h1:RZJ8H4ueU/aQ9pFtx5wqsuD3B/DezrewJeVwDKKYY8E=
 github.com/lightninglabs/protobuf-hex-display v1.4.3-hex-display/go.mod h1:2oKOBU042GKFHrdbgGiKax4xVrFiZu51lhacUZQ9MnE=
 github.com/lightningnetwork/lightning-onion v1.0.2-0.20220211021909-bb84a1ccb0c5 h1:TkKwqFcQTGYoI+VEqyxA8rxpCin8qDaYX0AfVRinT3k=
