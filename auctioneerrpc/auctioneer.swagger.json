@@ -1219,7 +1219,7 @@
         "zero_conf_channel": {
           "type": "boolean",
           "format": "boolean",
-          "description": "Signals if this bid is interested in zeroconf channels or not."
+          "description": "Signals if this bid is interested in a zero conf channel or not."
         }
       }
     },
@@ -1358,6 +1358,11 @@
             "format": "byte"
           },
           "description": "List of nodes that won't be allowed to match with our order. Incompatible\nwith the `allowed_node_ids` field."
+        },
+        "is_public": {
+          "type": "boolean",
+          "format": "boolean",
+          "description": "Flag used to signal that this order can be shared in public market\nplaces."
         }
       }
     },
