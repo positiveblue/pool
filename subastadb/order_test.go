@@ -37,6 +37,7 @@ var submitOrderTestCases = []struct {
 			Kit: *dummyOrder(t),
 		}
 		ask.NotAllowedNodeIDs = [][33]byte{{1, 2, 3}}
+		ask.IsPublic = true
 
 		return ask
 	},

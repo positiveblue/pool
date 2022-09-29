@@ -205,6 +205,7 @@ type Order struct {
 	Archived         bool
 	CreatedAt        sql.NullTime
 	ArchivedAt       sql.NullTime
+	IsPublic         bool
 }
 
 type OrderAllowedNodeID struct {
