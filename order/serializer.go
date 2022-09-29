@@ -205,6 +205,7 @@ func parseRPCServerOrder(version uint32,
 	kit.MinUnitsMatch = orderT.NewSupplyFromSats(
 		btcutil.Amount(details.MinChanAmt),
 	)
+	kit.IsPublic = details.IsPublic
 
 	switch details.ChannelType {
 	case auctioneerrpc.OrderChannelType_ORDER_CHANNEL_TYPE_UNKNOWN:
