@@ -64,7 +64,8 @@ type Store interface {
 	ban.Store
 
 	// Batches retrieves all existing batches.
-	Batches(ctx context.Context) (map[orderT.BatchID]*matching.BatchSnapshot, error)
+	Batches(context.Context) (map[orderT.BatchID]*matching.BatchSnapshot,
+		error)
 
 	// PersistBatchResult atomically updates all modified orders/accounts,
 	// persists a snapshot of the batch and switches to the next batch ID.
