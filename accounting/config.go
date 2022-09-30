@@ -7,11 +7,11 @@ import (
 	"github.com/btcsuite/btcd/btcutil"
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // BatchSnapshotMap is an alias for the type returned by our Store.
-type BatchSnapshotMap map[orderT.BatchID]*subastadb.BatchSnapshot
+type BatchSnapshotMap map[orderT.BatchID]*matching.BatchSnapshot
 
 type Config struct {
 	// Start is the time from which our report will be created, inclusive.

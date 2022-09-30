@@ -8,7 +8,6 @@ import (
 	"github.com/lightninglabs/faraday/fiat"
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
-	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/channeldb"
 	"github.com/lightningnetwork/lnd/lnwire"
@@ -58,7 +57,7 @@ type BatchEntry struct {
 
 // extractBatchEntry returns a new reporting entry line for the given batch.
 func extractBatchEntry(cfg *Config, batchID orderT.BatchID,
-	batch *subastadb.BatchSnapshot) (*BatchEntry, error) {
+	batch *matching.BatchSnapshot) (*BatchEntry, error) {
 
 	timestamp := batch.OrderBatch.CreationTimestamp
 	txID := batch.BatchTx.TxHash().String()

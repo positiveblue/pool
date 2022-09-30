@@ -14,6 +14,7 @@ import (
 	"github.com/lightninglabs/subasta/chanenforcement"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/traderterms"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // StoreMock is a type to hold mocked orders.
@@ -26,7 +27,7 @@ type StoreMock struct {
 	Orders           map[orderT.Nonce]order.ServerOrder
 	BatchPubkey      *btcec.PublicKey
 	MasterAcct       *account.Auctioneer
-	Snapshots        map[orderT.BatchID]*BatchSnapshot
+	Snapshots        map[orderT.BatchID]*matching.BatchSnapshot
 	lifetimePackages []*chanenforcement.LifetimePackage
 	TraderTerms      map[lsat.TokenID]*traderterms.Custom
 	t                *testing.T
@@ -41,7 +42,7 @@ func NewStoreMock(t *testing.T) *StoreMock {
 		BannedNodes:    make(map[[33]byte]*ban.Info),
 		Orders:         make(map[orderT.Nonce]order.ServerOrder),
 		BatchPubkey:    InitialBatchKey,
-		Snapshots:      make(map[orderT.BatchID]*BatchSnapshot),
+		Snapshots:      make(map[orderT.BatchID]*matching.BatchSnapshot),
 		TraderTerms:    make(map[lsat.TokenID]*traderterms.Custom),
 		t:              t,
 	}
@@ -296,7 +297,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAcct *account.Auctioneer, batchID orderT.BatchID,
-	batchSnapshot *BatchSnapshot, nextBatchKey *btcec.PublicKey,
+	batchSnapshot *matching.BatchSnapshot, nextBatchKey *btcec.PublicKey,
 	lifetimePkgs []*chanenforcement.LifetimePackage) error {
 
 	err := s.UpdateOrders(ctx, orders, orderModifiers)
@@ -331,7 +332,7 @@ func (s *StoreMock) PersistBatchResult(ctx context.Context,
 //
 // NOTE: This is part of the Store interface.
 func (s *StoreMock) GetBatchSnapshot(_ context.Context, id orderT.BatchID) (
-	*BatchSnapshot, error) {
+	*matching.BatchSnapshot, error) {
 
 	snapshot, ok := s.Snapshots[id]
 	if !ok {
@@ -479,6 +480,14 @@ func (s *StoreMock) BanAccount(ctx context.Context, accKey *btcec.PublicKey,
 	s.BannedAccounts[accountKey] = banInfo
 
 	return nil
+}
+
+// Batches returns all the batches known to the store.
+func (s *StoreMock) Batches(ctx context.Context) (map[orderT.BatchID]*matching.BatchSnapshot, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	return nil, nil
 }
 
 // GetAccountBan returns the ban Info for the given accountKey.

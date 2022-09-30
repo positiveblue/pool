@@ -3,6 +3,8 @@ package matching
 import (
 	"sort"
 
+	"github.com/btcsuite/btcd/btcutil"
+	"github.com/btcsuite/btcd/wire"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
 )
@@ -129,6 +131,18 @@ func (m *MultiUnitMatchMaker) MatchPossible(bid *order.Bid,
 		UnitsUnmatched:   unitsUnmatched,
 		Type:             matchType,
 	}, true
+}
+
+// BatchSnapshot holds a self-contained snapshot of a batch.
+type BatchSnapshot struct {
+	// BatchTx is the final, signed batch transaction for this batch.
+	BatchTx *wire.MsgTx
+
+	// BatchTxFee is the chain fee paid by the above batch tx.
+	BatchTxFee btcutil.Amount
+
+	// OrderBatch is the matched orders part of this batch.
+	OrderBatch *OrderBatch
 }
 
 // MatchBatch attempts to match an entire batch of orders resulting in a final

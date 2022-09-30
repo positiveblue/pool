@@ -89,7 +89,7 @@ type mockAuctioneerState struct {
 	// batch is confirmed.
 	batchStates map[orderT.BatchID]bool
 
-	snapshots map[orderT.BatchID]*subastadb.BatchSnapshot
+	snapshots map[orderT.BatchID]*matching.BatchSnapshot
 
 	quit chan struct{}
 }
@@ -114,7 +114,7 @@ func newMockAuctioneerState(batchKey *btcec.PublicKey,
 		stateSem:         stateSem,
 		orders:           make(map[orderT.Nonce]order.ServerOrder),
 		batchStates:      make(map[orderT.BatchID]bool),
-		snapshots:        make(map[orderT.BatchID]*subastadb.BatchSnapshot),
+		snapshots:        make(map[orderT.BatchID]*matching.BatchSnapshot),
 		quit:             make(chan struct{}),
 	}
 }
@@ -233,7 +233,7 @@ func (m *mockAuctioneerState) BatchConfirmed(ctx context.Context,
 }
 
 func (m *mockAuctioneerState) GetBatchSnapshot(ctx context.Context,
-	bid orderT.BatchID) (*subastadb.BatchSnapshot, error) {
+	bid orderT.BatchID) (*matching.BatchSnapshot, error) {
 
 	m.Lock()
 	defer m.Unlock()
@@ -1137,7 +1137,7 @@ func (a *auctioneerTestHarness) AssertLifetimesEnforced() {
 }
 
 func (a *auctioneerTestHarness) MarkBatchUnconfirmed(bid orderT.BatchID,
-	snapshot *subastadb.BatchSnapshot) {
+	snapshot *matching.BatchSnapshot) {
 
 	a.db.Lock()
 	defer a.db.Unlock()
@@ -1251,7 +1251,7 @@ func (a *auctioneerTestHarness) ReportExecutionSuccess() {
 	exeCtx := a.executor.submittedBatch
 	a.executor.Unlock()
 
-	snapshot := &subastadb.BatchSnapshot{
+	snapshot := &matching.BatchSnapshot{
 		BatchTx:    exeCtx.ExeTx,
 		BatchTxFee: exeCtx.FeeInfoEstimate.Fee,
 		OrderBatch: exeCtx.OrderBatch,
@@ -1628,7 +1628,7 @@ func TestAuctioneerPendingBatchRebroadcast(t *testing.T) {
 		// We'll now insert a pending batch snapshot and transaction,
 		// marking it as unconfirmed.
 		bid := orderT.NewBatchID(currentBatchKey)
-		testHarness.MarkBatchUnconfirmed(bid, &subastadb.BatchSnapshot{
+		testHarness.MarkBatchUnconfirmed(bid, &matching.BatchSnapshot{
 			BatchTx: batchTx,
 		})
 		batchKeys = append(batchKeys, currentBatchKey)

@@ -68,9 +68,10 @@ func TestFetchAuctioneerBalances(t *testing.T) {
 	// persistBatch emulates the store.PersistBatch behaviour.
 	persistBatch := func(acct *account.Auctioneer) {
 		time.Sleep(time.Second)
-		batch := &BatchSnapshot{
-			wire.NewMsgTx(2), 0,
-			matching.EmptyBatch(orderT.DefaultBatchVersion),
+		batch := &matching.BatchSnapshot{
+			BatchTx:    wire.NewMsgTx(2),
+			BatchTxFee: 0,
+			OrderBatch: matching.EmptyBatch(orderT.DefaultBatchVersion),
 		}
 		err := sqlStore.StoreBatch(ctx, acct.BatchKey, batch, true)
 		require.NoError(t, err)

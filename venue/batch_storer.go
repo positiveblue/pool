@@ -12,6 +12,7 @@ import (
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/subastadb"
+	"github.com/lightninglabs/subasta/venue/matching"
 )
 
 // ExeBatchStorer is a type that implements BatchStorer and can persist a batch
@@ -222,7 +223,7 @@ func (s *ExeBatchStorer) Store(ctx context.Context, result *ExecutionResult) err
 
 	// Also create a snapshot we'll store to the DB, useful if we later
 	// need to look up this batch.
-	snapshot := &subastadb.BatchSnapshot{
+	snapshot := &matching.BatchSnapshot{
 		BatchTx:    result.BatchTx,
 		BatchTxFee: result.FeeInfo.Fee,
 		OrderBatch: batch,

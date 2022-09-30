@@ -9,7 +9,7 @@ import (
 	reflect "reflect"
 	time "time"
 
-	v2 "github.com/btcsuite/btcd/btcec/v2"
+	btcec "github.com/btcsuite/btcd/btcec/v2"
 	btcutil "github.com/btcsuite/btcd/btcutil"
 	gomock "github.com/golang/mock/gomock"
 	lsat "github.com/lightninglabs/aperture/lsat"
@@ -20,6 +20,7 @@ import (
 	order0 "github.com/lightninglabs/subasta/order"
 	ratings "github.com/lightninglabs/subasta/ratings"
 	traderterms "github.com/lightninglabs/subasta/traderterms"
+	matching "github.com/lightninglabs/subasta/venue/matching"
 )
 
 // MockLeaseDurationStore is a mock of LeaseDurationStore interface.
@@ -112,7 +113,7 @@ func (m *MockStore) EXPECT() *MockStoreMockRecorder {
 }
 
 // Account mocks base method.
-func (m *MockStore) Account(arg0 context.Context, arg1 *v2.PublicKey, arg2 bool) (*account.Account, error) {
+func (m *MockStore) Account(arg0 context.Context, arg1 *btcec.PublicKey, arg2 bool) (*account.Account, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Account", arg0, arg1, arg2)
 	ret0, _ := ret[0].(*account.Account)
@@ -157,7 +158,7 @@ func (mr *MockStoreMockRecorder) AllTraderTerms(ctx interface{}) *gomock.Call {
 }
 
 // BanAccount mocks base method.
-func (m *MockStore) BanAccount(ctx context.Context, accountKey *v2.PublicKey, info *ban.Info) error {
+func (m *MockStore) BanAccount(ctx context.Context, accountKey *btcec.PublicKey, info *ban.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BanAccount", ctx, accountKey, info)
 	ret0, _ := ret[0].(error)
@@ -171,7 +172,7 @@ func (mr *MockStoreMockRecorder) BanAccount(ctx, accountKey, info interface{}) *
 }
 
 // BanNode mocks base method.
-func (m *MockStore) BanNode(ctx context.Context, nodeKey *v2.PublicKey, info *ban.Info) error {
+func (m *MockStore) BanNode(ctx context.Context, nodeKey *btcec.PublicKey, info *ban.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BanNode", ctx, nodeKey, info)
 	ret0, _ := ret[0].(error)
@@ -200,10 +201,10 @@ func (mr *MockStoreMockRecorder) BatchConfirmed(arg0, arg1 interface{}) *gomock.
 }
 
 // BatchKey mocks base method.
-func (m *MockStore) BatchKey(arg0 context.Context) (*v2.PublicKey, error) {
+func (m *MockStore) BatchKey(arg0 context.Context) (*btcec.PublicKey, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BatchKey", arg0)
-	ret0, _ := ret[0].(*v2.PublicKey)
+	ret0, _ := ret[0].(*btcec.PublicKey)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -214,8 +215,23 @@ func (mr *MockStoreMockRecorder) BatchKey(arg0 interface{}) *gomock.Call {
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "BatchKey", reflect.TypeOf((*MockStore)(nil).BatchKey), arg0)
 }
 
+// Batches mocks base method.
+func (m *MockStore) Batches(ctx context.Context) (map[order.BatchID]*matching.BatchSnapshot, error) {
+	m.ctrl.T.Helper()
+	ret := m.ctrl.Call(m, "Batches", ctx)
+	ret0, _ := ret[0].(map[order.BatchID]*matching.BatchSnapshot)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+// Batches indicates an expected call of Batches.
+func (mr *MockStoreMockRecorder) Batches(ctx interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "Batches", reflect.TypeOf((*MockStore)(nil).Batches), ctx)
+}
+
 // CommitAccountDiff mocks base method.
-func (m *MockStore) CommitAccountDiff(arg0 context.Context, arg1 *v2.PublicKey) error {
+func (m *MockStore) CommitAccountDiff(arg0 context.Context, arg1 *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CommitAccountDiff", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -285,7 +301,7 @@ func (mr *MockStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}) *go
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *v2.PublicKey, accInfo, nodeInfo *ban.Info) error {
+func (m *MockStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *btcec.PublicKey, accInfo, nodeInfo *ban.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 	ret0, _ := ret[0].(error)
@@ -314,7 +330,7 @@ func (mr *MockStoreMockRecorder) FetchAuctioneerAccount(arg0 interface{}) *gomoc
 }
 
 // GetAccountBan mocks base method.
-func (m *MockStore) GetAccountBan(ctx context.Context, accKey *v2.PublicKey, currentHeight uint32) (*ban.Info, error) {
+func (m *MockStore) GetAccountBan(ctx context.Context, accKey *btcec.PublicKey, currentHeight uint32) (*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAccountBan", ctx, accKey, currentHeight)
 	ret0, _ := ret[0].(*ban.Info)
@@ -344,10 +360,10 @@ func (mr *MockStoreMockRecorder) GetArchivedOrders(arg0 interface{}) *gomock.Cal
 }
 
 // GetBatchSnapshot mocks base method.
-func (m *MockStore) GetBatchSnapshot(arg0 context.Context, arg1 order.BatchID) (*BatchSnapshot, error) {
+func (m *MockStore) GetBatchSnapshot(arg0 context.Context, arg1 order.BatchID) (*matching.BatchSnapshot, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetBatchSnapshot", arg0, arg1)
-	ret0, _ := ret[0].(*BatchSnapshot)
+	ret0, _ := ret[0].(*matching.BatchSnapshot)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -359,7 +375,7 @@ func (mr *MockStoreMockRecorder) GetBatchSnapshot(arg0, arg1 interface{}) *gomoc
 }
 
 // GetNodeBan mocks base method.
-func (m *MockStore) GetNodeBan(ctx context.Context, nodeKey *v2.PublicKey, currentHeight uint32) (*ban.Info, error) {
+func (m *MockStore) GetNodeBan(ctx context.Context, nodeKey *btcec.PublicKey, currentHeight uint32) (*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNodeBan", ctx, nodeKey, currentHeight)
 	ret0, _ := ret[0].(*ban.Info)
@@ -434,7 +450,7 @@ func (mr *MockStoreMockRecorder) HasReservation(arg0, arg1 interface{}) *gomock.
 }
 
 // HasReservationForKey mocks base method.
-func (m *MockStore) HasReservationForKey(arg0 context.Context, arg1 *v2.PublicKey) (*account.Reservation, *lsat.TokenID, error) {
+func (m *MockStore) HasReservationForKey(arg0 context.Context, arg1 *btcec.PublicKey) (*account.Reservation, *lsat.TokenID, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "HasReservationForKey", arg0, arg1)
 	ret0, _ := ret[0].(*account.Reservation)
@@ -524,7 +540,7 @@ func (mr *MockStoreMockRecorder) ListBannedNodes(ctx, currentHeight interface{})
 }
 
 // PersistBatchResult mocks base method.
-func (m *MockStore) PersistBatchResult(arg0 context.Context, arg1 []order.Nonce, arg2 [][]order0.Modifier, arg3 []*v2.PublicKey, arg4 [][]account.Modifier, arg5 *account.Auctioneer, arg6 order.BatchID, arg7 *BatchSnapshot, arg8 *v2.PublicKey, arg9 []*chanenforcement.LifetimePackage) error {
+func (m *MockStore) PersistBatchResult(arg0 context.Context, arg1 []order.Nonce, arg2 [][]order0.Modifier, arg3 []*btcec.PublicKey, arg4 [][]account.Modifier, arg5 *account.Auctioneer, arg6 order.BatchID, arg7 *matching.BatchSnapshot, arg8 *btcec.PublicKey, arg9 []*chanenforcement.LifetimePackage) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PersistBatchResult", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 	ret0, _ := ret[0].(error)
@@ -552,7 +568,7 @@ func (mr *MockStoreMockRecorder) PutTraderTerms(ctx, terms interface{}) *gomock.
 }
 
 // RemoveAccountBan mocks base method.
-func (m *MockStore) RemoveAccountBan(ctx context.Context, acctKey *v2.PublicKey) error {
+func (m *MockStore) RemoveAccountBan(ctx context.Context, acctKey *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveAccountBan", ctx, acctKey)
 	ret0, _ := ret[0].(error)
@@ -580,7 +596,7 @@ func (mr *MockStoreMockRecorder) RemoveLeaseDuration(ctx, duration interface{}) 
 }
 
 // RemoveNodeBan mocks base method.
-func (m *MockStore) RemoveNodeBan(ctx context.Context, nodeKey *v2.PublicKey) error {
+func (m *MockStore) RemoveNodeBan(ctx context.Context, nodeKey *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveNodeBan", ctx, nodeKey)
 	ret0, _ := ret[0].(error)
@@ -608,7 +624,7 @@ func (mr *MockStoreMockRecorder) ReserveAccount(arg0, arg1, arg2 interface{}) *g
 }
 
 // StoreAccountDiff mocks base method.
-func (m *MockStore) StoreAccountDiff(arg0 context.Context, arg1 *v2.PublicKey, arg2 []account.Modifier) error {
+func (m *MockStore) StoreAccountDiff(arg0 context.Context, arg1 *btcec.PublicKey, arg2 []account.Modifier) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StoreAccountDiff", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
@@ -740,7 +756,7 @@ func (m *MockAdminStore) EXPECT() *MockAdminStoreMockRecorder {
 }
 
 // Account mocks base method.
-func (m *MockAdminStore) Account(arg0 context.Context, arg1 *v2.PublicKey, arg2 bool) (*account.Account, error) {
+func (m *MockAdminStore) Account(arg0 context.Context, arg1 *btcec.PublicKey, arg2 bool) (*account.Account, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Account", arg0, arg1, arg2)
 	ret0, _ := ret[0].(*account.Account)
@@ -785,7 +801,7 @@ func (mr *MockAdminStoreMockRecorder) AllTraderTerms(ctx interface{}) *gomock.Ca
 }
 
 // BanAccount mocks base method.
-func (m *MockAdminStore) BanAccount(ctx context.Context, accountKey *v2.PublicKey, info *ban.Info) error {
+func (m *MockAdminStore) BanAccount(ctx context.Context, accountKey *btcec.PublicKey, info *ban.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BanAccount", ctx, accountKey, info)
 	ret0, _ := ret[0].(error)
@@ -799,7 +815,7 @@ func (mr *MockAdminStoreMockRecorder) BanAccount(ctx, accountKey, info interface
 }
 
 // BanNode mocks base method.
-func (m *MockAdminStore) BanNode(ctx context.Context, nodeKey *v2.PublicKey, info *ban.Info) error {
+func (m *MockAdminStore) BanNode(ctx context.Context, nodeKey *btcec.PublicKey, info *ban.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BanNode", ctx, nodeKey, info)
 	ret0, _ := ret[0].(error)
@@ -828,10 +844,10 @@ func (mr *MockAdminStoreMockRecorder) BatchConfirmed(arg0, arg1 interface{}) *go
 }
 
 // BatchKey mocks base method.
-func (m *MockAdminStore) BatchKey(arg0 context.Context) (*v2.PublicKey, error) {
+func (m *MockAdminStore) BatchKey(arg0 context.Context) (*btcec.PublicKey, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "BatchKey", arg0)
-	ret0, _ := ret[0].(*v2.PublicKey)
+	ret0, _ := ret[0].(*btcec.PublicKey)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -843,10 +859,10 @@ func (mr *MockAdminStoreMockRecorder) BatchKey(arg0 interface{}) *gomock.Call {
 }
 
 // Batches mocks base method.
-func (m *MockAdminStore) Batches(ctx context.Context) (map[order.BatchID]*BatchSnapshot, error) {
+func (m *MockAdminStore) Batches(ctx context.Context) (map[order.BatchID]*matching.BatchSnapshot, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "Batches", ctx)
-	ret0, _ := ret[0].(map[order.BatchID]*BatchSnapshot)
+	ret0, _ := ret[0].(map[order.BatchID]*matching.BatchSnapshot)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -858,7 +874,7 @@ func (mr *MockAdminStoreMockRecorder) Batches(ctx interface{}) *gomock.Call {
 }
 
 // CommitAccountDiff mocks base method.
-func (m *MockAdminStore) CommitAccountDiff(arg0 context.Context, arg1 *v2.PublicKey) error {
+func (m *MockAdminStore) CommitAccountDiff(arg0 context.Context, arg1 *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "CommitAccountDiff", arg0, arg1)
 	ret0, _ := ret[0].(error)
@@ -914,7 +930,7 @@ func (mr *MockAdminStoreMockRecorder) DelTraderTerms(ctx, traderID interface{}) 
 }
 
 // DeleteAccountDiff mocks base method.
-func (m *MockAdminStore) DeleteAccountDiff(ctx context.Context, accountKey *v2.PublicKey) error {
+func (m *MockAdminStore) DeleteAccountDiff(ctx context.Context, accountKey *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "DeleteAccountDiff", ctx, accountKey)
 	ret0, _ := ret[0].(error)
@@ -942,7 +958,7 @@ func (mr *MockAdminStoreMockRecorder) DeleteLifetimePackage(ctx, pkg interface{}
 }
 
 // EnforceLifetimeViolation mocks base method.
-func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *v2.PublicKey, accInfo, nodeInfo *ban.Info) error {
+func (m *MockAdminStore) EnforceLifetimeViolation(ctx context.Context, pkg *chanenforcement.LifetimePackage, accKey, nodeKey *btcec.PublicKey, accInfo, nodeInfo *ban.Info) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "EnforceLifetimeViolation", ctx, pkg, accKey, nodeKey, accInfo, nodeInfo)
 	ret0, _ := ret[0].(error)
@@ -971,7 +987,7 @@ func (mr *MockAdminStoreMockRecorder) FetchAuctioneerAccount(arg0 interface{}) *
 }
 
 // GetAccountBan mocks base method.
-func (m *MockAdminStore) GetAccountBan(ctx context.Context, accKey *v2.PublicKey, currentHeight uint32) (*ban.Info, error) {
+func (m *MockAdminStore) GetAccountBan(ctx context.Context, accKey *btcec.PublicKey, currentHeight uint32) (*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetAccountBan", ctx, accKey, currentHeight)
 	ret0, _ := ret[0].(*ban.Info)
@@ -1016,10 +1032,10 @@ func (mr *MockAdminStoreMockRecorder) GetAuctioneerBalance(ctx, date interface{}
 }
 
 // GetBatchSnapshot mocks base method.
-func (m *MockAdminStore) GetBatchSnapshot(arg0 context.Context, arg1 order.BatchID) (*BatchSnapshot, error) {
+func (m *MockAdminStore) GetBatchSnapshot(arg0 context.Context, arg1 order.BatchID) (*matching.BatchSnapshot, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetBatchSnapshot", arg0, arg1)
-	ret0, _ := ret[0].(*BatchSnapshot)
+	ret0, _ := ret[0].(*matching.BatchSnapshot)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -1031,7 +1047,7 @@ func (mr *MockAdminStoreMockRecorder) GetBatchSnapshot(arg0, arg1 interface{}) *
 }
 
 // GetNodeBan mocks base method.
-func (m *MockAdminStore) GetNodeBan(ctx context.Context, nodeKey *v2.PublicKey, currentHeight uint32) (*ban.Info, error) {
+func (m *MockAdminStore) GetNodeBan(ctx context.Context, nodeKey *btcec.PublicKey, currentHeight uint32) (*ban.Info, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "GetNodeBan", ctx, nodeKey, currentHeight)
 	ret0, _ := ret[0].(*ban.Info)
@@ -1106,7 +1122,7 @@ func (mr *MockAdminStoreMockRecorder) HasReservation(arg0, arg1 interface{}) *go
 }
 
 // HasReservationForKey mocks base method.
-func (m *MockAdminStore) HasReservationForKey(arg0 context.Context, arg1 *v2.PublicKey) (*account.Reservation, *lsat.TokenID, error) {
+func (m *MockAdminStore) HasReservationForKey(arg0 context.Context, arg1 *btcec.PublicKey) (*account.Reservation, *lsat.TokenID, error) {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "HasReservationForKey", arg0, arg1)
 	ret0, _ := ret[0].(*account.Reservation)
@@ -1254,7 +1270,7 @@ func (mr *MockAdminStoreMockRecorder) NodeRatings(ctx interface{}) *gomock.Call 
 }
 
 // PersistBatchResult mocks base method.
-func (m *MockAdminStore) PersistBatchResult(arg0 context.Context, arg1 []order.Nonce, arg2 [][]order0.Modifier, arg3 []*v2.PublicKey, arg4 [][]account.Modifier, arg5 *account.Auctioneer, arg6 order.BatchID, arg7 *BatchSnapshot, arg8 *v2.PublicKey, arg9 []*chanenforcement.LifetimePackage) error {
+func (m *MockAdminStore) PersistBatchResult(arg0 context.Context, arg1 []order.Nonce, arg2 [][]order0.Modifier, arg3 []*btcec.PublicKey, arg4 [][]account.Modifier, arg5 *account.Auctioneer, arg6 order.BatchID, arg7 *matching.BatchSnapshot, arg8 *btcec.PublicKey, arg9 []*chanenforcement.LifetimePackage) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "PersistBatchResult", arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, arg8, arg9)
 	ret0, _ := ret[0].(error)
@@ -1282,7 +1298,7 @@ func (mr *MockAdminStoreMockRecorder) PutTraderTerms(ctx, terms interface{}) *go
 }
 
 // RemoveAccountBan mocks base method.
-func (m *MockAdminStore) RemoveAccountBan(ctx context.Context, acctKey *v2.PublicKey) error {
+func (m *MockAdminStore) RemoveAccountBan(ctx context.Context, acctKey *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveAccountBan", ctx, acctKey)
 	ret0, _ := ret[0].(error)
@@ -1310,7 +1326,7 @@ func (mr *MockAdminStoreMockRecorder) RemoveLeaseDuration(ctx, duration interfac
 }
 
 // RemoveNodeBan mocks base method.
-func (m *MockAdminStore) RemoveNodeBan(ctx context.Context, nodeKey *v2.PublicKey) error {
+func (m *MockAdminStore) RemoveNodeBan(ctx context.Context, nodeKey *btcec.PublicKey) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "RemoveNodeBan", ctx, nodeKey)
 	ret0, _ := ret[0].(error)
@@ -1352,7 +1368,7 @@ func (mr *MockAdminStoreMockRecorder) ReserveAccount(arg0, arg1, arg2 interface{
 }
 
 // StoreAccountDiff mocks base method.
-func (m *MockAdminStore) StoreAccountDiff(arg0 context.Context, arg1 *v2.PublicKey, arg2 []account.Modifier) error {
+func (m *MockAdminStore) StoreAccountDiff(arg0 context.Context, arg1 *btcec.PublicKey, arg2 []account.Modifier) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "StoreAccountDiff", arg0, arg1, arg2)
 	ret0, _ := ret[0].(error)
@@ -1428,7 +1444,7 @@ func (mr *MockAdminStoreMockRecorder) UpdateAccount(arg0, arg1 interface{}, arg2
 }
 
 // UpdateAccountDiff mocks base method.
-func (m *MockAdminStore) UpdateAccountDiff(ctx context.Context, accountKey *v2.PublicKey, modifiers []account.Modifier) error {
+func (m *MockAdminStore) UpdateAccountDiff(ctx context.Context, accountKey *btcec.PublicKey, modifiers []account.Modifier) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "UpdateAccountDiff", ctx, accountKey, modifiers)
 	ret0, _ := ret[0].(error)

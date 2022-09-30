@@ -152,9 +152,10 @@ func TestPersistBatchResult(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{testTraderKey}, accountModifiers,
-		ma1, batchID, &BatchSnapshot{
-			batchTx, 0,
-			matching.EmptyBatch(orderT.DefaultBatchVersion),
+		ma1, batchID, &matching.BatchSnapshot{
+			BatchTx:    batchTx,
+			BatchTxFee: 0,
+			OrderBatch: matching.EmptyBatch(orderT.DefaultBatchVersion),
 		}, nextBatchKey, lifetimePkgs,
 	)
 	if err != nil {
@@ -295,9 +296,10 @@ func TestPersistBatchResultRollback(t *testing.T) {
 	err = store.PersistBatchResult(
 		ctx, []orderT.Nonce{o1.Nonce()}, orderModifiers,
 		[]*btcec.PublicKey{invalidAccountKey}, accountModifiers,
-		ma1, batchID, &BatchSnapshot{
-			batchTx, 0,
-			matching.EmptyBatch(orderT.DefaultBatchVersion),
+		ma1, batchID, &matching.BatchSnapshot{
+			BatchTx:    batchTx,
+			BatchTxFee: 0,
+			OrderBatch: matching.EmptyBatch(orderT.DefaultBatchVersion),
 		},
 		testTraderKey, nil,
 	)
@@ -566,7 +568,7 @@ func assertBatchSerialization(t *testing.T, store AdminStore,
 
 	ctx := context.Background()
 	txFee := btcutil.Amount(911)
-	batchSnapshot := &BatchSnapshot{
+	batchSnapshot := &matching.BatchSnapshot{
 		BatchTx:    batchTx,
 		BatchTxFee: txFee,
 		OrderBatch: batch,

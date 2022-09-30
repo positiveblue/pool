@@ -93,7 +93,7 @@ type AuctioneerDatabase interface {
 	// GetBatchSnapshot returns the self-contained snapshot of a batch with
 	// the given ID as it was recorded at the time.
 	GetBatchSnapshot(context.Context, orderT.BatchID) (
-		*subastadb.BatchSnapshot, error)
+		*matching.BatchSnapshot, error)
 }
 
 // Wallet is an interface that contains all the methods necessary for the

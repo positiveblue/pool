@@ -38,7 +38,7 @@ func (s *SQLStore) BatchKey(ctx context.Context) (*btcec.PublicKey, error) {
 
 // StoreBatch inserts a batch with its confirmation status in the db.
 func (s *SQLStore) StoreBatch(ctx context.Context, batchID orderT.BatchID,
-	batch *BatchSnapshot, confirmed bool) error {
+	batch *matching.BatchSnapshot, confirmed bool) error {
 
 	txBody := func(txQueries *postgres.Queries) error {
 		err := storeBatchWithTx(ctx, txQueries, batchID, batch)
@@ -81,7 +81,7 @@ func (s *SQLStore) PersistBatchResult(ctx context.Context,
 	orders []orderT.Nonce, orderModifiers [][]order.Modifier,
 	accounts []*btcec.PublicKey, accountModifiers [][]account.Modifier,
 	masterAccount *account.Auctioneer, batchID orderT.BatchID,
-	batchSnapshot *BatchSnapshot, newBatchKey *btcec.PublicKey,
+	batchSnapshot *matching.BatchSnapshot, newBatchKey *btcec.PublicKey,
 	lifetimePkgs []*chanenforcement.LifetimePackage) error {
 
 	// Catch the most obvious problems first.
@@ -177,9 +177,9 @@ func (s *SQLStore) PersistBatchResult(ctx context.Context,
 // GetBatchSnapshot returns the self-contained snapshot of a batch with
 // the given ID as it was recorded at the time.
 func (s *SQLStore) GetBatchSnapshot(ctx context.Context,
-	batchID orderT.BatchID) (*BatchSnapshot, error) {
+	batchID orderT.BatchID) (*matching.BatchSnapshot, error) {
 
-	var batchSnapshot *BatchSnapshot
+	var batchSnapshot *matching.BatchSnapshot
 	txBody := func(txQueries *postgres.Queries) error {
 		var err error
 
@@ -285,7 +285,7 @@ func (s *SQLStore) BatchConfirmed(ctx context.Context,
 
 // Batches retrieves all existing batches.
 func (s *SQLStore) Batches(
-	ctx context.Context) (map[orderT.BatchID]*BatchSnapshot, error) {
+	ctx context.Context) (map[orderT.BatchID]*matching.BatchSnapshot, error) {
 
 	errMsg := "unable to get batches: %w"
 
@@ -296,7 +296,7 @@ func (s *SQLStore) Batches(
 		return nil, fmt.Errorf(errMsg, err)
 	}
 
-	batches := make(map[orderT.BatchID]*BatchSnapshot, len(batchKeys))
+	batches := make(map[orderT.BatchID]*matching.BatchSnapshot, len(batchKeys))
 	for _, batchKey := range batchKeys {
 		var batchID orderT.BatchID
 		copy(batchID[:], batchKey)
@@ -313,7 +313,7 @@ func (s *SQLStore) Batches(
 // storeBatchWithTx creates all the data related to a batch snapshot in the
 // db using the provided queries struct.
 func storeBatchWithTx(ctx context.Context, txQueries *postgres.Queries,
-	batchID orderT.BatchID, batchSnapshot *BatchSnapshot) error {
+	batchID orderT.BatchID, batchSnapshot *matching.BatchSnapshot) error {
 
 	// Create batch.
 	var batchTx bytes.Buffer
@@ -409,7 +409,7 @@ func storeBatchWithTx(ctx context.Context, txQueries *postgres.Queries,
 // using the provided queries struct.
 func createBatchAccountDiffsWithTx(ctx context.Context,
 	txQueries *postgres.Queries, batchID orderT.BatchID,
-	batchSnapshot *BatchSnapshot) error {
+	batchSnapshot *matching.BatchSnapshot) error {
 
 	accDiffs := batchSnapshot.OrderBatch.FeeReport.AccountDiffs
 	paramList := make(
@@ -469,10 +469,10 @@ func unmarshalBatchSnapshot(batchRow postgres.Batch,
 	matchedOrderRows []postgres.BatchMatchedOrder,
 	orders map[orderT.Nonce]order.ServerOrder,
 	accDiffRows []postgres.BatchAccountDiff,
-	clearingPriceRows []postgres.BatchClearingPrice) (*BatchSnapshot,
+	clearingPriceRows []postgres.BatchClearingPrice) (*matching.BatchSnapshot,
 	error) {
 
-	batchSnapshot := &BatchSnapshot{}
+	batchSnapshot := &matching.BatchSnapshot{}
 
 	batchTx := &wire.MsgTx{}
 	err := batchTx.Deserialize(bytes.NewReader(batchRow.BatchTx))

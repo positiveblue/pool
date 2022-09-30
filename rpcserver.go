@@ -191,7 +191,7 @@ type rpcServer struct {
 
 	terms *terms.AuctioneerTerms
 
-	snapshotCache    map[orderT.BatchID]*subastadb.BatchSnapshot
+	snapshotCache    map[orderT.BatchID]*matching.BatchSnapshot
 	snapshotCacheMtx sync.Mutex
 
 	// activeTraders is a map where we'll add/remove traders as they come
@@ -233,7 +233,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		terms:            terms,
 		quit:             make(chan struct{}),
 		connectedStreams: make(map[lsat.TokenID]*TraderStream),
-		snapshotCache:    make(map[orderT.BatchID]*subastadb.BatchSnapshot),
+		snapshotCache:    make(map[orderT.BatchID]*matching.BatchSnapshot),
 		subscribeTimeout: subscribeTimeout,
 		ratingAgency:     ratingAgency,
 		ratingsDB:        ratingsDB,
@@ -2263,7 +2263,7 @@ func (s *rpcServer) BatchSnapshot(ctx context.Context,
 // already exists in the cache. If it does, it's returned directly, otherwise
 // it is fetched from the database and placed into the cache.
 func (s *rpcServer) lookupSnapshot(ctx context.Context,
-	batchKey *btcec.PublicKey) (*subastadb.BatchSnapshot, error) {
+	batchKey *btcec.PublicKey) (*matching.BatchSnapshot, error) {
 
 	// Hold the mutex during the whole duration of this method to ensure
 	// that two parallel requests for the same batch ID will be serialized
@@ -2474,7 +2474,7 @@ func (s *rpcServer) MarketInfo(ctx context.Context,
 
 // marshallBatchSnapshot converts a batch snapshot into the RPC representation.
 func marshallBatchSnapshot(batchKey *btcec.PublicKey,
-	batchSnapshot *subastadb.BatchSnapshot) (*auctioneerrpc.BatchSnapshotResponse,
+	batchSnapshot *matching.BatchSnapshot) (*auctioneerrpc.BatchSnapshotResponse,
 	error) {
 
 	batch := batchSnapshot.OrderBatch

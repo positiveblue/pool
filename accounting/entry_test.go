@@ -11,7 +11,6 @@ import (
 	"github.com/lightninglabs/lndclient"
 	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/subasta/order"
-	"github.com/lightninglabs/subasta/subastadb"
 	"github.com/lightninglabs/subasta/venue/matching"
 	"github.com/lightningnetwork/lnd/lnwire"
 	"github.com/shopspring/decimal"
@@ -112,13 +111,13 @@ var extractBatchEntryTestCases = []struct {
 	name          string
 	cfg           *Config
 	batchID       orderT.BatchID
-	batch         *subastadb.BatchSnapshot
+	batch         *matching.BatchSnapshot
 	expectedEntry *BatchEntry
 	expectedErr   string
 }{{
 	name:    "extractBatchEntry fails if we cannot get the fiat price",
 	batchID: batchID,
-	batch: &subastadb.BatchSnapshot{
+	batch: &matching.BatchSnapshot{
 		BatchTx:    &wire.MsgTx{},
 		OrderBatch: newOrderBatch(),
 	},
@@ -131,7 +130,7 @@ var extractBatchEntryTestCases = []struct {
 }, {
 	name:    "extractBatchEntry is populated correctly",
 	batchID: batchID,
-	batch: &subastadb.BatchSnapshot{
+	batch: &matching.BatchSnapshot{
 		BatchTx:    &wire.MsgTx{},
 		OrderBatch: newOrderBatch(),
 	},

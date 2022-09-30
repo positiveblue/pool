@@ -59,7 +59,7 @@ type PrometheusConfig struct {
 	// SnapshotSource is a function that returns the batch snapshot for a
 	// batch with the given batch ID.
 	SnapshotSource func(context.Context,
-		*btcec.PublicKey) (*subastadb.BatchSnapshot, error)
+		*btcec.PublicKey) (*matching.BatchSnapshot, error)
 }
 
 // PrometheusExporter is a metric exporter that uses Prometheus directly. The
