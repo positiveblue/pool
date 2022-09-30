@@ -12,6 +12,10 @@ http:
       get: "/v1/pool/auction/terms"
     - selector: poolrpc.ChannelAuctioneer.MarketInfo
       get: "/v1/pool/market/info"
+    - selector: poolrpc.ChannelAuctioneer.OrderMetrics
+      get: "/v1/pool/order/metrics"
+    - selector: poolrpc.ChannelAuctioneer.BatchMetrics
+      get: "/v1/pool/batch/metrics"
 
     # Make the URI convenient to be called in different ways, the shortest of
     # them just returning the most recent batch.

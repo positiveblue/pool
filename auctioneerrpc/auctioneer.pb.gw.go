@@ -251,6 +251,42 @@ func local_request_ChannelAuctioneer_MarketInfo_0(ctx context.Context, marshaler
 
 }
 
+func request_ChannelAuctioneer_BatchMetrics_0(ctx context.Context, marshaler runtime.Marshaler, client ChannelAuctioneerClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq BatchMetricsRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := client.BatchMetrics(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_ChannelAuctioneer_BatchMetrics_0(ctx context.Context, marshaler runtime.Marshaler, server ChannelAuctioneerServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq BatchMetricsRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := server.BatchMetrics(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
+func request_ChannelAuctioneer_OrderMetrics_0(ctx context.Context, marshaler runtime.Marshaler, client ChannelAuctioneerClient, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq OrderMetricsRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := client.OrderMetrics(ctx, &protoReq, grpc.Header(&metadata.HeaderMD), grpc.Trailer(&metadata.TrailerMD))
+	return msg, metadata, err
+
+}
+
+func local_request_ChannelAuctioneer_OrderMetrics_0(ctx context.Context, marshaler runtime.Marshaler, server ChannelAuctioneerServer, req *http.Request, pathParams map[string]string) (proto.Message, runtime.ServerMetadata, error) {
+	var protoReq OrderMetricsRequest
+	var metadata runtime.ServerMetadata
+
+	msg, err := server.OrderMetrics(ctx, &protoReq)
+	return msg, metadata, err
+
+}
+
 // RegisterChannelAuctioneerHandlerServer registers the http handlers for service ChannelAuctioneer to "mux".
 // UnaryRPC     :call ChannelAuctioneerServer directly.
 // StreamingRPC :currently unsupported pending https://github.com/grpc/grpc-go/issues/906.
@@ -353,6 +389,46 @@ func RegisterChannelAuctioneerHandlerServer(ctx context.Context, mux *runtime.Se
 		}
 
 		forward_ChannelAuctioneer_MarketInfo_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_ChannelAuctioneer_BatchMetrics_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_ChannelAuctioneer_BatchMetrics_0(rctx, inboundMarshaler, server, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_ChannelAuctioneer_BatchMetrics_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_ChannelAuctioneer_OrderMetrics_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateIncomingContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := local_request_ChannelAuctioneer_OrderMetrics_0(rctx, inboundMarshaler, server, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_ChannelAuctioneer_OrderMetrics_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
 
 	})
 
@@ -497,6 +573,46 @@ func RegisterChannelAuctioneerHandlerClient(ctx context.Context, mux *runtime.Se
 
 	})
 
+	mux.Handle("GET", pattern_ChannelAuctioneer_BatchMetrics_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_ChannelAuctioneer_BatchMetrics_0(rctx, inboundMarshaler, client, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_ChannelAuctioneer_BatchMetrics_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
+	mux.Handle("GET", pattern_ChannelAuctioneer_OrderMetrics_0, func(w http.ResponseWriter, req *http.Request, pathParams map[string]string) {
+		ctx, cancel := context.WithCancel(req.Context())
+		defer cancel()
+		inboundMarshaler, outboundMarshaler := runtime.MarshalerForRequest(mux, req)
+		rctx, err := runtime.AnnotateContext(ctx, mux, req)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+		resp, md, err := request_ChannelAuctioneer_OrderMetrics_0(rctx, inboundMarshaler, client, req, pathParams)
+		ctx = runtime.NewServerMetadataContext(ctx, md)
+		if err != nil {
+			runtime.HTTPError(ctx, mux, outboundMarshaler, w, req, err)
+			return
+		}
+
+		forward_ChannelAuctioneer_OrderMetrics_0(ctx, mux, outboundMarshaler, w, req, resp, mux.GetForwardResponseOptions()...)
+
+	})
+
 	return nil
 }
 
@@ -510,6 +626,10 @@ var (
 	pattern_ChannelAuctioneer_BatchSnapshots_2 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3, 1, 0, 4, 1, 5, 4, 1, 0, 4, 1, 5, 5}, []string{"v1", "pool", "batch", "snapshots", "start_batch_id", "num_batches_back"}, "", runtime.AssumeColonVerbOpt(true)))
 
 	pattern_ChannelAuctioneer_MarketInfo_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "pool", "market", "info"}, "", runtime.AssumeColonVerbOpt(true)))
+
+	pattern_ChannelAuctioneer_BatchMetrics_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "pool", "batch", "metrics"}, "", runtime.AssumeColonVerbOpt(true)))
+
+	pattern_ChannelAuctioneer_OrderMetrics_0 = runtime.MustPattern(runtime.NewPattern(1, []int{2, 0, 2, 1, 2, 2, 2, 3}, []string{"v1", "pool", "order", "metrics"}, "", runtime.AssumeColonVerbOpt(true)))
 )
 
 var (
@@ -522,4 +642,8 @@ var (
 	forward_ChannelAuctioneer_BatchSnapshots_2 = runtime.ForwardResponseMessage
 
 	forward_ChannelAuctioneer_MarketInfo_0 = runtime.ForwardResponseMessage
+
+	forward_ChannelAuctioneer_BatchMetrics_0 = runtime.ForwardResponseMessage
+
+	forward_ChannelAuctioneer_OrderMetrics_0 = runtime.ForwardResponseMessage
 )

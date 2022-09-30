@@ -26,6 +26,7 @@ import (
 	"github.com/lightninglabs/subasta/ban"
 	"github.com/lightninglabs/subasta/chain"
 	"github.com/lightninglabs/subasta/chanenforcement"
+	"github.com/lightninglabs/subasta/metrics"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
@@ -500,6 +501,25 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		},
 	)
 
+	metricsManager, err := metrics.NewManager(
+		&metrics.ManagerConfig{
+			Batches:     nil,
+			Orders:      nil,
+			LastUpdated: time.Now(),
+			RefreshRate: cfg.MetricsRefreshCacheInterval,
+			// These duration buckets correlate to day, week, month, year in seconds
+			TimeDurationBuckets: []time.Duration{
+				86400 * time.Second,
+				604800 * time.Second,
+				2.628e+6 * time.Second,
+				3.154e+7 * time.Second,
+			},
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
+
 	// With our database open, we can set up the manager which watches over
 	// all the trader accounts.
 	accountManager, err := account.NewManager(&account.ManagerConfig{
@@ -761,8 +781,8 @@ func NewServer(cfg *Config, // nolint:gocyclo
 		store, lnd.Signer, accountManager, server.auctioneer.BestHeight,
 		server.orderBook, batchExecutor, server.auctioneer,
 		auctionTerms, ratingsAgency, ratingsDB, grpcListener,
-		restListener, serverOpts, clientCertOpt, cfg.SubscribeTimeout,
-		activeTraders,
+		restListener, serverOpts, clientCertOpt, metricsManager,
+		cfg.SubscribeTimeout, activeTraders,
 	)
 	server.rpcServer = auctioneerServer
 	cfg.Prometheus.PublicRPCServer = auctioneerServer.grpcServer

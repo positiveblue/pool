@@ -166,7 +166,7 @@ func (mr *MockManagerMockRecorder) SetLastUpdated(lastUpdated interface{}) *gomo
 }
 
 // SetOrders mocks base method.
-func (m *MockManager) SetOrders(orders *[]order0.ServerOrder) error {
+func (m *MockManager) SetOrders(orders []*order0.ServerOrder) error {
 	m.ctrl.T.Helper()
 	ret := m.ctrl.Call(m, "SetOrders", orders)
 	ret0, _ := ret[0].(error)
@@ -177,4 +177,16 @@ func (m *MockManager) SetOrders(orders *[]order0.ServerOrder) error {
 func (mr *MockManagerMockRecorder) SetOrders(orders interface{}) *gomock.Call {
 	mr.mock.ctrl.T.Helper()
 	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetOrders", reflect.TypeOf((*MockManager)(nil).SetOrders), orders)
+}
+
+// SetRefreshRate mocks base method.
+func (m *MockManager) SetRefreshRate(newTimeDuration time.Duration) {
+	m.ctrl.T.Helper()
+	m.ctrl.Call(m, "SetRefreshRate", newTimeDuration)
+}
+
+// SetRefreshRate indicates an expected call of SetRefreshRate.
+func (mr *MockManagerMockRecorder) SetRefreshRate(newTimeDuration interface{}) *gomock.Call {
+	mr.mock.ctrl.T.Helper()
+	return mr.mock.ctrl.RecordCallWithMethodType(mr.mock, "SetRefreshRate", reflect.TypeOf((*MockManager)(nil).SetRefreshRate), newTimeDuration)
 }

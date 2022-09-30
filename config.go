@@ -60,6 +60,8 @@ type Config struct {
 	NodeRatingsRefreshInterval time.Duration   `long:"ratingsrefreshinterval" description:"the refresh interval of the node ratings: 5s, 5m, etc"`
 	BosScoreWebURL             string          `long:"bosscoreurl" description:"should point to the current bos score JSON endpoint"`
 
+	MetricsRefreshCacheInterval time.Duration `long:"metricsrefreshcacheinterval" description:"the refresh interval of the order and batch metrics: 5s, 5m, etc"`
+
 	FundingConflictResetInterval time.Duration `long:"fundingconflictresetinterval" description:"the reset interval for funding conflicts (errors during channel opens), set to 0 for no automatic reset"`
 	TraderRejectResetInterval    time.Duration `long:"traderrejectresetinterval" description:"the reset interval for trader rejects (partial rejects because of --newnodesonly flag)"`
 
@@ -127,6 +129,7 @@ func DefaultConfig() *Config {
 		AccountExpiryOffset:          defaultAccountExpiryOffset,
 		DefaultNodeTier:              orderT.NodeTier0,
 		NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
+		MetricsRefreshCacheInterval:  defaultMetricsRefreshCacheInterval,
 		BosScoreWebURL:               defaultBosScoreURL,
 		FundingConflictResetInterval: defaultFundingConflictResetInterval,
 		TraderRejectResetInterval:    defaultTraderRejectResetInterval,

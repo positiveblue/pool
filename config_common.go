@@ -112,6 +112,11 @@ const (
 	// zombie network.
 	defaultBosScoreURL = "https://nodes.lightning.computer/availability/v1/btc.json"
 
+	// defaultMetricsRefreshCacheInterval is the time interval at which
+	// we re-populate batches and orders within the metrics manager class
+	// to calculate orders.
+	defaultMetricsRefreshCacheInterval = time.Minute * 10
+
 	// defaultFundingConflictResetInterval is the default interval after
 	// which we automatically reset the funding conflict map. By default we
 	// don't reset the funding conflicts automatically.

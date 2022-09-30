@@ -42,6 +42,10 @@ service ChannelAuctioneer {
     rpc BatchSnapshots (BatchSnapshotsRequest) returns (BatchSnapshotsResponse);
 
     rpc MarketInfo (MarketInfoRequest) returns (MarketInfoResponse);
+
+    rpc BatchMetrics (BatchMetricsRequest) returns (BatchMetricsResponse);
+
+    rpc OrderMetrics (OrderMetricsRequest) returns (OrderMetricsResponse);
 }
 
 message ReserveAccountRequest {
@@ -1560,4 +1564,68 @@ message MarketInfoResponse {
     // A map of all markets identified by their lease duration and the current
     // set of statistics.
     map<uint32, MarketInfo> markets = 1;
+}
+
+message OrderMetricsRequest {
+}
+
+message OrderMetrics {
+    // The number of open/pending ask orders per lease duration.
+    int64 num_asks = 1;
+
+    // The number of open/pending bid orders per lease duration.
+    int64 num_bids = 2;
+
+    // The total volume of ask orders per lease duration.
+    int64 ask_volume = 3;
+
+    // The total volume of bid orders per lease duration.
+    int64 bid_volume = 4;
+}
+
+message OrderMetricsResponse {
+    // A map of all orders identified by their time frame and the current
+    // set of statistics.
+    map<uint32, OrderMetrics> order_metrics_by_lease_duration = 1;
+}
+
+message BatchMetricsRequest {
+}
+
+message BatchMetrics {
+    // The number of open/pending ask orders per lease duration.
+    int64 total_sats_leased = 1;
+
+    // The number of open/pending bid orders per lease duration.
+    int64 total_fees_accrued = 2;
+
+    // The APR of the matched order sizes.
+    double median_order_size = 3;
+
+    // The median APR of all batches.
+    double median_apr = 4;
+}
+
+message BatchMetricsResponse {
+    // A map of all batch metrics identified by their timeframe and the current
+    // set of statistics.
+    map<uint64, BatchMetricsByLeaseDuration> batch_metrics_by_timeframe = 1;
+
+    // A map of all weekly metrics, mapped from timeframe timestamp.String() to weekly
+    // metrics.
+    map<string, WeeklyVolumeMetrics> weekly_volume_metrics_by_duration = 2;
+}
+
+message BatchMetricsByLeaseDuration {
+    // A map of all lease durations to batch metrics.
+    map<uint32, BatchMetrics> batch_metrics_by_duration = 1;
+}
+
+message WeeklyVolumeMetrics {
+    // A map of the lease duration to total volume.
+    map<uint32, int64> total_volume = 1;
+
+    // The current day of the month in timestamp.String()
+    // i.e. 2022-10-07 00:00:00 -0400 EDT.
+    string current_day = 2;
 }

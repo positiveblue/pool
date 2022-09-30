@@ -69,6 +69,8 @@ type Config struct {
 	NodeRatingsRefreshInterval time.Duration
 	BosScoreWebURL             string
 
+	MetricsRefreshCacheInterval time.Duration
+
 	FundingConflictResetInterval time.Duration
 	TraderRejectResetInterval    time.Duration
 
@@ -146,6 +148,7 @@ func DefaultConfig() *Config {
 		AccountExpiryOffset:          defaultAccountExpiryOffset,
 		DefaultNodeTier:              orderT.NodeTier1,
 		NodeRatingsRefreshInterval:   defaultNodeRatingsRefreshInterval,
+		MetricsRefreshCacheInterval:  defaultMetricsRefreshCacheInterval,
 		FundingConflictResetInterval: defaultFundingConflictResetInterval,
 		TraderRejectResetInterval:    defaultTraderRejectResetInterval,
 		AllowFakeTokens:              true,

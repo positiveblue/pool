@@ -37,6 +37,7 @@ import (
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/feebump"
+	"github.com/lightninglabs/subasta/metrics"
 	"github.com/lightninglabs/subasta/monitoring"
 	"github.com/lightninglabs/subasta/order"
 	"github.com/lightninglabs/subasta/ratings"
@@ -173,6 +174,8 @@ type rpcServer struct {
 
 	accountManager *account.Manager
 
+	metricsManager metrics.Manager
+
 	orderBook *order.Book
 
 	store subastadb.Store
@@ -215,7 +218,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 	auctioneer *Auctioneer, terms *terms.AuctioneerTerms,
 	ratingAgency ratings.Agency, ratingsDB ratings.NodeRatingsDatabase,
 	listener, restListener net.Listener, serverOpts []grpc.ServerOption,
-	restProxyCertOpt grpc.DialOption,
+	restProxyCertOpt grpc.DialOption, metricsManager metrics.Manager,
 	subscribeTimeout time.Duration, activeTraders *activeTradersMap) *rpcServer {
 
 	return &rpcServer{
@@ -226,6 +229,7 @@ func newRPCServer(store subastadb.Store, signer lndclient.SignerClient,
 		bestHeight:       bestHeight,
 		signer:           signer,
 		accountManager:   accountManager,
+		metricsManager:   metricsManager,
 		orderBook:        orderBook,
 		store:            store,
 		batchExecutor:    batchExecutor,
@@ -2367,6 +2371,219 @@ func (s *rpcServer) BatchSnapshots(ctx context.Context,
 	}
 
 	return resp, nil
+}
+
+// OrderMetrics returns the metrics relevant to the cached open orders.
+func (s *rpcServer) OrderMetrics(ctx context.Context,
+	_ *auctioneerrpc.OrderMetricsRequest) (*auctioneerrpc.OrderMetricsResponse,
+	error) {
+
+	cachedOrders := s.metricsManager.GetOrders()
+	if cachedOrders == nil || time.Since(s.metricsManager.GetLastUpdated()) >= s.metricsManager.GetRefreshRate() {
+		// cached orders is used to calculate the number of outstanding bids and asks
+		fetchedOrders, err := s.store.GetOrders(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching orders: %v", err)
+		}
+		cachedOrders = make([]*order.ServerOrder, len(fetchedOrders))
+		for idx := range fetchedOrders {
+			cachedOrders[idx] = &fetchedOrders[idx]
+		}
+		err = s.metricsManager.SetOrders(cachedOrders)
+		if err != nil {
+			return nil, fmt.Errorf("error setting orders: %v", err)
+		}
+	}
+	ordersByDuration := make(map[int64][]*order.ServerOrder)
+	for _, cachedOrder := range cachedOrders {
+		leaseDurationKey := int64((*cachedOrder).Details().LeaseDuration)
+		ordersByDuration[leaseDurationKey] = append(ordersByDuration[leaseDurationKey], cachedOrder)
+	}
+	orderMetricByDuration := make(map[int64]*metrics.OrderMetric)
+	for leaseduration := range ordersByDuration {
+		orderMetricsAddr := ordersByDuration[leaseduration]
+		orderMetrics, err := s.metricsManager.GenerateOrderMetric(orderMetricsAddr)
+		if err != nil {
+			return nil, fmt.Errorf("error fetching orders: %v", err)
+		}
+		orderMetricByDuration[leaseduration] = orderMetrics
+	}
+
+	marshalledOrderMetric := marshallOrderMetrics(&orderMetricByDuration)
+
+	return marshalledOrderMetric, nil
+}
+
+func marshallOrderMetrics(orderMetrics *map[int64]*metrics.OrderMetric) *auctioneerrpc.OrderMetricsResponse {
+	resp := &auctioneerrpc.OrderMetricsResponse{}
+	resp.OrderMetricsByLeaseDuration = make(map[uint32]*auctioneerrpc.OrderMetrics)
+	for leaseDuration, orderMetric := range *orderMetrics {
+		orderMetricUnmarshalled := auctioneerrpc.OrderMetrics{
+			NumBids:   orderMetric.NumBids,
+			NumAsks:   orderMetric.NumAsks,
+			BidVolume: orderMetric.BidVolume,
+			AskVolume: orderMetric.AskVolume,
+		}
+		resp.OrderMetricsByLeaseDuration[uint32(leaseDuration)] = &orderMetricUnmarshalled
+	}
+	return resp
+}
+
+// BatchMetrics returns the metrics for each timeduration, as well as
+// for each leaseduration.
+func (s *rpcServer) BatchMetrics(ctx context.Context,
+	_ *auctioneerrpc.BatchMetricsRequest) (*auctioneerrpc.BatchMetricsResponse,
+	error) {
+
+	allBatches := s.metricsManager.GetBatches()
+
+	if allBatches == nil || time.Since(s.metricsManager.GetLastUpdated()) >= s.metricsManager.GetRefreshRate() {
+		fetchedBatches, err := s.store.Batches(ctx)
+
+		if err != nil {
+			return nil, fmt.Errorf("error fetching batches: %v", err)
+		}
+		allBatches = fetchedBatches
+		err = s.metricsManager.SetBatches(allBatches)
+		if err != nil {
+			return nil, fmt.Errorf("error setting batches: %v", err)
+		}
+	}
+
+	populateBatchesToMatchedOrders := func(allBatches map[orderT.BatchID]*matching.BatchSnapshot) (map[uint64]map[uint32][]*matching.MatchedOrder,
+		map[string]map[uint32][]*matching.MatchedOrder) {
+
+		matchedOrdersByLeaseDuration := make(map[uint64]map[uint32][]*matching.MatchedOrder)
+		weeklyMatchedOrdersByLeaseDuration := make(map[string]map[uint32][]*matching.MatchedOrder)
+		for _, snapshot := range allBatches {
+			timestamp := snapshot.OrderBatch.CreationTimestamp
+			for matchedOrderIdx, matchedOrder := range snapshot.OrderBatch.Orders {
+				for _, timeDuration := range s.metricsManager.GetTimeDurations() {
+					if time.Duration(time.Since(timestamp).Seconds()) <= time.Duration(timeDuration.Seconds()) {
+						dayDurationKey := uint64(timeDuration.Hours() / 24)
+						if _, ok := matchedOrdersByLeaseDuration[dayDurationKey]; !ok {
+							matchedOrdersByLeaseDuration[dayDurationKey] = make(map[uint32][]*matching.MatchedOrder)
+						}
+						if _, ok := matchedOrdersByLeaseDuration[dayDurationKey][matchedOrder.Details.Ask.LeaseDuration()]; !ok {
+							var matchedOrderSlice []*matching.MatchedOrder
+							matchedOrdersByLeaseDuration[dayDurationKey][matchedOrder.Details.Ask.LeaseDuration()] = matchedOrderSlice
+						}
+						// NOTE: ask lease duration should be same as the matched bid lease duration
+						matchedOrdersByLeaseDuration[dayDurationKey][matchedOrder.Details.Ask.LeaseDuration()] = append(matchedOrdersByLeaseDuration[dayDurationKey][matchedOrder.Details.Ask.LeaseDuration()], &snapshot.OrderBatch.Orders[matchedOrderIdx])
+
+						// Check if the time duration falls under the last week
+						if timeDuration.Seconds() == 604800 {
+							roundedTime := time.Date(timestamp.Year(), timestamp.Month(), timestamp.Day(), 0, 0, 0, 0, timestamp.Location()).String()
+							if _, ok := weeklyMatchedOrdersByLeaseDuration[roundedTime]; !ok {
+								weeklyMatchedOrdersByLeaseDuration[roundedTime] = make(map[uint32][]*matching.MatchedOrder)
+							}
+							if _, ok := weeklyMatchedOrdersByLeaseDuration[roundedTime][matchedOrder.Details.Ask.LeaseDuration()]; !ok {
+								var matchedOrderSlice []*matching.MatchedOrder
+								weeklyMatchedOrdersByLeaseDuration[roundedTime][matchedOrder.Details.Ask.LeaseDuration()] = matchedOrderSlice
+							}
+							weeklyMatchedOrdersByLeaseDuration[roundedTime][matchedOrder.Details.Ask.LeaseDuration()] = append(weeklyMatchedOrdersByLeaseDuration[roundedTime][matchedOrder.Details.Ask.LeaseDuration()], &snapshot.OrderBatch.Orders[matchedOrderIdx])
+						}
+					}
+				}
+			}
+		}
+
+		return matchedOrdersByLeaseDuration, weeklyMatchedOrdersByLeaseDuration
+	}
+	// The map of target timeframes (i.e. 1 year, 1 month, etc) to another map of
+	// lease durations to a list of matched orders
+	matchedOrdersFiltered, weeklyVolumeMatchedOrders := populateBatchesToMatchedOrders(allBatches)
+
+	// Iterate through the filtered timeframes and durations,
+	// calculate metrics on the matched order buckets.
+	calculateBatchMetricsFromMatchedOrders := func(matchedOrders map[uint64]map[uint32][]*matching.MatchedOrder) (map[uint64]map[uint32]*metrics.BatchMetric,
+		error) {
+
+		batchMetricsByTimeframeDuration := make(map[uint64]map[uint32]*metrics.BatchMetric)
+		for timestamp, timestampBucket := range matchedOrders {
+			for durationBucket := range timestampBucket {
+				batchMetricsAddr := matchedOrders[timestamp][durationBucket]
+				batchMetric, err := s.metricsManager.GenerateBatchMetrics(batchMetricsAddr)
+				if err != nil {
+					return nil, fmt.Errorf("error fetching batch metrics: %v", err)
+				}
+				if _, ok := batchMetricsByTimeframeDuration[timestamp]; !ok {
+					batchMetricsByTimeframeDuration[timestamp] = make(map[uint32]*metrics.BatchMetric)
+				}
+				batchMetricsByTimeframeDuration[timestamp][durationBucket] = batchMetric
+			}
+		}
+
+		return batchMetricsByTimeframeDuration, nil
+	}
+
+	batchMetricsFiltered, err := calculateBatchMetricsFromMatchedOrders(matchedOrdersFiltered)
+	if err != nil {
+		return nil, fmt.Errorf("error calculating batch metrics: %v", err)
+	}
+
+	calculateWeeklyVolumeFromMatchedOrders := func(matchedOrders map[string]map[uint32][]*matching.MatchedOrder) map[string]map[uint32]int64 {
+		weeklyVolumeByTimeframeDuration := make(map[string]map[uint32]int64)
+		for timestamp, timestampBucket := range matchedOrders {
+			for durationBucket, matchedOrderBucket := range timestampBucket {
+				if _, ok := weeklyVolumeByTimeframeDuration[timestamp]; !ok {
+					weeklyVolumeByTimeframeDuration[timestamp] = make(map[uint32]int64)
+				}
+				weeklyVolumeByTimeframeDuration[timestamp][durationBucket] = int64(0)
+				for _, matchedOrder := range matchedOrderBucket {
+					// Check if the batch timestamp is less than a week old
+					weeklyVolumeByTimeframeDuration[timestamp][durationBucket] += int64(matchedOrder.Details.Quote.TotalSatsCleared)
+				}
+			}
+		}
+
+		return weeklyVolumeByTimeframeDuration
+	}
+
+	weeklyVolumeFiltered := calculateWeeklyVolumeFromMatchedOrders(weeklyVolumeMatchedOrders)
+
+	marshalledBatchMetrics := marshallBatchMetrics(batchMetricsFiltered, weeklyVolumeFiltered)
+
+	return marshalledBatchMetrics, nil
+}
+
+func marshallBatchMetrics(batchMetrics map[uint64]map[uint32]*metrics.BatchMetric, weeklyVolume map[string]map[uint32]int64) *auctioneerrpc.BatchMetricsResponse {
+	resp := &auctioneerrpc.BatchMetricsResponse{}
+	resp.BatchMetricsByTimeframe = make(map[uint64]*auctioneerrpc.BatchMetricsByLeaseDuration)
+	resp.WeeklyVolumeMetricsByDuration = make(map[string]*auctioneerrpc.WeeklyVolumeMetrics)
+
+	for timestamp, timestampBuckets := range batchMetrics {
+		batchMetricsByDuration := &auctioneerrpc.BatchMetricsByLeaseDuration{
+			BatchMetricsByDuration: make(map[uint32]*auctioneerrpc.BatchMetrics),
+		}
+		resp.BatchMetricsByTimeframe[timestamp] = batchMetricsByDuration
+		for leaseduration, batchMetric := range timestampBuckets {
+			if batchMetric == nil {
+				continue
+			}
+			batchMetricUnmarshalled := auctioneerrpc.BatchMetrics{
+				TotalSatsLeased:  batchMetric.TotalSatsLeased,
+				TotalFeesAccrued: batchMetric.TotalFeesAccrued,
+				MedianApr:        batchMetric.MedianAPR,
+				MedianOrderSize:  batchMetric.MedianOrderSize,
+			}
+			resp.BatchMetricsByTimeframe[timestamp].BatchMetricsByDuration[leaseduration] = &batchMetricUnmarshalled
+		}
+	}
+	for timestamp, timestampBuckets := range weeklyVolume {
+		weeklyVolumeByDuration := &auctioneerrpc.WeeklyVolumeMetrics{
+			TotalVolume: make(map[uint32]int64),
+		}
+		resp.WeeklyVolumeMetricsByDuration[timestamp] = weeklyVolumeByDuration
+		roundedTime := time.Date(time.Now().Year(), time.Now().Month(), time.Now().Day(), 0, 0, 0, 0, time.Now().Location()).String()
+		resp.WeeklyVolumeMetricsByDuration[timestamp].CurrentDay = roundedTime
+		for leaseduration, totalVolume := range timestampBuckets {
+			weeklyVolumeByLeaseDuration := resp.WeeklyVolumeMetricsByDuration[timestamp].TotalVolume
+			weeklyVolumeByLeaseDuration[leaseduration] = totalVolume
+		}
+	}
+
+	return resp
 }
 
 // MarketInfo returns a simple set of statistics per active market, grouped by

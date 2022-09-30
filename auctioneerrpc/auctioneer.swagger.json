@@ -34,6 +34,28 @@
         ]
       }
     },
+    "/v1/pool/batch/metrics": {
+      "get": {
+        "operationId": "ChannelAuctioneer_BatchMetrics",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/poolrpcBatchMetricsResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/gatewayruntimeError"
+            }
+          }
+        },
+        "tags": [
+          "ChannelAuctioneer"
+        ]
+      }
+    },
     "/v1/pool/batch/snapshots": {
       "get": {
         "operationId": "ChannelAuctioneer_BatchSnapshots",
@@ -162,6 +184,28 @@
             "description": "A successful response.",
             "schema": {
               "$ref": "#/definitions/poolrpcMarketInfoResponse"
+            }
+          },
+          "default": {
+            "description": "An unexpected error response",
+            "schema": {
+              "$ref": "#/definitions/gatewayruntimeError"
+            }
+          }
+        },
+        "tags": [
+          "ChannelAuctioneer"
+        ]
+      }
+    },
+    "/v1/pool/order/metrics": {
+      "get": {
+        "operationId": "ChannelAuctioneer_OrderMetrics",
+        "responses": {
+          "200": {
+            "description": "A successful response.",
+            "schema": {
+              "$ref": "#/definitions/poolrpcOrderMetricsResponse"
             }
           },
           "default": {
@@ -437,6 +481,62 @@
       ],
       "default": "STATE_PENDING_OPEN",
       "description": " - STATE_PENDING_OPEN: The account's funding transaction is not yet confirmed on-chain.\n - STATE_OPEN: The account is fully open and confirmed on-chain.\n - STATE_EXPIRED: The account is still open but the CLTV expiry has passed and the trader can\nclose it without the auctioneer's key. Orders for accounts in this state\nwon't be accepted.\n - STATE_PENDING_UPDATE: The account was modified by a deposit or withdrawal and is currently waiting\nfor the modifying transaction to confirm.\n - STATE_CLOSED: The account is closed. The auctioneer doesn't track whether the closing\ntransaction is already confirmed on-chain or not.\n - STATE_PENDING_BATCH: The account has recently participated in a batch and is not yet confirmed.\n - STATE_EXPIRED_PENDING_UPDATE: The account has reached the expiration height while it had a pending update\nthat hasn't yet confirmed. This allows accounts to be renewed once\nconfirmed and expired."
+    },
+    "poolrpcBatchMetrics": {
+      "type": "object",
+      "properties": {
+        "total_sats_leased": {
+          "type": "string",
+          "format": "int64",
+          "description": "The number of open/pending ask orders per lease duration."
+        },
+        "total_fees_accrued": {
+          "type": "string",
+          "format": "int64",
+          "description": "The number of open/pending bid orders per lease duration."
+        },
+        "median_order_size": {
+          "type": "number",
+          "format": "double",
+          "description": "The APR of the matched order sizes."
+        },
+        "median_apr": {
+          "type": "number",
+          "format": "double",
+          "description": "The median APR of all batches."
+        }
+      }
+    },
+    "poolrpcBatchMetricsByLeaseDuration": {
+      "type": "object",
+      "properties": {
+        "batch_metrics_by_duration": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/poolrpcBatchMetrics"
+          },
+          "description": "A map of all lease durations to batch metrics."
+        }
+      }
+    },
+    "poolrpcBatchMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "batch_metrics_by_timeframe": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/poolrpcBatchMetricsByLeaseDuration"
+          },
+          "description": "A map of all batch metrics identified by their timeframe and the current\nset of statistics."
+        },
+        "weekly_volume_metrics_by_duration": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/poolrpcWeeklyVolumeMetrics"
+          },
+          "description": "A map of all weekly metrics, mapped from timeframe (day) to weekly\nmetrics."
+        }
+      }
     },
     "poolrpcBatchSnapshotResponse": {
       "type": "object",
@@ -1004,6 +1104,43 @@
         }
       }
     },
+    "poolrpcOrderMetrics": {
+      "type": "object",
+      "properties": {
+        "num_asks": {
+          "type": "string",
+          "format": "int64",
+          "description": "The number of open/pending ask orders per lease duration."
+        },
+        "num_bids": {
+          "type": "string",
+          "format": "int64",
+          "description": "The number of open/pending bid orders per lease duration."
+        },
+        "ask_volume": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total volume of ask orders per lease duration."
+        },
+        "bid_volume": {
+          "type": "string",
+          "format": "int64",
+          "description": "The total volume of bid orders per lease duration."
+        }
+      }
+    },
+    "poolrpcOrderMetricsResponse": {
+      "type": "object",
+      "properties": {
+        "order_metrics_by_lease_duration": {
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/definitions/poolrpcOrderMetrics"
+          },
+          "description": "A map of all orders identified by their time frame and the current\nset of statistics."
+        }
+      }
+    },
     "poolrpcOrderReject": {
       "type": "object",
       "properties": {
@@ -1518,6 +1655,23 @@
           "type": "string",
           "format": "byte",
           "description": "The public key script of the output."
+        }
+      }
+    },
+    "poolrpcWeeklyVolumeMetrics": {
+      "type": "object",
+      "properties": {
+        "total_volume": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "format": "int64"
+          },
+          "description": "A map of the lease duration to total volume."
+        },
+        "current_day": {
+          "type": "string",
+          "description": "The current day of the month (timestamp.String())."
         }
       }
     },
