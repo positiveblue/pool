@@ -36,6 +36,7 @@ func testOrderSubmission(t *harnessTest) {
 			MinUnitsMatch:           1,
 			MaxBatchFeeRateSatPerKw: uint64(12500),
 			ChannelType:             defaultChannelType,
+			IsPublic:                true,
 		},
 		LeaseDurationBlocks: 365*144 + 1,
 		Version:             uint32(orderT.VersionChannelType),
@@ -75,6 +76,7 @@ func testOrderSubmission(t *harnessTest) {
 		auctioneerrpc.ChannelAnnouncementConstraints_ONLY_ANNOUNCED,
 		list.Asks[0].AnnouncementConstraints,
 	)
+	require.True(t.t, list.Asks[0].Details.IsPublic)
 
 	// Next, we'll submit a Bid as well to test the other code paths.
 	rpcBid := &poolrpc.Bid{

@@ -216,6 +216,8 @@ func upsertOrderWithTx(ctx context.Context, txQueries *postgres.Queries,
 
 		CreatedAt:  marshalSQLNullTime(serverDetails.CreatedAt),
 		ArchivedAt: marshalSQLNullTime(serverDetails.ArchivedAt),
+
+		IsPublic: details.IsPublic,
 	}
 	return txQueries.UpsertOrder(ctx, params)
 }
@@ -511,6 +513,7 @@ func unmarshalOrder(row postgres.GetOrdersRow) (order.ServerOrder, error) {
 	clientKit.MaxBatchFeeRate = chainfee.SatPerKWeight(row.MaxBatchFeeRate)
 	clientKit.LeaseDuration = uint32(row.LeaseDuration)
 	clientKit.ChannelType = orderT.ChannelType(row.ChannelType)
+	clientKit.IsPublic = row.IsPublic
 
 	serverKit := order.Kit{}
 

@@ -2030,6 +2030,7 @@ func marshallServerOrder(order order.ServerOrder) (*auctioneerrpc.ServerOrder, e
 		ChannelType:             channelType,
 		MaxBatchFeeRateSatPerKw: uint64(order.Details().MaxBatchFeeRate),
 		MinChanAmt:              uint64(order.Details().MinUnitsMatch.ToSatoshis()),
+		IsPublic:                order.Details().IsPublic,
 	}, nil
 }
 

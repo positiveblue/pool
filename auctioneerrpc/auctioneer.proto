@@ -974,6 +974,10 @@ message ServerOrder {
     // List of nodes that won't be allowed to match with our order. Incompatible
     // with the `allowed_node_ids` field.
     repeated bytes not_allowed_node_ids = 15;
+
+    // Flag used to signal that this order can be shared in public market
+    // places.
+    bool is_public = 17;
 }
 
 enum NodeTier {
@@ -1059,7 +1063,7 @@ message ServerBid {
     bool unannounced_channel = 8;
 
     /*
-    Signals if this bid is interested in zeroconf channels or not.
+    Signals if this bid is interested in a zero conf channel or not.
     */
     bool zero_conf_channel = 9;
 }

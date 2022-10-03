@@ -301,7 +301,7 @@ func (q *Queries) GetOrderNoncesByTraderKey(ctx context.Context, arg GetOrderNon
 }
 
 const getOrders = `-- name: GetOrders :many
-SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, created_at, archived_at, ob.nonce, min_node_tier, self_chan_balance, is_sidecar, unannounced_channel, zero_conf_channel, oa.nonce, channel_announcement_constraints, channel_confirmation_constraints 
+SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, created_at, archived_at, is_public, ob.nonce, min_node_tier, self_chan_balance, is_sidecar, unannounced_channel, zero_conf_channel, oa.nonce, channel_announcement_constraints, channel_confirmation_constraints 
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
         LEFT JOIN order_ask oa ON o.nonce = oa.nonce
 WHERE o.nonce = ANY($1::BYTEA[])
@@ -329,6 +329,7 @@ type GetOrdersRow struct {
 	Archived                       bool
 	CreatedAt                      sql.NullTime
 	ArchivedAt                     sql.NullTime
+	IsPublic                       bool
 	Nonce_2                        []byte
 	MinNodeTier                    sql.NullInt64
 	SelfChanBalance                sql.NullInt64
@@ -371,6 +372,7 @@ func (q *Queries) GetOrders(ctx context.Context, nonces [][]byte) ([]GetOrdersRo
 			&i.Archived,
 			&i.CreatedAt,
 			&i.ArchivedAt,
+			&i.IsPublic,
 			&i.Nonce_2,
 			&i.MinNodeTier,
 			&i.SelfChanBalance,
@@ -410,16 +412,17 @@ INSERT INTO orders(
         nonce, type, trader_key, version, state, fixed_rate, amount, units,
         units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration,
         channel_type, signature, multisig_key, node_key, token_id, user_agent,
-        archived, created_at, archived_at)
+        archived, created_at, archived_at, is_public)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16,
-        $17, $18, $19, $20, $21)
+        $17, $18, $19, $20, $21, $22)
 ON CONFLICT (nonce)
 DO UPDATE SET
         type=$2, trader_key=$3, version=$4, state=$5, fixed_rate=$6, amount=$7,
         units=$8, units_unfulfilled=$9, min_units_match=$10, 
         max_batch_fee_rate=$11, lease_duration=$12, channel_type=$13, 
         signature=$14, multisig_key=$15, node_key=$16, token_id=$17, 
-        user_agent=$18, archived=$19, created_at=$20, archived_at=$21
+        user_agent=$18, archived=$19, created_at=$20, archived_at=$21, 
+        is_public=$22
 `
 
 type UpsertOrderParams struct {
@@ -444,6 +447,7 @@ type UpsertOrderParams struct {
 	Archived         bool
 	CreatedAt        sql.NullTime
 	ArchivedAt       sql.NullTime
+	IsPublic         bool
 }
 
 // - Order Queries ---
@@ -470,6 +474,7 @@ func (q *Queries) UpsertOrder(ctx context.Context, arg UpsertOrderParams) error 
 		arg.Archived,
 		arg.CreatedAt,
 		arg.ArchivedAt,
+		arg.IsPublic,
 	)
 	return err
 }
