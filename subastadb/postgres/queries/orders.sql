@@ -19,6 +19,7 @@ DO UPDATE SET
 -- name: GetOrders :many
 SELECT * 
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
+        LEFT JOIN order_ask oa ON o.nonce = oa.nonce
 WHERE o.nonce = ANY(@nonces::BYTEA[]);
 
 -- name: GetOrdersCount :one
@@ -28,7 +29,7 @@ WHERE archived = $1;
 
 -- name: GetOrderNonces :many
 SELECT o.nonce
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
+FROM orders o
 WHERE archived = @archived
 ORDER BY nonce
 LIMIT NULLIF(@limit_param::int, 0) OFFSET @offset_param;
@@ -86,8 +87,9 @@ WHERE nonce=$1;
 
 -- name: CreateOrderBid :exec
 INSERT INTO order_bid(
-        nonce, min_node_tier, self_chan_balance, is_sidecar
-) VALUES ($1, $2, $3, $4);
+        nonce, min_node_tier, self_chan_balance, is_sidecar, 
+        unannounced_channel, zero_conf_channel
+) VALUES ($1, $2, $3, $4, $5, $6);
 
 -- name: GetOrderBid :one
 SELECT * 
@@ -97,4 +99,23 @@ WHERE nonce=$1;
 -- name: DeleteOrderBid :execrows
 DELETE
 FROM order_bid
+WHERE nonce=$1;
+
+
+--- Order ask Queries ---
+
+-- name: CreateOrderAsk :exec
+INSERT INTO order_ask(
+        nonce, channel_announcement_constraints, 
+        channel_confirmation_constraints
+) VALUES ($1, $2, $3);
+
+-- name: GetOrderAsk :one
+SELECT * 
+FROM order_ask 
+WHERE nonce=$1;
+
+-- name: DeleteOrderAsk :execrows
+DELETE
+FROM order_ask
 WHERE nonce=$1;

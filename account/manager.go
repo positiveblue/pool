@@ -33,7 +33,7 @@ const (
 
 	// minAccountExpiry and maxAccountExpiry represent the thresholds at
 	// both extremes for valid account expirations.
-	minAccountExpiry = 144       // One day worth of blocks.
+	minAccountExpiry = 432       // Three days worth of blocks.
 	maxAccountExpiry = 144 * 365 // A year worth of blocks.
 
 	// heightHintPadding is the padding we add from our best known height

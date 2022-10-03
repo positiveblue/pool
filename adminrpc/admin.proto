@@ -166,6 +166,17 @@ message ServerAsk {
     The user agent string this order was submitted with.
     */
     string user_agent = 5;
+
+    /*
+    The constraints for selling the liquidity based on channel discoverability.
+    */
+    poolrpc.ChannelAnnouncementConstraints announcement_constraints = 6;
+
+    /*
+    The constraints for selling the liquidity based on the number of
+    blocks before considering the channel confirmed.
+    */
+    poolrpc.ChannelConfirmationConstraints confirmation_constraints = 7;
 }
 
 message ServerBid {
@@ -211,6 +222,16 @@ message ServerBid {
     Whether this bid was submitted as a sidecar order.
     */
     bool is_sidecar = 8;
+
+    /*
+    Signals if this bid is interested in an announced or unannounced channel.
+    */
+    bool unannounced_channel = 9;
+
+    /*
+    Signals if this bid is interested in zeroconf channels or not.
+    */
+    bool zero_conf_channel = 10;
 }
 
 message AccountDetailsRequest {

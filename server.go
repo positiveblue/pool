@@ -19,6 +19,7 @@ import (
 	"github.com/lightninglabs/aperture/lsat"
 	"github.com/lightninglabs/lndclient"
 	"github.com/lightninglabs/pool/auctioneerrpc"
+	orderT "github.com/lightninglabs/pool/order"
 	"github.com/lightninglabs/pool/terms"
 	"github.com/lightninglabs/subasta/account"
 	"github.com/lightninglabs/subasta/adminrpc"
@@ -275,6 +276,22 @@ func (a *activeTradersMap) TraderFeeSchedule(id [32]byte) terms.FeeSchedule {
 	}
 
 	return t.FeeSchedule(a.defaultFeeSchedule)
+}
+
+// TraderBatchVersion returns the batch version for the trader.
+func (a *activeTradersMap) TraderBatchVersion(
+	id [33]byte) (orderT.BatchVersion, error) {
+
+	a.RLock()
+	defer a.RUnlock()
+
+	trader, ok := a.activeTraders[id]
+	if !ok {
+		return orderT.DefaultBatchVersion, fmt.Errorf("unable to get "+
+			"batch version, trader [%x] is not online", id)
+	}
+
+	return trader.BatchVersion, nil
 }
 
 // invalidateCache removes the cache entry for a given trader if it exists.
@@ -584,6 +601,14 @@ func NewServer(cfg *Config, // nolint:gocyclo
 	}
 	ratingsAgency := ratings.NewNodeTierAgency(ratingsDB)
 
+	channelAnnouncement := matching.NewChannelAnnouncementPredicate(
+		activeTraders.TraderBatchVersion,
+	)
+
+	zeroConfChannel := matching.NewZeroConfChannelPredicate(
+		activeTraders.TraderBatchVersion,
+	)
+
 	server := &Server{
 		cfg:              cfg,
 		lnd:              lnd,
@@ -642,6 +667,8 @@ func NewServer(cfg *Config, // nolint:gocyclo
 			TraderOnline: matching.NewTraderOnlineFilter(
 				activeTraders.IsActive,
 			),
+			ChannelAnnouncement:      channelAnnouncement,
+			ZeroConfChannel:          zeroConfChannel,
 			RatingsAgency:            ratingsAgency,
 			DefaultAuctioneerVersion: cfg.DefaultAuctioneerVersion,
 		}),

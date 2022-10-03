@@ -102,6 +102,14 @@ var testCases = []*testCase{
 		test: testBatchMatchingConditions,
 	},
 	{
+		name: "match unannounced channels",
+		test: testBatchUnannouncedChannels,
+	},
+	{
+		name: "match zero conf channels",
+		test: testBatchZeroConfChannels,
+	},
+	{
 		name: "distinct lease duration buckets",
 		test: testBatchExecutionDurationBuckets,
 	},
@@ -141,7 +149,6 @@ var testCases = []*testCase{
 		name: "batch account auto-renewal",
 		test: testBatchAccountAutoRenewal,
 	},
-
 	{
 		name: "hashmail server",
 		test: testHashMailServer,

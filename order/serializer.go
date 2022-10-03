@@ -63,6 +63,94 @@ func unmarshalNodeTier(nodeTier auctioneerrpc.NodeTier) (orderT.NodeTier,
 	}
 }
 
+// MarshalAnnouncementConstraints maps the channel announcement constraints
+// used in memory to their RPC counterparts.
+func MarshalAnnouncementConstraints(
+	constraint orderT.ChannelAnnouncementConstraints) (auctioneerrpc.ChannelAnnouncementConstraints,
+	error) {
+
+	switch constraint {
+	case orderT.AnnouncementNoPreference:
+		return auctioneerrpc.ChannelAnnouncementConstraints_ANNOUNCEMENT_NO_PREFERENCE,
+			nil
+
+	case orderT.OnlyAnnounced:
+		return auctioneerrpc.ChannelAnnouncementConstraints_ONLY_ANNOUNCED,
+			nil
+
+	case orderT.OnlyUnannounced:
+		return auctioneerrpc.ChannelAnnouncementConstraints_ONLY_UNANNOUNCED,
+			nil
+	}
+
+	return 0, fmt.Errorf("unable to marshal unknown announcement "+
+		"constraint type: %v", constraint)
+}
+
+// UnmarshallAnnouncementConstraints maps the RPC announcement constraints enum
+// to the announcement constraints used in memory.
+func UnmarshallAnnouncementConstraints(
+	constraint auctioneerrpc.ChannelAnnouncementConstraints) (orderT.ChannelAnnouncementConstraints,
+	error) {
+
+	switch constraint {
+	case auctioneerrpc.ChannelAnnouncementConstraints_ANNOUNCEMENT_NO_PREFERENCE:
+		return orderT.AnnouncementNoPreference, nil
+
+	case auctioneerrpc.ChannelAnnouncementConstraints_ONLY_ANNOUNCED:
+		return orderT.OnlyAnnounced, nil
+
+	case auctioneerrpc.ChannelAnnouncementConstraints_ONLY_UNANNOUNCED:
+		return orderT.OnlyUnannounced, nil
+	}
+
+	return 0, fmt.Errorf("unknown channel announcement constraint type: "+
+		"%v", constraint)
+}
+
+// MarshalConfirmationConstraints maps the announcement constraints enum used
+// in memory to the RPC counterparts.
+func MarshalConfirmationConstraints(
+	constraint orderT.ChannelConfirmationConstraints) (auctioneerrpc.ChannelConfirmationConstraints,
+	error) {
+
+	switch constraint {
+	case orderT.ConfirmationNoPreference:
+		return auctioneerrpc.ChannelConfirmationConstraints_CONFIRMATION_NO_PREFERENCE,
+			nil
+
+	case orderT.OnlyConfirmed:
+		return auctioneerrpc.ChannelConfirmationConstraints_ONLY_CONFIRMED,
+			nil
+
+	case orderT.OnlyZeroConf:
+		return auctioneerrpc.ChannelConfirmationConstraints_ONLY_ZEROCONF,
+			nil
+	}
+
+	return 0, fmt.Errorf("unable to marshal unknown announcement "+
+		"constraint type: %v", constraint)
+}
+
+func UnmarshallConfirmationConstraints(
+	constraint auctioneerrpc.ChannelConfirmationConstraints) (orderT.ChannelConfirmationConstraints,
+	error) {
+
+	switch constraint {
+	case auctioneerrpc.ChannelConfirmationConstraints_CONFIRMATION_NO_PREFERENCE:
+		return orderT.ConfirmationNoPreference, nil
+
+	case auctioneerrpc.ChannelConfirmationConstraints_ONLY_CONFIRMED:
+		return orderT.OnlyConfirmed, nil
+
+	case auctioneerrpc.ChannelConfirmationConstraints_ONLY_ZEROCONF:
+		return orderT.OnlyZeroConf, nil
+	}
+
+	return 0, fmt.Errorf("unknown channel announcement constraint type: "+
+		"%v", constraint)
+}
+
 // parseRPCKits parses the incoming raw RPC order into the go native data
 // types used in the order struct.
 func parseRPCKits(version uint32,
@@ -223,9 +311,25 @@ func ParseRPCOrder(req *auctioneerrpc.ServerSubmitOrderRequest) (ServerOrder,
 		}
 		clientKit.LeaseDuration = a.LeaseDurationBlocks
 
+		announcement, err := UnmarshallAnnouncementConstraints(
+			a.AnnouncementConstraints,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		confirmation, err := UnmarshallConfirmationConstraints(
+			a.ConfirmationConstraints,
+		)
+		if err != nil {
+			return nil, err
+		}
+
 		o = &Ask{
 			Ask: orderT.Ask{
-				Kit: *clientKit,
+				Kit:                     *clientKit,
+				AnnouncementConstraints: announcement,
+				ConfirmationConstraints: confirmation,
 			},
 			Kit: *serverKit,
 		}
@@ -244,9 +348,11 @@ func ParseRPCOrder(req *auctioneerrpc.ServerSubmitOrderRequest) (ServerOrder,
 				err.Error())
 		}
 		clientBid := &orderT.Bid{
-			Kit:             *clientKit,
-			MinNodeTier:     nodeTier,
-			SelfChanBalance: btcutil.Amount(b.SelfChanBalance),
+			Kit:                *clientKit,
+			MinNodeTier:        nodeTier,
+			SelfChanBalance:    btcutil.Amount(b.SelfChanBalance),
+			UnannouncedChannel: b.UnannouncedChannel,
+			ZeroConfChannel:    b.ZeroConfChannel,
 		}
 
 		// The order signature digest includes the IsSidecar flag but

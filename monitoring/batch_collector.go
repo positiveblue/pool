@@ -180,7 +180,7 @@ func newBatchCollector(cfg *PrometheusConfig) *batchCollector {
 
 	// Now that we've created the set of gagues to be reset each round,
 	// we'll make a new set that are never reset to ensure we have a
-	// cummulative vaue.
+	// cummulative value.
 	permGauges := make(gauges)
 	permGauges.addGauge(batchTotalVolume, "total batch volume", nil)
 	permGauges.addGauge(batchTotalRevenue, "total batch revenue", nil)

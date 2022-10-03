@@ -16,18 +16,41 @@ type CreateOrderAllowedNodeIdsParams struct {
 	Allowed bool
 }
 
+const createOrderAsk = `-- name: CreateOrderAsk :exec
+
+INSERT INTO order_ask(
+        nonce, channel_announcement_constraints, 
+        channel_confirmation_constraints
+) VALUES ($1, $2, $3)
+`
+
+type CreateOrderAskParams struct {
+	Nonce                          []byte
+	ChannelAnnouncementConstraints int16
+	ChannelConfirmationConstraints int16
+}
+
+// - Order ask Queries ---
+func (q *Queries) CreateOrderAsk(ctx context.Context, arg CreateOrderAskParams) error {
+	_, err := q.db.Exec(ctx, createOrderAsk, arg.Nonce, arg.ChannelAnnouncementConstraints, arg.ChannelConfirmationConstraints)
+	return err
+}
+
 const createOrderBid = `-- name: CreateOrderBid :exec
 
 INSERT INTO order_bid(
-        nonce, min_node_tier, self_chan_balance, is_sidecar
-) VALUES ($1, $2, $3, $4)
+        nonce, min_node_tier, self_chan_balance, is_sidecar, 
+        unannounced_channel, zero_conf_channel
+) VALUES ($1, $2, $3, $4, $5, $6)
 `
 
 type CreateOrderBidParams struct {
-	Nonce           []byte
-	MinNodeTier     int64
-	SelfChanBalance int64
-	IsSidecar       bool
+	Nonce              []byte
+	MinNodeTier        int64
+	SelfChanBalance    int64
+	IsSidecar          bool
+	UnannouncedChannel bool
+	ZeroConfChannel    bool
 }
 
 // - Order bid Queries ---
@@ -37,6 +60,8 @@ func (q *Queries) CreateOrderBid(ctx context.Context, arg CreateOrderBidParams) 
 		arg.MinNodeTier,
 		arg.SelfChanBalance,
 		arg.IsSidecar,
+		arg.UnannouncedChannel,
+		arg.ZeroConfChannel,
 	)
 	return err
 }
@@ -69,6 +94,20 @@ WHERE nonce = $1
 
 func (q *Queries) DeleteOrderAllowedNodeIds(ctx context.Context, nonce []byte) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteOrderAllowedNodeIds, nonce)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const deleteOrderAsk = `-- name: DeleteOrderAsk :execrows
+DELETE
+FROM order_ask
+WHERE nonce=$1
+`
+
+func (q *Queries) DeleteOrderAsk(ctx context.Context, nonce []byte) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteOrderAsk, nonce)
 	if err != nil {
 		return 0, err
 	}
@@ -129,8 +168,21 @@ func (q *Queries) GetOrderAllowedNodeIds(ctx context.Context, nonces [][]byte) (
 	return items, nil
 }
 
+const getOrderAsk = `-- name: GetOrderAsk :one
+SELECT nonce, channel_announcement_constraints, channel_confirmation_constraints 
+FROM order_ask 
+WHERE nonce=$1
+`
+
+func (q *Queries) GetOrderAsk(ctx context.Context, nonce []byte) (OrderAsk, error) {
+	row := q.db.QueryRow(ctx, getOrderAsk, nonce)
+	var i OrderAsk
+	err := row.Scan(&i.Nonce, &i.ChannelAnnouncementConstraints, &i.ChannelConfirmationConstraints)
+	return i, err
+}
+
 const getOrderBid = `-- name: GetOrderBid :one
-SELECT nonce, min_node_tier, self_chan_balance, is_sidecar 
+SELECT nonce, min_node_tier, self_chan_balance, is_sidecar, unannounced_channel, zero_conf_channel 
 FROM order_bid 
 WHERE nonce=$1
 `
@@ -143,6 +195,8 @@ func (q *Queries) GetOrderBid(ctx context.Context, nonce []byte) (OrderBid, erro
 		&i.MinNodeTier,
 		&i.SelfChanBalance,
 		&i.IsSidecar,
+		&i.UnannouncedChannel,
+		&i.ZeroConfChannel,
 	)
 	return i, err
 }
@@ -175,7 +229,7 @@ func (q *Queries) GetOrderNetworkAddresses(ctx context.Context, nonces [][]byte)
 
 const getOrderNonces = `-- name: GetOrderNonces :many
 SELECT o.nonce
-FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
+FROM orders o
 WHERE archived = $1
 ORDER BY nonce
 LIMIT NULLIF($3::int, 0) OFFSET $2
@@ -247,37 +301,43 @@ func (q *Queries) GetOrderNoncesByTraderKey(ctx context.Context, arg GetOrderNon
 }
 
 const getOrders = `-- name: GetOrders :many
-SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, created_at, archived_at, ob.nonce, min_node_tier, self_chan_balance, is_sidecar 
+SELECT o.nonce, type, trader_key, version, state, fixed_rate, amount, units, units_unfulfilled, min_units_match, max_batch_fee_rate, lease_duration, channel_type, signature, multisig_key, node_key, token_id, user_agent, archived, created_at, archived_at, ob.nonce, min_node_tier, self_chan_balance, is_sidecar, unannounced_channel, zero_conf_channel, oa.nonce, channel_announcement_constraints, channel_confirmation_constraints 
 FROM orders o LEFT JOIN order_bid ob ON o.nonce = ob.nonce
+        LEFT JOIN order_ask oa ON o.nonce = oa.nonce
 WHERE o.nonce = ANY($1::BYTEA[])
 `
 
 type GetOrdersRow struct {
-	Nonce            []byte
-	Type             int16
-	TraderKey        []byte
-	Version          int64
-	State            int16
-	FixedRate        int64
-	Amount           int64
-	Units            int64
-	UnitsUnfulfilled int64
-	MinUnitsMatch    int64
-	MaxBatchFeeRate  int64
-	LeaseDuration    int64
-	ChannelType      int16
-	Signature        []byte
-	MultisigKey      []byte
-	NodeKey          []byte
-	TokenID          []byte
-	UserAgent        string
-	Archived         bool
-	CreatedAt        sql.NullTime
-	ArchivedAt       sql.NullTime
-	Nonce_2          []byte
-	MinNodeTier      sql.NullInt64
-	SelfChanBalance  sql.NullInt64
-	IsSidecar        sql.NullBool
+	Nonce                          []byte
+	Type                           int16
+	TraderKey                      []byte
+	Version                        int64
+	State                          int16
+	FixedRate                      int64
+	Amount                         int64
+	Units                          int64
+	UnitsUnfulfilled               int64
+	MinUnitsMatch                  int64
+	MaxBatchFeeRate                int64
+	LeaseDuration                  int64
+	ChannelType                    int16
+	Signature                      []byte
+	MultisigKey                    []byte
+	NodeKey                        []byte
+	TokenID                        []byte
+	UserAgent                      string
+	Archived                       bool
+	CreatedAt                      sql.NullTime
+	ArchivedAt                     sql.NullTime
+	Nonce_2                        []byte
+	MinNodeTier                    sql.NullInt64
+	SelfChanBalance                sql.NullInt64
+	IsSidecar                      sql.NullBool
+	UnannouncedChannel             sql.NullBool
+	ZeroConfChannel                sql.NullBool
+	Nonce_3                        []byte
+	ChannelAnnouncementConstraints sql.NullInt16
+	ChannelConfirmationConstraints sql.NullInt16
 }
 
 func (q *Queries) GetOrders(ctx context.Context, nonces [][]byte) ([]GetOrdersRow, error) {
@@ -315,6 +375,11 @@ func (q *Queries) GetOrders(ctx context.Context, nonces [][]byte) ([]GetOrdersRo
 			&i.MinNodeTier,
 			&i.SelfChanBalance,
 			&i.IsSidecar,
+			&i.UnannouncedChannel,
+			&i.ZeroConfChannel,
+			&i.Nonce_3,
+			&i.ChannelAnnouncementConstraints,
+			&i.ChannelConfirmationConstraints,
 		); err != nil {
 			return nil, err
 		}

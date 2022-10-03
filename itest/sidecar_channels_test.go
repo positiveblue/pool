@@ -84,7 +84,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool,
 	// channel expectation.
 	firstSidecarBid, _ := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, selfChanBalance, auto,
+		orderFixedRate, askAmt, selfChanBalance, auto, true,
 	)
 
 	// We are now ready to start the actual batch execution process.
@@ -101,11 +101,13 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool,
 	assertPendingChannel(
 		t, t.trader.cfg.LndNode, askAmt+selfChanBalance, true,
 		dave.PubKey, remotePendingBalanceCheck(selfChanBalance),
+		privateChannelCheck(true),
 	)
 	assertPendingChannel(
 		t, dave, askAmt+selfChanBalance, false,
 		t.trader.cfg.LndNode.PubKey,
 		localPendingBalanceCheck(selfChanBalance),
+		privateChannelCheck(true),
 	)
 
 	// We'll now mine a block to confirm the channel. We should find the
@@ -191,7 +193,7 @@ func sidecarChannelsHappyPath(ctx context.Context, t *harnessTest, auto bool,
 	// channel expectation.
 	secondSidecarBid, _ := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0, auto,
+		orderFixedRate, askAmt, 0, auto, false,
 	)
 
 	// Also add a normal bid order from the recipient's account.
@@ -344,7 +346,7 @@ func testSidecarChannelsRejectNewNodesOnly(t *harnessTest) {
 	// channel expectation.
 	firstSidecarBid, _ := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0, false,
+		orderFixedRate, askAmt, 0, false, false,
 	)
 
 	// We are now ready to start the actual batch execution process. Let's
@@ -460,7 +462,7 @@ func testSidecarChannelsRejectMinChanSize(t *harnessTest) {
 	// channel expectation.
 	makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0, false,
+		orderFixedRate, askAmt, 0, false, false,
 	)
 
 	// We are now ready to start the actual batch execution process. Let's
@@ -569,7 +571,7 @@ func testSidecarTicketCancellation(t *harnessTest) {
 	// check that the order is canceled as well.
 	sidecarBid, ticketID := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0, true,
+		orderFixedRate, askAmt, 0, true, false,
 	)
 	assertSidecarState(
 		t.t, providerTrader, 2, ticketID, sidecar.StateExpectingChannel,
@@ -606,7 +608,7 @@ func testSidecarTicketCancellation(t *harnessTest) {
 	// even after cancelling the first two.
 	_, ticketID2 := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, 0, true,
+		orderFixedRate, askAmt, 0, true, false,
 	)
 	assertSidecarState(
 		t.t, providerTrader, 3, ticketID2,
@@ -707,7 +709,7 @@ func sidecarChannelsRecipientOffline(t *harnessTest) {
 	// during the batch.
 	_, sidecarOnlineID := makeSidecar(
 		t, providerTrader, recipientTrader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, selfChanBalance, true,
+		orderFixedRate, askAmt, selfChanBalance, true, false,
 	)
 	resp, err := recipientTrader.ListSidecars(
 		ctx, &poolrpc.ListSidecarsRequest{SidecarId: sidecarOnlineID},
@@ -724,7 +726,7 @@ func sidecarChannelsRecipientOffline(t *harnessTest) {
 	// attempt the batch.
 	_, sidecarOfflineID := makeSidecar(
 		t, providerTrader, recipient2Trader, providerAccount.TraderKey,
-		orderFixedRate, askAmt, selfChanBalance, true,
+		orderFixedRate, askAmt, selfChanBalance, true, false,
 	)
 	resp, err = recipient2Trader.ListSidecars(
 		ctx, &poolrpc.ListSidecarsRequest{SidecarId: sidecarOfflineID},
@@ -791,7 +793,7 @@ func sidecarChannelsRecipientOffline(t *harnessTest) {
 func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 	providerAccountKey []byte, orderFixedRate uint32, // nolint:unparam
 	askAmt btcutil.Amount, selfChanBalance uint64, // nolint:unparam
-	auto bool) (orderT.Nonce, []byte) {
+	auto, unannounced bool) (orderT.Nonce, []byte) {
 
 	ctx := context.Background()
 
@@ -809,6 +811,7 @@ func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 			Version:             uint32(orderT.VersionSidecarChannel),
 			SelfChanBalance:     selfChanBalance,
 			MinNodeTier:         auctioneerrpc.NodeTier_TIER_0,
+			UnannouncedChannel:  unannounced,
 		}
 	} else {
 		bid = &poolrpc.Bid{
@@ -818,6 +821,8 @@ func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 			},
 			SelfChanBalance:     selfChanBalance,
 			LeaseDurationBlocks: defaultOrderDuration,
+			UnannouncedChannel:  unannounced,
+			ZeroConfChannel:     false,
 		}
 	}
 
@@ -870,6 +875,7 @@ func makeSidecar(t *harnessTest, providerTrader, recipientTrader *traderHarness,
 			bid.Bid.Details.MinUnitsMatch = 2
 			bid.Bid.MinNodeTier = auctioneerrpc.NodeTier_TIER_0
 			bid.Bid.SidecarTicket = registerResp.Ticket
+			bid.Bid.UnannouncedChannel = unannounced
 		},
 	)
 	require.NoError(t.t, err)

@@ -1154,6 +1154,19 @@ func assertPendingChannel(t *harnessTest, node *lntest.HarnessNode,
 	}
 }
 
+// privateChannelCheck is a channel check predicate for checking if the
+// channel was announced or not.
+func privateChannelCheck(private bool) pendingChanCheck {
+	return func(c *lnrpc.PendingChannelsResponse_PendingChannel) error {
+		if c.Private != private {
+			return fmt.Errorf("got %v for private channel, but "+
+				"wanted %v", c.Private, private)
+		}
+
+		return nil
+	}
+}
+
 func assertNumPendingChannels(t *harnessTest, node *lntest.HarnessNode,
 	numChans int) {
 

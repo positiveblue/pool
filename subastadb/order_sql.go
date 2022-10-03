@@ -16,6 +16,7 @@ import (
 	"github.com/lightningnetwork/lnd/tor"
 )
 
+// NodeIDSlice represents a slice of LN nodeIDs.
 type NodeIDSlice [][33]byte
 
 // SubmitOrder submits an order to the store. If an order with the given
@@ -45,11 +46,26 @@ func (s *SQLStore) SubmitOrder(ctx context.Context,
 			return err
 		}
 
-		// Create related row for the order in the orders_bid table.
-		if newOrder.Type() == orderT.TypeBid {
+		switch newOrder.Type() {
+		case orderT.TypeAsk:
+			// Create related row for the order in the orders_ask
+			// table.
+			newAskOrder, ok := newOrder.(*order.Ask)
+			if !ok {
+				return fmt.Errorf("unable to cast Ask order")
+			}
+
+			err = createOrderAskWithTx(ctx, txQueries, newAskOrder)
+			if err != nil {
+				return err
+			}
+
+		case orderT.TypeBid:
+			// Create related row for the order in the orders_bid
+			// table.
 			newBidOrder, ok := newOrder.(*order.Bid)
 			if !ok {
-				return nil
+				return fmt.Errorf("unable to cast Bid order")
 			}
 
 			err = createOrderBidWithTx(ctx, txQueries, newBidOrder)
@@ -204,6 +220,22 @@ func upsertOrderWithTx(ctx context.Context, txQueries *postgres.Queries,
 	return txQueries.UpsertOrder(ctx, params)
 }
 
+// createOrderAskWithTx inserts the order data specific to asks using the
+// provided queries struct.
+func createOrderAskWithTx(ctx context.Context, txQueries *postgres.Queries,
+	ask *order.Ask) error {
+
+	nonce := ask.Nonce()
+	announcement := int16(ask.AnnouncementConstraints)
+	confirmation := int16(ask.ConfirmationConstraints)
+	params := postgres.CreateOrderAskParams{
+		Nonce:                          nonce[:],
+		ChannelAnnouncementConstraints: announcement,
+		ChannelConfirmationConstraints: confirmation,
+	}
+	return txQueries.CreateOrderAsk(ctx, params)
+}
+
 // createOrderBidWithTx inserts the order data specific to bids using the
 // provided queries struct.
 func createOrderBidWithTx(ctx context.Context, txQueries *postgres.Queries,
@@ -211,10 +243,12 @@ func createOrderBidWithTx(ctx context.Context, txQueries *postgres.Queries,
 
 	nonce := bid.Nonce()
 	params := postgres.CreateOrderBidParams{
-		Nonce:           nonce[:],
-		MinNodeTier:     int64(bid.MinNodeTier),
-		SelfChanBalance: int64(bid.SelfChanBalance),
-		IsSidecar:       bid.IsSidecar,
+		Nonce:              nonce[:],
+		MinNodeTier:        int64(bid.MinNodeTier),
+		SelfChanBalance:    int64(bid.SelfChanBalance),
+		IsSidecar:          bid.IsSidecar,
+		UnannouncedChannel: bid.UnannouncedChannel,
+		ZeroConfChannel:    bid.ZeroConfChannel,
 	}
 	return txQueries.CreateOrderBid(ctx, params)
 }
@@ -511,11 +545,26 @@ func unmarshalOrder(row postgres.GetOrdersRow) (order.ServerOrder, error) {
 		return nil, err
 	}
 
+	askO, ok := serverOrder.(*order.Ask)
+	if ok {
+		announcement := orderT.ChannelAnnouncementConstraints(
+			row.ChannelAnnouncementConstraints.Int16,
+		)
+		askO.AnnouncementConstraints = announcement
+
+		confirmation := orderT.ChannelConfirmationConstraints(
+			row.ChannelConfirmationConstraints.Int16,
+		)
+		askO.ConfirmationConstraints = confirmation
+	}
+
 	bidO, ok := serverOrder.(*order.Bid)
 	if ok {
 		bidO.MinNodeTier = orderT.NodeTier(row.MinNodeTier.Int64)
 		bidO.SelfChanBalance = btcutil.Amount(row.SelfChanBalance.Int64)
 		bidO.IsSidecar = row.IsSidecar.Bool
+		bidO.UnannouncedChannel = row.UnannouncedChannel.Bool
+		bidO.ZeroConfChannel = row.ZeroConfChannel.Bool
 	}
 
 	return serverOrder, nil
