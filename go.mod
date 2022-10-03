@@ -179,7 +179,7 @@ require (
 	sigs.k8s.io/yaml v1.2.0 // indirect
 )
 
-go 1.17
+go 1.18
 
 // The subasta/auctioneerrpc package declares itself as pool/auctioneerrpc as
 // well so go mod can identify it as the same package and allows us to replace

@@ -8,6 +8,7 @@ package subasta
 import (
 	"bytes"
 	"fmt"
+	"runtime/debug"
 	"strings"
 )
 
@@ -45,8 +46,17 @@ func Version() string {
 		version = fmt.Sprintf("%s-%s", version, preRelease)
 	}
 
+	commit := ""
+	if info, ok := debug.ReadBuildInfo(); ok {
+		for _, setting := range info.Settings {
+			if setting.Key == "vcs.revision" {
+				commit = setting.Value
+			}
+		}
+	}
+
 	// Append commit hash of current build to version.
-	version = fmt.Sprintf("%s commit=%s", version, Commit)
+	version = fmt.Sprintf("%s commit=%s", version, commit)
 
 	return version
 }

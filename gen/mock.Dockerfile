@@ -1,4 +1,4 @@
-FROM golang:1.17.10-bullseye
+FROM golang:1.18.6-bullseye
 
 RUN go install github.com/golang/mock/mockgen@v1.6.0
 

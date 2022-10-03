@@ -1,7 +1,7 @@
 # If you change this value, please change it in the following files as well:
 # /regtest.Dockerfile
 # /.github/workflows/main.yml
-FROM golang:1.17.10-alpine as builder
+FROM golang:1.18.6-alpine as builder
 
 # Copy in the local repository to build from.
 COPY . /go/src/github.com/lightninglabs/subasta
@@ -16,10 +16,10 @@ ENV GO111MODULE on
 # Install dependencies and install/build both auctioneer binaries (daemon and
 # CLI).
 RUN apk add --no-cache --update alpine-sdk \
-    git \
-    make \
-&&  cd /go/src/github.com/lightninglabs/subasta \
-&&  make install
+        git \
+        make \
+        &&  cd /go/src/github.com/lightninglabs/subasta \
+        &&  make install
 
 # Start a new, final image to reduce size.
 FROM alpine as final
@@ -35,8 +35,8 @@ COPY --from=builder /go/bin/auctioncli /bin/
 
 # Add bash.
 RUN apk add --no-cache \
-    bash \
-    ca-certificates
+        bash \
+        ca-certificates
 
 # Specify the start command and entrypoint as the subasta daemon.
 ENTRYPOINT ["auctionserver", "daemon"]
