@@ -239,6 +239,20 @@ func (s *adminRPCServer) ResumeBatchTicker(_ context.Context,
 	return &adminrpc.EmptyResponse{}, nil
 }
 
+// SetRefreshRate alters the refresh rate used by the metrics
+// manager to set the duration at which we should fetch new batches
+// and orders rather than retreiving the cached batches and orders.
+func (s *adminRPCServer) SetRefreshRate(_ context.Context,
+	req *adminrpc.SetRefreshRateRequest) (*adminrpc.EmptyResponse, error) {
+
+	// Resume the batch ticker of the main auctioneer state machine.
+	s.mainRPCServer.metricsManager.SetRefreshRate(
+		time.Duration(req.TimeDuration),
+	)
+
+	return &adminrpc.EmptyResponse{}, nil
+}
+
 // ListOrders lists all currently known orders of the auctioneer database. A
 // flag can specify if all active or all archived orders should be returned.
 func (s *adminRPCServer) ListOrders(ctx context.Context,

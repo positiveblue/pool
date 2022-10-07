@@ -42,6 +42,7 @@ service AuctionAdmin {
     rpc Shutdown (EmptyRequest) returns (EmptyResponse);
     rpc SetStatus (SetStatusRequest) returns (EmptyResponse);
     rpc SetLogLevel (SetLogLevelRequest) returns (EmptyResponse);
+    rpc SetRefreshRate (SetRefreshRateRequest) returns (EmptyResponse);
 }
 
 message EmptyRequest {
@@ -791,4 +792,9 @@ message SetStatusRequest {
 message SetLogLevelRequest {
     // The new log level to set for the server.
     string log_level = 1;
+}
+
+message SetRefreshRateRequest {
+    // New time duration to set for the metrics manager.
+    uint64 time_duration = 1;
 }

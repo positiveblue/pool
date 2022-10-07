@@ -393,3 +393,26 @@ var setLogLevelCommand = cli.Command{
 		})
 	}),
 }
+
+var setMetricsTimeInterval = cli.Command{
+	Name:        "setmetricstimeinterval",
+	ShortName:   "smti",
+	Usage:       "Set a new metrics time interval",
+	Description: `Set a new metrics time interval for repopulating cached batches and orders from the store.`,
+	ArgsUsage:   "time duration in ns",
+	Flags: []cli.Flag{
+		cli.Int64Flag{
+			Name:  "time_interval",
+			Usage: "time interval in nanoseconds",
+		},
+	},
+	Action: wrapSimpleCmd(func(ctx context.Context, cliCtx *cli.Context,
+		client adminrpc.AuctionAdminClient) (proto.Message, error) {
+
+		refreshRate := cliCtx.Uint64("time_interval")
+
+		return client.SetRefreshRate(ctx, &adminrpc.SetRefreshRateRequest{
+			TimeDuration: refreshRate,
+		})
+	}),
+}

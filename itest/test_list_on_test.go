@@ -98,6 +98,14 @@ var testCases = []*testCase{
 		test: testNodeRatingAgencyAndMatching,
 	},
 	{
+		name: "order metrics reads and caches correctly",
+		test: testOrderMetricsFlow,
+	},
+	{
+		name: "batch metrics reads and caches correctly",
+		test: testBatchMetricsFlow,
+	},
+	{
 		name: "batch matching conditions",
 		test: testBatchMatchingConditions,
 	},

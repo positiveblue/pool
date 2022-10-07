@@ -177,6 +177,8 @@ func newAuctioneerHarness(cfg auctioneerConfig) (*auctioneerHarness, error) {
 				AuthWhitelistPaths: []string{
 					"^/poolrpc.ChannelAuctioneer/Terms.*$",
 					"^/poolrpc.ChannelAuctioneer/NodeRating.*$",
+					"^/poolrpc.ChannelAuctioneer/BatchMetrics.*$",
+					"^/poolrpc.ChannelAuctioneer/OrderMetrics.*$",
 					"^/poolrpc.ChannelAuctioneer/BatchSnapshots.*$",
 					"^/poolrpc.ChannelAuctioneer/SubscribeSidecar.*$",
 					"^/poolrpc.HashMail/NewCipherBox.*$",

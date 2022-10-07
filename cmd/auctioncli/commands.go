@@ -15,6 +15,7 @@ var adminCommands = []cli.Command{{
 		shutdownCommand,
 		setStatusCommand,
 		setLogLevelCommand,
+		setMetricsTimeInterval,
 	},
 }}
 
